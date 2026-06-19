@@ -1,4 +1,5 @@
 ﻿using Vortice.Direct3D11;
+using WTK.MediaForge.Core.Capture;
 using WTK.MediaForge.Core.Frames;
 
 namespace WTK.MediaForge.Graphics.D3D11;
@@ -10,13 +11,15 @@ public sealed class D3D11TextureFrame
         nint sharedHandle,
         FrameSize size,
         long frameNumber,
-        long timestamp)
+        long timestamp,
+        CaptureFrameStats frameStats = default)
     {
         Texture = texture;
         SharedHandle = sharedHandle;
         Size = size;
         FrameNumber = frameNumber;
         Timestamp = timestamp;
+        FrameStats = frameStats;
     }
 
     public ID3D11Texture2D Texture { get; }
@@ -30,4 +33,6 @@ public sealed class D3D11TextureFrame
     public long FrameNumber { get; }
 
     public long Timestamp { get; }
+
+    public CaptureFrameStats FrameStats { get; }
 }

@@ -1,6 +1,7 @@
 ﻿using Vortice.DXGI;
 using WTK.MediaForge.Core.Capture;
 using WTK.MediaForge.Core.Frames;
+using ModeRotation = Vortice.DXGI.ModeRotation;
 
 namespace WTK.MediaForge.Capture.DesktopDuplication;
 
@@ -29,6 +30,7 @@ public static class DesktopMonitorEnumerator
                     using (output)
                     {
                         var outputDescription = output.Description;
+                        var adapterLuid = adapterDescription.Luid;
 
                         int width = outputDescription.DesktopCoordinates.Right - outputDescription.DesktopCoordinates.Left;
                         int height = outputDescription.DesktopCoordinates.Bottom - outputDescription.DesktopCoordinates.Top;
@@ -36,8 +38,14 @@ public static class DesktopMonitorEnumerator
                         if (width < 0)
                             width = 0;
 
-                        if(height < 0)
+                        if (height < 0)
                             height = 0;
+
+                        var desktopRect = new DesktopRect(
+                            outputDescription.DesktopCoordinates.Left,
+                            outputDescription.DesktopCoordinates.Top,
+                            outputDescription.DesktopCoordinates.Right,
+                            outputDescription.DesktopCoordinates.Bottom);
 
                         result.Add(new CaptureSourceInfo
                         {
@@ -45,7 +53,14 @@ public static class DesktopMonitorEnumerator
                             OutputIndex = outputIndex,
                             AdapterName = adapterDescription.Description,
                             OutputName = outputDescription.DeviceName,
-                            Size = new FrameSize((uint)width, (uint)height)
+                            AdapterLuid = new GpuAdapterLuid
+                            {
+                                LowPart = adapterLuid.LowPart,
+                                HighPart = adapterLuid.HighPart
+                            },
+                            DesktopRect = desktopRect,
+                            LogicalSize = new FrameSize((uint)width, (uint)height),
+                            Rotation = MapRotation(outputDescription.Rotation)
                         });
                     }
                 }
@@ -54,4 +69,13 @@ public static class DesktopMonitorEnumerator
 
         return result;
     }
+
+    private static DisplayRotation MapRotation(ModeRotation rotation) =>
+        rotation switch
+        {
+            ModeRotation.Rotate90 => DisplayRotation.Rotate90,
+            ModeRotation.Rotate180 => DisplayRotation.Rotate180,
+            ModeRotation.Rotate270 => DisplayRotation.Rotate270,
+            _ => DisplayRotation.None
+        };
 }

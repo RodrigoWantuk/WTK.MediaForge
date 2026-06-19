@@ -32,6 +32,7 @@
             label1 = new Label();
             cmbMonitors = new ComboBox();
             lblStatus = new Label();
+            lblDiagnostics = new Label();
             btnStart = new Button();
             btnStop = new Button();
             timerCapture = new System.Windows.Forms.Timer(components);
@@ -63,13 +64,22 @@
             lblStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             lblStatus.Location = new Point(31, 45);
             lblStatus.Name = "lblStatus";
-            lblStatus.Size = new Size(682, 32);
+            lblStatus.Size = new Size(682, 18);
             lblStatus.TabIndex = 2;
+            // 
+            // lblDiagnostics
+            // 
+            lblDiagnostics.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblDiagnostics.Font = new Font("Consolas", 8.25F, FontStyle.Regular, GraphicsUnit.Point);
+            lblDiagnostics.Location = new Point(31, 66);
+            lblDiagnostics.Name = "lblDiagnostics";
+            lblDiagnostics.Size = new Size(682, 72);
+            lblDiagnostics.TabIndex = 8;
             // 
             // btnStart
             // 
             btnStart.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnStart.Location = new Point(638, 80);
+            btnStart.Location = new Point(638, 144);
             btnStart.Name = "btnStart";
             btnStart.Size = new Size(75, 23);
             btnStart.TabIndex = 3;
@@ -80,7 +90,7 @@
             // btnStop
             // 
             btnStop.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnStop.Location = new Point(557, 80);
+            btnStop.Location = new Point(557, 144);
             btnStop.Name = "btnStop";
             btnStop.Size = new Size(75, 23);
             btnStop.TabIndex = 4;
@@ -98,15 +108,15 @@
             pnlPreview.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             pnlPreview.BackColor = Color.Black;
             pnlPreview.BorderStyle = BorderStyle.FixedSingle;
-            pnlPreview.Location = new Point(31, 142);
+            pnlPreview.Location = new Point(31, 206);
             pnlPreview.Name = "pnlPreview";
-            pnlPreview.Size = new Size(682, 364);
+            pnlPreview.Size = new Size(682, 300);
             pnlPreview.TabIndex = 5;
             // 
             // label2
             // 
             label2.AutoSize = true;
-            label2.Location = new Point(31, 114);
+            label2.Location = new Point(31, 178);
             label2.Name = "label2";
             label2.Size = new Size(74, 15);
             label2.TabIndex = 6;
@@ -115,7 +125,7 @@
             // txtOverlay
             // 
             txtOverlay.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            txtOverlay.Location = new Point(111, 111);
+            txtOverlay.Location = new Point(111, 175);
             txtOverlay.Name = "txtOverlay";
             txtOverlay.Size = new Size(602, 23);
             txtOverlay.TabIndex = 7;
@@ -126,6 +136,7 @@
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(764, 518);
+            Controls.Add(lblDiagnostics);
             Controls.Add(txtOverlay);
             Controls.Add(label2);
             Controls.Add(pnlPreview);
@@ -147,6 +158,7 @@
         private Label label1;
         private ComboBox cmbMonitors;
         private Label lblStatus;
+        private Label lblDiagnostics;
         private Button btnStart;
         private Button btnStop;
         private System.Windows.Forms.Timer timerCapture;

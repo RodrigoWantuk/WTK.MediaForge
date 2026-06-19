@@ -1,5 +1,6 @@
 using WTK.MediaForge.Capture.DesktopDuplication;
 using WTK.MediaForge.Core.Capture;
+using WTK.MediaForge.Graphics.D3D11;
 using WTK.MediaForge.Graphics.Vulkan;
 
 namespace WMF.Testing
@@ -9,6 +10,7 @@ namespace WMF.Testing
         private IReadOnlyList<CaptureSourceInfo> _monitors = Array.Empty<CaptureSourceInfo>();
         private DesktopDuplicationCaptureSource? _capture;
         private VulkanPreviewRenderer? _vulkanRenderer;
+        private CaptureSourceInfo? _activeCaptureSource;
 
         private long _lastFrameNumber;
         private DateTime _lastFpsTime = DateTime.UtcNow;
@@ -44,6 +46,8 @@ namespace WMF.Testing
                     pnlPreview.ClientSize.Width,
                     pnlPreview.ClientSize.Height);
 
+                _vulkanRenderer.SetOverlayText(OverlayText);
+
                 lblStatus.Text =
                     $"Monitors found: {_monitors.Count} | Vulkan Preview OK: {vulkanInfo}";
             }
@@ -64,6 +68,17 @@ namespace WMF.Testing
 
             _vulkanRenderer?.ClearSource();
 
+            _activeCaptureSource = selected;
+
+            _vulkanRenderer?.SetPreviewParams(
+                selected.LogicalSize.Width,
+                selected.LogicalSize.Height,
+                0,
+                0,
+                selected.Rotation);
+
+            _vulkanRenderer?.SetOverlayText(OverlayText);
+
             _capture?.Dispose();
             _capture = new DesktopDuplicationCaptureSource(selected);
             _capture.Start();
@@ -77,7 +92,8 @@ namespace WMF.Testing
             btnStart.Enabled = false;
             btnStop.Enabled = true;
 
-            lblStatus.Text = $"Capturing: {selected}";
+            lblStatus.Text = $"Capturing: {selected.OutputName}";
+            UpdateDiagnosticsPanel(null, 0);
         }
 
         private void btnStop_Click(object sender, EventArgs e)
@@ -97,6 +113,16 @@ namespace WMF.Testing
             {
                 if (frame.HasSharedHandle)
                 {
+                    if (_activeCaptureSource is { } source)
+                    {
+                        _vulkanRenderer?.SetPreviewParams(
+                            source.LogicalSize.Width,
+                            source.LogicalSize.Height,
+                            frame.Size.Width,
+                            frame.Size.Height,
+                            source.Rotation);
+                    }
+
                     _vulkanRenderer?.SetSourceD3D11SharedTexture(
                         frame.SharedHandle,
                         frame.Size.Width,
@@ -123,16 +149,40 @@ namespace WMF.Testing
                 double fps = _framesInWindow / elapsed.TotalSeconds;
 
                 lblStatus.Text =
-                    $"Frame: {_lastFrameNumber} | " +
-                    $"Size: {frame.Size} | " +
-                    $"FPS: {fps:0.0} | " +
-                    $"D3D11 Texture: 0x{frame.Texture.NativePointer.ToInt64():X} | " +
-                    $"Shared Handle: 0x{frame.SharedHandle.ToInt64():X} | " +
-                    $"Overlay: \"{txtOverlay.Text}\"";
+                    $"Frame: {_lastFrameNumber} | FPS: {fps:0.0} | " +
+                    $"Handle: 0x{frame.SharedHandle.ToInt64():X} | Overlay: \"{txtOverlay.Text}\"";
+
+                UpdateDiagnosticsPanel(frame, fps);
 
                 _framesInWindow = 0;
                 _lastFpsTime = now;
             }
+        }
+
+        private void UpdateDiagnosticsPanel(D3D11TextureFrame? frame, double fps)
+        {
+            if (_activeCaptureSource is null)
+            {
+                lblDiagnostics.Text = string.Empty;
+                return;
+            }
+
+            if (frame is null)
+            {
+                lblDiagnostics.Text = CaptureDiagnosticsFormatter.BuildStartup(
+                    _activeCaptureSource,
+                    _capture?.SessionInfo,
+                    _vulkanRenderer?.GetRendererInfo());
+                return;
+            }
+
+            lblDiagnostics.Text = CaptureDiagnosticsFormatter.Build(
+                _activeCaptureSource,
+                _capture?.SessionInfo,
+                frame.FrameStats,
+                frame,
+                _vulkanRenderer?.GetRendererInfo(),
+                fps);
         }
 
         private void pnlPreview_Resize(object? sender, EventArgs e)
@@ -154,8 +204,14 @@ namespace WMF.Testing
 
         private void txtOverlay_TextChanged(object sender, EventArgs e)
         {
-            // Próxima fase:
-            // esse texto vai virar uma textura/overlay renderizada pelo Vulkan.
+            try
+            {
+                _vulkanRenderer?.SetOverlayText(OverlayText);
+            }
+            catch (Exception ex)
+            {
+                lblStatus.Text = $"Overlay update failed: {ex.Message}";
+            }
         }
 
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
@@ -166,6 +222,7 @@ namespace WMF.Testing
 
             _capture?.Dispose();
             _capture = null;
+            _activeCaptureSource = null;
 
             _vulkanRenderer?.Dispose();
             _vulkanRenderer = null;
@@ -179,6 +236,7 @@ namespace WMF.Testing
 
             _capture?.Dispose();
             _capture = null;
+            _activeCaptureSource = null;
 
             btnStart.Enabled = true;
             btnStop.Enabled = false;

@@ -28,6 +28,12 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
     private uint _textureHeight;
     private Format _textureFormat;
 
+    private readonly D3D11TextureCenterProbe _centerProbe = new();
+
+    public CaptureSessionInfo? SessionInfo { get; private set; }
+
+    public CaptureFrameStats LastFrameStats { get; private set; }
+
     public DesktopDuplicationCaptureSource(CaptureSourceInfo source)
     {
         _source = source;
@@ -49,6 +55,12 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
 
         _device = D3D11GpuDevice.CreateForAdapter(adapter);
 
+        GpuAdapterLuid captureAdapterLuid = new()
+        {
+            LowPart = adapter.Description1.Luid.LowPart,
+            HighPart = adapter.Description1.Luid.HighPart
+        };
+
         if (adapter.EnumOutputs(_source.OutputIndex, out IDXGIOutput? output).Failure || output is null)
             throw new InvalidOperationException($"Output not found: {_source.OutputIndex}");
 
@@ -66,7 +78,17 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
 
         _size = new FrameSize(_textureWidth, _textureHeight);
 
+        SessionInfo = new CaptureSessionInfo
+        {
+            CaptureAdapterLuid = captureAdapterLuid,
+            DuplicationTextureSize = _size,
+            TextureFormat = _textureFormat.ToString(),
+            RefreshRateNumerator = duplicationDescription.ModeDescription.RefreshRate.Numerator,
+            RefreshRateDenominator = duplicationDescription.ModeDescription.RefreshRate.Denominator
+        };
+
         CreateOwnedTexture();
+        WarmUpDuplication();
     }
 
     private void DisposeOwnedTexture()
@@ -109,6 +131,8 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
         _textureWidth = 0;
         _textureHeight = 0;
         _textureFormat = default;
+        SessionInfo = null;
+        LastFrameStats = default;
     }
 
     public bool TryAcquireNextFrame(out D3D11TextureFrame? frame)
@@ -136,6 +160,17 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
             using ID3D11Texture2D acquiredTexture =
                 desktopResource!.QueryInterface<ID3D11Texture2D>();
 
+            var acquiredDescription = acquiredTexture.Description;
+            var acquiredSize = new FrameSize(acquiredDescription.Width, acquiredDescription.Height);
+
+            EnsureOwnedTextureMatches(acquiredDescription);
+
+            if (_ownedTexture is null)
+                return false;
+
+            CaptureCenterPixel? centerPixel = null;
+            var centerPixelReadSucceeded = false;
+
             if (_keyedMutex is not null)
             {
                 _keyedMutex.AcquireSync(0, 1000);
@@ -145,6 +180,26 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
             {
                 _device.Context.CopyResource(_ownedTexture, acquiredTexture);
                 _device.Context.Flush();
+
+                centerPixelReadSucceeded = _centerProbe.TryReadCenterPixel(
+                    _device.Device,
+                    _device.Context,
+                    _ownedTexture,
+                    out byte blue,
+                    out byte green,
+                    out byte red,
+                    out byte alpha);
+
+                if (centerPixelReadSucceeded)
+                {
+                    centerPixel = new CaptureCenterPixel
+                    {
+                        Blue = blue,
+                        Green = green,
+                        Red = red,
+                        Alpha = alpha
+                    };
+                }
             }
             finally
             {
@@ -156,12 +211,29 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
 
             _frameNumber++;
 
+            var ownedSize = new FrameSize(_textureWidth, _textureHeight);
+
+            LastFrameStats = new CaptureFrameStats
+            {
+                AccumulatedFrames = frameInfo.AccumulatedFrames,
+                ProtectedContentMaskedOut = frameInfo.ProtectedContentMaskedOut,
+                RectsCoalesced = frameInfo.RectsCoalesced,
+                AcquiredTextureSize = acquiredSize,
+                OwnedTextureSize = ownedSize,
+                TextureSizeMismatch =
+                    acquiredSize.Width != ownedSize.Width ||
+                    acquiredSize.Height != ownedSize.Height,
+                CenterPixel = centerPixel,
+                CenterPixelReadSucceeded = centerPixelReadSucceeded
+            };
+
             frame = new D3D11TextureFrame(
                 _ownedTexture,
                 _sharedHandle,
                 _size,
                 _frameNumber,
-                Stopwatch.GetTimestamp());
+                Stopwatch.GetTimestamp(),
+                LastFrameStats);
 
             return true;
         }
@@ -169,6 +241,60 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
         {
             desktopResource?.Dispose();
             _duplication.ReleaseFrame();
+        }
+    }
+
+    private void WarmUpDuplication()
+    {
+        if (_duplication is null)
+            return;
+
+        for (int i = 0; i < 10; i++)
+        {
+            var result = _duplication.AcquireNextFrame(
+                16,
+                out _,
+                out IDXGIResource? desktopResource);
+
+            if (result.Code == ResultCode.WaitTimeout.Code)
+                continue;
+
+            if (result.Failure)
+                break;
+
+            desktopResource?.Dispose();
+            _duplication.ReleaseFrame();
+        }
+    }
+
+    private void EnsureOwnedTextureMatches(Texture2DDescription acquiredDescription)
+    {
+        if (_ownedTexture is not null &&
+            acquiredDescription.Width == _textureWidth &&
+            acquiredDescription.Height == _textureHeight &&
+            acquiredDescription.Format == _textureFormat)
+        {
+            return;
+        }
+
+        _textureWidth = acquiredDescription.Width;
+        _textureHeight = acquiredDescription.Height;
+        _textureFormat = acquiredDescription.Format;
+        _size = new FrameSize(_textureWidth, _textureHeight);
+
+        DisposeOwnedTexture();
+        CreateOwnedTexture();
+
+        if (SessionInfo is not null)
+        {
+            SessionInfo = new CaptureSessionInfo
+            {
+                CaptureAdapterLuid = SessionInfo.CaptureAdapterLuid,
+                DuplicationTextureSize = _size,
+                TextureFormat = _textureFormat.ToString(),
+                RefreshRateNumerator = SessionInfo.RefreshRateNumerator,
+                RefreshRateDenominator = SessionInfo.RefreshRateDenominator
+            };
         }
     }
 
@@ -229,6 +355,7 @@ public sealed class DesktopDuplicationCaptureSource : IDisposable
 
         _disposed = true;
         Stop();
+        _centerProbe.Dispose();
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]
