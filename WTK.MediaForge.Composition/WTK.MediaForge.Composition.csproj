@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="WTK.MediaForge.Composition.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
   </ItemGroup>
 
