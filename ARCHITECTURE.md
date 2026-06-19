@@ -182,6 +182,8 @@ WTK.MediaForge.Graphics.D3D11
 WTK.MediaForge.Graphics.Vulkan
 WTK.MediaForge.Graphics.Interop
 WTK.MediaForge.Composition
+WTK.MediaForge.Composition.Tests
+WTK.MediaForge.Core.Tests
 WTK.MediaForge.Diagnostics
 ```
 
@@ -218,22 +220,28 @@ MediaForgeProject
 
 #### `WTK.MediaForge.Composition`
 
-Contains the scene graph and composition model.
+Contains the scene graph, serializable project model, immutable snapshots, and composition runtime.
 
 Examples:
 
 ```text
+MediaForgeProject
 MediaForgeCanvas
 MediaForgeDrawObject
-DesktopCaptureDrawObject
-WebcamDrawObject
-RtspStreamDrawObject
-ImageDrawObject
+SourceLayerDrawObject
 TextDrawObject
+SolidDrawObject
 CanvasDrawObject
-MediaForgeEffect
+MediaForgeRenderOutput
+ProjectStateSnapshot
+RenderFrameSnapshot
+MediaForgeRenderThread
+ShaderPipelineCatalog
 BlendMode
+LayoutMode
 ```
+
+Draw objects reference live sources by `SourceId`. Source type (`wtk.desktop.capture`, `wtk.image.file`, …) lives in `MediaForgeSourceDefinition`, not in the draw object type.
 
 #### `WTK.MediaForge.Capture`
 
@@ -460,11 +468,11 @@ A **draw object** places something onto a canvas.
 Examples:
 
 ```text
-DesktopCaptureSource
+DesktopCaptureSource (runtime)
   provides GPU frames from a display
 
-DesktopCaptureDrawObject
-  references that source and defines where/how it appears on a canvas
+SourceLayerDrawObject (project)
+  references SourceId and defines where/how the source appears on a canvas
 ```
 
 This separation allows one source to be reused multiple times:
@@ -504,40 +512,29 @@ The renderer should not own the editable project state directly. It should rende
 
 ## Scene Snapshots
 
-The UI thread will edit canvases and draw objects in real time. The render thread should not directly iterate lists that the UI can modify concurrently.
+The UI thread edits `MediaForgeProject` while capture runs on source threads and rendering runs on a dedicated render thread.
 
-Recommended strategy:
+Two-stage snapshot pipeline (phase 1 foundation):
 
 ```text
-Editable Scene Model
-  â†“
-Render Snapshot
-  â†“
-Vulkan Renderer
+MediaForgeProject (editable, UI thread)
+  -> ProjectStateSnapshotFactory.CreateImmutableSnapshot
+ProjectStateSnapshot (deep copy, immutable)
+  -> RenderFrameSnapshotFactory.Build + TryAcquireLatestFrame
+RenderFrameSnapshot (GPU leases, IDisposable)
+  -> LatestSnapshotBuffer.Publish
+MediaForgeRenderThread -> IRenderBackend
 ```
-
-A render snapshot is a stable, frame-safe representation of the scene.
 
 This prevents:
 
 - collection modification during rendering;
 - race conditions;
+- shared mutable JsonObject / list references;
 - resource lifetime issues;
-- UI thread blocking;
-- render thread instability.
+- render thread reading editable project state directly.
 
-Conceptually:
-
-```text
-UI Thread:
-  modifies MediaForgeCanvas
-
-Application Layer:
-  generates RenderSceneSnapshot
-
-Render Thread:
-  renders RenderSceneSnapshot
-```
+Lifecycle commands (Bind, Unbind, Resize, Stop) use a render-thread command queue. Frame payloads use LatestSnapshotBuffer only.
 
 ---
 
@@ -1127,7 +1124,7 @@ Validated:
 
 ```text
 .NET 8 WinForms host
-Desktop monitor enumeration
+Desktop monitor enumeration (including rotated outputs)
 Desktop Duplication API capture
 D3D11 texture capture
 D3D11 GPU-to-GPU CopyResource
@@ -1138,36 +1135,37 @@ WinForms Panel to Vulkan surface
 Vulkan swapchain presentation
 Vulkan external memory import
 D3D11 texture reaching Vulkan
+Shader-based preview (Fit + rotation + text overlay)
+Phase 1 composition foundation (project model, validator, snapshots, render thread)
 ```
 
-Current temporary renderer path:
+Current POC renderer path:
 
 ```text
 D3D11 imported image
-  -> vkCmdCopyImage
+  -> Vulkan ImageView + Sampler
+  -> desktop_preview.vert / desktop_preview.frag
+  -> Fit layout + display rotation
   -> swapchain
 ```
+
+Catalog shaders (`mf.*`) and `IRenderBackend` Vulkan bridge are defined but not yet wired into `Form1`.
 
 Known limitations:
 
 ```text
-direct copy does not scale
-direct copy does not rotate
-direct copy does not preserve aspect ratio intentionally
-direct copy is not the final composition path
-portrait monitor handling requires rotation logic
-visual composition requires shader-based rendering
+POC preview uses a single-source path, not the full compositor runtime
+Nested canvas rendering is modeled in snapshots but not yet in Vulkan backend
+Full multi-output composition is phase 2
 ```
 
 Next architectural step:
 
 ```text
-D3D11 imported image
-  -> Vulkan ImageView
-  -> Vulkan Sampler
-  -> DescriptorSet
-  -> Fragment Shader
-  -> Canvas rendering pipeline
+VulkanRenderBackend implementing IRenderBackend
+  -> consume RenderFrameSnapshot
+  -> mf.* shader catalog pipelines
+  -> optional gradual migration from VulkanPreviewRenderer
 ```
 
 ---
@@ -1176,27 +1174,31 @@ D3D11 imported image
 
 ### Milestone 1: Formal Composition Model
 
-Create the initial high-level model:
+Status: **done (phase 1 foundation)**
 
 ```text
+MediaForgeProject
 MediaForgeCanvas
-MediaForgeDrawObject
-DesktopCaptureDrawObject
+SourceLayerDrawObject
 TextDrawObject
+SolidDrawObject
 CanvasDrawObject
 Transform2D
-CropRect
-BlendMode
+NormalizedRect
+BlendMode / LayoutMode
+MediaForgeProjectValidator
 ```
 
 ### Milestone 2: Renderer Snapshot
 
-Create a simple render snapshot model so the renderer does not directly consume editable UI state.
+Status: **done (phase 1 foundation)**
 
 ```text
-MediaForgeCanvas
-  -> RenderCanvasSnapshot
-  -> VulkanRenderer
+MediaForgeProject
+  -> ProjectStateSnapshot
+  -> RenderFrameSnapshot
+  -> LatestSnapshotBuffer
+  -> MediaForgeRenderThread
 ```
 
 ### Milestone 3: Shader-Based Texture Rendering
