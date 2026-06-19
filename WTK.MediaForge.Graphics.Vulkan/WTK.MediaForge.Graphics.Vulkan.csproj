@@ -18,6 +18,12 @@
   <ItemGroup>
     <EmbeddedResource Include="Shaders\desktop_preview.vert" />
     <EmbeddedResource Include="Shaders\desktop_preview.frag" />
+    <EmbeddedResource Include="Shaders\Catalog\mf_common.vert" />
+    <EmbeddedResource Include="Shaders\Catalog\mf_source_layer.frag" />
+    <EmbeddedResource Include="Shaders\Catalog\mf_solid.frag" />
+    <EmbeddedResource Include="Shaders\Catalog\mf_text.frag" />
+    <EmbeddedResource Include="Shaders\Catalog\mf_canvas_composite.frag" />
+    <EmbeddedResource Include="Shaders\Catalog\mf_output_letterbox.frag" />
   </ItemGroup>
 
   <ItemGroup>
