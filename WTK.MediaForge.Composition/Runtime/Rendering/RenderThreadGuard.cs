@@ -1,22 +1,25 @@
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public static class RenderThreadGuard
+/// <summary>
+/// Per render-thread instance guard. Each <see cref="MediaForgeRenderThread"/> owns one guard
+/// shared with its backend — not a process-wide singleton.
+/// </summary>
+public sealed class RenderThreadGuard
 {
-    private static volatile Thread? _renderThread;
+    private int _renderThreadId;
 
-    public static void RegisterRenderThread(Thread thread) =>
-        _renderThread = thread ?? throw new ArgumentNullException(nameof(thread));
+    public void BindToCurrentThread() =>
+        _renderThreadId = Environment.CurrentManagedThreadId;
 
-    public static void ClearRenderThread() =>
-        _renderThread = null;
+    public void Clear() =>
+        _renderThreadId = 0;
 
-    public static void AssertOnRenderThread()
+    public void AssertOnRenderThread()
     {
-        var expected = _renderThread;
-        if (expected is null)
-            throw new InvalidOperationException("Render thread has not been registered.");
+        if (_renderThreadId == 0)
+            throw new InvalidOperationException("Render thread has not been bound to this guard.");
 
-        if (Thread.CurrentThread != expected)
+        if (Environment.CurrentManagedThreadId != _renderThreadId)
             throw new InvalidOperationException("Render backend calls must run on the render thread.");
     }
 }

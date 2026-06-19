@@ -6,6 +6,7 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 public sealed class MediaForgeRenderThread : IDisposable
 {
     private readonly IRenderBackend _backend;
+    private readonly RenderThreadGuard _threadGuard;
     private readonly LatestSnapshotBuffer _snapshotBuffer = new();
     private readonly ConcurrentQueue<RenderCommand> _commands = new();
     private readonly ManualResetEventSlim _workSignal = new(false);
@@ -13,9 +14,10 @@ public sealed class MediaForgeRenderThread : IDisposable
     private int _disposed;
     private volatile int _stopRequested;
 
-    public MediaForgeRenderThread(IRenderBackend backend)
+    public MediaForgeRenderThread(IRenderBackend backend, RenderThreadGuard threadGuard)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
+        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _thread = new Thread(RenderLoop)
         {
             IsBackground = true,
@@ -62,24 +64,34 @@ public sealed class MediaForgeRenderThread : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        if (_thread.IsAlive)
-        {
-            _stopRequested = 1;
-            _commands.Enqueue(new StopRenderThreadCommand());
-            _workSignal.Set();
+        Exception? stopException = null;
 
-            if (!_thread.Join(TimeSpan.FromSeconds(10)))
-                throw new TimeoutException("Render thread did not stop within the expected timeout.");
+        try
+        {
+            if (_thread.IsAlive)
+            {
+                _stopRequested = 1;
+                _commands.Enqueue(new StopRenderThreadCommand());
+                _workSignal.Set();
+
+                if (!_thread.Join(TimeSpan.FromSeconds(10)))
+                    stopException = new TimeoutException("Render thread did not stop within the expected timeout.");
+            }
+        }
+        finally
+        {
+            _snapshotBuffer.Dispose();
+            _workSignal.Dispose();
+            _threadGuard.Clear();
         }
 
-        _snapshotBuffer.Dispose();
-        _workSignal.Dispose();
-        RenderThreadGuard.ClearRenderThread();
+        if (stopException is not null)
+            throw stopException;
     }
 
     private void RenderLoop()
     {
-        RenderThreadGuard.RegisterRenderThread(Thread.CurrentThread);
+        _threadGuard.BindToCurrentThread();
 
         try
         {
@@ -96,7 +108,7 @@ public sealed class MediaForgeRenderThread : IDisposable
         }
         finally
         {
-            RenderThreadGuard.ClearRenderThread();
+            _threadGuard.Clear();
         }
     }
 
@@ -140,13 +152,17 @@ public sealed class MediaForgeRenderThread : IDisposable
         }
         catch (Exception)
         {
+            // TODO: Diagnostics.Record render failure.
+        }
+        finally
+        {
             try
             {
                 snapshot.Dispose();
             }
             catch (Exception)
             {
-                // TODO: Diagnostics.Record render dispose failure.
+                // TODO: Diagnostics.Record snapshot dispose failure.
             }
         }
     }

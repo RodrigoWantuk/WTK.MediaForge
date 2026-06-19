@@ -1,17 +1,14 @@
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Validation;
 
 public static class MediaForgeProjectValidator
 {
-    private static readonly HashSet<string> KnownSourceTypeIds =
-    [
-        MediaSourceTypeId.DesktopCapture.Value,
-        MediaSourceTypeId.ImageFile.Value,
-        MediaSourceTypeId.VideoFile.Value
-    ];
+    private static readonly SourceDefinitionValidatorRegistry SourceRegistry =
+        SourceDefinitionValidatorRegistry.Default;
 
     public static ProjectValidationResult Validate(MediaForgeProject project)
     {
@@ -87,11 +84,13 @@ public static class MediaForgeProjectValidator
             if (source.Id.IsEmpty)
                 issues.Add(ValidationIssue.Error("source.id.empty", "Source definition has empty id."));
 
-            if (source.TypeId.IsEmpty || !KnownSourceTypeIds.Contains(source.TypeId.Value))
+            if (source.TypeId.IsEmpty || !SourceRegistry.IsKnown(source.TypeId))
                 issues.Add(ValidationIssue.Error("source.type.invalid", $"Unknown or empty source type id: '{source.TypeId.Value}'."));
 
             if (source.SchemaVersion <= 0)
                 issues.Add(ValidationIssue.Error("source.schema.invalid", $"Source '{source.Name}' has invalid SchemaVersion."));
+
+            issues.AddRange(SourceRegistry.Validate(source));
         }
     }
 
@@ -128,10 +127,9 @@ public static class MediaForgeProjectValidator
         if (drawObject.Id.IsEmpty)
             issues.Add(ValidationIssue.Error("drawobject.id.empty", $"Draw object in canvas '{canvasName}' has empty id."));
 
-        if (!drawObject.Transform.HasPositiveSize)
-            issues.Add(ValidationIssue.Error("drawobject.transform.size", $"Draw object '{drawObject.Name}' in canvas '{canvasName}' has non-positive size."));
+        ValidateTransform(drawObject, canvasName, issues);
 
-        if (drawObject.Opacity is < 0f or > 1f)
+        if (!IsValidOpacity(drawObject.Opacity))
             issues.Add(ValidationIssue.Error("drawobject.opacity.invalid", $"Draw object '{drawObject.Name}' opacity out of range."));
 
         if (drawObject.Crop is { } crop && !crop.IsValid)
@@ -149,7 +147,7 @@ public static class MediaForgeProjectValidator
             case TextDrawObject text:
                 if (!text.TextColor.IsInRange())
                     issues.Add(ValidationIssue.Error("drawobject.text.color", $"Text object '{drawObject.Name}' color out of range."));
-                if (text.FontSize <= 0)
+                if (!float.IsFinite(text.FontSize) || text.FontSize <= 0)
                     issues.Add(ValidationIssue.Error("drawobject.text.font", $"Text object '{drawObject.Name}' has invalid FontSize."));
                 break;
 
@@ -166,4 +164,41 @@ public static class MediaForgeProjectValidator
                 break;
         }
     }
+
+    private static void ValidateTransform(MediaForgeDrawObject drawObject, string canvasName, List<ValidationIssue> issues)
+    {
+        var transform = drawObject.Transform;
+
+        if (!IsValidCanvasPoint(transform.Position))
+            issues.Add(ValidationIssue.Error("drawobject.transform.position", $"Draw object '{drawObject.Name}' in canvas '{canvasName}' has invalid position."));
+
+        if (!IsValidCanvasSize(transform.Size))
+            issues.Add(ValidationIssue.Error("drawobject.transform.size", $"Draw object '{drawObject.Name}' in canvas '{canvasName}' has non-positive size."));
+
+        if (!float.IsFinite(transform.RotationDegrees))
+            issues.Add(ValidationIssue.Error("drawobject.transform.rotation", $"Draw object '{drawObject.Name}' in canvas '{canvasName}' has invalid rotation."));
+
+        if (!IsValidNormalizedPoint(transform.Pivot))
+            issues.Add(ValidationIssue.Error("drawobject.transform.pivot", $"Draw object '{drawObject.Name}' in canvas '{canvasName}' has invalid pivot."));
+    }
+
+    private static bool IsValidCanvasPoint(CanvasPoint point) =>
+        float.IsFinite(point.X) && float.IsFinite(point.Y);
+
+    private static bool IsValidCanvasSize(CanvasSize size) =>
+        float.IsFinite(size.Width) &&
+        float.IsFinite(size.Height) &&
+        size.Width > 0 &&
+        size.Height > 0;
+
+    private static bool IsValidNormalizedPoint(NormalizedPoint point) =>
+        float.IsFinite(point.X) &&
+        float.IsFinite(point.Y) &&
+        point.X >= 0f &&
+        point.X <= 1f &&
+        point.Y >= 0f &&
+        point.Y <= 1f;
+
+    private static bool IsValidOpacity(float value) =>
+        float.IsFinite(value) && value >= 0f && value <= 1f;
 }

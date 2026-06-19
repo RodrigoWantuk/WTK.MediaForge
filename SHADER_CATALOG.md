@@ -44,6 +44,10 @@ color = texture(sourceTexture, uvRaw);
 - `ShaderPipelineCatalog` — registry
 - `RenderDrawObjectPipelineMapper` — draw object → pipeline kind
 
+## Snapshot ownership
+
+`IRenderBackend.Render` receives a `RenderFrameSnapshot` but does **not** dispose it. `MediaForgeRenderThread` acquires the snapshot from `LatestSnapshotBuffer` and always calls `Dispose()` in a `finally` block after the backend returns.
+
 ## POC note
 
 `desktop_preview.vert/frag` remain the active POC preview path. Catalog shaders are the foundation for the compositor backend (phase 2 Vulkan bridge).

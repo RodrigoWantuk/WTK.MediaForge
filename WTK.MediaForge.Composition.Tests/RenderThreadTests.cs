@@ -5,7 +5,9 @@ using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Core.Time;
 using Xunit;
 
@@ -16,7 +18,8 @@ public class RenderThreadTests
     [Fact]
     public void NullRenderBackend_rejects_calls_off_render_thread()
     {
-        var backend = new NullRenderBackend();
+        var guard = new RenderThreadGuard();
+        var backend = new NullRenderBackend(guard);
 
         Assert.Throws<InvalidOperationException>(() =>
             backend.Render(CreateEmptySnapshot(version: 1)));
@@ -25,8 +28,9 @@ public class RenderThreadTests
     [Fact]
     public void Render_thread_processes_bind_and_render_commands()
     {
-        var backend = new NullRenderBackend();
-        using var renderThread = StartRenderThread(backend);
+        var guard = new RenderThreadGuard();
+        var backend = new NullRenderBackend(guard);
+        using var renderThread = StartRenderThread(backend, guard);
 
         var outputId = RenderOutputId.New();
         renderThread.EnqueueCommand(new BindOutputCommand
@@ -58,8 +62,30 @@ public class RenderThreadTests
         var runtime = new CompositionRuntime();
         runtime.RegisterFrameProvider(source);
 
-        var backend = new NullRenderBackend();
-        using var renderThread = StartRenderThread(backend);
+        var guard = new RenderThreadGuard();
+        var backend = new NullRenderBackend(guard);
+        using var renderThread = StartRenderThread(backend, guard);
+
+        renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
+
+        WaitUntil(() => backend.RenderCount >= 1, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+
+        Assert.Equal(0, source.RetainCount);
+    }
+
+    [Fact]
+    public void RenderThread_disposes_snapshot_even_when_backend_does_not()
+    {
+        var source = CreateRunningSource();
+        source.PublishFrame(1, MediaTime.Zero);
+
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var guard = new RenderThreadGuard();
+        var backend = new NonDisposingNullRenderBackend(guard);
+        using var renderThread = StartRenderThread(backend, guard);
 
         renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
 
@@ -76,8 +102,9 @@ public class RenderThreadTests
         var runtime = new CompositionRuntime();
         runtime.RegisterFrameProvider(source);
 
-        var backend = new SlowNullRenderBackend(TimeSpan.FromMilliseconds(30));
-        using var renderThread = StartRenderThread(backend);
+        var guard = new RenderThreadGuard();
+        var backend = new SlowNullRenderBackend(guard, TimeSpan.FromMilliseconds(30));
+        using var renderThread = StartRenderThread(backend, guard);
 
         for (var frame = 1; frame <= 20; frame++)
         {
@@ -100,8 +127,9 @@ public class RenderThreadTests
         var runtime = new CompositionRuntime();
         runtime.RegisterFrameProvider(source);
 
-        var backend = new NullRenderBackend();
-        var renderThread = StartRenderThread(backend);
+        var guard = new RenderThreadGuard();
+        var backend = new NullRenderBackend(guard);
+        var renderThread = StartRenderThread(backend, guard);
         renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
 
         renderThread.Dispose();
@@ -110,9 +138,9 @@ public class RenderThreadTests
         Assert.False(renderThread.IsRunning);
     }
 
-    private static MediaForgeRenderThread StartRenderThread(IRenderBackend backend)
+    private static MediaForgeRenderThread StartRenderThread(IRenderBackend backend, RenderThreadGuard guard)
     {
-        var renderThread = new MediaForgeRenderThread(backend);
+        var renderThread = new MediaForgeRenderThread(backend, guard);
         renderThread.Start();
         return renderThread;
     }
@@ -180,6 +208,30 @@ public class RenderThreadTests
             ProjectStateVersion = version,
             Canvases = ImmutableArray<RenderCanvasSnapshot>.Empty,
             Outputs = ImmutableArray<RenderOutputStateSnapshot>.Empty,
-            FrameLeases = ImmutableArray<Core.Gpu.GpuFrameLease>.Empty
+            FrameLeases = ImmutableArray<GpuFrameLease>.Empty
         };
+}
+
+public sealed class NonDisposingNullRenderBackend : IRenderBackend
+{
+    private readonly RenderThreadGuard _threadGuard;
+
+    public NonDisposingNullRenderBackend(RenderThreadGuard threadGuard) =>
+        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+
+    public int RenderCount => Volatile.Read(ref _renderCount);
+
+    private int _renderCount;
+
+    public void BindOutput(RenderOutputBindingSnapshot binding) { }
+
+    public void UnbindOutput(RenderOutputId outputId) { }
+
+    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
+
+    public void Render(RenderFrameSnapshot snapshot)
+    {
+        _threadGuard.AssertOnRenderThread();
+        Interlocked.Increment(ref _renderCount);
+    }
 }

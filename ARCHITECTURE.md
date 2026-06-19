@@ -367,21 +367,16 @@ A canvas can be used as:
 
 A `MediaForgeDrawObject` is anything that can be drawn onto a canvas.
 
-Examples:
+Examples (current phase 1 model):
 
 ```text
-DesktopCaptureDrawObject
-WindowCaptureDrawObject
-RegionCaptureDrawObject
-WebcamDrawObject
-RtspStreamDrawObject
-VideoFileDrawObject
-ImageDrawObject
+SourceLayerDrawObject   references SourceId; type lives in MediaForgeSourceDefinition
 TextDrawObject
+SolidDrawObject
 CanvasDrawObject
-ShapeDrawObject
-AudioMeterDrawObject
 ```
+
+Future draw object types may include shapes, audio meters, etc. Source-specific types such as `DesktopCaptureDrawObject` or `ImageDrawObject` are intentionally **not** used — one `SourceLayerDrawObject` covers all media sources.
 
 Base conceptual model:
 
@@ -1098,6 +1093,9 @@ Use snapshots or resource references for rendering.
 Use explicit Dispose patterns for native resources.
 Keep D3D11 and Vulkan resources in backend-specific projects.
 Keep Core and Composition free from Vulkan/D3D11 dependencies.
+MediaForgeRenderThread owns RenderFrameSnapshot after AcquireLatest — always Dispose in finally.
+IRenderBackend uses snapshots but never disposes them.
+Each render thread uses its own RenderThreadGuard instance (not process-wide).
 ```
 
 Recommended separation:

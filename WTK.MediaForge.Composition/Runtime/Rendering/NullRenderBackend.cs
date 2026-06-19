@@ -7,7 +7,11 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 public sealed class NullRenderBackend : IRenderBackend
 {
+    private readonly RenderThreadGuard _threadGuard;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
+
+    public NullRenderBackend(RenderThreadGuard threadGuard) =>
+        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
 
     public int RenderCount => Volatile.Read(ref _renderCount);
 
@@ -20,20 +24,20 @@ public sealed class NullRenderBackend : IRenderBackend
 
     public void BindOutput(RenderOutputBindingSnapshot binding)
     {
-        RenderThreadGuard.AssertOnRenderThread();
+        _threadGuard.AssertOnRenderThread();
         ArgumentNullException.ThrowIfNull(binding);
         _bindings[binding.OutputId] = binding;
     }
 
     public void UnbindOutput(RenderOutputId outputId)
     {
-        RenderThreadGuard.AssertOnRenderThread();
+        _threadGuard.AssertOnRenderThread();
         _bindings.TryRemove(outputId, out _);
     }
 
     public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize)
     {
-        RenderThreadGuard.AssertOnRenderThread();
+        _threadGuard.AssertOnRenderThread();
 
         if (_bindings.TryGetValue(outputId, out var existing))
         {
@@ -50,11 +54,10 @@ public sealed class NullRenderBackend : IRenderBackend
 
     public void Render(RenderFrameSnapshot snapshot)
     {
-        RenderThreadGuard.AssertOnRenderThread();
+        _threadGuard.AssertOnRenderThread();
         ArgumentNullException.ThrowIfNull(snapshot);
 
         Interlocked.Increment(ref _renderCount);
         Volatile.Write(ref _lastProjectStateVersion, snapshot.ProjectStateVersion);
-        snapshot.Dispose();
     }
 }

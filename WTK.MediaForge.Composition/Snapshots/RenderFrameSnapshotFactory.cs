@@ -18,21 +18,51 @@ public static class RenderFrameSnapshotFactory
 
         var diagnostics = new List<SnapshotDiagnostic>();
         var leasesBySource = new Dictionary<SourceId, GpuFrameLease>();
-        var canvasLookup = projectState.Canvases.ToDictionary(c => c.Id);
 
-        var canvases = projectState.Canvases
-            .Select(canvas => BuildCanvas(canvas, canvasLookup, runtime, leasesBySource, diagnostics, nestingDepth: 0))
-            .ToImmutableArray();
-
-        var snapshot = new RenderFrameSnapshot
+        try
         {
-            ProjectStateVersion = projectState.Version,
-            Canvases = canvases,
-            Outputs = projectState.Outputs,
-            FrameLeases = leasesBySource.Values.ToImmutableArray()
-        };
+            var canvasLookup = projectState.Canvases.ToDictionary(c => c.Id);
 
-        return SnapshotBuildResult.Create(snapshot, diagnostics.ToImmutableArray());
+            var canvases = projectState.Canvases
+                .Select(canvas => BuildCanvas(
+                    canvas,
+                    canvasLookup,
+                    runtime,
+                    leasesBySource,
+                    diagnostics,
+                    nestingDepth: 0))
+                .ToImmutableArray();
+
+            var snapshot = new RenderFrameSnapshot
+            {
+                ProjectStateVersion = projectState.Version,
+                Canvases = canvases,
+                Outputs = projectState.Outputs,
+                FrameLeases = leasesBySource.Values.ToImmutableArray()
+            };
+
+            return SnapshotBuildResult.Create(snapshot, diagnostics.ToImmutableArray());
+        }
+        catch
+        {
+            ReleaseLeases(leasesBySource.Values);
+            throw;
+        }
+    }
+
+    private static void ReleaseLeases(IEnumerable<GpuFrameLease> leases)
+    {
+        foreach (var lease in leases)
+        {
+            try
+            {
+                lease.Dispose();
+            }
+            catch (Exception)
+            {
+                // TODO: Diagnostics.Record lease release failure.
+            }
+        }
     }
 
     private static RenderCanvasSnapshot BuildCanvas(
@@ -87,12 +117,14 @@ public static class RenderFrameSnapshotFactory
                 SourceId = sourceLayer.SourceId,
                 LayoutMode = sourceLayer.LayoutMode,
                 ContentRotationOverride = sourceLayer.ContentRotationOverride,
-                BoundFrame = TryAcquireSourceFrame(
-                    sourceLayer.SourceId,
-                    sourceLayer.Id,
-                    runtime,
-                    leasesBySource,
-                    diagnostics)
+                BoundFrame = sourceLayer.Enabled
+                    ? TryAcquireSourceFrame(
+                        sourceLayer.SourceId,
+                        sourceLayer.Id,
+                        runtime,
+                        leasesBySource,
+                        diagnostics)
+                    : null
             },
             TextDrawObjectSnapshot text => new RenderTextDrawObjectSnapshot
             {
@@ -143,23 +175,21 @@ public static class RenderFrameSnapshotFactory
 
         if (nestingDepth >= MaxNestedCanvasDepth)
         {
-            diagnostics.Add(new SnapshotDiagnostic
-            {
-                Kind = SnapshotDiagnosticKind.NestedCanvasDepthExceeded,
-                Message = $"Nested canvas depth exceeded for draw object '{nested.Name}'.",
-                DrawObjectId = nested.Id,
-                CanvasId = nested.NestedCanvasId
-            });
+            AddDiagnostic(
+                diagnostics,
+                SnapshotDiagnosticKind.NestedCanvasDepthExceeded,
+                $"Nested canvas depth exceeded for draw object '{nested.Name}'.",
+                drawObjectId: nested.Id,
+                canvasId: nested.NestedCanvasId);
         }
         else if (!canvasLookup.TryGetValue(nested.NestedCanvasId, out var nestedCanvasState))
         {
-            diagnostics.Add(new SnapshotDiagnostic
-            {
-                Kind = SnapshotDiagnosticKind.NestedCanvasMissing,
-                Message = $"Nested canvas {nested.NestedCanvasId} not found for draw object '{nested.Name}'.",
-                DrawObjectId = nested.Id,
-                CanvasId = nested.NestedCanvasId
-            });
+            AddDiagnostic(
+                diagnostics,
+                SnapshotDiagnosticKind.NestedCanvasMissing,
+                $"Nested canvas {nested.NestedCanvasId} not found for draw object '{nested.Name}'.",
+                drawObjectId: nested.Id,
+                canvasId: nested.NestedCanvasId);
         }
         else
         {
@@ -197,29 +227,46 @@ public static class RenderFrameSnapshotFactory
 
         if (!runtime.TryGetFrameProvider(sourceId, out var provider))
         {
-            diagnostics.Add(new SnapshotDiagnostic
-            {
-                Kind = SnapshotDiagnosticKind.SourceNotRegistered,
-                Message = $"Source {sourceId} is not registered in the runtime.",
-                SourceId = sourceId,
-                DrawObjectId = drawObjectId
-            });
+            AddDiagnostic(
+                diagnostics,
+                SnapshotDiagnosticKind.SourceNotRegistered,
+                $"Source {sourceId} is not registered in the runtime.",
+                sourceId: sourceId,
+                drawObjectId: drawObjectId);
             return null;
         }
 
         if (!provider.TryAcquireLatestFrame(out var lease))
         {
-            diagnostics.Add(new SnapshotDiagnostic
-            {
-                Kind = SnapshotDiagnosticKind.SourceNoFrame,
-                Message = $"No frame available for source {sourceId}.",
-                SourceId = sourceId,
-                DrawObjectId = drawObjectId
-            });
+            AddDiagnostic(
+                diagnostics,
+                SnapshotDiagnosticKind.SourceNoFrame,
+                $"No frame available for source {sourceId}.",
+                sourceId: sourceId,
+                drawObjectId: drawObjectId);
             return null;
         }
 
         leasesBySource[sourceId] = lease;
         return lease.Frame;
+    }
+
+    private static void AddDiagnostic(
+        List<SnapshotDiagnostic> diagnostics,
+        SnapshotDiagnosticKind kind,
+        string message,
+        SourceId? sourceId = null,
+        CanvasId? canvasId = null,
+        DrawObjectId? drawObjectId = null)
+    {
+        diagnostics.Add(new SnapshotDiagnostic
+        {
+            Kind = kind,
+            Severity = SnapshotDiagnostic.DefaultSeverity(kind),
+            Message = message,
+            SourceId = sourceId,
+            CanvasId = canvasId,
+            DrawObjectId = drawObjectId
+        });
     }
 }

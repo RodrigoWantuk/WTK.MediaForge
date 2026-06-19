@@ -6,30 +6,33 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 public sealed class SlowNullRenderBackend : IRenderBackend
 {
+    private readonly RenderThreadGuard _threadGuard;
     private readonly TimeSpan _renderDelay;
-    private readonly NullRenderBackend _inner = new();
 
-    public SlowNullRenderBackend(TimeSpan renderDelay) =>
+    public SlowNullRenderBackend(RenderThreadGuard threadGuard, TimeSpan renderDelay)
+    {
+        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _renderDelay = renderDelay;
+    }
 
-    public int RenderCount => _inner.RenderCount;
+    public int RenderCount => Volatile.Read(ref _renderCount);
 
-    public void BindOutput(RenderOutputBindingSnapshot binding) =>
-        _inner.BindOutput(binding);
+    private int _renderCount;
 
-    public void UnbindOutput(RenderOutputId outputId) =>
-        _inner.UnbindOutput(outputId);
+    public void BindOutput(RenderOutputBindingSnapshot binding) { }
 
-    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) =>
-        _inner.ResizeOutput(outputId, surfaceSize);
+    public void UnbindOutput(RenderOutputId outputId) { }
+
+    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
 
     public void Render(RenderFrameSnapshot snapshot)
     {
-        RenderThreadGuard.AssertOnRenderThread();
+        _threadGuard.AssertOnRenderThread();
+        ArgumentNullException.ThrowIfNull(snapshot);
 
         if (_renderDelay > TimeSpan.Zero)
             Thread.Sleep(_renderDelay);
 
-        _inner.Render(snapshot);
+        Interlocked.Increment(ref _renderCount);
     }
 }
