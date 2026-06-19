@@ -1,0 +1,18 @@
+namespace WTK.MediaForge.Composition.Project;
+
+public sealed class MediaForgeProject
+{
+    public const int CurrentSchemaVersion = 1;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+
+    public string CreatedWithVersion { get; set; } = "1.0.0";
+
+    public string SavedWithVersion { get; set; } = "1.0.0";
+
+    public List<MediaForgeSourceDefinition> SourceDefinitions { get; set; } = [];
+
+    public List<MediaForgeCanvas> Canvases { get; set; } = [];
+
+    public List<MediaForgeRenderOutput> Outputs { get; set; } = [];
+}

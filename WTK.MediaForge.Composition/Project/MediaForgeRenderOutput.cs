@@ -1,0 +1,21 @@
+using WTK.MediaForge.Core.Color;
+using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Media;
+
+namespace WTK.MediaForge.Composition.Project;
+
+public sealed class MediaForgeRenderOutput
+{
+    public RenderOutputId Id { get; set; } = RenderOutputId.New();
+
+    public string Name { get; set; } = string.Empty;
+
+    public CanvasId CanvasId { get; set; }
+
+    public FrameSize OutputSize { get; set; } = new(1920, 1080);
+
+    public LayoutMode CanvasLayoutMode { get; set; } = LayoutMode.Fit;
+
+    public ColorRgba LetterboxColor { get; set; } = ColorRgba.Black;
+}
