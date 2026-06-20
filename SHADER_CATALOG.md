@@ -46,7 +46,11 @@ color = texture(sourceTexture, uvRaw);
 
 ## Snapshot ownership
 
-`IRenderBackend.Render` receives a `RenderFrameSnapshot` but does **not** dispose it. `MediaForgeRenderThread` acquires the snapshot from `LatestSnapshotBuffer` and always calls `Dispose()` in a `finally` block after the backend returns.
+**Phase 1 (current):** `IRenderBackend.Render` receives a `RenderFrameSnapshot` but does **not** dispose it. `MediaForgeRenderThread` acquires the snapshot from `LatestSnapshotBuffer` and calls `Dispose()` in a `finally` block after the backend returns. This is safe with `NullRenderBackend` only.
+
+**Target (Option B, E0):** `Submit` returns `IRenderFrameSubmission` which owns the snapshot until GPU completion. The render thread's `PendingRenderSubmissionTracker` manages pending submissions and disposes them when completed. The backend never disposes snapshots directly.
+
+**Buffer rules:** `LatestSnapshotBuffer.Publish` uses a lock; rejected publishes (buffer disposed) do not dispose the caller's snapshot. `PublishFrame` disposes on failure before ownership transfer.
 
 ## POC note
 

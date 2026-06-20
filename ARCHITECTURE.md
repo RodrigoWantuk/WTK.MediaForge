@@ -531,6 +531,49 @@ This prevents:
 
 Lifecycle commands (Bind, Unbind, Resize, Stop) use a render-thread command queue. Frame payloads use LatestSnapshotBuffer only.
 
+`LatestSnapshotBuffer` uses lock-based synchronization. Snapshot `Dispose()` runs outside the lock. If `Publish` throws because the buffer is disposed, the rejected snapshot remains owned by the caller.
+
+`PublishFrame` transfers ownership only after a successful buffer publish. If publish fails, the caller must dispose the snapshot.
+
+---
+
+## Render Thread Wake Signal (Known Limitation)
+
+The render loop uses `ManualResetEventSlim` with a 50ms wait and manual reset. This can add occasional latency spikes (~50ms). Replacing with `AutoResetEvent` or `SemaphoreSlim` is deferred to the Vulkan bridge phase.
+
+---
+
+## Target GPU Lifetime Contract (Option B — E0)
+
+Phase 1 uses synchronous `IRenderBackend.Render` with `NullRenderBackend` — the render thread disposes the snapshot in `finally` after `Render` returns. This is safe only while the backend completes before returning.
+
+The target contract for real GPU backends (Vulkan):
+
+```text
+RenderThread acquires snapshot from LatestSnapshotBuffer
+  -> backend.Submit(snapshot) returns IRenderFrameSubmission
+  -> PendingRenderSubmissionTracker owns pending submissions
+  -> snapshot disposed when submission completes (fence signaled)
+  -> leases and capture slots released through snapshot dispose chain
+```
+
+Key rules:
+
+- `IRenderBackend` creates submissions; `PendingRenderSubmissionTracker` on the render thread manages `MaxFramesInFlight`, polling, and disposal.
+- Backend never disposes snapshots directly.
+- If `Submit` fails before acceptance, the render thread disposes the snapshot.
+- If the tracker is full, drop the newly acquired snapshot (low latency over rendering every frame).
+- Shutdown order: stop accepting frames → `backend.WaitIdle()` → `pendingTracker.Dispose()` → `snapshotBuffer.Dispose()`.
+
+`CPU finished submitting ≠ GPU finished using` — GPU resources live until submission/fence completion.
+
+---
+
+## Disabled Draw Objects
+
+- **Validator** still validates `NestedCanvasId` references even when a `CanvasDrawObject` is disabled.
+- **RenderFrameSnapshotFactory** skips nested canvas resolution and frame acquisition when `CanvasDrawObject.Enabled == false` (same rule as disabled `SourceLayerDrawObject`).
+
 ---
 
 ## GPU-First Resource Strategy
@@ -1093,10 +1136,30 @@ Use snapshots or resource references for rendering.
 Use explicit Dispose patterns for native resources.
 Keep D3D11 and Vulkan resources in backend-specific projects.
 Keep Core and Composition free from Vulkan/D3D11 dependencies.
-MediaForgeRenderThread owns RenderFrameSnapshot after AcquireLatest — always Dispose in finally.
-IRenderBackend uses snapshots but never disposes them.
 Each render thread uses its own RenderThreadGuard instance (not process-wide).
 ```
+
+### Snapshot ownership (phase 1 — NullRenderBackend)
+
+```text
+LatestSnapshotBuffer.Publish accepted     -> buffer owns snapshot until AcquireLatest
+LatestSnapshotBuffer.Publish rejected     -> caller owns snapshot (buffer does not dispose it)
+PublishFrame failed before publish        -> PublishFrame disposes snapshot
+AcquireLatest                             -> render thread owns snapshot
+Render completes (NullRenderBackend)      -> render thread disposes in finally
+IRenderBackend                            -> uses snapshot, never disposes it
+```
+
+### Snapshot ownership (target — Option B, E0)
+
+```text
+Submit accepted                           -> IRenderFrameSubmission owns snapshot
+Submit failed                             -> render thread disposes snapshot
+Tracker accepted submission               -> tracker owns submission until completed
+Submission.Dispose on completion          -> snapshot -> leases -> capture slots
+```
+
+Disabled nested canvas: validator validates references; factory does not resolve nested canvas or acquire internal frames when disabled.
 
 Recommended separation:
 
