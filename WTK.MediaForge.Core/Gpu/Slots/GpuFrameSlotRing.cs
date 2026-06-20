@@ -9,6 +9,7 @@ public sealed class GpuFrameSlotRing : IDisposable
     private readonly SlotEntry[] _slots;
     private int? _latestSlotIndex;
     private bool _stopped;
+    private bool _finalizeRequested;
     private bool _disposed;
     private long _droppedFrames;
     private long _generationMismatches;
@@ -42,15 +43,22 @@ public sealed class GpuFrameSlotRing : IDisposable
         }
     }
 
+    public bool IsFullyDisposed
+    {
+        get
+        {
+            lock (_gate)
+                return _disposed;
+        }
+    }
+
     public bool TryBeginWrite(out int slotIndex)
     {
         slotIndex = -1;
 
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-
-            if (_stopped)
+            if (_disposed || _stopped)
                 return false;
 
             for (var i = 0; i < _slots.Length; i++)
@@ -85,7 +93,8 @@ public sealed class GpuFrameSlotRing : IDisposable
 
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(GpuFrameSlotRing));
 
             var entry = _slots[slotIndex];
             entry.Handle = handle;
@@ -103,7 +112,8 @@ public sealed class GpuFrameSlotRing : IDisposable
     {
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(GpuFrameSlotRing));
 
             if (_stopped)
                 throw new InvalidOperationException("Ring is stopped.");
@@ -181,29 +191,25 @@ public sealed class GpuFrameSlotRing : IDisposable
         }
     }
 
-    public void Dispose()
+    public void RequestFinalize()
     {
         lock (_gate)
         {
             if (_disposed)
                 return;
 
-            _disposed = true;
+            _finalizeRequested = true;
             _stopped = true;
             _latestSlotIndex = null;
 
             for (var i = 0; i < _slots.Length; i++)
                 FinalizeSlotOnDisposeLocked(_slots[i]);
+
+            TryCompleteFinalizeLocked();
         }
     }
 
-    private void FinalizeSlotOnDisposeLocked(SlotEntry entry)
-    {
-        if (entry.RefCount > 0 && entry.State is GpuFrameSlotState.Published or GpuFrameSlotState.Free)
-            entry.State = GpuFrameSlotState.DisposePending;
-
-        DestroySlotResourceLocked(entry, forceDisposePhysical: true);
-    }
+    public void Dispose() => RequestFinalize();
 
     internal void Release(int slotIndex, long generation)
     {
@@ -233,6 +239,8 @@ public sealed class GpuFrameSlotRing : IDisposable
 
             if (entry.RefCount == 0)
                 OnSlotRetainCountZeroLocked(slotIndex, entry);
+
+            TryCompleteFinalizeLocked();
         }
     }
 
@@ -240,6 +248,19 @@ public sealed class GpuFrameSlotRing : IDisposable
     {
         lock (_gate)
             return _slots[slotIndex].RefCount;
+    }
+
+    internal int GetTotalRetainCount()
+    {
+        lock (_gate)
+        {
+            var total = 0;
+
+            for (var i = 0; i < _slots.Length; i++)
+                total += _slots[i].RefCount;
+
+            return total;
+        }
     }
 
     internal GpuFrameSlotState GetSlotState(int slotIndex)
@@ -319,12 +340,51 @@ public sealed class GpuFrameSlotRing : IDisposable
     {
         if (entry.RefCount == 0)
         {
-            DestroySlotResourceLocked(entry);
+            if (!ReusePhysicalResources)
+                DestroySlotResourceLocked(entry);
+
             return;
         }
 
-        if (entry.State is GpuFrameSlotState.Published or GpuFrameSlotState.Free)
+        if (entry.State is GpuFrameSlotState.Published or GpuFrameSlotState.Free or GpuFrameSlotState.Writing)
             entry.State = GpuFrameSlotState.DisposePending;
+    }
+
+    private void FinalizeSlotOnDisposeLocked(SlotEntry entry)
+    {
+        if (entry.RefCount > 0)
+        {
+            if (entry.State is GpuFrameSlotState.Published or GpuFrameSlotState.Free or GpuFrameSlotState.Writing)
+                entry.State = GpuFrameSlotState.DisposePending;
+
+            return;
+        }
+
+        DestroySlotResourceLocked(entry, forceDisposePhysical: true);
+    }
+
+    private void TryCompleteFinalizeLocked()
+    {
+        if (!_finalizeRequested || _disposed)
+            return;
+
+        for (var i = 0; i < _slots.Length; i++)
+        {
+            if (_slots[i].RefCount > 0)
+                return;
+        }
+
+        for (var i = 0; i < _slots.Length; i++)
+        {
+            var entry = _slots[i];
+
+            if (entry.ResourceDisposed)
+                continue;
+
+            DestroySlotResourceLocked(entry, forceDisposePhysical: true);
+        }
+
+        _disposed = true;
     }
 
     private static void DestroySlotResourceLocked(
@@ -332,7 +392,7 @@ public sealed class GpuFrameSlotRing : IDisposable
         bool reusePhysicalResources,
         bool forceDisposePhysical = false)
     {
-        if (!reusePhysicalResources || forceDisposePhysical)
+        if (!reusePhysicalResources)
         {
             if (entry.Handle is IDisposable disposable && !entry.ResourceDisposed)
             {
@@ -347,6 +407,10 @@ public sealed class GpuFrameSlotRing : IDisposable
             }
 
             entry.Handle = null;
+            entry.ResourceDisposed = true;
+        }
+        else if (forceDisposePhysical)
+        {
             entry.ResourceDisposed = true;
         }
 

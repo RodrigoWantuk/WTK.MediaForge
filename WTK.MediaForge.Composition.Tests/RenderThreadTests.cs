@@ -204,6 +204,17 @@ public class RenderThreadTests
     }
 
     [Fact]
+    public void Dispose_runs_backend_WaitIdle_on_render_thread()
+    {
+        var guard = new RenderThreadGuard();
+        var backend = new WaitIdleTrackingRenderBackend(guard);
+        var renderThread = StartRenderThread(backend, guard);
+        renderThread.Dispose();
+
+        Assert.True(backend.WaitIdleCalledOnRenderThread);
+    }
+
+    [Fact]
     public void PublishFrame_disposes_snapshot_when_render_thread_disposed()
     {
         var source = CreateRunningSource();
@@ -325,6 +336,31 @@ public class RenderThreadTests
     {
         public override void Add(IRenderFrameSubmission submission) =>
             throw new InvalidOperationException("Simulated tracker add failure.");
+    }
+
+    private sealed class WaitIdleTrackingRenderBackend : IRenderBackend
+    {
+        private readonly RenderThreadGuard _threadGuard;
+
+        public WaitIdleTrackingRenderBackend(RenderThreadGuard threadGuard) =>
+            _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+
+        public bool WaitIdleCalledOnRenderThread { get; private set; }
+
+        public void BindOutput(RenderOutputBindingSnapshot binding) { }
+
+        public void UnbindOutput(RenderOutputId outputId) { }
+
+        public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
+
+        public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
+            new ImmediateRenderFrameSubmission(snapshot);
+
+        public void WaitIdle()
+        {
+            _threadGuard.AssertOnRenderThread();
+            WaitIdleCalledOnRenderThread = true;
+        }
     }
 }
 

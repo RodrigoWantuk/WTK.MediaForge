@@ -9,6 +9,7 @@ namespace WTK.MediaForge.Capture.Gpu;
 public sealed class D3D11GpuFrameSlotRing : IDisposable
 {
     private readonly D3D11SharedTextureFrameHandle[] _handles;
+    private int _handlesDisposed;
     private int _disposed;
 
     public D3D11GpuFrameSlotRing(
@@ -32,14 +33,36 @@ public sealed class D3D11GpuFrameSlotRing : IDisposable
 
     public GpuFrameSlotRing Ring { get; }
 
+    public bool IsFullyDisposed => Volatile.Read(ref _disposed) != 0;
+
     public D3D11SharedTextureFrameHandle GetHandle(int slotIndex) => _handles[slotIndex];
+
+    public void Retire() => Ring.Stop();
+
+    public bool TryFinalizePhysicalResources()
+    {
+        Ring.RequestFinalize();
+
+        if (!Ring.IsFullyDisposed)
+            return false;
+
+        DisposeHandlesIfNeeded();
+        Volatile.Write(ref _disposed, 1);
+        return true;
+    }
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        if (IsFullyDisposed)
             return;
 
-        Ring.Dispose();
+        TryFinalizePhysicalResources();
+    }
+
+    private void DisposeHandlesIfNeeded()
+    {
+        if (Interlocked.Exchange(ref _handlesDisposed, 1) != 0)
+            return;
 
         foreach (var handle in _handles)
             handle.Dispose();

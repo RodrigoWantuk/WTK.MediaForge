@@ -147,6 +147,72 @@ public class D3D11GpuFrameSlotRingTests
         }
     }
 
+    [Fact]
+    public void Capture_can_reuse_unconsumed_old_latest_slot()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        using (var slotRing = CreateSlotRing(device))
+        {
+            for (var frame = 1; frame <= 5; frame++)
+                CaptureFrame(slotRing, frameNumber: frame);
+
+            Assert.True(slotRing.GetHandle(0).ProducerAcquireKey == D3D11SharedTextureSyncKeys.Consumer ||
+                        slotRing.GetHandle(0).ProducerAcquireKey == D3D11SharedTextureSyncKeys.Producer);
+        }
+    }
+
+    [Fact]
+    public void Retire_does_not_destroy_handles_while_slot_retained()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        using (var slotRing = CreateSlotRing(device))
+        {
+            CaptureFrame(slotRing, frameNumber: 1);
+            Assert.True(slotRing.Ring.TryRetainLatest(out var lease));
+
+            slotRing.Retire();
+
+            Assert.False(slotRing.IsFullyDisposed);
+            Assert.NotNull(slotRing.GetHandle(0).Texture);
+
+            lease!.Dispose();
+
+            Assert.True(slotRing.TryFinalizePhysicalResources());
+            Assert.True(slotRing.IsFullyDisposed);
+        }
+    }
+
+    [Fact]
+    public void Recreate_ring_retires_old_ring_without_destroying_retained_slot()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        {
+            var firstRing = CreateSlotRing(device);
+            CaptureFrame(firstRing, frameNumber: 1);
+            Assert.True(firstRing.Ring.TryRetainLatest(out var lease));
+
+            var secondRing = CreateSlotRing(device);
+            firstRing.Retire();
+
+            Assert.False(firstRing.IsFullyDisposed);
+            Assert.Equal(1, firstRing.Ring.GetRefCount(lease!.SlotIndex));
+
+            lease.Dispose();
+            Assert.True(firstRing.TryFinalizePhysicalResources());
+
+            secondRing.Dispose();
+        }
+    }
+
     private static D3D11GpuFrameSlotRing CreateSlotRing(D3D11GpuDevice device) =>
         new(device.Device, width: 64, height: 64, Format.B8G8R8A8_UNorm, slotCount: 3);
 
@@ -162,13 +228,16 @@ public class D3D11GpuFrameSlotRingTests
 
         try
         {
-            handle.KeyedMutex.AcquireSync(D3D11SharedTextureSyncKeys.Producer, 1000);
+            handle.KeyedMutex.AcquireSync(handle.ProducerAcquireKey, 1000);
             mutexAcquired = true;
         }
         finally
         {
             if (mutexAcquired)
+            {
                 handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
+                handle.NotifyCaptureReleasedToConsumer();
+            }
         }
 
         ring.CompleteWrite(slotIndex, handle, frameNumber, Stopwatch.GetTimestamp());

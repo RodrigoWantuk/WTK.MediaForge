@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using WTK.MediaForge.Core.Frames;
@@ -8,6 +9,7 @@ namespace WTK.MediaForge.Graphics.D3D11;
 public sealed class D3D11SharedTextureFrameHandle : IGpuFrameHandle, IDisposable
 {
     private int _disposed;
+    private ulong _producerAcquireKey = D3D11SharedTextureSyncKeys.Producer;
 
     internal D3D11SharedTextureFrameHandle(
         ID3D11Texture2D texture,
@@ -37,6 +39,14 @@ public sealed class D3D11SharedTextureFrameHandle : IGpuFrameHandle, IDisposable
 
     public bool HasSharedHandle => SharedHandle != 0;
 
+    public ulong ProducerAcquireKey => Volatile.Read(ref _producerAcquireKey);
+
+    public void NotifyCaptureReleasedToConsumer() =>
+        Volatile.Write(ref _producerAcquireKey, D3D11SharedTextureSyncKeys.Consumer);
+
+    public void NotifyVulkanReleasedToProducer() =>
+        Volatile.Write(ref _producerAcquireKey, D3D11SharedTextureSyncKeys.Producer);
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -47,5 +57,7 @@ public sealed class D3D11SharedTextureFrameHandle : IGpuFrameHandle, IDisposable
 
         Texture.Dispose();
         Texture = null!;
+
+        Win32NativeHandle.CloseSharedHandle(SharedHandle);
     }
 }

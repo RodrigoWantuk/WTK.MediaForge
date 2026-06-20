@@ -89,31 +89,67 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
 
         Interlocked.Increment(ref _submitCount);
 
-        var imports = ImportSharedTextures(snapshot);
-        var commandBuffer = BeginCommandBuffer();
+        List<VulkanD3D11TextureImport>? imports = null;
+        CommandBuffer commandBuffer = default;
+        Fence fence = default;
 
-        foreach (var import in imports)
+        try
         {
-            VulkanImageLayoutTransition.Transition(
-                _deviceContext.Vk,
+            imports = ImportSharedTextures(snapshot).ToList();
+            commandBuffer = BeginCommandBuffer();
+
+            foreach (var import in imports)
+            {
+                VulkanImageLayoutTransition.Transition(
+                    _deviceContext.Vk,
+                    commandBuffer,
+                    import.Image,
+                    ImageLayout.Undefined,
+                    ImageLayout.General);
+            }
+
+            if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
+                throw new InvalidOperationException("vkEndCommandBuffer failed.");
+
+            fence = CreateFence();
+            SubmitCommandBuffer(commandBuffer, imports, fence);
+
+            return new VulkanRenderFrameSubmission(
+                _deviceContext,
+                snapshot,
                 commandBuffer,
-                import.Image,
-                ImageLayout.Undefined,
-                ImageLayout.General);
+                fence,
+                imports);
+        }
+        catch
+        {
+            CleanupFailedSubmit(imports, commandBuffer, fence);
+            throw;
+        }
+    }
+
+    private void CleanupFailedSubmit(
+        List<VulkanD3D11TextureImport>? imports,
+        CommandBuffer commandBuffer,
+        Fence fence)
+    {
+        var vk = _deviceContext.Vk;
+        var device = _deviceContext.Device;
+
+        if (fence.Handle != 0)
+            vk.DestroyFence(device, fence, null);
+
+        if (commandBuffer.Handle != 0)
+        {
+            var localCommandBuffer = commandBuffer;
+            vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &localCommandBuffer);
         }
 
-        if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
-            throw new InvalidOperationException("vkEndCommandBuffer failed.");
+        if (imports is null)
+            return;
 
-        var fence = CreateFence();
-        SubmitCommandBuffer(commandBuffer, imports, fence);
-
-        return new VulkanRenderFrameSubmission(
-            _deviceContext,
-            snapshot,
-            commandBuffer,
-            fence,
-            imports);
+        foreach (var import in imports)
+            import.Dispose();
     }
 
     public void WaitIdle()

@@ -14,6 +14,8 @@ public sealed class MediaForgeRenderThread : IDisposable
     private readonly Thread _thread;
     private int _disposed;
     private volatile int _stopRequested;
+    private volatile int _shutdownCleanupComplete;
+    private Exception? _shutdownCleanupError;
 
     public MediaForgeRenderThread(
         IRenderBackend backend,
@@ -110,20 +112,11 @@ public sealed class MediaForgeRenderThread : IDisposable
         }
         finally
         {
-            try
-            {
-                _backend.WaitIdle();
-            }
-            catch (Exception)
-            {
-                // TODO: Diagnostics.Record backend wait idle failure.
-            }
-
-            _pendingTracker.Dispose();
-            _snapshotBuffer.Dispose();
             _workSignal.Dispose();
-            _threadGuard.Clear();
         }
+
+        if (_shutdownCleanupError is not null)
+            throw new InvalidOperationException("Render thread shutdown cleanup failed.", _shutdownCleanupError);
 
         if (stopException is not null)
             throw stopException;
@@ -144,11 +137,18 @@ public sealed class MediaForgeRenderThread : IDisposable
             }
 
             ProcessCommands(maxCommands: null);
-            RenderLatestSnapshot();
             _pendingTracker.PollCompleted();
+            _backend.WaitIdle();
+            _pendingTracker.Dispose();
+            _snapshotBuffer.Dispose();
+        }
+        catch (Exception ex)
+        {
+            _shutdownCleanupError = ex;
         }
         finally
         {
+            Volatile.Write(ref _shutdownCleanupComplete, 1);
             _threadGuard.Clear();
         }
     }

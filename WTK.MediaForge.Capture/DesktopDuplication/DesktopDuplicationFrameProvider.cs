@@ -18,6 +18,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
 
     private readonly CaptureSourceInfo _captureSource;
     private readonly object _stateGate = new();
+    private readonly List<D3D11GpuFrameSlotRing> _retiredRings = [];
 
     private DesktopDuplicationSession? _session;
     private D3D11GpuFrameSlotRing? _slotRing;
@@ -26,6 +27,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
     private TaskCompletionSource? _startTcs;
     private long _frameNumber;
     private int _disposed;
+    private int _state = (int)MediaSourceState.Stopped;
 
     public DesktopDuplicationFrameProvider(SourceId id, CaptureSourceInfo captureSource)
     {
@@ -37,24 +39,33 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
 
     public string Name => _captureSource.OutputName;
 
-    public MediaSourceState State { get; private set; } = MediaSourceState.Stopped;
+    public MediaSourceState State => (MediaSourceState)Volatile.Read(ref _state);
 
     public Exception? LastError { get; private set; }
 
-    internal GpuFrameSlotRing? Ring => _slotRing?.Ring;
+    internal GpuFrameSlotRing? Ring => Volatile.Read(ref _slotRing)?.Ring;
 
     internal int ActiveSlotRetainCount
     {
         get
         {
-            var ring = _slotRing?.Ring;
-            if (ring is null)
-                return 0;
-
             var total = 0;
+            var current = Volatile.Read(ref _slotRing);
 
-            for (var i = 0; i < ring.SlotCount; i++)
-                total += ring.GetRefCount(i);
+            if (current is not null)
+            {
+                for (var i = 0; i < current.Ring.SlotCount; i++)
+                    total += current.Ring.GetRefCount(i);
+            }
+
+            lock (_retiredRings)
+            {
+                foreach (var retired in _retiredRings)
+                {
+                    for (var i = 0; i < retired.Ring.SlotCount; i++)
+                        total += retired.Ring.GetRefCount(i);
+                }
+            }
 
             return total;
         }
@@ -69,7 +80,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
             if (State is MediaSourceState.Starting or MediaSourceState.Running)
                 return Task.CompletedTask;
 
-            State = MediaSourceState.Starting;
+            Volatile.Write(ref _state, (int)MediaSourceState.Starting);
             LastError = null;
             _startTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _captureCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -92,7 +103,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
             if (State is MediaSourceState.Stopped or MediaSourceState.Stopping)
                 return Task.CompletedTask;
 
-            State = MediaSourceState.Stopping;
+            Volatile.Write(ref _state, (int)MediaSourceState.Stopping);
         }
 
         _captureCts?.Cancel();
@@ -100,9 +111,8 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
         if (_captureThread is { IsAlive: true })
             _captureThread.Join(TimeSpan.FromSeconds(5));
 
-        _slotRing?.Ring.Stop();
-        _slotRing?.Dispose();
-        _slotRing = null;
+        RetireCurrentRing();
+        TryFinalizeRetiredRings();
 
         _session?.Dispose();
         _session = null;
@@ -112,7 +122,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
         _captureThread = null;
 
         lock (_stateGate)
-            State = MediaSourceState.Stopped;
+            Volatile.Write(ref _state, (int)MediaSourceState.Stopped);
 
         return Task.CompletedTask;
     }
@@ -126,8 +136,8 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
         if (State != MediaSourceState.Running)
             return false;
 
-        var ring = _slotRing?.Ring;
-        if (ring is null || !ring.TryRetainLatest(out var slotLease))
+        var slotRing = Volatile.Read(ref _slotRing);
+        if (slotRing is null || !slotRing.Ring.TryRetainLatest(out var slotLease))
             return false;
 
         var frame = slotLease!.Frame with
@@ -148,6 +158,14 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
             return;
 
         StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+        lock (_retiredRings)
+        {
+            foreach (var retired in _retiredRings)
+                retired.Dispose();
+
+            _retiredRings.Clear();
+        }
     }
 
     private void CaptureThreadMain()
@@ -157,15 +175,17 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
             _session = new DesktopDuplicationSession();
             _session.Start(_captureSource);
 
-            _slotRing = new D3D11GpuFrameSlotRing(
-                _session.Device.Device,
-                _session.TextureSize.Width,
-                _session.TextureSize.Height,
-                _session.TextureFormat,
-                SlotCount);
+            Volatile.Write(
+                ref _slotRing,
+                new D3D11GpuFrameSlotRing(
+                    _session.Device.Device,
+                    _session.TextureSize.Width,
+                    _session.TextureSize.Height,
+                    _session.TextureFormat,
+                    SlotCount));
 
             lock (_stateGate)
-                State = MediaSourceState.Running;
+                Volatile.Write(ref _state, (int)MediaSourceState.Running);
 
             _startTcs!.TrySetResult();
 
@@ -176,7 +196,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
             LastError = ex;
 
             lock (_stateGate)
-                State = MediaSourceState.Failed;
+                Volatile.Write(ref _state, (int)MediaSourceState.Failed);
 
             _startTcs?.TrySetException(ex);
         }
@@ -186,84 +206,120 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            if (_session is null || _slotRing is null)
+            var session = _session;
+            var slotRing = Volatile.Read(ref _slotRing);
+
+            if (session is null || slotRing is null)
                 break;
 
-            if (!_session.TryAcquireNextFrame(out var desktopTexture, out _))
+            if (!session.TryAcquireNextFrame(out var desktopTexture, out _))
                 continue;
 
             try
             {
-                PublishDesktopFrame(desktopTexture);
+                PublishDesktopFrame(session, slotRing, desktopTexture);
+                TryFinalizeRetiredRings();
             }
             finally
             {
                 desktopTexture.Dispose();
-                _session.ReleaseFrame();
+                session.ReleaseFrame();
             }
         }
     }
 
-    private void PublishDesktopFrame(ID3D11Texture2D desktopTexture)
+    private void PublishDesktopFrame(
+        DesktopDuplicationSession session,
+        D3D11GpuFrameSlotRing slotRing,
+        ID3D11Texture2D desktopTexture)
     {
-        if (_session is null || _slotRing is null)
-            return;
-
         var description = desktopTexture.Description;
 
-        if (description.Width != _session.TextureSize.Width ||
-            description.Height != _session.TextureSize.Height ||
-            description.Format != _session.TextureFormat)
+        if (description.Width != session.TextureSize.Width ||
+            description.Height != session.TextureSize.Height ||
+            description.Format != session.TextureFormat)
         {
-            RecreateSlotRing(description);
+            RecreateSlotRing(session, description);
+            slotRing = Volatile.Read(ref _slotRing)!;
         }
 
-        if (!_slotRing.Ring.TryBeginWrite(out var slotIndex))
+        if (!slotRing.Ring.TryBeginWrite(out var slotIndex))
             return;
 
-        var handle = _slotRing.GetHandle(slotIndex);
+        var handle = slotRing.GetHandle(slotIndex);
         var mutexAcquired = false;
 
         try
         {
-            handle.KeyedMutex.AcquireSync(D3D11SharedTextureSyncKeys.Producer, 1000);
+            handle.KeyedMutex.AcquireSync(handle.ProducerAcquireKey, 1000);
             mutexAcquired = true;
 
-            _session.Device.Context.CopyResource(handle.Texture, desktopTexture);
-            _session.Device.Context.Flush();
+            session.Device.Context.CopyResource(handle.Texture, desktopTexture);
+            session.Device.Context.Flush();
         }
         catch
         {
-            _slotRing.Ring.CancelWrite(slotIndex);
+            slotRing.Ring.CancelWrite(slotIndex);
             throw;
         }
         finally
         {
             if (mutexAcquired)
+            {
                 handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
+                handle.NotifyCaptureReleasedToConsumer();
+            }
         }
 
         var frameNumber = Interlocked.Increment(ref _frameNumber);
 
-        _slotRing.Ring.CompleteWrite(
+        slotRing.Ring.CompleteWrite(
             slotIndex,
             handle,
             frameNumber,
             Stopwatch.GetTimestamp());
     }
 
-    private void RecreateSlotRing(Texture2DDescription description)
+    private void RecreateSlotRing(DesktopDuplicationSession session, Texture2DDescription description)
     {
-        if (_session is null)
-            return;
-
-        _slotRing?.Dispose();
-
-        _slotRing = new D3D11GpuFrameSlotRing(
-            _session.Device.Device,
+        var newRing = new D3D11GpuFrameSlotRing(
+            session.Device.Device,
             description.Width,
             description.Height,
             description.Format,
             SlotCount);
+
+        var oldRing = Interlocked.Exchange(ref _slotRing, newRing);
+
+        if (oldRing is not null)
+        {
+            oldRing.Retire();
+            lock (_retiredRings)
+                _retiredRings.Add(oldRing);
+        }
+    }
+
+    private void RetireCurrentRing()
+    {
+        var current = Interlocked.Exchange(ref _slotRing, null);
+
+        if (current is null)
+            return;
+
+        current.Retire();
+        lock (_retiredRings)
+            _retiredRings.Add(current);
+    }
+
+    private void TryFinalizeRetiredRings()
+    {
+        lock (_retiredRings)
+        {
+            for (var i = _retiredRings.Count - 1; i >= 0; i--)
+            {
+                if (_retiredRings[i].TryFinalizePhysicalResources())
+                    _retiredRings.RemoveAt(i);
+            }
+        }
     }
 }

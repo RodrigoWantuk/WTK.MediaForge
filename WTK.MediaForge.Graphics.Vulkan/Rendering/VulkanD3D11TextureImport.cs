@@ -8,6 +8,7 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
+    private readonly nint _importedSharedHandle;
     private Image _image;
     private DeviceMemory _memory;
     private bool _disposed;
@@ -17,24 +18,24 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
         Device device,
         Image image,
         DeviceMemory memory,
-        nint sharedHandle,
-        uint width,
-        uint height)
+        nint importedSharedHandle,
+        D3D11SharedTextureFrameHandle sourceHandle)
     {
         _vk = vk;
         _device = device;
         _image = image;
         _memory = memory;
-        SharedHandle = sharedHandle;
-        Width = width;
-        Height = height;
+        _importedSharedHandle = importedSharedHandle;
+        SourceHandle = sourceHandle;
+        Width = sourceHandle.TextureSize.Width;
+        Height = sourceHandle.TextureSize.Height;
     }
+
+    public D3D11SharedTextureFrameHandle SourceHandle { get; }
 
     public Image Image => _image;
 
     public DeviceMemory Memory => _memory;
-
-    public nint SharedHandle { get; }
 
     public uint Width { get; }
 
@@ -50,24 +51,33 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
         if (!handle.HasSharedHandle)
             throw new InvalidOperationException("D3D11 shared texture handle is missing a shared NT handle.");
 
-        return Import(
-            deviceContext.Vk,
-            deviceContext.Device,
-            deviceContext.PhysicalDevice,
-            deviceContext.FindMemoryType,
-            handle.SharedHandle,
-            handle.TextureSize.Width,
-            handle.TextureSize.Height);
+        var duplicatedHandle = Win32NativeHandle.DuplicateSharedHandle(handle.SharedHandle);
+        var format = D3D11VulkanFormatMap.MapOrThrow(handle.Format);
+
+        try
+        {
+            return Import(
+                deviceContext.Vk,
+                deviceContext.Device,
+                deviceContext.FindMemoryType,
+                duplicatedHandle,
+                handle,
+                format);
+        }
+        catch
+        {
+            Win32NativeHandle.CloseSharedHandle(duplicatedHandle);
+            throw;
+        }
     }
 
-    public static VulkanD3D11TextureImport Import(
+    private static VulkanD3D11TextureImport Import(
         Vk vk,
         Device device,
-        PhysicalDevice physicalDevice,
         Func<uint, MemoryPropertyFlags, uint> findMemoryType,
-        nint sharedHandle,
-        uint width,
-        uint height)
+        nint importedSharedHandle,
+        D3D11SharedTextureFrameHandle sourceHandle,
+        Format format)
     {
         var externalMemoryImageCreateInfo = new ExternalMemoryImageCreateInfo
         {
@@ -80,8 +90,8 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
             SType = StructureType.ImageCreateInfo,
             PNext = &externalMemoryImageCreateInfo,
             ImageType = ImageType.Type2D,
-            Format = Format.B8G8R8A8Unorm,
-            Extent = new Extent3D(width, height, 1),
+            Format = format,
+            Extent = new Extent3D(sourceHandle.TextureSize.Width, sourceHandle.TextureSize.Height, 1),
             MipLevels = 1,
             ArrayLayers = 1,
             Samples = SampleCountFlags.Count1Bit,
@@ -100,7 +110,7 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
         {
             SType = StructureType.ImportMemoryWin32HandleInfoKhr,
             HandleType = ExternalMemoryHandleTypeFlags.D3D11TextureBit,
-            Handle = sharedHandle
+            Handle = importedSharedHandle
         };
 
         var dedicatedAllocateInfo = new MemoryDedicatedAllocateInfo
@@ -134,9 +144,7 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
             throw new InvalidOperationException("Bind imported Vulkan image memory failed.");
         }
 
-        _ = physicalDevice;
-
-        return new VulkanD3D11TextureImport(vk, device, image, memory, sharedHandle, width, height);
+        return new VulkanD3D11TextureImport(vk, device, image, memory, importedSharedHandle, sourceHandle);
     }
 
     public void Dispose()
@@ -146,16 +154,19 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
 
         _disposed = true;
 
+        if (_image.Handle != 0)
+        {
+            _vk.DestroyImage(_device, _image, null);
+            _image = default;
+        }
+
         if (_memory.Handle != 0)
         {
             _vk.FreeMemory(_device, _memory, null);
             _memory = default;
         }
 
-        if (_image.Handle != 0)
-        {
-            _vk.DestroyImage(_device, _image, null);
-            _image = default;
-        }
+        if (_importedSharedHandle != 0)
+            Win32NativeHandle.CloseSharedHandle(_importedSharedHandle);
     }
 }

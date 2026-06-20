@@ -1,5 +1,4 @@
 using Silk.NET.Vulkan;
-using Silk.NET.Vulkan.Extensions.KHR;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
 
@@ -7,6 +6,8 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmission
 {
+    private const ulong FenceWaitTimeoutNs = 5_000_000_000;
+
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly List<VulkanD3D11TextureImport> _imports;
     private RenderFrameSnapshot? _snapshot;
@@ -47,13 +48,13 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
+        WaitForCompletionIfNeeded();
+
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
 
         if (Fence.Handle != 0)
-        {
             vk.DestroyFence(device, Fence, null);
-        }
 
         if (CommandBuffer.Handle != 0)
         {
@@ -62,8 +63,28 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         }
 
         foreach (var import in _imports)
+        {
+            import.SourceHandle.NotifyVulkanReleasedToProducer();
             import.Dispose();
+        }
 
         Interlocked.Exchange(ref _snapshot, null)?.Dispose();
+    }
+
+    private void WaitForCompletionIfNeeded()
+    {
+        if (Fence.Handle == 0 || IsCompleted)
+            return;
+
+        var fence = Fence;
+        var result = _deviceContext.Vk.WaitForFences(
+            _deviceContext.Device,
+            1,
+            in fence,
+            true,
+            FenceWaitTimeoutNs);
+
+        if (result is not (Result.Success or Result.Timeout))
+            throw new InvalidOperationException($"vkWaitForFences failed during submission dispose: {result}");
     }
 }

@@ -204,6 +204,26 @@ public class GpuFrameSlotRingTests
     }
 
     [Fact]
+    public void RequestFinalize_allows_release_to_complete_deferred_dispose()
+    {
+        var ring = new GpuFrameSlotRing(slotCount: 3);
+        CaptureFrame(ring, frameNumber: 1);
+
+        Assert.True(ring.TryRetainLatest(out var lease));
+        var slotIndex = lease!.SlotIndex;
+
+        ring.RequestFinalize();
+
+        Assert.False(ring.IsFullyDisposed);
+        Assert.Equal(GpuFrameSlotState.DisposePending, ring.GetSlotState(slotIndex));
+
+        lease.Dispose();
+
+        Assert.True(ring.IsFullyDisposed);
+        Assert.Equal(GpuFrameSlotState.Free, ring.GetSlotState(slotIndex));
+    }
+
+    [Fact]
     public void CancelWrite_returns_slot_to_free()
     {
         var ring = new GpuFrameSlotRing(slotCount: 3);
