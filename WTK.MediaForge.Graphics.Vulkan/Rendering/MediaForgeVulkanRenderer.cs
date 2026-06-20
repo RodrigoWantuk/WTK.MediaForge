@@ -72,6 +72,20 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         return false;
     }
 
+    internal bool TryGetOffscreenTargetLayout(RenderOutputId outputId, out ImageLayout layout)
+    {
+        if (_offscreenTargets.TryGetValue(outputId, out var handle) &&
+            handle.IsAlive &&
+            handle.Target is VulkanOffscreenRenderTarget target)
+        {
+            layout = target.CurrentLayout;
+            return true;
+        }
+
+        layout = default;
+        return false;
+    }
+
     internal IVulkanRendererFaultInjector FaultInjector => _faultInjector;
 
     public int SubmitCount => Volatile.Read(ref _submitCount);
@@ -208,6 +222,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             textureLeases = AcquireTextureLeases(handles);
             var imports = textureLeases.Select(lease => lease.Import).ToList();
             var previousLayouts = imports.Select(import => import.CurrentLayout).ToArray();
+            var previousTargetLayouts = CaptureOffscreenTargetLayouts();
             commandBuffer = BeginCommandBuffer();
             submissionResources = _cp1Pipelines.CreateSubmissionResourceScope();
 
@@ -226,17 +241,32 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
                 fence = CreateFence();
                 SubmitCommandBuffer(commandBuffer, imports, fence);
-
-                foreach (var import in imports)
-                    import.SetLayout(ImageLayout.General);
             }
-            catch
+            catch (Exception submitEx)
             {
-                submissionResources.Dispose();
+                List<Exception>? cleanupErrors = null;
+
+                try
+                {
+                    submissionResources.Dispose();
+                }
+                catch (Exception cleanupEx)
+                {
+                    (cleanupErrors ??= []).Add(cleanupEx);
+                }
+
                 submissionResources = null;
 
                 for (var i = 0; i < imports.Count; i++)
                     imports[i].SetLayout(previousLayouts[i]);
+
+                RestoreOffscreenTargetLayouts(previousTargetLayouts);
+
+                if (cleanupErrors is not null)
+                {
+                    cleanupErrors.Insert(0, submitEx);
+                    throw new AggregateException("Failed to clean up failed Vulkan submit.", cleanupErrors);
+                }
 
                 throw;
             }
@@ -256,6 +286,28 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             CleanupFailedSubmit(textureLeases, commandBuffer, fence);
             throw;
         }
+    }
+
+    private Dictionary<VulkanOffscreenRenderTarget, ImageLayout> CaptureOffscreenTargetLayouts()
+    {
+        var layouts = new Dictionary<VulkanOffscreenRenderTarget, ImageLayout>();
+
+        foreach (var handle in _offscreenTargets.Values)
+        {
+            if (!handle.IsAlive || handle.Target is not VulkanOffscreenRenderTarget target)
+                continue;
+
+            layouts[target] = target.CurrentLayout;
+        }
+
+        return layouts;
+    }
+
+    private static void RestoreOffscreenTargetLayouts(
+        IReadOnlyDictionary<VulkanOffscreenRenderTarget, ImageLayout> layouts)
+    {
+        foreach (var (target, layout) in layouts)
+            target.CurrentLayout = layout;
     }
 
     private void CleanupFailedSubmit(

@@ -11,6 +11,8 @@ internal static unsafe class VulkanImageLayoutTransition
         ImageLayout oldLayout,
         ImageLayout newLayout)
     {
+        VulkanImageLayoutTransitionLifetime.Record(oldLayout, newLayout);
+
         var (sourceStage, destinationStage, srcAccess, dstAccess) = GetTransitionStages(oldLayout, newLayout);
 
         var barrier = CreateBarrier(image, oldLayout, newLayout, srcAccess, dstAccess);

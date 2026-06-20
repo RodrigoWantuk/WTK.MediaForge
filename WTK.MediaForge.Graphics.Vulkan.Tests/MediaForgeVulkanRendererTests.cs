@@ -2,12 +2,14 @@ using System.Collections.Immutable;
 using System.Reflection;
 using Silk.NET.Vulkan;
 using Vortice.DXGI;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Graphics.D3D11;
 using WTK.MediaForge.Graphics.Vulkan;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
@@ -764,7 +766,7 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
-    public void Cached_import_second_submit_uses_General_to_General_transition()
+    public void Cached_import_second_submit_preserves_ShaderReadOnly_layout()
     {
         if (!TryCreateRenderer(out var renderer))
             return;
@@ -783,17 +785,53 @@ public class MediaForgeVulkanRendererTests
 
             try
             {
-                var first = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+                var outputId = RenderOutputId.New();
+                renderer.Backend.BindOutput(CreateOffscreenBinding(outputId, 64, 64));
+
+                var first = renderer.Backend.Submit(CreateCp1SnapshotWithD3D11Frame(handle, outputId));
                 ReleaseSubmission(first);
 
                 using (var lease = renderer.Backend.TextureRegistry.Acquire(handle))
-                    Assert.Equal(ImageLayout.General, lease.Import.CurrentLayout);
+                    Assert.Equal(ImageLayout.ShaderReadOnlyOptimal, lease.Import.CurrentLayout);
 
-                var second = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+                var second = renderer.Backend.Submit(CreateCp1SnapshotWithD3D11Frame(handle, outputId));
                 ReleaseSubmission(second);
 
                 using (var lease = renderer.Backend.TextureRegistry.Acquire(handle))
-                    Assert.Equal(ImageLayout.General, lease.Import.CurrentLayout);
+                    Assert.Equal(ImageLayout.ShaderReadOnlyOptimal, lease.Import.CurrentLayout);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void Empty_submit_does_not_change_import_layout()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+                ReleaseSubmission(submission);
+
+                using var lease = renderer.Backend.TextureRegistry.Acquire(handle);
+                Assert.Equal(ImageLayout.Undefined, lease.Import.CurrentLayout);
             }
             finally
             {
@@ -1281,6 +1319,62 @@ public class MediaForgeVulkanRendererTests
                             BoundFrame = frame
                         }
                     ]
+                }
+            ]
+        };
+    }
+
+    private static RenderFrameSnapshot CreateCp1SnapshotWithD3D11Frame(
+        D3D11SharedTextureFrameHandle handle,
+        RenderOutputId outputId)
+    {
+        var canvasId = CanvasId.New();
+        var frame = new GpuFrameReference
+        {
+            Backend = GpuFrameBackend.D3D11SharedTexture,
+            Handle = handle,
+            TextureSize = handle.TextureSize,
+            LogicalSize = handle.TextureSize,
+            SourceId = SourceId.New(),
+            FrameNumber = 1
+        };
+
+        return new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 1,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Main",
+                    Size = handle.TextureSize,
+                    Objects =
+                    [
+                        new RenderSourceLayerDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Layer",
+                            SourceId = frame.SourceId,
+                            Transform = new Transform2D
+                            {
+                                Size = new CanvasSize(handle.TextureSize.Width, handle.TextureSize.Height)
+                            },
+                            BoundFrame = frame
+                        }
+                    ]
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Offscreen",
+                    TypeId = RenderOutputTypes.Offscreen,
+                    CanvasId = canvasId,
+                    OutputSize = handle.TextureSize,
+                    CanvasLayoutMode = LayoutMode.Fit
                 }
             ]
         };

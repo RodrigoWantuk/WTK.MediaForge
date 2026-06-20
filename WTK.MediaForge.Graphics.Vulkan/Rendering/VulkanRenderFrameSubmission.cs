@@ -94,6 +94,15 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
             }
         }
 
+        try
+        {
+            _submissionResources.Dispose();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+
         foreach (var lease in _textureLeases)
         {
             try
@@ -104,15 +113,6 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
             {
                 (errors ??= []).Add(ex);
             }
-        }
-
-        try
-        {
-            _submissionResources.Dispose();
-        }
-        catch (Exception ex)
-        {
-            (errors ??= []).Add(ex);
         }
 
         try

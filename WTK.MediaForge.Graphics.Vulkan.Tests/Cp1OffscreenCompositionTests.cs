@@ -1,4 +1,5 @@
 using Vortice.DXGI;
+using Silk.NET.Vulkan;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
@@ -291,6 +292,203 @@ public class Cp1OffscreenCompositionTests
         }
     }
 
+    [Fact]
+    public async Task Cp1_source_import_layout_remains_ShaderReadOnly_after_successful_submit()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+
+                using var snapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId);
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                using var lease = backend.TextureRegistry.Acquire(context.SharedHandle);
+                Assert.Equal(ImageLayout.ShaderReadOnlyOptimal, lease.Import.CurrentLayout);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_second_submit_uses_ShaderReadOnly_to_ShaderReadOnly_or_skips_transition()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanImageLayoutTransitionLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+
+                using (var firstSnapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId))
+                {
+                    var first = backend.Submit(firstSnapshot);
+                    await ReleaseSubmissionAsync(first);
+                }
+
+                using (var lease = backend.TextureRegistry.Acquire(context.SharedHandle))
+                    Assert.Equal(ImageLayout.ShaderReadOnlyOptimal, lease.Import.CurrentLayout);
+
+                using (var secondSnapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId))
+                {
+                    var second = backend.Submit(secondSnapshot);
+                    await ReleaseSubmissionAsync(second);
+                }
+
+                using (var lease = backend.TextureRegistry.Acquire(context.SharedHandle))
+                    Assert.Equal(ImageLayout.ShaderReadOnlyOptimal, lease.Import.CurrentLayout);
+
+                Assert.Equal(1, VulkanImageLayoutTransitionLifetime.UndefinedToShaderReadTransitions);
+                Assert.Equal(0, VulkanImageLayoutTransitionLifetime.GeneralToShaderReadTransitions);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_output_target_transitions_to_ShaderReadOnly_after_render_pass()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanImageLayoutTransitionLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+
+                using var snapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId);
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryGetOffscreenTargetLayout(outputId, out var layout));
+                Assert.Equal(ImageLayout.ShaderReadOnlyOptimal, layout);
+                Assert.Equal(2, VulkanImageLayoutTransitionLifetime.ColorAttachmentToShaderReadTransitions);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void QueueSubmit_failure_rolls_back_output_target_layout()
+    {
+        var faultInjector = new TestVulkanRendererFaultInjector { FailQueueSubmit = true };
+
+        if (!TryCreateCp1Context(out var context, faultInjector))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+                Assert.True(backend.TryGetOffscreenTargetLayout(outputId, out var initialLayout));
+                Assert.Equal(ImageLayout.Undefined, initialLayout);
+
+                using var snapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId);
+
+                Assert.Throws<InvalidOperationException>(() => backend.Submit(snapshot));
+
+                Assert.True(backend.TryGetOffscreenTargetLayout(outputId, out var rollbackLayout));
+                Assert.Equal(ImageLayout.Undefined, rollbackLayout);
+                Assert.Equal(0, backend.TextureRegistryActiveLeaseCount);
+            }
+            finally
+            {
+                faultInjector.FailQueueSubmit = false;
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Submission_disposes_descriptor_sets_before_texture_leases()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanSubmissionResourceLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+
+                using var snapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId);
+                var submission = backend.Submit(snapshot);
+
+                await submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                submission.DisposeCompleted();
+
+                Assert.True(VulkanSubmissionResourceLifetime.LastDescriptorSetFreeOrder > 0);
+                Assert.True(VulkanSubmissionResourceLifetime.FirstTextureLeaseDisposeOrder > 0);
+                Assert.True(
+                    VulkanSubmissionResourceLifetime.LastDescriptorSetFreeOrder <
+                    VulkanSubmissionResourceLifetime.FirstTextureLeaseDisposeOrder);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
     private static RenderFrameSnapshot CreateCp1Snapshot(
         D3D11SharedTextureFrameHandle sharedHandle,
         CanvasId canvasId,
@@ -385,14 +583,16 @@ public class Cp1OffscreenCompositionTests
         }
     }
 
-    private static bool TryCreateCp1Context(out Cp1TestContext? context)
+    private static bool TryCreateCp1Context(
+        out Cp1TestContext? context,
+        IVulkanRendererFaultInjector? faultInjector = null)
     {
         context = null;
 
         if (!TryCreateSharedTexture(out var device, out var sharedHandle))
             return false;
 
-        if (!TryCreateRenderer(out var renderer))
+        if (!TryCreateRenderer(out var renderer, faultInjector))
         {
             sharedHandle.Dispose();
             device.Dispose();
@@ -409,7 +609,9 @@ public class Cp1OffscreenCompositionTests
         submission.DisposeCompleted();
     }
 
-    private static bool TryCreateRenderer(out TestRendererContext? context)
+    private static bool TryCreateRenderer(
+        out TestRendererContext? context,
+        IVulkanRendererFaultInjector? faultInjector = null)
     {
         context = null;
 
@@ -417,10 +619,10 @@ public class Cp1OffscreenCompositionTests
         {
             var guard = new RenderThreadGuard();
             if (!MediaForgeVulkanRenderer.TryCreate(
-                    guard,
-                    diagnostics: null,
-                    NullVulkanRendererFaultInjector.Instance,
-                    out var backend) ||
+                guard,
+                diagnostics: null,
+                faultInjector ?? NullVulkanRendererFaultInjector.Instance,
+                out var backend) ||
                 backend is null)
             {
                 return false;

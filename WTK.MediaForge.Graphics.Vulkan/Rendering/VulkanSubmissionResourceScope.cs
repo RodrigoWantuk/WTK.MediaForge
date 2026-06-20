@@ -84,7 +84,7 @@ internal sealed unsafe class VulkanSubmissionResourceScope : IDisposable
                     throw new InvalidOperationException($"vkFreeDescriptorSets failed: {result}");
 
                 Interlocked.Decrement(ref VulkanSubmissionResourceLifetime.LiveDescriptorSets);
-                Interlocked.Increment(ref VulkanSubmissionResourceLifetime.FreedDescriptorSets);
+                VulkanSubmissionResourceLifetime.RecordDescriptorSetFreed();
             }
             catch (Exception ex)
             {

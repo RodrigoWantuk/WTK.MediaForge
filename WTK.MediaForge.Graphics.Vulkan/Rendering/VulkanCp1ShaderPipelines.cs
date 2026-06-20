@@ -129,7 +129,6 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         }
 
         TransitionToShaderRead(_vk, commandBuffer, canvasTarget);
-        canvasTarget.CurrentLayout = ImageLayout.ShaderReadOnlyOptimal;
     }
 
     private void RenderOutputPass(
@@ -174,7 +173,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             EndRenderPassInstance(commandBuffer);
         }
 
-        outputTarget.CurrentLayout = ImageLayout.ShaderReadOnlyOptimal;
+        TransitionToShaderRead(_vk, commandBuffer, outputTarget);
     }
 
     private void DrawTexturedLayer(

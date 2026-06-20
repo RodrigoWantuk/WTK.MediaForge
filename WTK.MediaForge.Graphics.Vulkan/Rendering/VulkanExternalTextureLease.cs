@@ -21,6 +21,7 @@ internal sealed class VulkanExternalTextureLease : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
+        VulkanSubmissionResourceLifetime.RecordTextureLeaseDisposeStarted();
         _registry.Release(_entry.Key);
         _registry.CollectUnused();
     }
