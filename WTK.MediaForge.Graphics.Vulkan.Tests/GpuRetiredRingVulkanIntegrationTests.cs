@@ -99,7 +99,12 @@ public class GpuRetiredRingVulkanIntegrationTests
         try
         {
             var guard = new RenderThreadGuard();
-            if (!MediaForgeVulkanRenderer.TryCreate(guard, out var backend) || backend is null)
+            if (!MediaForgeVulkanRenderer.TryCreate(
+                    guard,
+                    diagnostics: null,
+                    NullVulkanRendererFaultInjector.Instance,
+                    out var backend) ||
+                backend is null)
                 return false;
 
             context = new TestRendererContext(guard, backend);

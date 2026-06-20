@@ -8,6 +8,7 @@ using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Graphics.D3D11;
+using WTK.MediaForge.Graphics.Vulkan;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
 using Xunit;
 
@@ -199,7 +200,7 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
-    public void WaitIdle_completes_outstanding_submissions()
+    public void WaitForCompletionAsync_completes_outstanding_submissions()
     {
         if (!TryCreateRenderer(out var renderer))
             return;
@@ -216,7 +217,10 @@ public class MediaForgeVulkanRendererTests
 
                 try
                 {
-                    renderer.Backend.WaitIdle();
+                    submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult();
                     Assert.True(submission.IsCompleted);
                     submission.DisposeCompleted();
                     Assert.Equal(0, retainProbe.ActiveRetainCount);
@@ -398,9 +402,102 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
-    public void AcquireTextureLeases_failure_releases_all_previously_acquired_registry_leases()
+    public void Submit_with_duplicate_texture_key_acquires_one_registry_lease()
     {
         if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateDevice(out var device))
+            return;
+
+        using (renderer)
+        using (device)
+        {
+            var textureId = GpuTextureId.New();
+            using var first = D3D11SharedTextureFactory.CreateSharedTextureWithTextureId(
+                device.Device, 64, 64, textureId);
+            using var second = D3D11SharedTextureFactory.CreateSharedTextureWithTextureId(
+                device.Device, 64, 64, textureId);
+
+            SimulateCaptureReleasedToConsumer(first);
+            SimulateCaptureReleasedToConsumer(second);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var snapshot = CreateSnapshotWithDuplicateTextureKey(first, second);
+                var submission = renderer.Backend.Submit(snapshot);
+
+                try
+                {
+                    Assert.Equal(1, renderer.Backend.TextureRegistryActiveLeaseCount);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void Submit_with_duplicate_texture_key_imports_one_vulkan_texture()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateDevice(out var device))
+            return;
+
+        using (renderer)
+        using (device)
+        {
+            var textureId = GpuTextureId.New();
+            using var first = D3D11SharedTextureFactory.CreateSharedTextureWithTextureId(
+                device.Device, 64, 64, textureId);
+            using var second = D3D11SharedTextureFactory.CreateSharedTextureWithTextureId(
+                device.Device, 64, 64, textureId);
+
+            SimulateCaptureReleasedToConsumer(first);
+            SimulateCaptureReleasedToConsumer(second);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var snapshot = CreateSnapshotWithDuplicateTextureKey(first, second);
+                var submission = renderer.Backend.Submit(snapshot);
+
+                try
+                {
+                    Assert.Equal(1, renderer.Backend.TextureRegistry.EntryCount);
+                    Assert.Equal(1, renderer.Backend.TextureRegistryActiveLeaseCount);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void AcquireTextureLeases_failure_releases_all_previously_acquired_registry_leases()
+    {
+        var faultInjector = new TestVulkanRendererFaultInjector();
+
+        if (!TryCreateRenderer(out var renderer, faultInjector))
             return;
 
         if (!TryCreateSharedTexture(out var device, out var firstHandle))
@@ -425,14 +522,14 @@ public class MediaForgeVulkanRendererTests
 
                 try
                 {
-                    renderer.Backend.SimulateAcquireFailureOnAttempt = 3;
+                    faultInjector.FailAcquireOnAttempt = 3;
 
                     Assert.Throws<InvalidOperationException>(() =>
                         renderer.Backend.Submit(CreateSnapshotWithThreeD3D11Frames(firstHandle, secondHandle, thirdHandle)));
 
                     Assert.Equal(0, renderer.Backend.TextureRegistryActiveLeaseCount);
 
-                    renderer.Backend.SimulateAcquireFailureOnAttempt = 0;
+                    faultInjector.FailAcquireOnAttempt = null;
 
                     var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(firstHandle));
                     ReleaseSubmission(submission);
@@ -441,7 +538,7 @@ public class MediaForgeVulkanRendererTests
                 }
                 finally
                 {
-                    renderer.Backend.SimulateAcquireFailureOnAttempt = 0;
+                    faultInjector.FailAcquireOnAttempt = null;
                     guard.Clear();
                 }
             }
@@ -451,7 +548,9 @@ public class MediaForgeVulkanRendererTests
     [Fact]
     public void QueueSubmit_failure_does_not_mark_handle_as_producer()
     {
-        if (!TryCreateRenderer(out var renderer))
+        var faultInjector = new TestVulkanRendererFaultInjector();
+
+        if (!TryCreateRenderer(out var renderer, faultInjector))
             return;
 
         if (!TryCreateSharedTexture(out var device, out var handle))
@@ -468,7 +567,7 @@ public class MediaForgeVulkanRendererTests
 
             try
             {
-                renderer.Backend.SimulateQueueSubmitFailure = true;
+                faultInjector.FailQueueSubmit = true;
 
                 Assert.Throws<InvalidOperationException>(() =>
                     renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle)));
@@ -477,7 +576,7 @@ public class MediaForgeVulkanRendererTests
             }
             finally
             {
-                renderer.Backend.SimulateQueueSubmitFailure = false;
+                faultInjector.FailQueueSubmit = false;
                 guard.Clear();
             }
         }
@@ -493,7 +592,9 @@ public class MediaForgeVulkanRendererTests
     [Fact]
     public void QueueSubmit_failure_does_not_advance_import_layout()
     {
-        if (!TryCreateRenderer(out var renderer))
+        var faultInjector = new TestVulkanRendererFaultInjector();
+
+        if (!TryCreateRenderer(out var renderer, faultInjector))
             return;
 
         if (!TryCreateSharedTexture(out var device, out var handle))
@@ -510,7 +611,7 @@ public class MediaForgeVulkanRendererTests
 
             try
             {
-                renderer.Backend.SimulateQueueSubmitFailure = true;
+                faultInjector.FailQueueSubmit = true;
 
                 Assert.Throws<InvalidOperationException>(() =>
                     renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle)));
@@ -520,7 +621,7 @@ public class MediaForgeVulkanRendererTests
             }
             finally
             {
-                renderer.Backend.SimulateQueueSubmitFailure = false;
+                faultInjector.FailQueueSubmit = false;
                 guard.Clear();
             }
         }
@@ -680,15 +781,126 @@ public class MediaForgeVulkanRendererTests
         }
     }
 
-    private static bool TryCreateRenderer(out TestRendererContext? context)
+    [Fact]
+    public void Submit_rejects_more_than_128_external_textures()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateDevice(out var device))
+            return;
+
+        using (renderer)
+        using (device)
+        {
+            var handles = new List<D3D11SharedTextureFrameHandle>(129);
+
+            try
+            {
+                for (var i = 0; i < 129; i++)
+                {
+                    var handle = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, 64, 64);
+                    handles.Add(handle);
+                    SimulateCaptureReleasedToConsumer(handle);
+                }
+
+                var guard = renderer!.Guard;
+                guard.BindToCurrentThread();
+
+                try
+                {
+                    var snapshot = CreateSnapshotWithManyD3D11Frames(handles);
+                    Assert.Throws<NotSupportedException>(() => renderer.Backend.Submit(snapshot));
+                }
+                finally
+                {
+                    guard.Clear();
+                }
+            }
+            finally
+            {
+                foreach (var handle in handles)
+                    handle.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void MediaForgeVulkanRenderer_is_internal()
+    {
+        var type = typeof(MediaForgeVulkanRenderer);
+        Assert.False(type.IsPublic);
+        Assert.True(type.IsNotPublic);
+    }
+
+    [Fact]
+    public void MediaForgeVulkanRenderBackendFactory_returns_public_backend()
+    {
+        var guard = new RenderThreadGuard();
+        var factory = new MediaForgeVulkanRenderBackendFactory();
+
+        if (!factory.TryCreate(guard, diagnostics: null, out var backend))
+            return;
+
+        if (backend is IDisposable disposable)
+            disposable.Dispose();
+
+        Assert.NotNull(backend);
+        Assert.True(typeof(IRenderBackend).IsAssignableFrom(backend!.GetType()));
+        Assert.True(backend.GetType().IsNotPublic);
+    }
+
+    private static RenderFrameSnapshot CreateSnapshotWithManyD3D11Frames(
+        IReadOnlyList<D3D11SharedTextureFrameHandle> handles)
+    {
+        var objects = handles
+            .Select((handle, index) => (RenderDrawObjectSnapshot)CreateLayerSnapshot(
+                new GpuFrameReference
+                {
+                    Backend = GpuFrameBackend.D3D11SharedTexture,
+                    Handle = handle,
+                    TextureSize = handle.TextureSize,
+                    LogicalSize = handle.TextureSize,
+                    SourceId = SourceId.New(),
+                    FrameNumber = index + 1
+                },
+                $"Layer{index + 1}"))
+            .ToArray();
+
+        return new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 1,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = CanvasId.New(),
+                    Name = "Main",
+                    Size = handles[0].TextureSize,
+                    Objects = [.. objects]
+                }
+            ]
+        };
+    }
+
+    private static bool TryCreateRenderer(
+        out TestRendererContext? context,
+        IVulkanRendererFaultInjector? faultInjector = null)
     {
         context = null;
 
         try
         {
             var guard = new RenderThreadGuard();
-            if (!MediaForgeVulkanRenderer.TryCreate(guard, out var backend) || backend is null)
+            if (!MediaForgeVulkanRenderer.TryCreate(
+                    guard,
+                    diagnostics: null,
+                    faultInjector ?? NullVulkanRendererFaultInjector.Instance,
+                    out var backend) ||
+                backend is null)
+            {
                 return false;
+            }
 
             context = new TestRendererContext(guard, backend);
             return true;
@@ -697,6 +909,70 @@ public class MediaForgeVulkanRendererTests
         {
             return false;
         }
+    }
+
+    private static bool TryCreateDevice(out D3D11GpuDevice device)
+    {
+        device = null!;
+
+        try
+        {
+            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+
+            if (factory.EnumAdapters1(0, out IDXGIAdapter1? adapter).Failure || adapter is null)
+                return false;
+
+            device = D3D11GpuDevice.CreateForAdapter(adapter);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static RenderFrameSnapshot CreateSnapshotWithDuplicateTextureKey(
+        D3D11SharedTextureFrameHandle first,
+        D3D11SharedTextureFrameHandle second)
+    {
+        var firstFrame = new GpuFrameReference
+        {
+            Backend = GpuFrameBackend.D3D11SharedTexture,
+            Handle = first,
+            TextureSize = first.TextureSize,
+            LogicalSize = first.TextureSize,
+            SourceId = SourceId.New(),
+            FrameNumber = 1
+        };
+
+        var secondFrame = new GpuFrameReference
+        {
+            Backend = GpuFrameBackend.D3D11SharedTexture,
+            Handle = second,
+            TextureSize = second.TextureSize,
+            LogicalSize = second.TextureSize,
+            SourceId = SourceId.New(),
+            FrameNumber = 2
+        };
+
+        return new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 1,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = CanvasId.New(),
+                    Name = "Main",
+                    Size = first.TextureSize,
+                    Objects =
+                    [
+                        CreateLayerSnapshot(firstFrame, "Layer1"),
+                        CreateLayerSnapshot(secondFrame, "Layer2")
+                    ]
+                }
+            ]
+        };
     }
 
     private static bool TryCreateSharedTexture(out D3D11GpuDevice device, out D3D11SharedTextureFrameHandle handle)

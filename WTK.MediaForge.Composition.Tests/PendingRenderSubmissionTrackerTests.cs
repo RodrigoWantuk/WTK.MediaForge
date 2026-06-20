@@ -23,7 +23,7 @@ public class PendingRenderSubmissionTrackerTests
         tracker.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => tracker.Add(submission));
-        submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        submission.Dispose();
     }
 
     [Fact]
@@ -156,8 +156,8 @@ public class PendingRenderSubmissionTrackerTests
         {
             if (!ownershipTransferred)
             {
-                if (submission is not null)
-                    submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                if (submission is ImmediateRenderFrameSubmission immediate)
+                    immediate.Dispose();
                 else
                     snapshot.Dispose();
             }
@@ -405,8 +405,6 @@ public class PendingRenderSubmissionTrackerTests
         public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
             new ImmediateRenderFrameSubmission(snapshot);
 
-        public void WaitIdle() { }
-
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
@@ -435,8 +433,6 @@ public class PendingRenderSubmissionTrackerTests
         public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
             new ImmediateRenderFrameSubmission(snapshot);
 
-        public void WaitIdle() { }
-
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             new(WaitIdleAsyncCore(cancellationToken));
 
@@ -458,8 +454,6 @@ public class PendingRenderSubmissionTrackerTests
         public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
             new ImmediateRenderFrameSubmission(snapshot);
 
-        public void WaitIdle() { }
-
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.FromException(new InvalidOperationException("Simulated WaitIdle failure."));
     }
@@ -476,8 +470,6 @@ public class PendingRenderSubmissionTrackerTests
 
         public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
             new ImmediateRenderFrameSubmission(snapshot);
-
-        public void WaitIdle() { }
 
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -504,12 +496,6 @@ public class PendingRenderSubmissionTrackerTests
 
         public void DisposeCompleted() =>
             throw new InvalidOperationException("Simulated dispose failure.");
-
-        public ValueTask DisposeAsync()
-        {
-            DisposeCompleted();
-            return ValueTask.CompletedTask;
-        }
     }
 
     private sealed class RecoverableFailingRenderFrameSubmission : IRenderFrameSubmission
@@ -533,12 +519,6 @@ public class PendingRenderSubmissionTrackerTests
             if (!_allowDispose)
                 throw new InvalidOperationException("Simulated dispose failure.");
         }
-
-        public ValueTask DisposeAsync()
-        {
-            DisposeCompleted();
-            return ValueTask.CompletedTask;
-        }
     }
 
     private sealed class FailOnceRenderFrameSubmission : IRenderFrameSubmission
@@ -559,12 +539,6 @@ public class PendingRenderSubmissionTrackerTests
         {
             if (Interlocked.Increment(ref _disposeAttempts) == 1)
                 throw new InvalidOperationException("Simulated first dispose failure.");
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            DisposeCompleted();
-            return ValueTask.CompletedTask;
         }
     }
 }

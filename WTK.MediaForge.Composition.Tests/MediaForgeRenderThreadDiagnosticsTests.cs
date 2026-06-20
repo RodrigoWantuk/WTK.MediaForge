@@ -73,8 +73,6 @@ public class MediaForgeRenderThreadDiagnosticsTests
             throw new InvalidOperationException("Simulated submit failure.");
         }
 
-        public void WaitIdle() { }
-
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }

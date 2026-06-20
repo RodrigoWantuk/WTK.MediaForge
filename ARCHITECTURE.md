@@ -565,7 +565,7 @@ Key rules:
 - If `Submit` fails before acceptance, the render thread disposes the snapshot.
 - If the tracker is full, drop the newly acquired snapshot (low latency over rendering every frame).
 - `PollCompleted` removes a submission from the pending list only after successful `DisposeCompleted`; shutdown propagates dispose failures.
-- Shutdown order: stop accepting frames → `pendingTracker.ShutdownAsync(backend, timeout)` → `snapshotBuffer.Dispose()`.
+- Shutdown order: stop accepting frames → drain command queue → `LatestSnapshotBuffer.Dispose()` → `pendingTracker.ShutdownAsync(backend, timeout)` → backend/resources disposed by owner.
 
 D3D11/Vulkan shared texture sync:
 
@@ -578,6 +578,34 @@ Registry and retirement:
 - `IsRetired` on the D3D11 handle is a **collection hint**, not an acquire barrier — pending snapshots may still import retired handles while leases are alive.
 - `VulkanExternalTextureRegistry` rejects closed/disposed handles (`!HasSharedHandle`); `CollectUnused` and last lease `Release` destroy retired imports when `RefCount == 0`.
 - Cached Vulkan imports track `CurrentLayout`; layout advances only after successful `QueueSubmit`.
+- `VulkanExternalTextureRegistry.Acquire` creates Vulkan imports **outside** the global registry lock using a `TaskCompletionSource` publish/wait pattern; concurrent acquire of the same key creates one import.
+- External texture dedupe uses `VulkanExternalTextureKey` (`GpuTextureId + Width + Height + Format`), never native handle identity.
+
+Submission cleanup (production contract):
+
+- `IRenderFrameSubmission` does **not** implement `IAsyncDisposable`.
+- Cleanup path: `WaitForCompletionAsync(timeout, cancellationToken)` then `DisposeCompleted()`.
+- `PendingRenderSubmissionTracker` and `MediaForgeRenderThread` never call submission `DisposeAsync`.
+
+Backend contract:
+
+- `IRenderBackend` exposes `WaitIdleAsync(timeout, cancellationToken)` only — no synchronous `WaitIdle()`.
+- `MediaForgeVulkanRenderer` is `internal`; production creation uses `MediaForgeVulkanRenderBackendFactory.TryCreate`.
+- Test failures inject via `IVulkanRendererFaultInjector` — no `Simulate*` properties on the renderer.
+
+Submit limits:
+
+- `MaxExternalTextureImportsPerSubmit = 128`.
+- Keyed-mutex submit arrays use `ArrayPool<T>`; pointers to rented arrays exist only during `vkQueueSubmit`.
+
+Provider lifecycle:
+
+- `StartAsync`, `StopAsync`, and `DisposeAsync` serialize through a single `_lifecycleGate` using `*CoreAsync` methods (no nested gate deadlock).
+- Non-timeout dispose failure sets `DisposeFailed` (not stuck in `Disposing`); retry is allowed after `DisposeTimedOut` or `DisposeFailed`.
+
+D3D11 ring finalization:
+
+- If any physical handle dispose fails during ring finalization, `FullyDisposed` faults and `RetiredGpuResourceManager` moves the resource to failed state.
 
 `CPU finished submitting ≠ GPU finished using` — GPU resources live until submission/fence completion.
 
@@ -604,9 +632,9 @@ Rules:
 ## Known technical debt (GPU lifecycle)
 
 - `RetiredGpuResourceManager.WaitForAllFinalizedAsync` — functional but verbose; simplify after test stabilization settles.
-- `VulkanExternalTextureRegistry.Acquire` — Vulkan import creation runs inside the global registry lock; refactor to short lock + create-outside-lock + publish entry pattern when multi-source frames become common.
-- `MediaForgeVulkanRenderer` test hooks (`SimulateQueueSubmitFailure`, `SimulateAcquireFailureOnAttempt`) — replace with injectable registry/fault interface when test surface grows.
 - `AcquireTextureLeases` partial lease dispose failure — cleanup loop is exception-safe but lacks a dedicated test (registry fake/injectable needed).
+- Offscreen render targets are allocated and resized but not yet used as color attachments in `Submit` — compositing pipeline is the next step.
+- Win32 HWND swapchain outputs are not wired through `MediaForgeVulkanRenderer` yet — offscreen targets land first.
 
 ---
 
@@ -778,6 +806,8 @@ Swapchain target
 
 Offscreen render target
   used for nested canvases, transitions, effects, or encoder input
+  RenderTargetKind.Offscreen — Vulkan R8G8B8A8 image (COLOR_ATTACHMENT | SAMPLED)
+  created/resized/disposed by MediaForgeVulkanRenderer on bind/resize/unbind
 
 Encoder render target
   used as input to hardware/software encoders
@@ -1239,6 +1269,9 @@ Vulkan external memory import
 D3D11 texture reaching Vulkan
 Shader-based preview (Fit + rotation + text overlay)
 Phase 1 composition foundation (project model, validator, snapshots, render thread)
+Vulkan IRenderBackend bridge (headless submit, external texture import, keyed mutex)
+GPU lifecycle hardening P0 (provider gate, ring fault propagation, dedupe, ArrayPool, submission/backend contracts)
+Offscreen render target scaffolding (RenderTargetKind.Offscreen, VulkanOffscreenRenderTarget)
 ```
 
 Current POC renderer path:
@@ -1257,15 +1290,16 @@ Known limitations:
 
 ```text
 POC preview uses a single-source path, not the full compositor runtime
-Nested canvas rendering is modeled in snapshots but not yet in Vulkan backend
+Nested canvas rendering is modeled in snapshots but not yet composited into offscreen targets
+Offscreen targets exist but Submit does not render into them yet
 Full multi-output composition is phase 2
+Win32 swapchain binding through IRenderBackend is not implemented yet
 ```
 
 Next architectural step:
 
 ```text
-VulkanRenderBackend implementing IRenderBackend
-  -> consume RenderFrameSnapshot
+Minimal compositing pass: source layers -> offscreen target (fit mode)
   -> mf.* shader catalog pipelines
   -> optional gradual migration from VulkanPreviewRenderer
 ```

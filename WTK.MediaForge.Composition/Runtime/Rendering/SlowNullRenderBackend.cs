@@ -47,8 +47,6 @@ public sealed class SlowNullRenderBackend : IRenderBackend
         return new ImmediateRenderFrameSubmission(snapshot);
     }
 
-    public void WaitIdle() { }
-
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
 }

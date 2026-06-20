@@ -14,7 +14,7 @@ public sealed class VulkanExternalTextureLease : IDisposable
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
     }
 
-    internal VulkanD3D11TextureImport Import => _entry.Import;
+    internal VulkanD3D11TextureImport Import => _entry.Import!;
 
     public void Dispose()
     {

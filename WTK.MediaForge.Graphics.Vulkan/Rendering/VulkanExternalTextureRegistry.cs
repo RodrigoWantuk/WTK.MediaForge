@@ -39,7 +39,6 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
     public VulkanExternalTextureLease Acquire(D3D11SharedTextureFrameHandle handle)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(handle);
 
         if (!handle.HasSharedHandle)
@@ -49,29 +48,81 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
                 "D3D11 shared texture handle is closed or unavailable.");
         }
 
-        lock (_gate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+        var key = VulkanExternalTextureKey.From(handle);
 
-            if (!handle.HasSharedHandle)
+        while (true)
+        {
+            RegistryEntry? entry = null;
+            var isCreator = false;
+
+            lock (_gate)
             {
-                throw new ObjectDisposedException(
-                    nameof(handle),
-                    "D3D11 shared texture handle is closed or unavailable.");
+                ObjectDisposedException.ThrowIf(_disposed, this);
+
+                if (!handle.HasSharedHandle)
+                {
+                    throw new ObjectDisposedException(
+                        nameof(handle),
+                        "D3D11 shared texture handle is closed or unavailable.");
+                }
+
+                if (_entries.TryGetValue(key, out entry))
+                {
+                    if (entry.IsReady)
+                    {
+                        entry.RefCount++;
+                        return new VulkanExternalTextureLease(entry, this);
+                    }
+
+                    if (entry.Creation.Task.IsFaulted)
+                    {
+                        _entries.Remove(key);
+                        entry = null;
+                    }
+                }
+
+                if (entry is null)
+                {
+                    entry = new RegistryEntry(key, handle);
+                    _entries[key] = entry;
+                    isCreator = true;
+                }
             }
 
-            var key = VulkanExternalTextureKey.From(handle);
-
-            if (!_entries.TryGetValue(key, out var entry))
+            if (isCreator)
             {
-                VulkanD3D11TextureImport import;
-
                 try
                 {
-                    import = VulkanD3D11TextureImport.Import(_deviceContext, handle);
+                    var import = VulkanD3D11TextureImport.Import(_deviceContext, handle);
+
+                    lock (_gate)
+                    {
+                        ObjectDisposedException.ThrowIf(_disposed, this);
+
+                        if (!_entries.TryGetValue(key, out var current) || !ReferenceEquals(current, entry))
+                        {
+                            import.Dispose();
+                            throw new ObjectDisposedException(
+                                nameof(VulkanExternalTextureRegistry),
+                                "Registry entry was removed while creating import.");
+                        }
+
+                        current.PublishImport(import, handle);
+                        current.RefCount++;
+                        return new VulkanExternalTextureLease(current, this);
+                    }
                 }
                 catch (Exception ex)
                 {
+                    lock (_gate)
+                    {
+                        if (_entries.TryGetValue(key, out var current) && ReferenceEquals(current, entry))
+                        {
+                            current.Creation.TrySetException(ex);
+                            _entries.Remove(key);
+                        }
+                    }
+
                     MediaForgeDiagnostics.Report(
                         _diagnostics,
                         MediaForgeDiagnosticSeverity.Error,
@@ -79,15 +130,18 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
                         ex.Message,
                         nameof(VulkanExternalTextureRegistry),
                         ex);
+
                     throw;
                 }
-
-                entry = new RegistryEntry(key, handle, import);
-                _entries[key] = entry;
             }
 
-            entry.RefCount++;
-            return new VulkanExternalTextureLease(entry, this);
+            try
+            {
+                entry!.Creation.Task.GetAwaiter().GetResult();
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -125,7 +179,7 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
             foreach (var (key, entry) in _entries)
             {
-                if (entry.SourceHandle.IsRetired && entry.RefCount == 0)
+                if (entry.SourceHandle.IsRetired && entry.RefCount == 0 && entry.Import is not null)
                 {
                     (importsToDispose ??= []).Add(entry.Import);
                     (toRemove ??= []).Add(key);
@@ -148,7 +202,7 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
-        List<VulkanD3D11TextureImport> importsToDispose;
+        RegistryEntry[] entriesSnapshot;
 
         lock (_gate)
         {
@@ -162,34 +216,47 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
             }
 
             _disposed = true;
-            importsToDispose = _entries.Values.Select(static entry => entry.Import).ToList();
+            entriesSnapshot = _entries.Values.ToArray();
             _entries.Clear();
         }
 
-        foreach (var import in importsToDispose)
-            import.Dispose();
+        foreach (var entry in entriesSnapshot)
+        {
+            if (!entry.Creation.Task.IsCompleted)
+                entry.Creation.TrySetCanceled();
+
+            entry.Import?.Dispose();
+        }
 
         return ValueTask.CompletedTask;
     }
 
     internal sealed class RegistryEntry
     {
-        public RegistryEntry(
-            VulkanExternalTextureKey key,
-            D3D11SharedTextureFrameHandle sourceHandle,
-            VulkanD3D11TextureImport import)
+        public RegistryEntry(VulkanExternalTextureKey key, D3D11SharedTextureFrameHandle sourceHandle)
         {
             Key = key;
             SourceHandle = sourceHandle;
-            Import = import;
         }
 
         public VulkanExternalTextureKey Key { get; }
 
-        public D3D11SharedTextureFrameHandle SourceHandle { get; }
+        public D3D11SharedTextureFrameHandle SourceHandle { get; private set; }
 
-        public VulkanD3D11TextureImport Import { get; }
+        public TaskCompletionSource<VulkanD3D11TextureImport> Creation { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public VulkanD3D11TextureImport? Import { get; private set; }
 
         public int RefCount { get; set; }
+
+        public bool IsReady => Import is not null;
+
+        public void PublishImport(VulkanD3D11TextureImport import, D3D11SharedTextureFrameHandle sourceHandle)
+        {
+            Import = import;
+            SourceHandle = sourceHandle;
+            Creation.TrySetResult(import);
+        }
     }
 }

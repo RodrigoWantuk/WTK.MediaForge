@@ -169,6 +169,52 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
+    public void Concurrent_acquire_same_handle_creates_single_import()
+    {
+        if (!TryCreateContext(out var context))
+            return;
+
+        using (context)
+        {
+            const int threadCount = 8;
+            var barrier = new Barrier(threadCount);
+            var leases = new VulkanExternalTextureLease[threadCount];
+            var exceptions = new Exception?[threadCount];
+
+            var threads = Enumerable.Range(0, threadCount)
+                .Select(index => new Thread(() =>
+                {
+                    try
+                    {
+                        barrier.SignalAndWait();
+                        leases[index] = context!.Registry.Acquire(context.Handle);
+                    }
+                    catch (Exception ex)
+                    {
+                        exceptions[index] = ex;
+                    }
+                }))
+                .ToArray();
+
+            foreach (var thread in threads)
+                thread.Start();
+
+            foreach (var thread in threads)
+                thread.Join();
+
+            Assert.All(exceptions, ex => Assert.Null(ex));
+            Assert.Equal(1, context.Registry.EntryCount);
+
+            var firstImport = leases[0].Import;
+            foreach (var lease in leases)
+                Assert.Same(firstImport, lease.Import);
+
+            foreach (var lease in leases)
+                lease.Dispose();
+        }
+    }
+
+    [Fact]
     public void Registry_DisposeAsync_throws_if_refcount_active()
     {
         if (!TryCreateContext(out var context))

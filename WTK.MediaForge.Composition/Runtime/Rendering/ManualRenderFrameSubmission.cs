@@ -56,11 +56,4 @@ public sealed class ManualRenderFrameSubmission : IRenderFrameSubmission, IDispo
             .GetResult();
         DisposeCompleted();
     }
-
-    public async ValueTask DisposeAsync()
-    {
-        await WaitForCompletionAsync(TimeSpan.FromSeconds(DefaultDisposeWaitSeconds), CancellationToken.None)
-            .ConfigureAwait(false);
-        DisposeCompleted();
-    }
 }

@@ -52,8 +52,6 @@ internal sealed class ManualNullRenderBackend : IRenderBackend
             submission.Complete();
     }
 
-    public void WaitIdle() { }
-
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
 }

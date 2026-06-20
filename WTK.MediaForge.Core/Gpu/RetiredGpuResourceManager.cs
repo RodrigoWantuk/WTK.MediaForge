@@ -49,6 +49,20 @@ public sealed class RetiredGpuResourceManager
         }
     }
 
+    internal void RequeueFailedResourcesForRetry()
+    {
+        lock (_gate)
+        {
+            foreach (var failure in _failed)
+            {
+                if (!_pending.Any(r => ReferenceEquals(r, failure.Resource)))
+                    _pending.Add(failure.Resource);
+            }
+
+            _failed.Clear();
+        }
+    }
+
     public void Add(IRetiredGpuResource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);

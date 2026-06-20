@@ -91,16 +91,6 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         DisposeCompleted();
     }
 
-    public ValueTask DisposeAsync()
-    {
-        WaitForCompletionAsync(TimeSpan.FromSeconds(DefaultDisposeWaitSeconds), CancellationToken.None)
-            .AsTask()
-            .GetAwaiter()
-            .GetResult();
-        DisposeCompleted();
-        return ValueTask.CompletedTask;
-    }
-
     private void WaitForFenceSync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _resourcesDisposed) != 0 || IsCompleted)

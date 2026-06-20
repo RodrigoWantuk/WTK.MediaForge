@@ -206,7 +206,7 @@ public class RenderThreadTests
     }
 
     [Fact]
-    public void Dispose_runs_backend_WaitIdle_on_render_thread()
+    public void Dispose_runs_backend_WaitIdleAsync_on_render_thread()
     {
         var guard = new RenderThreadGuard();
         var backend = new WaitIdleTrackingRenderBackend(guard);
@@ -378,15 +378,10 @@ public class RenderThreadTests
         public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
             new ImmediateRenderFrameSubmission(snapshot);
 
-        public void WaitIdle()
+        public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
             _threadGuard.AssertOnRenderThread();
             WaitIdleCalledOnRenderThread = true;
-        }
-
-        public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
-        {
-            WaitIdle();
             return ValueTask.CompletedTask;
         }
     }
@@ -447,8 +442,6 @@ public sealed class ManualNullRenderBackend : IRenderBackend
             submission.Complete();
     }
 
-    public void WaitIdle() { }
-
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
 }
@@ -476,8 +469,6 @@ public sealed class ThrowingSubmitNullRenderBackend : IRenderBackend
         Interlocked.Increment(ref _submitAttempts);
         throw new InvalidOperationException("Simulated submit failure.");
     }
-
-    public void WaitIdle() { }
 
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;

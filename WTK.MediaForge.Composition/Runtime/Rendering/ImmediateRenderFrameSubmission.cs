@@ -38,10 +38,4 @@ public sealed class ImmediateRenderFrameSubmission : IRenderFrameSubmission, IDi
             .GetResult();
         DisposeCompleted();
     }
-
-    public ValueTask DisposeAsync()
-    {
-        DisposeCompleted();
-        return ValueTask.CompletedTask;
-    }
 }

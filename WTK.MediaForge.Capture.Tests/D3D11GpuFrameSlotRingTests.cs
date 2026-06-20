@@ -3,6 +3,7 @@ using Vortice.DXGI;
 using WTK.MediaForge.Capture.Gpu;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Gpu.Slots;
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 using Xunit;
 
@@ -280,23 +281,103 @@ public class D3D11GpuFrameSlotRingTests
     }
 
     [Fact]
-    public void FullyDisposed_faults_when_finalization_fails_irrecoverably()
+    public void DisposeHandlesIfNeeded_attempts_all_handles_when_one_fails()
     {
-        // Covered by ring dispose path; Retire + release still completes successfully with D3D11 handles.
         if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
             return;
 
         using (device)
-        using (var ring = CreateSlotRing(device))
         {
+            var disposer = new ThrowingSlotDisposer(failingSlotIndex: 1);
+            using var ring = CreateSlotRing(device, disposer);
             CaptureFrame(ring, frameNumber: 1);
             Assert.True(ring.Ring.TryRetainLatest(out var lease));
 
             ring.Retire();
             lease!.Dispose();
 
-            Assert.True(ring.TryFinalizePhysicalResources());
-            Assert.True(ring.FullyDisposed.IsCompletedSuccessfully);
+            var ex = Assert.Throws<AggregateException>(() => ring.TryFinalizePhysicalResources());
+
+            Assert.Single(ex.InnerExceptions);
+            Assert.Equal(3, disposer.DisposeCallCount);
+            Assert.True(ring.FullyDisposed.IsFaulted);
+        }
+    }
+
+    [Fact]
+    public void TryFinalizePhysicalResources_faults_FullyDisposed_when_handle_dispose_fails()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        {
+            var disposer = new ThrowingSlotDisposer(failingSlotIndex: 0);
+            using var ring = CreateSlotRing(device, disposer);
+            CaptureFrame(ring, frameNumber: 1);
+            Assert.True(ring.Ring.TryRetainLatest(out var lease));
+
+            ring.Retire();
+            lease!.Dispose();
+
+            Assert.Throws<AggregateException>(() => ring.TryFinalizePhysicalResources());
+            Assert.True(ring.FullyDisposed.IsFaulted);
+            Assert.False(ring.FullyDisposed.IsCompletedSuccessfully);
+        }
+    }
+
+    [Fact]
+    public void RetiredGpuResourceManager_moves_ring_to_failed_when_ring_finalization_faults()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        {
+            var manager = new RetiredGpuResourceManager();
+            var disposer = new ThrowingSlotDisposer(failingSlotIndex: 0);
+            var ring = CreateSlotRing(device, disposer);
+            CaptureFrame(ring, frameNumber: 1);
+            Assert.True(ring.Ring.TryRetainLatest(out var lease));
+
+            ring.Retire();
+            lease!.Dispose();
+            manager.Add(ring);
+
+            manager.TryFinalizeAll();
+
+            Assert.Equal(1, manager.FailedCount);
+            Assert.Equal(0, manager.PendingCount);
+            Assert.True(ring.FullyDisposed.IsFaulted);
+        }
+    }
+
+    [Fact]
+    public void Ring_finalization_failure_reports_diagnostic_for_each_failed_slot()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        {
+            var diagnostics = new InMemoryDiagnosticsSink();
+            var disposer = new ThrowingSlotDisposer(failingSlotIndices: [0, 2]);
+            using var ring = CreateSlotRing(device, disposer, diagnostics);
+            CaptureFrame(ring, frameNumber: 1);
+            Assert.True(ring.Ring.TryRetainLatest(out var lease));
+
+            ring.Retire();
+            lease!.Dispose();
+
+            Assert.Throws<AggregateException>(() => ring.TryFinalizePhysicalResources());
+
+            var handleFailures = diagnostics.Diagnostics
+                .Where(d => d.Code == "capture.handle_dispose_failed")
+                .ToArray();
+
+            Assert.Equal(2, handleFailures.Length);
+            Assert.Contains(handleFailures, d => d.SlotIndex == 0);
+            Assert.Contains(handleFailures, d => d.SlotIndex == 2);
         }
     }
 
@@ -337,8 +418,49 @@ public class D3D11GpuFrameSlotRingTests
         }
     }
 
-    private static D3D11GpuFrameSlotRing CreateSlotRing(D3D11GpuDevice device) =>
-        new(device.Device, width: 64, height: 64, Format.B8G8R8A8_UNorm, slotCount: 3);
+    private static D3D11GpuFrameSlotRing CreateSlotRing(
+        D3D11GpuDevice device,
+        ID3D11GpuFrameSlotDisposer? slotDisposer = null,
+        IMediaForgeDiagnosticsSink? diagnostics = null) =>
+        new(
+            device.Device,
+            width: 64,
+            height: 64,
+            Format.B8G8R8A8_UNorm,
+            slotCount: 3,
+            diagnostics,
+            slotDisposer ?? DefaultD3D11GpuFrameSlotDisposer.Instance);
+
+    private sealed class ThrowingSlotDisposer : ID3D11GpuFrameSlotDisposer
+    {
+        private readonly HashSet<int> _failingSlotIndices;
+        private int _disposeCallCount;
+
+        public ThrowingSlotDisposer(int failingSlotIndex)
+            : this([failingSlotIndex])
+        {
+        }
+
+        public ThrowingSlotDisposer(int[] failingSlotIndices)
+        {
+            _failingSlotIndices = failingSlotIndices.ToHashSet();
+        }
+
+        public int DisposeCallCount => Volatile.Read(ref _disposeCallCount);
+
+        public void DisposeSlot(D3D11GpuFrameSlot slot)
+        {
+            Interlocked.Increment(ref _disposeCallCount);
+
+            if (_failingSlotIndices.Contains(slot.SlotIndex))
+            {
+                throw new InvalidOperationException(
+                    $"Simulated D3D11 handle dispose failure on slot {slot.SlotIndex}.");
+            }
+
+            slot.Handle.Dispose();
+        }
+    }
 
     private static void CaptureFrame(D3D11GpuFrameSlotRing slotRing, long frameNumber)
     {

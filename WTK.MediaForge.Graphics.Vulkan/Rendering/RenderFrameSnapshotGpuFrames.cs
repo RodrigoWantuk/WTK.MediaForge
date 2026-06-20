@@ -9,7 +9,7 @@ internal static class RenderFrameSnapshotGpuFrames
     public static IReadOnlyList<D3D11SharedTextureFrameHandle> CollectD3D11SharedTextures(RenderFrameSnapshot snapshot)
     {
         var handles = new List<D3D11SharedTextureFrameHandle>();
-        var seen = new HashSet<nint>();
+        var seen = new HashSet<VulkanExternalTextureKey>();
 
         foreach (var canvas in snapshot.Canvases)
             Collect(canvas.Objects, handles, seen);
@@ -20,7 +20,7 @@ internal static class RenderFrameSnapshotGpuFrames
     private static void Collect(
         IReadOnlyList<RenderDrawObjectSnapshot> objects,
         List<D3D11SharedTextureFrameHandle> handles,
-        HashSet<nint> seen)
+        HashSet<VulkanExternalTextureKey> seen)
     {
         foreach (var drawObject in objects)
         {
@@ -42,9 +42,14 @@ internal static class RenderFrameSnapshotGpuFrames
     private static void TryAdd(
         D3D11SharedTextureFrameHandle handle,
         List<D3D11SharedTextureFrameHandle> handles,
-        HashSet<nint> seen)
+        HashSet<VulkanExternalTextureKey> seen)
     {
-        if (!handle.HasSharedHandle || !seen.Add(handle.SharedHandle.DangerousGetHandleForInterop()))
+        if (!handle.HasSharedHandle)
+            return;
+
+        var key = VulkanExternalTextureKey.From(handle);
+
+        if (!seen.Add(key))
             return;
 
         handles.Add(handle);

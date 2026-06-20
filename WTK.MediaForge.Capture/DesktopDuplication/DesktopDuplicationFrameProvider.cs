@@ -18,6 +18,7 @@ internal enum ProviderDisposeState
     Active,
     Disposing,
     DisposeTimedOut,
+    DisposeFailed,
     Disposed,
 }
 
@@ -30,7 +31,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly object _stateGate = new();
     private readonly RetiredGpuResourceManager _retiredResourceManager = new();
-    private readonly SemaphoreSlim _disposeGate = new(1, 1);
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
     private DesktopDuplicationSession? _session;
     private D3D11GpuFrameSlotRing? _slotRing;
@@ -92,82 +93,55 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
         }
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    internal void AddRetiredResourceForTests(IRetiredGpuResource resource) =>
+        _retiredResourceManager.Add(resource);
+
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        EnsureLifecycleAllowsStart();
 
-        lock (_stateGate)
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
         {
-            if (State is MediaSourceState.Starting or MediaSourceState.Running)
-                return Task.CompletedTask;
-
-            Volatile.Write(ref _state, (int)MediaSourceState.Starting);
-            LastError = null;
-            _startTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            _captureCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            EnsureLifecycleAllowsStart();
+            await StartCoreAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        _captureThread = new Thread(CaptureThreadMain)
+        finally
         {
-            IsBackground = true,
-            Name = $"DesktopDuplication-{Id}"
-        };
-        _captureThread.Start();
-
-        return _startTcs.Task.WaitAsync(cancellationToken);
+            _lifecycleGate.Release();
+        }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        lock (_stateGate)
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
         {
-            if (State is MediaSourceState.Stopped or MediaSourceState.Stopping)
-                return Task.CompletedTask;
-
-            Volatile.Write(ref _state, (int)MediaSourceState.Stopping);
+            await StopCoreAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        _captureCts?.Cancel();
-
-        if (_captureThread is { IsAlive: true } &&
-            !_captureThread.Join(TimeSpan.FromSeconds(5)))
+        finally
         {
-            var timeout = new TimeoutException("Capture thread did not stop within the expected timeout.");
-
-            MediaForgeDiagnostics.Report(
-                _diagnostics,
-                MediaForgeDiagnosticSeverity.Error,
-                "capture.thread_stop_timeout",
-                timeout.Message,
-                nameof(DesktopDuplicationFrameProvider),
-                timeout,
-                Id.Value,
-                Name);
-
-            lock (_stateGate)
-            {
-                Volatile.Write(ref _state, (int)MediaSourceState.Failed);
-                LastError = timeout;
-            }
-
-            throw timeout;
+            _lifecycleGate.Release();
         }
-
-        RetireCurrentRing();
-        TryFinalizeRetiredRings();
-
-        _session?.Dispose();
-        _session = null;
-
-        _captureCts?.Dispose();
-        _captureCts = null;
-        _captureThread = null;
-
-        lock (_stateGate)
-            Volatile.Write(ref _state, (int)MediaSourceState.Stopped);
-
-        return Task.CompletedTask;
     }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _lifecycleGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        try
+        {
+            await DisposeCoreAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     public bool TryAcquireLatestFrame(out GpuFrameLease lease)
     {
@@ -220,55 +194,163 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
         return true;
     }
 
-    public async ValueTask DisposeAsync()
+    private void EnsureLifecycleAllowsStart()
     {
-        await _disposeGate.WaitAsync().ConfigureAwait(false);
+        switch (DisposeState)
+        {
+            case ProviderDisposeState.Disposing:
+                throw new InvalidOperationException("Cannot start while provider dispose is in progress.");
+
+            case ProviderDisposeState.DisposeTimedOut:
+            case ProviderDisposeState.DisposeFailed:
+                throw new InvalidOperationException(
+                    "Cannot start while provider dispose has failed or timed out. Retry dispose first.");
+
+            case ProviderDisposeState.Disposed:
+                throw new ObjectDisposedException(nameof(DesktopDuplicationFrameProvider));
+        }
+
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+    }
+
+    private Task StartCoreAsync(CancellationToken cancellationToken)
+    {
+        lock (_stateGate)
+        {
+            if (State is MediaSourceState.Starting or MediaSourceState.Running)
+                return Task.CompletedTask;
+
+            Volatile.Write(ref _state, (int)MediaSourceState.Starting);
+            LastError = null;
+            _startTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _captureCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        }
+
+        _captureThread = new Thread(CaptureThreadMain)
+        {
+            IsBackground = true,
+            Name = $"DesktopDuplication-{Id}"
+        };
+        _captureThread.Start();
+
+        return _startTcs.Task.WaitAsync(cancellationToken);
+    }
+
+    private Task StopCoreAsync(CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+
+        lock (_stateGate)
+        {
+            if (State is MediaSourceState.Stopped or MediaSourceState.Stopping)
+                return Task.CompletedTask;
+
+            Volatile.Write(ref _state, (int)MediaSourceState.Stopping);
+        }
+
+        _captureCts?.Cancel();
+
+        if (_captureThread is { IsAlive: true } &&
+            !_captureThread.Join(TimeSpan.FromSeconds(5)))
+        {
+            var timeout = new TimeoutException("Capture thread did not stop within the expected timeout.");
+
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "capture.thread_stop_timeout",
+                timeout.Message,
+                nameof(DesktopDuplicationFrameProvider),
+                timeout,
+                Id.Value,
+                Name);
+
+            lock (_stateGate)
+            {
+                Volatile.Write(ref _state, (int)MediaSourceState.Failed);
+                LastError = timeout;
+            }
+
+            throw timeout;
+        }
+
+        RetireCurrentRing();
+        TryFinalizeRetiredRings();
+
+        _session?.Dispose();
+        _session = null;
+
+        _captureCts?.Dispose();
+        _captureCts = null;
+        _captureThread = null;
+
+        lock (_stateGate)
+            Volatile.Write(ref _state, (int)MediaSourceState.Stopped);
+
+        return Task.CompletedTask;
+    }
+
+    private async ValueTask DisposeCoreAsync(CancellationToken cancellationToken)
+    {
+        if (DisposeState == ProviderDisposeState.Disposed)
+            return;
+
+        if (DisposeState is ProviderDisposeState.DisposeFailed or ProviderDisposeState.DisposeTimedOut)
+            _retiredResourceManager.RequeueFailedResourcesForRetry();
+
+        Volatile.Write(ref _disposeState, (int)ProviderDisposeState.Disposing);
 
         try
         {
-            if ((ProviderDisposeState)Volatile.Read(ref _disposeState) == ProviderDisposeState.Disposed)
-                return;
+            await StopCoreAsync(cancellationToken).ConfigureAwait(false);
+            await _retiredResourceManager
+                .WaitForAllFinalizedAsync(TimeSpan.FromSeconds(DisposeWaitSeconds), cancellationToken)
+                .ConfigureAwait(false);
 
-            Volatile.Write(ref _disposeState, (int)ProviderDisposeState.Disposing);
-
-            try
-            {
-                await StopAsync(CancellationToken.None).ConfigureAwait(false);
-                await _retiredResourceManager
-                    .WaitForAllFinalizedAsync(TimeSpan.FromSeconds(DisposeWaitSeconds), CancellationToken.None)
-                    .ConfigureAwait(false);
-
-                Volatile.Write(ref _disposeState, (int)ProviderDisposeState.Disposed);
-                Interlocked.Exchange(ref _disposed, 1);
-            }
-            catch (TimeoutException ex)
-            {
-                LastError = ex;
-
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Error,
-                    "capture.dispose_timeout",
-                    ex.Message,
-                    nameof(DesktopDuplicationFrameProvider),
-                    ex,
-                    Id.Value,
-                    Name);
-
-                lock (_stateGate)
-                    Volatile.Write(ref _state, (int)MediaSourceState.Failed);
-
-                Volatile.Write(ref _disposeState, (int)ProviderDisposeState.DisposeTimedOut);
-                throw;
-            }
+            Volatile.Write(ref _disposeState, (int)ProviderDisposeState.Disposed);
+            Interlocked.Exchange(ref _disposed, 1);
         }
-        finally
+        catch (TimeoutException ex)
         {
-            _disposeGate.Release();
+            LastError = ex;
+
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "capture.dispose_timeout",
+                ex.Message,
+                nameof(DesktopDuplicationFrameProvider),
+                ex,
+                Id.Value,
+                Name);
+
+            lock (_stateGate)
+                Volatile.Write(ref _state, (int)MediaSourceState.Failed);
+
+            Volatile.Write(ref _disposeState, (int)ProviderDisposeState.DisposeTimedOut);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            LastError = ex;
+
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "capture.dispose_failed",
+                ex.Message,
+                nameof(DesktopDuplicationFrameProvider),
+                ex,
+                Id.Value,
+                Name);
+
+            lock (_stateGate)
+                Volatile.Write(ref _state, (int)MediaSourceState.Failed);
+
+            Volatile.Write(ref _disposeState, (int)ProviderDisposeState.DisposeFailed);
+            throw;
         }
     }
-
-    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     private void CaptureThreadMain()
     {

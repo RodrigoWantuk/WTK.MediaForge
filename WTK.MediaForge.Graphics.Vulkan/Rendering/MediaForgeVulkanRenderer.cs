@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -10,31 +11,37 @@ using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposable
+internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposable
 {
+    private const int MaxExternalTextureImportsPerSubmit = 128;
+
     private readonly RenderThreadGuard _threadGuard;
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly VulkanExternalTextureRegistry _textureRegistry;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
+    private readonly IVulkanRendererFaultInjector _faultInjector;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
+    private readonly ConcurrentDictionary<RenderOutputId, VulkanOffscreenRenderTarget> _offscreenTargets = new();
     private int _disposed;
 
-    public MediaForgeVulkanRenderer(RenderThreadGuard threadGuard, IMediaForgeDiagnosticsSink? diagnostics = null)
+    internal MediaForgeVulkanRenderer(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        IVulkanRendererFaultInjector faultInjector)
+        : this(threadGuard, VulkanHeadlessDevice.Create(), diagnostics, faultInjector)
     {
-        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
-        _diagnostics = diagnostics;
-        _deviceContext = VulkanHeadlessDevice.Create();
-        _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
     }
 
     internal MediaForgeVulkanRenderer(
         RenderThreadGuard threadGuard,
         VulkanHeadlessDevice deviceContext,
-        IMediaForgeDiagnosticsSink? diagnostics = null)
+        IMediaForgeDiagnosticsSink? diagnostics,
+        IVulkanRendererFaultInjector faultInjector)
     {
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
+        _faultInjector = faultInjector ?? throw new ArgumentNullException(nameof(faultInjector));
         _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
     }
 
@@ -42,30 +49,38 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
 
     internal int TextureRegistryActiveLeaseCount => _textureRegistry.ActiveLeaseCount;
 
-    /// <summary>
-    /// When true, <see cref="SubmitCommandBuffer"/> throws before updating keyed mutex state.
-    /// For unit tests only.
-    /// </summary>
-    internal bool SimulateQueueSubmitFailure { get; set; }
+    internal int OffscreenTargetCount => _offscreenTargets.Count;
 
-    /// <summary>
-    /// When greater than zero, throws on the Nth texture acquire attempt during <see cref="Submit"/>.
-    /// For unit tests only.
-    /// </summary>
-    internal int SimulateAcquireFailureOnAttempt { get; set; }
+    internal bool TryGetOffscreenTargetSize(RenderOutputId outputId, out FrameSize size)
+    {
+        if (_offscreenTargets.TryGetValue(outputId, out var target))
+        {
+            size = target.Size;
+            return true;
+        }
+
+        size = default;
+        return false;
+    }
+
+    internal IVulkanRendererFaultInjector FaultInjector => _faultInjector;
 
     public int SubmitCount => Volatile.Read(ref _submitCount);
 
     private int _submitCount;
-    private int _acquireAttemptCounter;
 
-    public static bool TryCreate(RenderThreadGuard threadGuard, out MediaForgeVulkanRenderer? renderer)
+    internal static bool TryCreate(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        IVulkanRendererFaultInjector faultInjector,
+        out MediaForgeVulkanRenderer? renderer)
     {
         ArgumentNullException.ThrowIfNull(threadGuard);
+        ArgumentNullException.ThrowIfNull(faultInjector);
 
         try
         {
-            renderer = new MediaForgeVulkanRenderer(threadGuard);
+            renderer = new MediaForgeVulkanRenderer(threadGuard, diagnostics, faultInjector);
             return true;
         }
         catch
@@ -80,6 +95,24 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         _threadGuard.AssertOnRenderThread();
         ArgumentNullException.ThrowIfNull(binding);
+
+        if (binding.TargetKind == RenderTargetKind.Offscreen)
+        {
+            if (binding.SurfaceSize.Width == 0 || binding.SurfaceSize.Height == 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(binding),
+                    "Offscreen output binding requires non-zero surface dimensions.");
+            }
+
+            if (_offscreenTargets.TryRemove(binding.OutputId, out var existing))
+                existing.Dispose();
+
+            _offscreenTargets[binding.OutputId] = new VulkanOffscreenRenderTarget(
+                _deviceContext,
+                binding.SurfaceSize);
+        }
+
         _bindings[binding.OutputId] = binding;
     }
 
@@ -87,13 +120,24 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         _threadGuard.AssertOnRenderThread();
+
         _bindings.TryRemove(outputId, out _);
+
+        if (_offscreenTargets.TryRemove(outputId, out var target))
+            target.Dispose();
     }
 
     public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         _threadGuard.AssertOnRenderThread();
+
+        if (surfaceSize.Width == 0 || surfaceSize.Height == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(surfaceSize),
+                "Output surface dimensions must be greater than zero.");
+        }
 
         if (_bindings.TryGetValue(outputId, out var existing))
         {
@@ -105,6 +149,12 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
                 SurfaceSize = surfaceSize,
                 BindingVersion = existing.BindingVersion + 1
             };
+
+            if (existing.TargetKind == RenderTargetKind.Offscreen &&
+                _offscreenTargets.TryGetValue(outputId, out var target))
+            {
+                target.Resize(surfaceSize);
+            }
         }
     }
 
@@ -115,7 +165,14 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         ArgumentNullException.ThrowIfNull(snapshot);
 
         Interlocked.Increment(ref _submitCount);
-        _acquireAttemptCounter = 0;
+
+        var handles = RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot);
+
+        if (handles.Count > MaxExternalTextureImportsPerSubmit)
+        {
+            throw new NotSupportedException(
+                $"Submit supports at most {MaxExternalTextureImportsPerSubmit} external textures.");
+        }
 
         List<VulkanExternalTextureLease>? textureLeases = null;
         CommandBuffer commandBuffer = default;
@@ -123,7 +180,7 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
 
         try
         {
-            textureLeases = AcquireTextureLeases(snapshot);
+            textureLeases = AcquireTextureLeases(handles);
             var imports = textureLeases.Select(lease => lease.Import).ToList();
             var previousLayouts = imports.Select(import => import.CurrentLayout).ToArray();
             commandBuffer = BeginCommandBuffer();
@@ -193,14 +250,22 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
             return;
 
         foreach (var lease in textureLeases)
-            lease.Dispose();
-    }
-
-    public void WaitIdle()
-    {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        _threadGuard.AssertOnRenderThread();
-        _deviceContext.WaitIdle();
+        {
+            try
+            {
+                lease.Dispose();
+            }
+            catch (Exception ex)
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "vulkan.texture_lease_dispose_failed",
+                    "Failed to dispose texture lease after failed submit.",
+                    nameof(MediaForgeVulkanRenderer),
+                    ex);
+            }
+        }
     }
 
     /// <summary>
@@ -224,25 +289,26 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
+        foreach (var target in _offscreenTargets.Values)
+            target.Dispose();
+
+        _offscreenTargets.Clear();
+
         _textureRegistry.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _deviceContext.Dispose();
     }
 
-    private List<VulkanExternalTextureLease> AcquireTextureLeases(RenderFrameSnapshot snapshot)
+    private List<VulkanExternalTextureLease> AcquireTextureLeases(IReadOnlyList<D3D11SharedTextureFrameHandle> handles)
     {
-        var handles = RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot);
         var leases = new List<VulkanExternalTextureLease>(handles.Count);
+        var acquireAttempt = 0;
 
         try
         {
             foreach (var handle in handles)
             {
-                if (SimulateAcquireFailureOnAttempt > 0 &&
-                    ++_acquireAttemptCounter == SimulateAcquireFailureOnAttempt)
-                {
-                    throw new InvalidOperationException("Simulated texture acquire failure for tests.");
-                }
-
+                acquireAttempt++;
+                _faultInjector.BeforeAcquireTexture(acquireAttempt);
                 leases.Add(_textureRegistry.Acquire(handle));
             }
 
@@ -322,58 +388,109 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
 
-        void* submitPNext = null;
-        Win32KeyedMutexAcquireReleaseInfoKHR keyedMutexInfo = default;
+        DeviceMemory[]? acquireSyncs = null;
+        DeviceMemory[]? releaseSyncs = null;
+        ulong[]? acquireKeys = null;
+        ulong[]? releaseKeys = null;
+        uint[]? acquireTimeouts = null;
 
-        if (imports.Count > 0)
+        try
         {
-            var acquireSyncs = stackalloc DeviceMemory[imports.Count];
-            var releaseSyncs = stackalloc DeviceMemory[imports.Count];
-            var acquireKeys = stackalloc ulong[imports.Count];
-            var releaseKeys = stackalloc ulong[imports.Count];
-            var acquireTimeouts = stackalloc uint[imports.Count];
+            void* submitPNext = null;
+            Win32KeyedMutexAcquireReleaseInfoKHR keyedMutexInfo = default;
 
-            for (var i = 0; i < imports.Count; i++)
+            if (imports.Count > 0)
             {
-                acquireSyncs[i] = imports[i].Memory;
-                releaseSyncs[i] = imports[i].Memory;
-                acquireKeys[i] = imports[i].SourceHandle.ProducerAcquireKey;
-                releaseKeys[i] = D3D11SharedTextureSyncKeys.Producer;
-                acquireTimeouts[i] = 1_000_000_000;
+                acquireSyncs = ArrayPool<DeviceMemory>.Shared.Rent(imports.Count);
+                releaseSyncs = ArrayPool<DeviceMemory>.Shared.Rent(imports.Count);
+                acquireKeys = ArrayPool<ulong>.Shared.Rent(imports.Count);
+                releaseKeys = ArrayPool<ulong>.Shared.Rent(imports.Count);
+                acquireTimeouts = ArrayPool<uint>.Shared.Rent(imports.Count);
+
+                for (var i = 0; i < imports.Count; i++)
+                {
+                    acquireSyncs[i] = imports[i].Memory;
+                    releaseSyncs[i] = imports[i].Memory;
+                    acquireKeys[i] = imports[i].SourceHandle.ProducerAcquireKey;
+                    releaseKeys[i] = D3D11SharedTextureSyncKeys.Producer;
+                    acquireTimeouts[i] = 1_000_000_000;
+                }
+
+                fixed (DeviceMemory* acquireSyncPtr = acquireSyncs)
+                fixed (DeviceMemory* releaseSyncPtr = releaseSyncs)
+                fixed (ulong* acquireKeysPtr = acquireKeys)
+                fixed (ulong* releaseKeysPtr = releaseKeys)
+                fixed (uint* acquireTimeoutsPtr = acquireTimeouts)
+                {
+                    keyedMutexInfo = new Win32KeyedMutexAcquireReleaseInfoKHR
+                    {
+                        SType = StructureType.Win32KeyedMutexAcquireReleaseInfoKhr,
+                        AcquireCount = (uint)imports.Count,
+                        PAcquireSyncs = acquireSyncPtr,
+                        PAcquireKeys = acquireKeysPtr,
+                        PAcquireTimeouts = acquireTimeoutsPtr,
+                        ReleaseCount = (uint)imports.Count,
+                        PReleaseSyncs = releaseSyncPtr,
+                        PReleaseKeys = releaseKeysPtr
+                    };
+
+                    submitPNext = &keyedMutexInfo;
+
+                    var commandBuffers = stackalloc CommandBuffer[1];
+                    commandBuffers[0] = commandBuffer;
+
+                    var submitInfo = new SubmitInfo
+                    {
+                        SType = StructureType.SubmitInfo,
+                        PNext = submitPNext,
+                        CommandBufferCount = 1,
+                        PCommandBuffers = commandBuffers
+                    };
+
+                    _faultInjector.BeforeQueueSubmit();
+
+                    if (vk.QueueSubmit(_deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
+                        throw new InvalidOperationException("vkQueueSubmit failed.");
+                }
+            }
+            else
+            {
+                var commandBuffers = stackalloc CommandBuffer[1];
+                commandBuffers[0] = commandBuffer;
+
+                var submitInfo = new SubmitInfo
+                {
+                    SType = StructureType.SubmitInfo,
+                    PNext = submitPNext,
+                    CommandBufferCount = 1,
+                    PCommandBuffers = commandBuffers
+                };
+
+                _faultInjector.BeforeQueueSubmit();
+
+                if (vk.QueueSubmit(_deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
+                    throw new InvalidOperationException("vkQueueSubmit failed.");
             }
 
-            keyedMutexInfo = new Win32KeyedMutexAcquireReleaseInfoKHR
-            {
-                SType = StructureType.Win32KeyedMutexAcquireReleaseInfoKhr,
-                AcquireCount = (uint)imports.Count,
-                PAcquireSyncs = acquireSyncs,
-                PAcquireKeys = acquireKeys,
-                PAcquireTimeouts = acquireTimeouts,
-                ReleaseCount = (uint)imports.Count,
-                PReleaseSyncs = releaseSyncs,
-                PReleaseKeys = releaseKeys
-            };
-
-            submitPNext = &keyedMutexInfo;
+            foreach (var import in imports)
+                import.SourceHandle.NotifyVulkanReleasedToProducer();
         }
-
-        var commandBuffers = stackalloc CommandBuffer[] { commandBuffer };
-
-        var submitInfo = new SubmitInfo
+        finally
         {
-            SType = StructureType.SubmitInfo,
-            PNext = submitPNext,
-            CommandBufferCount = 1,
-            PCommandBuffers = commandBuffers
-        };
+            if (acquireSyncs is not null)
+                ArrayPool<DeviceMemory>.Shared.Return(acquireSyncs, clearArray: true);
 
-        if (SimulateQueueSubmitFailure)
-            throw new InvalidOperationException("vkQueueSubmit failed.");
+            if (releaseSyncs is not null)
+                ArrayPool<DeviceMemory>.Shared.Return(releaseSyncs, clearArray: true);
 
-        if (vk.QueueSubmit(_deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
-            throw new InvalidOperationException("vkQueueSubmit failed.");
+            if (acquireKeys is not null)
+                ArrayPool<ulong>.Shared.Return(acquireKeys, clearArray: true);
 
-        foreach (var import in imports)
-            import.SourceHandle.NotifyVulkanReleasedToProducer();
+            if (releaseKeys is not null)
+                ArrayPool<ulong>.Shared.Return(releaseKeys, clearArray: true);
+
+            if (acquireTimeouts is not null)
+                ArrayPool<uint>.Shared.Return(acquireTimeouts, clearArray: true);
+        }
     }
 }

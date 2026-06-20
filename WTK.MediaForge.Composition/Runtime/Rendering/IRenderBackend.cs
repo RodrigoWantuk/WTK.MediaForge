@@ -14,7 +14,5 @@ public interface IRenderBackend
 
     IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot);
 
-    void WaitIdle();
-
     ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken);
 }
