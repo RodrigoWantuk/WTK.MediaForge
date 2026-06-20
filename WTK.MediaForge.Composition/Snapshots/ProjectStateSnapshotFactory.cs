@@ -46,6 +46,9 @@ public static class ProjectStateSnapshotFactory
         {
             Id = output.Id,
             Name = output.Name,
+            TypeId = output.TypeId,
+            SchemaVersion = output.SchemaVersion,
+            Settings = JsonObjectCloneHelper.DeepClone(output.Settings),
             CanvasId = output.CanvasId,
             OutputSize = output.OutputSize,
             CanvasLayoutMode = output.CanvasLayoutMode,

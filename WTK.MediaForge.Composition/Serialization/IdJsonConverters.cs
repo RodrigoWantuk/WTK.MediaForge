@@ -48,3 +48,12 @@ public sealed class MediaSourceTypeIdJsonConverter : JsonConverter<MediaSourceTy
     public override void Write(Utf8JsonWriter writer, MediaSourceTypeId value, JsonSerializerOptions options) =>
         writer.WriteStringValue(value.Value);
 }
+
+public sealed class RenderOutputTypeIdJsonConverter : JsonConverter<RenderOutputTypeId>
+{
+    public override RenderOutputTypeId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        new(reader.GetString() ?? string.Empty);
+
+    public override void Write(Utf8JsonWriter writer, RenderOutputTypeId value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(value.Value);
+}

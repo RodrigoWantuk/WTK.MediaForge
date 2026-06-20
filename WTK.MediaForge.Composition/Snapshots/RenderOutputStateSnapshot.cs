@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
@@ -10,6 +12,12 @@ public sealed class RenderOutputStateSnapshot
     public RenderOutputId Id { get; init; }
 
     public string Name { get; init; } = string.Empty;
+
+    public RenderOutputTypeId TypeId { get; init; } = RenderOutputTypes.PreviewWindow;
+
+    public int SchemaVersion { get; init; } = 1;
+
+    public JsonObject Settings { get; init; } = new();
 
     public CanvasId CanvasId { get; init; }
 

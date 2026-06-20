@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Sources;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Validation;
 
 namespace WTK.MediaForge.Composition.Project;
@@ -15,7 +16,20 @@ public static class MediaForgeProjectMigrator
         }
 
         MigrateSourceDefinitions(project);
+        MigrateOutputs(project);
         return ProjectMigrateResult.Succeeded(project);
+    }
+
+    private static void MigrateOutputs(MediaForgeProject project)
+    {
+        foreach (var output in project.Outputs)
+        {
+            if (output.TypeId.IsEmpty)
+                output.TypeId = RenderOutputTypes.PreviewWindow;
+
+            if (output.SchemaVersion <= 0)
+                output.SchemaVersion = 1;
+        }
     }
 
     private static void MigrateSourceDefinitions(MediaForgeProject project)

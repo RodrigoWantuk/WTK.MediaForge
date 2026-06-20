@@ -10,6 +10,9 @@ public static class MediaForgeProjectValidator
     private static readonly SourceDefinitionValidatorRegistry SourceRegistry =
         SourceDefinitionValidatorRegistry.Default;
 
+    private static readonly RenderOutputDefinitionValidatorRegistry OutputRegistry =
+        RenderOutputDefinitionValidatorRegistry.Default;
+
     public static ProjectValidationResult Validate(MediaForgeProject project)
     {
         var issues = new List<ValidationIssue>();
@@ -103,6 +106,14 @@ public static class MediaForgeProjectValidator
         {
             if (output.Id.IsEmpty)
                 issues.Add(ValidationIssue.Error("output.id.empty", "Output has empty id."));
+
+            if (output.TypeId.IsEmpty || !OutputRegistry.IsKnown(output.TypeId))
+                issues.Add(ValidationIssue.Error("output.type.invalid", $"Unknown or empty output type id: '{output.TypeId.Value}'."));
+
+            if (output.SchemaVersion <= 0)
+                issues.Add(ValidationIssue.Error("output.schema.invalid", $"Output '{output.Name}' has invalid SchemaVersion."));
+
+            issues.AddRange(OutputRegistry.Validate(output));
 
             if (output.CanvasId.IsEmpty)
                 issues.Add(ValidationIssue.Error("output.canvas.empty", $"Output '{output.Name}' has empty CanvasId."));
