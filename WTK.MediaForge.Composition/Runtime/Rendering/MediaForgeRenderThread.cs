@@ -17,6 +17,7 @@ public sealed class MediaForgeRenderThread : IDisposable
     private readonly AutoResetEvent _workSignal = new(false);
     private readonly Thread _thread;
     private readonly TimeSpan _joinTimeout;
+    private readonly TimeSpan _submissionShutdownTimeout;
     private int _disposed;
     private int _workSignalDisposed;
     private volatile int _stopRequested;
@@ -28,13 +29,15 @@ public sealed class MediaForgeRenderThread : IDisposable
         PendingRenderSubmissionTracker? pendingTracker = null,
         int maxFramesInFlight = 2,
         IMediaForgeDiagnosticsSink? diagnostics = null,
-        TimeSpan? joinTimeout = null)
+        TimeSpan? joinTimeout = null,
+        TimeSpan? submissionShutdownTimeout = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _diagnostics = diagnostics;
         _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(maxFramesInFlight, diagnostics);
         _joinTimeout = joinTimeout ?? TimeSpan.FromSeconds(10);
+        _submissionShutdownTimeout = submissionShutdownTimeout ?? TimeSpan.FromSeconds(10);
         _thread = new Thread(RenderLoop)
         {
             IsBackground = true,
@@ -189,7 +192,7 @@ public sealed class MediaForgeRenderThread : IDisposable
             ProcessCommands(maxCommands: null);
             _snapshotBuffer.Dispose();
             _pendingTracker
-                .ShutdownAsync(_backend, TimeSpan.FromSeconds(10), CancellationToken.None)
+                .ShutdownAsync(_backend, _submissionShutdownTimeout, CancellationToken.None)
                 .AsTask()
                 .GetAwaiter()
                 .GetResult();

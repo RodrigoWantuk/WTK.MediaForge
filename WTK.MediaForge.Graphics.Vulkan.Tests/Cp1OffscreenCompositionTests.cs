@@ -69,6 +69,14 @@ public class Cp1OffscreenCompositionTests
     [Fact]
     public void Offscreen_target_survives_unbind_until_submission_fence_completes()
     {
+        if (!TryCreateSharedTexture(out var device, out var sharedHandle))
+            return;
+
+        using var deviceScope = device;
+        using var handleScope = sharedHandle;
+
+        VulkanOffscreenRenderTargetLifetime.Reset();
+
         if (!TryCreateRenderer(out var context))
             return;
 
@@ -81,6 +89,8 @@ public class Cp1OffscreenCompositionTests
             try
             {
                 var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
                 backend.BindOutput(new RenderOutputBindingSnapshot
                 {
                     OutputId = outputId,
@@ -89,12 +99,27 @@ public class Cp1OffscreenCompositionTests
                     BindingVersion = 1
                 });
 
-                var submission = backend.Submit(CreateEmptySnapshot(version: 1));
+                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.LiveCount);
+
+                var snapshot = CreateCp1Snapshot(sharedHandle, canvasId, outputId);
+                var submission = backend.Submit(snapshot);
+
+                Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.LiveCount);
+
                 backend.UnbindOutput(outputId);
 
                 Assert.Equal(0, backend.OffscreenTargetCount);
+                Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.LiveCount);
+                Assert.Equal(0, VulkanOffscreenRenderTargetLifetime.DisposeCount);
+
                 submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None).AsTask().GetAwaiter().GetResult();
                 submission.DisposeCompleted();
+
+                Assert.Equal(0, backend.TextureRegistryActiveLeaseCount);
+                Assert.Equal(0, VulkanOffscreenRenderTargetLifetime.LiveCount);
+                Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.DisposeCount);
+
+                snapshot.Dispose();
             }
             finally
             {

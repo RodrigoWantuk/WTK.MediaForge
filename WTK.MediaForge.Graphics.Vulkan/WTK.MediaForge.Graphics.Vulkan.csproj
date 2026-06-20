@@ -4,22 +4,23 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-	<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ShaderCompilerGlobalOption_class_name>CompiledShaders</ShaderCompilerGlobalOption_class_name>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ShaderCompile Include="Shaders/**/*.vert" />
+    <ShaderCompile Include="Shaders/**/*.frag" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Silk.NET.Vulkan" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="Shaders\Catalog\mf_common.vert" />
-    <EmbeddedResource Include="Shaders\Catalog\mf_source_layer.frag" />
-    <EmbeddedResource Include="Shaders\Catalog\mf_solid.frag" />
-    <EmbeddedResource Include="Shaders\Catalog\mf_text.frag" />
-    <EmbeddedResource Include="Shaders\Catalog\mf_canvas_composite.frag" />
-    <EmbeddedResource Include="Shaders\Catalog\mf_output_letterbox.frag" />
+    <PackageReference Include="XenoAtom.ShaderCompiler.Build">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

@@ -64,4 +64,8 @@ public sealed class NullRenderBackend : IRenderBackend
 
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
+
+    public bool Disposed { get; private set; }
+
+    public void Dispose() => Disposed = true;
 }

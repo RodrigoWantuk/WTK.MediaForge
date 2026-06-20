@@ -155,19 +155,26 @@ public class RenderThreadTests
         var diagnostics = new ListDiagnosticsSink();
         var guard = new RenderThreadGuard();
         var backend = new ManualNullRenderBackend(guard);
-        using var renderThread = StartRenderThread(backend, guard, maxFramesInFlight: 1, diagnostics: diagnostics);
+        var renderThread = StartRenderThread(backend, guard, maxFramesInFlight: 1, diagnostics: diagnostics);
 
-        source.PublishFrame(1, MediaTime.Zero);
-        renderThread.PublishFrame(BuildSnapshot(runtime, source, 1));
-        source.PublishFrame(2, new MediaTime(16_000_000));
-        renderThread.PublishFrame(BuildSnapshot(runtime, source, 2));
+        try
+        {
+            source.PublishFrame(1, MediaTime.Zero);
+            renderThread.PublishFrame(BuildSnapshot(runtime, source, 1));
+            source.PublishFrame(2, new MediaTime(16_000_000));
+            renderThread.PublishFrame(BuildSnapshot(runtime, source, 2));
 
-        WaitUntil(
-            () => diagnostics.Diagnostics.Any(d => d.Code == "render.frame_dropped_tracker_full"),
-            TimeSpan.FromSeconds(5));
+            WaitUntil(
+                () => diagnostics.Diagnostics.Any(d => d.Code == "render.frame_dropped_tracker_full"),
+                TimeSpan.FromSeconds(5));
 
-        backend.CompleteAllPending();
-        WaitUntil(() => renderThread.PendingTracker.PendingCount == 0, TimeSpan.FromSeconds(5));
+            backend.CompleteAllPending();
+            WaitUntil(() => renderThread.PendingTracker.PendingCount == 0, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            renderThread.Dispose();
+        }
     }
 
     [Fact]
@@ -417,6 +424,10 @@ public class RenderThreadTests
             WaitIdleCalledOnRenderThread = true;
             return ValueTask.CompletedTask;
         }
+
+        public void Dispose()
+        {
+        }
     }
 }
 
@@ -475,8 +486,12 @@ public sealed class ManualNullRenderBackend : IRenderBackend
             submission.Complete();
     }
 
+    public bool Disposed { get; private set; }
+
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
+
+    public void Dispose() => Disposed = true;
 }
 
 public sealed class ThrowingSubmitNullRenderBackend : IRenderBackend
@@ -505,4 +520,8 @@ public sealed class ThrowingSubmitNullRenderBackend : IRenderBackend
 
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
+
+    public void Dispose()
+    {
+    }
 }

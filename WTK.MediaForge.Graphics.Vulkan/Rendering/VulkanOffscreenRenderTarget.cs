@@ -19,6 +19,7 @@ internal sealed unsafe class VulkanOffscreenRenderTarget : IVulkanOffscreenRende
             throw new ArgumentOutOfRangeException(nameof(size), "Offscreen target dimensions must be greater than zero.");
 
         Size = size;
+        Interlocked.Increment(ref VulkanOffscreenRenderTargetLifetime.LiveCount);
         var resources = CreateResources(size.Width, size.Height);
         ApplyResources(resources);
     }
@@ -28,6 +29,8 @@ internal sealed unsafe class VulkanOffscreenRenderTarget : IVulkanOffscreenRende
     public Image Image => _image;
 
     public ImageView ImageView => _imageView;
+
+    internal VulkanHeadlessDevice DeviceContext => _deviceContext;
 
     public ImageLayout CurrentLayout { get; set; } = ImageLayout.Undefined;
 
@@ -55,6 +58,8 @@ internal sealed unsafe class VulkanOffscreenRenderTarget : IVulkanOffscreenRende
             return;
 
         DestroyResources();
+        Interlocked.Decrement(ref VulkanOffscreenRenderTargetLifetime.LiveCount);
+        Interlocked.Increment(ref VulkanOffscreenRenderTargetLifetime.DisposeCount);
     }
 
     private CreatedResources CreateResources(uint width, uint height)

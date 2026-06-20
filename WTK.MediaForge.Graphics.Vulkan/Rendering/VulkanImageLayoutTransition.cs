@@ -11,7 +11,53 @@ internal static unsafe class VulkanImageLayoutTransition
         ImageLayout oldLayout,
         ImageLayout newLayout)
     {
-        var barrier = new ImageMemoryBarrier
+        var (sourceStage, destinationStage, srcAccess, dstAccess) = GetTransitionStages(oldLayout, newLayout);
+
+        var barrier = CreateBarrier(image, oldLayout, newLayout, srcAccess, dstAccess);
+
+        vk.CmdPipelineBarrier(
+            commandBuffer,
+            sourceStage,
+            destinationStage,
+            0,
+            0,
+            null,
+            0,
+            null,
+            1,
+            &barrier);
+    }
+
+    private static (PipelineStageFlags Source, PipelineStageFlags Destination, AccessFlags SrcAccess, AccessFlags DstAccess)
+        GetTransitionStages(ImageLayout oldLayout, ImageLayout newLayout) =>
+        (oldLayout, newLayout) switch
+        {
+            (ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal) =>
+                (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit),
+            (ImageLayout.Undefined, ImageLayout.General) =>
+                (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit),
+            (ImageLayout.General, ImageLayout.General) =>
+                (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.ShaderReadBit, AccessFlags.ShaderReadBit),
+            (ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal) or
+            (ImageLayout.General, ImageLayout.ColorAttachmentOptimal) =>
+                (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.ColorAttachmentOutputBit, 0, AccessFlags.ColorAttachmentWriteBit),
+            (ImageLayout.ColorAttachmentOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+                (PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.ColorAttachmentWriteBit, AccessFlags.ShaderReadBit),
+            (ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal) =>
+                (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.ShaderReadBit, AccessFlags.ShaderReadBit),
+            (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal) =>
+                (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ColorAttachmentOutputBit, AccessFlags.ShaderReadBit, AccessFlags.ColorAttachmentWriteBit),
+            _ => throw new InvalidOperationException(
+                $"Unsupported image layout transition: {oldLayout} -> {newLayout}.")
+        };
+
+    private static ImageMemoryBarrier CreateBarrier(
+        Image image,
+        ImageLayout oldLayout,
+        ImageLayout newLayout,
+        AccessFlags srcAccess,
+        AccessFlags dstAccess) =>
+        new()
         {
             SType = StructureType.ImageMemoryBarrier,
             OldLayout = oldLayout,
@@ -26,42 +72,8 @@ internal static unsafe class VulkanImageLayoutTransition
                 LevelCount = 1,
                 BaseArrayLayer = 0,
                 LayerCount = 1
-            }
+            },
+            SrcAccessMask = srcAccess,
+            DstAccessMask = dstAccess
         };
-
-        PipelineStageFlags sourceStage;
-        PipelineStageFlags destinationStage;
-
-        if (oldLayout == ImageLayout.Undefined && newLayout == ImageLayout.General)
-        {
-            barrier.SrcAccessMask = 0;
-            barrier.DstAccessMask = AccessFlags.ShaderReadBit;
-            sourceStage = PipelineStageFlags.TopOfPipeBit;
-            destinationStage = PipelineStageFlags.FragmentShaderBit;
-        }
-        else if (oldLayout == ImageLayout.General && newLayout == ImageLayout.General)
-        {
-            barrier.SrcAccessMask = AccessFlags.ShaderReadBit;
-            barrier.DstAccessMask = AccessFlags.ShaderReadBit;
-            sourceStage = PipelineStageFlags.FragmentShaderBit;
-            destinationStage = PipelineStageFlags.FragmentShaderBit;
-        }
-        else
-        {
-            throw new InvalidOperationException(
-                $"Unsupported image layout transition: {oldLayout} -> {newLayout}.");
-        }
-
-        vk.CmdPipelineBarrier(
-            commandBuffer,
-            sourceStage,
-            destinationStage,
-            0,
-            0,
-            null,
-            0,
-            null,
-            1,
-            &barrier);
-    }
 }

@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Composition.Sources.Settings;
 using WTK.MediaForge.Composition.Tests.Engine;
@@ -162,9 +163,101 @@ public class MediaForgeEngineTests
         Assert.False(engine.IsRunning);
     }
 
+    [Fact]
+    public async Task Engine_publish_frame_keeps_snapshot_lease_alive_until_render_thread_consumes_submission()
+    {
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        await using var engine = CreateEngine(providerFactory, backendFactory);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+
+        var source = providerFactory.Sources.Values.First();
+        await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        Assert.Equal(1, source.ActiveSlotRetainCount);
+
+        backendFactory.Backend!.CompleteAllPending();
+        await WaitUntilAsync(() => source.ActiveSlotRetainCount == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Engine_stop_disposes_render_backend()
+    {
+        var backendFactory = new RecordingRenderBackendFactory();
+        await using var engine = CreateEngine(backendFactory: backendFactory);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+
+        await engine.StopAsync();
+
+        Assert.True(backendFactory.Backend!.Disposed);
+    }
+
+    [Fact]
+    public async Task Engine_start_failure_disposes_backend()
+    {
+        var backendFactory = new RecordingRenderBackendFactory();
+        var providerFactory = new FakeMediaSourceProviderFactory { FailAfterCount = 1 };
+        var project = CreateValidProject();
+        project.SourceDefinitions.Add(new MediaForgeSourceDefinition
+        {
+            Name = "Second",
+            TypeId = MediaSourceTypes.Desktop,
+            Settings = MediaSourceSettingsSerializer.ToJson(new DesktopCaptureSourceSettings())
+        });
+
+        await using var engine = CreateEngine(providerFactory, backendFactory);
+        await engine.LoadProjectAsync(project);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.StartAsync());
+
+        Assert.True(backendFactory.Backend!.Disposed);
+    }
+
+    [Fact]
+    public async Task Engine_stop_attempts_backend_dispose_even_when_render_thread_dispose_fails()
+    {
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        var engine = new MediaForgeEngine(
+            providerFactory,
+            new FakeRenderOutputSinkFactory(),
+            backendFactory)
+        {
+            RenderThreadSubmissionShutdownTimeoutForTests = TimeSpan.FromMilliseconds(50)
+        };
+
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+
+        var ex = await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+        Assert.NotEmpty(ex.InnerExceptions);
+        Assert.True(backendFactory.Backend!.Disposed);
+
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Engine_stop_aggregates_cleanup_errors_after_attempting_all_cleanup()
+    {
+        var providerFactory = new ThrowingStopMediaSourceProviderFactory();
+        var backendFactory = new ThrowingDisposeRenderBackendFactory();
+        await using var engine = CreateEngine(providerFactory, backendFactory);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+
+        var ex = await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+
+        Assert.True(ex.InnerExceptions.Count >= 2);
+        Assert.Contains(
+            ex.InnerExceptions,
+            inner => inner.Message.Contains("Simulated provider stop failure", StringComparison.Ordinal));
+        Assert.True(backendFactory.Backend!.DisposeAttempted);
+    }
+
     private static MediaForgeEngine CreateEngine(
-        FakeMediaSourceProviderFactory? providerFactory = null,
-        RecordingRenderBackendFactory? backendFactory = null)
+        IMediaSourceProviderFactory? providerFactory = null,
+        IRenderBackendFactory? backendFactory = null)
     {
         return new MediaForgeEngine(
             providerFactory ?? new FakeMediaSourceProviderFactory(),

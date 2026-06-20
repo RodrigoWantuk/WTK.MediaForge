@@ -424,6 +424,10 @@ public class PendingRenderSubmissionTrackerTests
 
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class DelayedWaitIdleRenderBackend : IRenderBackend
@@ -458,6 +462,10 @@ public class PendingRenderSubmissionTrackerTests
             _waitIdleEntered.TrySetResult();
             await _releaseWaitIdle.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class FailingWaitIdleRenderBackend : IRenderBackend
@@ -473,6 +481,10 @@ public class PendingRenderSubmissionTrackerTests
 
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.FromException(new InvalidOperationException("Simulated WaitIdle failure."));
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class FailOnceWaitIdleRenderBackend : IRenderBackend
@@ -496,6 +508,10 @@ public class PendingRenderSubmissionTrackerTests
             }
 
             return ValueTask.CompletedTask;
+        }
+
+        public void Dispose()
+        {
         }
     }
 

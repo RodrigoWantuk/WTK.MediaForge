@@ -1,0 +1,50 @@
+using System.Numerics;
+using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Capture;
+using WTK.MediaForge.Core.Gpu;
+using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Media;
+
+namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
+
+internal static class Cp1PushConstantsBuilder
+{
+    public static MediaForgeLayerPushConstants BuildSourceLayer(
+        RenderSourceLayerDrawObjectSnapshot layer,
+        GpuFrameReference frame,
+        LayoutMode outputCanvasLayoutMode)
+    {
+        var crop = layer.EffectiveCrop;
+        var layoutMode = layer.LayoutMode == LayoutMode.Fit
+            ? outputCanvasLayoutMode
+            : layer.LayoutMode;
+
+        return new MediaForgeLayerPushConstants
+        {
+            CropRect = new Vector4(crop.Left, crop.Top, crop.Right, crop.Bottom),
+            LogicalSize = new Vector2(frame.LogicalSize.Width, frame.LogicalSize.Height),
+            BoxSize = new Vector2(layer.Transform.Size.Width, layer.Transform.Size.Height),
+            Pivot = new Vector2(layer.Transform.Pivot.X, layer.Transform.Pivot.Y),
+            Opacity = layer.Opacity,
+            LayoutMode = (int)layoutMode,
+            ContentRotation = CapturePreviewGeometry.ResolveShaderRotation(
+                frame.Rotation,
+                frame.LogicalSize,
+                frame.TextureSize)
+        };
+    }
+
+    public static MediaForgeOutputPushConstants BuildOutputLetterbox(
+        RenderOutputStateSnapshot output,
+        FrameSize canvasSize)
+    {
+        var letterbox = output.LetterboxColor;
+        return new MediaForgeOutputPushConstants
+        {
+            CanvasSize = new Vector2(canvasSize.Width, canvasSize.Height),
+            OutputSize = new Vector2(output.OutputSize.Width, output.OutputSize.Height),
+            LetterboxColor = new Vector4(letterbox.R, letterbox.G, letterbox.B, letterbox.A),
+            LayoutMode = (int)output.CanvasLayoutMode
+        };
+    }
+}

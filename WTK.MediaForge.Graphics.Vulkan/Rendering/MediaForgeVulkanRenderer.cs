@@ -11,7 +11,7 @@ using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposable
+internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 {
     private const int MaxExternalTextureImportsPerSubmit = 128;
 
@@ -22,6 +22,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
     private readonly IVulkanRendererFaultInjector _faultInjector;
     private readonly Func<VulkanHeadlessDevice, FrameSize, IVulkanOffscreenRenderTarget> _offscreenTargetFactory;
     private readonly Action _disposeDevice;
+    private readonly VulkanCp1ShaderPipelines _cp1Pipelines;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
     private readonly ConcurrentDictionary<RenderOutputId, VulkanOffscreenTargetHandle> _offscreenTargets = new();
     private int _disposed;
@@ -49,6 +50,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
         _offscreenTargetFactory = offscreenTargetFactory ?? CreateOffscreenRenderTarget;
         _disposeDevice = disposeDevice ?? _deviceContext.Dispose;
         _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
+        _cp1Pipelines = new VulkanCp1ShaderPipelines(_deviceContext);
     }
 
     internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;
@@ -210,18 +212,8 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
 
             try
             {
-                foreach (var import in imports)
-                {
-                    VulkanImageLayoutTransition.Transition(
-                        _deviceContext.Vk,
-                        commandBuffer,
-                        import.Image,
-                        import.CurrentLayout,
-                        ImageLayout.General);
-                }
-
                 retainedOffscreenTargets = VulkanCp1OffscreenCompositor.Compose(
-                    _deviceContext.Vk,
+                    _cp1Pipelines,
                     commandBuffer,
                     snapshot,
                     _offscreenTargets,
@@ -351,6 +343,15 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
         }
 
         _offscreenTargets.Clear();
+
+        try
+        {
+            _cp1Pipelines.Dispose();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
 
         try
         {

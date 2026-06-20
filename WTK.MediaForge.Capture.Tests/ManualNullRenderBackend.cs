@@ -54,4 +54,8 @@ internal sealed class ManualNullRenderBackend : IRenderBackend
 
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
+
+    public void Dispose()
+    {
+    }
 }

@@ -30,6 +30,13 @@ vec2 computeLayoutUv(vec2 localUv, int layoutMode, vec2 contentSize, vec2 boxSiz
         else
             scale = vec2(contentAspect / boxAspect, 1.0);
     }
+    else if (layoutMode == 1)
+    {
+        if (contentAspect > boxAspect)
+            scale = vec2(contentAspect / boxAspect, 1.0);
+        else
+            scale = vec2(1.0, boxAspect / contentAspect);
+    }
 
     return (localUv - vec2(0.5)) / scale + vec2(0.5);
 }

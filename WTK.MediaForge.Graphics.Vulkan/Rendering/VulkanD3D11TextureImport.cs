@@ -11,6 +11,7 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
     private readonly SharedWin32Handle _importedSharedHandle;
     private Image _image;
     private DeviceMemory _memory;
+    private ImageView _imageView;
     private bool _disposed;
 
     private VulkanD3D11TextureImport(
@@ -18,6 +19,7 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
         Device device,
         Image image,
         DeviceMemory memory,
+        ImageView imageView,
         SharedWin32Handle importedSharedHandle,
         D3D11SharedTextureFrameHandle sourceHandle)
     {
@@ -25,6 +27,7 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
         _device = device;
         _image = image;
         _memory = memory;
+        _imageView = imageView;
         _importedSharedHandle = importedSharedHandle;
         SourceHandle = sourceHandle;
         Width = sourceHandle.TextureSize.Width;
@@ -34,6 +37,8 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
     public D3D11SharedTextureFrameHandle SourceHandle { get; }
 
     public Image Image => _image;
+
+    public ImageView ImageView => _imageView;
 
     public DeviceMemory Memory => _memory;
 
@@ -149,7 +154,10 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
             if (vk.BindImageMemory(device, image, memory, 0) != Result.Success)
                 throw new InvalidOperationException("Bind imported Vulkan image memory failed.");
 
-            return new VulkanD3D11TextureImport(vk, device, image, memory, importedSharedHandle, sourceHandle);
+            if (CreateImageView(vk, device, image, format, out var imageView) != Result.Success)
+                throw new InvalidOperationException("Create imported Vulkan image view failed.");
+
+            return new VulkanD3D11TextureImport(vk, device, image, memory, imageView, importedSharedHandle, sourceHandle);
         }
         catch
         {
@@ -161,12 +169,44 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
         }
     }
 
+    private static Result CreateImageView(
+        Vk vk,
+        Device device,
+        Image image,
+        Format format,
+        out ImageView imageView)
+    {
+        var viewInfo = new ImageViewCreateInfo
+        {
+            SType = StructureType.ImageViewCreateInfo,
+            Image = image,
+            ViewType = ImageViewType.Type2D,
+            Format = format,
+            SubresourceRange = new ImageSubresourceRange
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                BaseMipLevel = 0,
+                LevelCount = 1,
+                BaseArrayLayer = 0,
+                LayerCount = 1
+            }
+        };
+
+        return vk.CreateImageView(device, &viewInfo, null, out imageView);
+    }
+
     public void Dispose()
     {
         if (_disposed)
             return;
 
         _disposed = true;
+
+        if (_imageView.Handle != 0)
+        {
+            _vk.DestroyImageView(_device, _imageView, null);
+            _imageView = default;
+        }
 
         if (_image.Handle != 0)
         {

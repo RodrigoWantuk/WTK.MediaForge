@@ -76,5 +76,9 @@ public class MediaForgeRenderThreadDiagnosticsTests
 
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
+
+        public void Dispose()
+        {
+        }
     }
 }
