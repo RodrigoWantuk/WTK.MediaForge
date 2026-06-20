@@ -65,6 +65,15 @@ public sealed class D3D11GpuFrameSlotRing : IDisposable
             return;
 
         foreach (var handle in _handles)
-            handle.Dispose();
+        {
+            try
+            {
+                handle.Dispose();
+            }
+            catch (Exception)
+            {
+                // TODO: Diagnostics.Record handle dispose failure.
+            }
+        }
     }
 }

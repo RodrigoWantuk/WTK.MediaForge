@@ -48,7 +48,11 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        WaitForCompletionIfNeeded();
+        if (!WaitForCompletionIfNeeded())
+        {
+            Volatile.Write(ref _disposed, 0);
+            throw new TimeoutException("Timed out waiting for Vulkan submission fence before dispose.");
+        }
 
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
@@ -71,10 +75,13 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         Interlocked.Exchange(ref _snapshot, null)?.Dispose();
     }
 
-    private void WaitForCompletionIfNeeded()
+    private bool WaitForCompletionIfNeeded()
     {
-        if (Fence.Handle == 0 || IsCompleted)
-            return;
+        if (Fence.Handle == 0)
+            return true;
+
+        if (_deviceContext.Vk.GetFenceStatus(_deviceContext.Device, Fence) == Result.Success)
+            return true;
 
         var fence = Fence;
         var result = _deviceContext.Vk.WaitForFences(
@@ -84,7 +91,12 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
             true,
             FenceWaitTimeoutNs);
 
-        if (result is not (Result.Success or Result.Timeout))
-            throw new InvalidOperationException($"vkWaitForFences failed during submission dispose: {result}");
+        if (result == Result.Success)
+            return true;
+
+        if (result == Result.Timeout)
+            return false;
+
+        throw new InvalidOperationException($"vkWaitForFences failed during submission dispose: {result}");
     }
 }

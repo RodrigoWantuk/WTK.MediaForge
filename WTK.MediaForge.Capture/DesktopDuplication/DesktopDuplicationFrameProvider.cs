@@ -108,8 +108,19 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
 
         _captureCts?.Cancel();
 
-        if (_captureThread is { IsAlive: true })
-            _captureThread.Join(TimeSpan.FromSeconds(5));
+        if (_captureThread is { IsAlive: true } &&
+            !_captureThread.Join(TimeSpan.FromSeconds(5)))
+        {
+            var timeout = new TimeoutException("Capture thread did not stop within the expected timeout.");
+
+            lock (_stateGate)
+            {
+                Volatile.Write(ref _state, (int)MediaSourceState.Failed);
+                LastError = timeout;
+            }
+
+            throw timeout;
+        }
 
         RetireCurrentRing();
         TryFinalizeRetiredRings();
@@ -158,13 +169,15 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
             return;
 
         StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+        TryFinalizeRetiredRings();
 
         lock (_retiredRings)
         {
-            foreach (var retired in _retiredRings)
-                retired.Dispose();
-
-            _retiredRings.Clear();
+            if (_retiredRings.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "Cannot dispose provider while retired slot rings still have active leases.");
+            }
         }
     }
 

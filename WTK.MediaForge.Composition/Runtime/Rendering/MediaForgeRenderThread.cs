@@ -14,7 +14,6 @@ public sealed class MediaForgeRenderThread : IDisposable
     private readonly Thread _thread;
     private int _disposed;
     private volatile int _stopRequested;
-    private volatile int _shutdownCleanupComplete;
     private Exception? _shutdownCleanupError;
 
     public MediaForgeRenderThread(
@@ -148,7 +147,6 @@ public sealed class MediaForgeRenderThread : IDisposable
         }
         finally
         {
-            Volatile.Write(ref _shutdownCleanupComplete, 1);
             _threadGuard.Clear();
         }
     }

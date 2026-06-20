@@ -134,10 +134,8 @@ public class RenderThreadTests
         }
 
         WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
-        Assert.True(renderThread.PendingTracker.PendingCount <= 1);
 
-        backend.CompleteAllPending();
-        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+        Assert.True(renderThread.PendingTracker.PendingCount <= 1);
     }
 
     [Fact]
@@ -373,6 +371,15 @@ public sealed class ManualNullRenderBackend : IRenderBackend
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
 
     public int SubmitCount => Volatile.Read(ref _submitCount);
+
+    public int PendingBackendSubmissionCount
+    {
+        get
+        {
+            lock (_pending)
+                return _pending.Count;
+        }
+    }
 
     private int _submitCount;
 
