@@ -2,7 +2,7 @@ using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Composition.Runtime;
 
-public sealed class LatestSnapshotBuffer : IDisposable
+internal sealed class LatestSnapshotBuffer : IDisposable
 {
     private readonly object _gate = new();
     private RenderFrameSnapshot? _latest;

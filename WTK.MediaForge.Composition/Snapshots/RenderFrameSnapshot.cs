@@ -4,7 +4,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public sealed class RenderFrameSnapshot : IDisposable
+internal sealed class RenderFrameSnapshot : IDisposable
 {
     private int _disposed;
 

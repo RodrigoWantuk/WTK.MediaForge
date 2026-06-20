@@ -3,7 +3,7 @@ using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Composition.Shaders;
 
-public static class RenderDrawObjectPipelineMapper
+internal static class RenderDrawObjectPipelineMapper
 {
     public static ShaderPipelineKind GetPipelineKind(RenderDrawObjectSnapshot drawObject) =>
         drawObject switch

@@ -5,7 +5,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public sealed class NullRenderBackend : IRenderBackend
+internal sealed class NullRenderBackend : IRenderBackend
 {
     private readonly RenderThreadGuard _threadGuard;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();

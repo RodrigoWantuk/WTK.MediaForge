@@ -2,7 +2,7 @@ using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public sealed class ImmediateRenderFrameSubmission : IRenderFrameSubmission
+internal sealed class ImmediateRenderFrameSubmission : IRenderFrameSubmission
 {
     private RenderFrameSnapshot? _snapshot;
     private int _resourcesDisposed;

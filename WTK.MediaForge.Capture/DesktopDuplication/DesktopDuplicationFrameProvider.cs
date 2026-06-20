@@ -22,7 +22,7 @@ internal enum ProviderDisposeState
     Disposed,
 }
 
-public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyncDisposable, IDisposable
+internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyncDisposable, IDisposable
 {
     private const int SlotCount = 3;
     private const int DisposeWaitSeconds = 5;

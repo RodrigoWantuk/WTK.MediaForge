@@ -8,7 +8,7 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 /// Tracks in-flight GPU render submissions without blocking on completion.
 /// Shutdown uses <see cref="ShutdownAsync"/> to wait with timeouts before destroying resources.
 /// </summary>
-public class PendingRenderSubmissionTracker : IDisposable
+internal class PendingRenderSubmissionTracker : IDisposable
 {
     private enum PendingTrackerState
     {

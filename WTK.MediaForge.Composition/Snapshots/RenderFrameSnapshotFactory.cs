@@ -9,7 +9,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public static class RenderFrameSnapshotFactory
+internal static class RenderFrameSnapshotFactory
 {
     private static int MaxNestedCanvasDepth => CanvasGraphLimits.MaxNestedCanvasDepth;
 

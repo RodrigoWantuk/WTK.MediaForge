@@ -42,7 +42,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     {
     }
 
-    public MediaForgeEngine(
+    internal MediaForgeEngine(
         IMediaSourceProviderFactory sourceProviderFactory,
         IRenderOutputSinkFactory outputSinkFactory,
         IRenderBackendFactory backendFactory,

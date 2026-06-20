@@ -8,7 +8,7 @@ using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public abstract class RenderDrawObjectSnapshot
+internal abstract class RenderDrawObjectSnapshot
 {
     public DrawObjectId Id { get; init; }
 
@@ -27,7 +27,7 @@ public abstract class RenderDrawObjectSnapshot
     public ImmutableArray<EffectStateSnapshot> Effects { get; init; } = [];
 }
 
-public sealed class RenderSourceLayerDrawObjectSnapshot : RenderDrawObjectSnapshot
+internal sealed class RenderSourceLayerDrawObjectSnapshot : RenderDrawObjectSnapshot
 {
     public SourceId SourceId { get; init; }
 
@@ -38,7 +38,7 @@ public sealed class RenderSourceLayerDrawObjectSnapshot : RenderDrawObjectSnapsh
     public GpuFrameReference? BoundFrame { get; init; }
 }
 
-public sealed class RenderTextDrawObjectSnapshot : RenderDrawObjectSnapshot
+internal sealed class RenderTextDrawObjectSnapshot : RenderDrawObjectSnapshot
 {
     public string Text { get; init; } = string.Empty;
 
@@ -47,12 +47,12 @@ public sealed class RenderTextDrawObjectSnapshot : RenderDrawObjectSnapshot
     public float FontSize { get; init; } = 24f;
 }
 
-public sealed class RenderSolidDrawObjectSnapshot : RenderDrawObjectSnapshot
+internal sealed class RenderSolidDrawObjectSnapshot : RenderDrawObjectSnapshot
 {
     public ColorRgba FillColor { get; init; } = ColorRgba.Black;
 }
 
-public sealed class RenderCanvasDrawObjectSnapshot : RenderDrawObjectSnapshot
+internal sealed class RenderCanvasDrawObjectSnapshot : RenderDrawObjectSnapshot
 {
     public RenderCanvasSnapshot? NestedCanvas { get; init; }
 }

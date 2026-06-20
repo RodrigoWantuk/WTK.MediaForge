@@ -11,7 +11,7 @@ namespace WTK.MediaForge.Composition.Snapshots;
 [JsonDerivedType(typeof(ColorCorrectionEffectSnapshot), "effect.color")]
 [JsonDerivedType(typeof(BlurEffectSnapshot), "effect.blur")]
 [JsonDerivedType(typeof(TransitionEffectSnapshot), "effect.transition")]
-public abstract class EffectStateSnapshot
+internal abstract class EffectStateSnapshot
 {
     public EffectId Id { get; init; }
 
@@ -24,7 +24,7 @@ public abstract class EffectStateSnapshot
     public int SchemaVersion { get; init; } = 1;
 }
 
-public sealed class ChromaKeyEffectSnapshot : EffectStateSnapshot
+internal sealed class ChromaKeyEffectSnapshot : EffectStateSnapshot
 {
     public ColorRgba KeyColor { get; init; } = ColorRgba.From(0f, 1f, 0f, 1f);
 
@@ -35,7 +35,7 @@ public sealed class ChromaKeyEffectSnapshot : EffectStateSnapshot
     public float SpillReduction { get; init; } = 0.5f;
 }
 
-public sealed class ColorCorrectionEffectSnapshot : EffectStateSnapshot
+internal sealed class ColorCorrectionEffectSnapshot : EffectStateSnapshot
 {
     public float Brightness { get; init; }
 
@@ -46,12 +46,12 @@ public sealed class ColorCorrectionEffectSnapshot : EffectStateSnapshot
     public float HueDegrees { get; init; }
 }
 
-public sealed class BlurEffectSnapshot : EffectStateSnapshot
+internal sealed class BlurEffectSnapshot : EffectStateSnapshot
 {
     public float Radius { get; init; } = 4f;
 }
 
-public sealed class TransitionEffectSnapshot : EffectStateSnapshot
+internal sealed class TransitionEffectSnapshot : EffectStateSnapshot
 {
     public TransitionKind Kind { get; init; } = TransitionKind.Fade;
 

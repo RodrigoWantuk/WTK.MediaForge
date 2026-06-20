@@ -8,6 +8,7 @@ Before considering a change complete, verify:
 - [ ] No new TODOs in lifetime paths.
 - [ ] No swallowed exceptions in physical resource cleanup.
 - [ ] Tests added for every lifetime change.
+- [ ] Runtime/GPU/snapshot internals are not exposed as public product API.
 - [ ] `dotnet test` passes.
 - [ ] `scripts/test.ps1 -Tier Fast` passes.
 - [ ] `scripts/test.ps1 -Tier Gpu` passes when touching GPU code.

@@ -4,7 +4,7 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 /// Per render-thread instance guard. Each <see cref="MediaForgeRenderThread"/> owns one guard
 /// shared with its backend — not a process-wide singleton.
 /// </summary>
-public sealed class RenderThreadGuard
+internal sealed class RenderThreadGuard
 {
     private int _renderThreadId;
 

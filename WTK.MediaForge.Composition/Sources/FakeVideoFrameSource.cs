@@ -6,7 +6,7 @@ using WTK.MediaForge.Core.Time;
 
 namespace WTK.MediaForge.Composition.Sources;
 
-public sealed class FakeVideoFrameSource : IVideoFrameProvider, IDisposable
+internal sealed class FakeVideoFrameSource : IVideoFrameProvider, IDisposable
 {
     private readonly object _gate = new();
     private readonly FrameSize _frameSize;

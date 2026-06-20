@@ -7,7 +7,7 @@ using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Capture.Gpu;
 
-public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
+internal sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
 {
     private readonly D3D11GpuFrameSlot[] _slots;
     private readonly ID3D11GpuFrameSlotDisposer _slotDisposer;

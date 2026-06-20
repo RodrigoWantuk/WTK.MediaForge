@@ -1,6 +1,6 @@
 namespace WTK.MediaForge.Composition.Shaders;
 
-public enum ShaderPipelineKind
+internal enum ShaderPipelineKind
 {
     Unknown = 0,
     SourceLayer = 1,

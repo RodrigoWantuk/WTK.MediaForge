@@ -7,7 +7,7 @@ using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public sealed class RenderOutputStateSnapshot
+internal sealed class RenderOutputStateSnapshot
 {
     public RenderOutputId Id { get; init; }
 

@@ -2,7 +2,7 @@ using WTK.MediaForge.Core.Gpu;
 
 namespace WTK.MediaForge.Core.Sources;
 
-public interface IVideoFrameProvider : IMediaSource
+internal interface IVideoFrameProvider : IMediaSource
 {
     /// <summary>
     /// Fast and non-blocking. Returns false when no frame is ready.

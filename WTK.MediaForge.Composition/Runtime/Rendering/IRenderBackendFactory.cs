@@ -2,7 +2,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public interface IRenderBackendFactory
+internal interface IRenderBackendFactory
 {
     bool TryCreate(
         RenderThreadGuard threadGuard,

@@ -4,7 +4,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public sealed class SlowNullRenderBackend : IRenderBackend
+internal sealed class SlowNullRenderBackend : IRenderBackend
 {
     private readonly RenderThreadGuard _threadGuard;
     private readonly TimeSpan _renderDelay;

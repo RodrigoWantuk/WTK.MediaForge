@@ -3,7 +3,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public sealed class SnapshotBuildResult : IDisposable
+internal sealed class SnapshotBuildResult : IDisposable
 {
     private int _disposed;
     private RenderFrameSnapshot? _snapshot;

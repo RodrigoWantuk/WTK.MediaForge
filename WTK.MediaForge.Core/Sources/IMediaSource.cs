@@ -2,7 +2,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Core.Sources;
 
-public enum MediaSourceState
+internal enum MediaSourceState
 {
     Stopped = 0,
     Starting = 1,
@@ -11,7 +11,7 @@ public enum MediaSourceState
     Stopping = 4
 }
 
-public interface IMediaSource
+internal interface IMediaSource
 {
     SourceId Id { get; }
 

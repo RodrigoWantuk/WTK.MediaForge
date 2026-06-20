@@ -5,14 +5,14 @@ using WTK.MediaForge.Core.Sources;
 
 namespace WTK.MediaForge.Composition.Runtime.Sources;
 
-public interface IMediaSourceProviderFactory
+internal interface IMediaSourceProviderFactory
 {
     bool CanCreate(MediaSourceTypeId typeId);
 
     IVideoFrameProvider CreateProvider(MediaForgeSourceDefinition sourceDefinition);
 }
 
-public sealed class UnsupportedMediaSourceProviderFactory : IMediaSourceProviderFactory
+internal sealed class UnsupportedMediaSourceProviderFactory : IMediaSourceProviderFactory
 {
     public bool CanCreate(MediaSourceTypeId typeId) => false;
 

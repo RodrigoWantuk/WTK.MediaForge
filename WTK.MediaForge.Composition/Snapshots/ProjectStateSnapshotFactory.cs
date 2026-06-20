@@ -4,7 +4,7 @@ using WTK.MediaForge.Composition.Project;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public static class ProjectStateSnapshotFactory
+internal static class ProjectStateSnapshotFactory
 {
     private static long _snapshotCounter;
 

@@ -7,7 +7,7 @@ using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public abstract class DrawObjectStateSnapshot
+internal abstract class DrawObjectStateSnapshot
 {
     public DrawObjectId Id { get; init; }
 
@@ -26,7 +26,7 @@ public abstract class DrawObjectStateSnapshot
     public ImmutableArray<EffectStateSnapshot> Effects { get; init; } = [];
 }
 
-public sealed class SourceLayerDrawObjectSnapshot : DrawObjectStateSnapshot
+internal sealed class SourceLayerDrawObjectSnapshot : DrawObjectStateSnapshot
 {
     public SourceId SourceId { get; init; }
 
@@ -35,7 +35,7 @@ public sealed class SourceLayerDrawObjectSnapshot : DrawObjectStateSnapshot
     public DisplayRotation? ContentRotationOverride { get; init; }
 }
 
-public sealed class TextDrawObjectSnapshot : DrawObjectStateSnapshot
+internal sealed class TextDrawObjectSnapshot : DrawObjectStateSnapshot
 {
     public string Text { get; init; } = string.Empty;
 
@@ -44,12 +44,12 @@ public sealed class TextDrawObjectSnapshot : DrawObjectStateSnapshot
     public float FontSize { get; init; } = 24f;
 }
 
-public sealed class SolidDrawObjectSnapshot : DrawObjectStateSnapshot
+internal sealed class SolidDrawObjectSnapshot : DrawObjectStateSnapshot
 {
     public ColorRgba FillColor { get; init; } = ColorRgba.Black;
 }
 
-public sealed class CanvasDrawObjectSnapshot : DrawObjectStateSnapshot
+internal sealed class CanvasDrawObjectSnapshot : DrawObjectStateSnapshot
 {
     public CanvasId NestedCanvasId { get; init; }
 }

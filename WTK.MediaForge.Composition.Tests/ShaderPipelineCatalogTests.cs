@@ -17,13 +17,14 @@ public class ShaderPipelineCatalogTests
     }
 
     [Theory]
-    [InlineData(typeof(SourceLayerDrawObject), ShaderPipelineKind.SourceLayer, "mf.source.layer")]
-    [InlineData(typeof(SolidDrawObject), ShaderPipelineKind.Solid, "mf.solid")]
-    [InlineData(typeof(TextDrawObject), ShaderPipelineKind.Text, "mf.text")]
-    [InlineData(typeof(CanvasDrawObject), ShaderPipelineKind.CanvasComposite, "mf.canvas.composite")]
-    public void Mapper_resolves_project_draw_objects(Type drawObjectType, ShaderPipelineKind expectedKind, string expectedCatalogId)
+    [InlineData(typeof(SourceLayerDrawObject), (int)ShaderPipelineKind.SourceLayer, "mf.source.layer")]
+    [InlineData(typeof(SolidDrawObject), (int)ShaderPipelineKind.Solid, "mf.solid")]
+    [InlineData(typeof(TextDrawObject), (int)ShaderPipelineKind.Text, "mf.text")]
+    [InlineData(typeof(CanvasDrawObject), (int)ShaderPipelineKind.CanvasComposite, "mf.canvas.composite")]
+    public void Mapper_resolves_project_draw_objects(Type drawObjectType, int expectedKindValue, string expectedCatalogId)
     {
         var drawObject = (MediaForgeDrawObject)Activator.CreateInstance(drawObjectType)!;
+        var expectedKind = (ShaderPipelineKind)expectedKindValue;
 
         var kind = RenderDrawObjectPipelineMapper.GetPipelineKind(drawObject);
         var descriptor = ShaderPipelineCatalog.GetRequired(kind);

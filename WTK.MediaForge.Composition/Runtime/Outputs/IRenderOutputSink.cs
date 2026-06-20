@@ -4,7 +4,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Outputs;
 
-public interface IRenderOutputSink : IAsyncDisposable
+internal interface IRenderOutputSink : IAsyncDisposable
 {
     RenderOutputBindingSnapshot CreateBinding(
         RenderOutputId outputId,

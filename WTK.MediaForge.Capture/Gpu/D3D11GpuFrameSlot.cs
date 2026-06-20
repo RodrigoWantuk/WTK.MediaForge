@@ -5,7 +5,7 @@ using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Capture.Gpu;
 
-public sealed class D3D11GpuFrameSlot
+internal sealed class D3D11GpuFrameSlot
 {
     internal D3D11GpuFrameSlot(int slotIndex, D3D11SharedTextureFrameHandle handle)
     {

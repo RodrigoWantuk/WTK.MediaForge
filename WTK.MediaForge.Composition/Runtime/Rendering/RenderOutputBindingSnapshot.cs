@@ -3,7 +3,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public sealed class RenderOutputBindingSnapshot
+internal sealed class RenderOutputBindingSnapshot
 {
     public RenderOutputId OutputId { get; init; }
 

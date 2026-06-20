@@ -3,7 +3,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public sealed class SourceDefinitionSnapshot
+internal sealed class SourceDefinitionSnapshot
 {
     public SourceId Id { get; init; }
 

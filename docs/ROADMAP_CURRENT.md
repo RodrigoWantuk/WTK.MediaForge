@@ -1,26 +1,28 @@
-# Current Roadmap — GPU Lifecycle + Product Model
+# Current Roadmap - GPU Lifecycle + Public API
 
 This roadmap is mandatory. Do not choose a different order within each track.
 
 ## Status
 
-- **P0 GPU lifecycle (commits 1–11):** complete
-- **Product model formalization (H1–H7):** H1 complete; H2–H7 pending
-- **Visual compositing + real sources/outputs:** blocked until H7
+- **P0 GPU lifecycle (commits 1-11):** complete
+- **Product model formalization (H1-H7):** H1 complete; H2-H7 pending
+- **Public API stabilization (PAPI-1-PAPI-8):** PAPI-1 in progress
+- **Visual compositing + real sources/outputs:** blocked until PAPI-8
 
-## Blocking rule (product features)
+## Blocking Rule (Product Features)
 
-Until product commits H2–H7 are complete, do not implement:
+Until public API commits PAPI-1-PAPI-8 are complete, do not implement:
 
 - UI shells beyond test harnesses
 - NDI, RTSP, webcam, MP4 decode sources
 - encoder, audio, streaming sinks
-- preview binding in production app
+- productive WinForms preview binding
 - ad hoc draw object types per media format
+- public plugin APIs
 
-Documentation and contract work (H1) is allowed and required.
+Documentation and API contract work is allowed and required.
 
-## Completed — P0 GPU lifecycle
+## Completed - P0 GPU Lifecycle
 
 1. Provider lifecycle gate + DisposeFailed
 2. Ring FullyDisposed faulted
@@ -28,19 +30,33 @@ Documentation and contract work (H1) is allowed and required.
 4. ArrayPool + limit 128 imports
 5. Remove IAsyncDisposable from submissions
 6. Remove synchronous WaitIdle from IRenderBackend
-7. MediaForgeVulkanRenderer internal + public factory
+7. MediaForgeVulkanRenderer internal + factory-controlled creation
 8. IVulkanRendererFaultInjector (no Simulate*)
 9. Registry acquire outside global lock
 10. ARCHITECTURE.md final contracts
 11. Offscreen render target scaffolding
 
-## Next — Product model (H1–H7)
+## Current - Public API Stabilization (PAPI-1-PAPI-8)
+
+See [PUBLIC_API.md](PUBLIC_API.md) for the public product API boundary.
+
+| # | Commit |
+|---|--------|
+| PAPI-1 | Public API audit |
+| PAPI-2 | `MediaForgeWindows.CreateEngine` |
+| PAPI-3 | `MediaForgeProjectBuilder` |
+| PAPI-4 | Public engine state/runtime API |
+| PAPI-5 | Typed `RenderOutputTarget` contracts |
+| PAPI-6 | Public validation/runtime exceptions |
+| PAPI-7 | Public engine events |
+| PAPI-8 | Offscreen sample |
+
+## Deferred - Product Model (H2-H7)
 
 See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for full contract.
 
 | # | Commit |
 |---|--------|
-| H1 | Product model documentation |
 | H2 | Source type catalog + typed settings |
 | H3 | Output type catalog + typed settings |
 | H4 | Effect model |
@@ -48,18 +64,24 @@ See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for full contract.
 | H6 | Advanced graph validation (cycles, depth 8) |
 | H7 | MediaForgeEngine facade skeleton |
 
-## After H7
+## After PAPI-8
 
-1. Minimal compositing: source layer → offscreen target (fit)
-2. Real sources: desktop (exists), webcam, NDI, RTSP, video file
-3. Real outputs: preview window, offscreen, NDI, MP4, streaming
+1. Minimal compositing hardening beyond CP1.
+2. CP2 multi-layer basics.
+3. CP3 nested canvas.
+4. Real source/output integrations after the public API is stable.
 
-## Validation gates
+## Validation Gates
 
 After each code commit:
 
 ```powershell
 dotnet test
 ./scripts/test.ps1 -Tier Fast
-./scripts/test.ps1 -Tier Gpu   # when touching GPU/Capture/Vulkan
+```
+
+When touching Capture, D3D11, Vulkan, GPU lifecycle, keyed mutex, registry, render thread, provider, or submission, also run:
+
+```powershell
+./scripts/test.ps1 -Tier Gpu
 ```

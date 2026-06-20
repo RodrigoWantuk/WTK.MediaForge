@@ -1,6 +1,6 @@
 namespace WTK.MediaForge.Core.Gpu;
 
-public sealed class GpuFrameLease : IDisposable
+internal sealed class GpuFrameLease : IDisposable
 {
     private int _disposed;
     private readonly Action? _onRelease;

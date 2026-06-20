@@ -1,6 +1,6 @@
 namespace WTK.MediaForge.Composition.Shaders;
 
-public sealed class ShaderPipelineDescriptor
+internal sealed class ShaderPipelineDescriptor
 {
     public ShaderPipelineKind Kind { get; init; }
 

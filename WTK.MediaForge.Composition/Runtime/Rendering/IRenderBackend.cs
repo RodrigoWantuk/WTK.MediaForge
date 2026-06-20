@@ -4,7 +4,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public interface IRenderBackend : IDisposable
+internal interface IRenderBackend : IDisposable
 {
     void BindOutput(RenderOutputBindingSnapshot binding);
 

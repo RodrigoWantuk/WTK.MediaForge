@@ -4,7 +4,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public sealed class MediaForgeRenderThread : IDisposable
+internal sealed class MediaForgeRenderThread : IDisposable
 {
     private static readonly TimeSpan FailedSubmitDisposeTimeout = TimeSpan.FromSeconds(1);
 

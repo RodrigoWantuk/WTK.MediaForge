@@ -1,6 +1,6 @@
 namespace WTK.MediaForge.Composition.Shaders;
 
-public static class ShaderPipelineCatalog
+internal static class ShaderPipelineCatalog
 {
     public static readonly ShaderPipelineDescriptor SourceLayer = new()
     {

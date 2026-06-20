@@ -2,7 +2,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public enum SnapshotDiagnosticSeverity
+internal enum SnapshotDiagnosticSeverity
 {
     Info = 0,
     Warning = 1,
@@ -10,7 +10,7 @@ public enum SnapshotDiagnosticSeverity
     Fatal = 3
 }
 
-public enum SnapshotDiagnosticKind
+internal enum SnapshotDiagnosticKind
 {
     SourceNotRegistered = 0,
     SourceNoFrame = 1,
@@ -18,7 +18,7 @@ public enum SnapshotDiagnosticKind
     NestedCanvasDepthExceeded = 3
 }
 
-public sealed class SnapshotDiagnostic
+internal sealed class SnapshotDiagnostic
 {
     public SnapshotDiagnosticKind Kind { get; init; }
 

@@ -5,7 +5,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-public sealed class RenderCanvasSnapshot
+internal sealed class RenderCanvasSnapshot
 {
     public CanvasId Id { get; init; }
 

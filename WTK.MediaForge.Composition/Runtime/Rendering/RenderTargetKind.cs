@@ -1,6 +1,6 @@
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public enum RenderTargetKind
+internal enum RenderTargetKind
 {
     Unknown = 0,
     Win32Hwnd = 1,

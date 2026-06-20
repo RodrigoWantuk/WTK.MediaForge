@@ -441,7 +441,7 @@ public class RenderThreadTests
     }
 }
 
-public sealed class ManualNullRenderBackend : IRenderBackend
+internal sealed class ManualNullRenderBackend : IRenderBackend
 {
     private readonly RenderThreadGuard _threadGuard;
     private readonly List<ManualRenderFrameSubmission> _pending = [];
@@ -504,7 +504,7 @@ public sealed class ManualNullRenderBackend : IRenderBackend
     public void Dispose() => Disposed = true;
 }
 
-public sealed class ThrowingSubmitNullRenderBackend : IRenderBackend
+internal sealed class ThrowingSubmitNullRenderBackend : IRenderBackend
 {
     private readonly RenderThreadGuard _threadGuard;
 

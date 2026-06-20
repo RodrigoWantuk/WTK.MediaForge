@@ -7,7 +7,7 @@ using WTK.MediaForge.Core.Time;
 
 namespace WTK.MediaForge.Composition.Sources;
 
-public sealed class FakeGpuFrameSlotRingVideoFrameSource : IVideoFrameProvider, IDisposable
+internal sealed class FakeGpuFrameSlotRingVideoFrameSource : IVideoFrameProvider, IDisposable
 {
     private readonly GpuFrameSlotRing _ring;
     private readonly FrameSize _frameSize;

@@ -4,7 +4,7 @@ using WTK.MediaForge.Core.Sources;
 
 namespace WTK.MediaForge.Composition.Runtime;
 
-public sealed class CompositionRuntime
+internal sealed class CompositionRuntime
 {
     private readonly ConcurrentDictionary<SourceId, IVideoFrameProvider> _frameProviders = new();
 
