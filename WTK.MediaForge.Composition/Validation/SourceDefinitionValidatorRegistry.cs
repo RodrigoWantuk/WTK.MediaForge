@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Validation;
@@ -21,12 +22,12 @@ public sealed class SourceDefinitionValidatorRegistry
 
     public static SourceDefinitionValidatorRegistry Default { get; } = CreateDefault();
 
-    public bool IsKnown(MediaSourceTypeId typeId) =>
-        !typeId.IsEmpty && _validators.ContainsKey(typeId.Value);
+    public bool IsKnown(MediaSourceTypeId typeId) => MediaSourceTypeRegistry.IsKnown(typeId);
 
     public IEnumerable<ValidationIssue> Validate(MediaForgeSourceDefinition source)
     {
-        if (!_validators.TryGetValue(source.TypeId.Value, out var validator))
+        var canonical = MediaSourceTypeRegistry.ResolveCanonical(source.TypeId);
+        if (!_validators.TryGetValue(canonical.Value, out var validator))
             yield break;
 
         foreach (var issue in validator.Validate(source))
@@ -37,22 +38,16 @@ public sealed class SourceDefinitionValidatorRegistry
     {
         ISourceDefinitionValidator[] builtIn =
         [
-            new BuiltinSourceDefinitionValidator(MediaSourceTypeId.DesktopCapture),
-            new BuiltinSourceDefinitionValidator(MediaSourceTypeId.ImageFile),
-            new BuiltinSourceDefinitionValidator(MediaSourceTypeId.VideoFile)
+            new Sources.DesktopCaptureSourceDefinitionValidator(),
+            new Sources.WebcamSourceDefinitionValidator(),
+            new Sources.NdiInputSourceDefinitionValidator(),
+            new Sources.RtspInputSourceDefinitionValidator(),
+            new Sources.VideoFileSourceDefinitionValidator(),
+            new Sources.ImageFileSourceDefinitionValidator(),
+            new Sources.WindowCaptureSourceDefinitionValidator(),
+            new Sources.GeneratedSourceDefinitionValidator()
         ];
 
         return new SourceDefinitionValidatorRegistry(builtIn);
-    }
-
-    private sealed class BuiltinSourceDefinitionValidator : ISourceDefinitionValidator
-    {
-        public BuiltinSourceDefinitionValidator(MediaSourceTypeId typeId) =>
-            TypeId = typeId;
-
-        public MediaSourceTypeId TypeId { get; }
-
-        public IEnumerable<ValidationIssue> Validate(MediaForgeSourceDefinition source) =>
-            Enumerable.Empty<ValidationIssue>();
     }
 }

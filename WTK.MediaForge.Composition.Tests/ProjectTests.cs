@@ -2,6 +2,8 @@ using System.Text.Json.Nodes;
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Serialization;
+using WTK.MediaForge.Composition.Sources;
+using WTK.MediaForge.Composition.Sources.Settings;
 using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
@@ -104,8 +106,12 @@ public class ProjectValidationTests
                 {
                     Id = sourceId,
                     Name = "Desktop 1",
-                    TypeId = MediaSourceTypeId.DesktopCapture,
-                    Settings = new JsonObject { ["adapterIndex"] = 0, ["outputIndex"] = 0 }
+                    TypeId = MediaSourceTypes.Desktop,
+                    Settings = MediaSourceSettingsSerializer.ToJson(new DesktopCaptureSourceSettings
+                    {
+                        AdapterIndex = 0,
+                        OutputIndex = 0
+                    })
                 }
             ],
             Canvases =
@@ -173,8 +179,11 @@ public class ProjectJsonRoundTripTests
                 {
                     Id = sourceId,
                     Name = "Image",
-                    TypeId = MediaSourceTypeId.ImageFile,
-                    Settings = new JsonObject { ["path"] = "C:\\test.png" }
+                    TypeId = MediaSourceTypes.ImageFile,
+                    Settings = MediaSourceSettingsSerializer.ToJson(new ImageFileSourceSettings
+                    {
+                        Path = "C:\\test.png"
+                    })
                 }
             ],
             Canvases =

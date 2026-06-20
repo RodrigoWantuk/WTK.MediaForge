@@ -1,3 +1,4 @@
+using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Composition.Validation;
 
 namespace WTK.MediaForge.Composition.Project;
@@ -13,8 +14,19 @@ public static class MediaForgeProjectMigrator
             ]));
         }
 
-        // Future: migrate older schemas here.
+        MigrateSourceDefinitions(project);
         return ProjectMigrateResult.Succeeded(project);
+    }
+
+    private static void MigrateSourceDefinitions(MediaForgeProject project)
+    {
+        foreach (var source in project.SourceDefinitions)
+        {
+            if (!MediaSourceTypeRegistry.IsLegacy(source.TypeId))
+                continue;
+
+            source.TypeId = MediaSourceTypeRegistry.ResolveCanonical(source.TypeId);
+        }
     }
 }
 
