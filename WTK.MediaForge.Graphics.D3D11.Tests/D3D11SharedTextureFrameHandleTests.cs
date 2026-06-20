@@ -55,6 +55,25 @@ public class D3D11SharedTextureFrameHandleTests
     }
 
     [Fact]
+    public void MarkRetired_sets_IsRetired()
+    {
+        if (!TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        {
+            using var handle = D3D11SharedTextureFactory.CreateSharedTexture(
+                device.Device,
+                width: 32,
+                height: 32);
+
+            Assert.False(handle.IsRetired);
+            handle.MarkRetired();
+            Assert.True(handle.IsRetired);
+        }
+    }
+
+    [Fact]
     public void CreateSharedTexture_rejects_zero_dimensions()
     {
         if (!TryCreateDefaultDevice(out var device))

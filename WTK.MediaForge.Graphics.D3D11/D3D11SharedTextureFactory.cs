@@ -52,7 +52,8 @@ public static class D3D11SharedTextureFactory
             keyedMutex,
             sharedHandle,
             new FrameSize(width, height),
-            format);
+            format,
+            GpuTextureId.New());
     }
 
     private static nint CreateSharedHandle(ID3D11Texture2D texture)

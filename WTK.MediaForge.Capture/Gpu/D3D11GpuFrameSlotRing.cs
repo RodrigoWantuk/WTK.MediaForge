@@ -9,7 +9,7 @@ namespace WTK.MediaForge.Capture.Gpu;
 
 public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
 {
-    private readonly D3D11SharedTextureFrameHandle[] _handles;
+    private readonly D3D11GpuFrameSlot[] _slots;
     private readonly TaskCompletionSource _fullyDisposedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _handlesDisposed;
     private int _disposed;
@@ -24,12 +24,13 @@ public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
         ArgumentNullException.ThrowIfNull(device);
 
         Ring = new GpuFrameSlotRing(slotCount, reusePhysicalResources: true);
-        _handles = new D3D11SharedTextureFrameHandle[slotCount];
+        _slots = new D3D11GpuFrameSlot[slotCount];
 
         for (var i = 0; i < slotCount; i++)
         {
-            _handles[i] = D3D11SharedTextureFactory.CreateSharedTexture(device, width, height, format);
-            Ring.InitializeSlot(i, _handles[i]);
+            var handle = D3D11SharedTextureFactory.CreateSharedTexture(device, width, height, format);
+            _slots[i] = new D3D11GpuFrameSlot(i, handle);
+            Ring.InitializeSlot(i, handle);
         }
     }
 
@@ -39,15 +40,17 @@ public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
 
     public bool IsFullyDisposed => Volatile.Read(ref _disposed) != 0;
 
-    private int _retired;
+    public bool IsRetired => _slots.Length > 0 && _slots[0].IsRetired;
 
-    public bool IsRetired => Volatile.Read(ref _retired) != 0;
+    public D3D11GpuFrameSlot GetSlot(int slotIndex) => _slots[slotIndex];
 
-    public D3D11SharedTextureFrameHandle GetHandle(int slotIndex) => _handles[slotIndex];
+    public D3D11SharedTextureFrameHandle GetHandle(int slotIndex) => _slots[slotIndex].Handle;
 
     public void Retire()
     {
-        Volatile.Write(ref _retired, 1);
+        foreach (var slot in _slots)
+            slot.MarkRetired();
+
         Ring.Stop();
     }
 
@@ -88,11 +91,11 @@ public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
         if (Interlocked.Exchange(ref _handlesDisposed, 1) != 0)
             return;
 
-        foreach (var handle in _handles)
+        foreach (var slot in _slots)
         {
             try
             {
-                handle.Dispose();
+                slot.Handle.Dispose();
             }
             catch (Exception)
             {

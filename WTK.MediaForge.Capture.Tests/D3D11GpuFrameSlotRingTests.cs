@@ -298,6 +298,43 @@ public class D3D11GpuFrameSlotRingTests
         }
     }
 
+    [Fact]
+    public void Retire_marks_all_handles_retired()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        using (var slotRing = CreateSlotRing(device))
+        {
+            slotRing.Retire();
+
+            for (var i = 0; i < slotRing.Ring.SlotCount; i++)
+            {
+                Assert.True(slotRing.GetSlot(i).IsRetired);
+                Assert.True(slotRing.GetHandle(i).IsRetired);
+            }
+
+            Assert.True(slotRing.IsRetired);
+        }
+    }
+
+    [Fact]
+    public void Slots_have_unique_texture_ids()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        using (var slotRing = CreateSlotRing(device))
+        {
+            var ids = new HashSet<Guid>();
+
+            for (var i = 0; i < slotRing.Ring.SlotCount; i++)
+                Assert.True(ids.Add(slotRing.GetSlot(i).TextureId.Value));
+        }
+    }
+
     private static D3D11GpuFrameSlotRing CreateSlotRing(D3D11GpuDevice device) =>
         new(device.Device, width: 64, height: 64, Format.B8G8R8A8_UNorm, slotCount: 3);
 
@@ -321,7 +358,7 @@ public class D3D11GpuFrameSlotRingTests
             if (mutexAcquired)
             {
                 handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
-                handle.NotifyCaptureReleasedToConsumer();
+            handle.NotifyCaptureReleasedToConsumer();
             }
         }
 
