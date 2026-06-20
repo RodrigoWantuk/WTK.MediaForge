@@ -179,12 +179,20 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         _deviceContext.WaitIdle();
     }
 
+    /// <summary>
+    /// No-op: submission ownership belongs to <see cref="PendingRenderSubmissionTracker"/>.
+    /// Do not create untracked internal submissions in this backend.
+    /// Shutdown waits each submission fence via the tracker.
+    /// </summary>
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         _threadGuard.AssertOnRenderThread();
 
-        return new ValueTask(Task.Run(_deviceContext.WaitIdle, cancellationToken).WaitAsync(timeout, cancellationToken));
+        _ = timeout;
+        _ = cancellationToken;
+
+        return ValueTask.CompletedTask;
     }
 
     public void Dispose()

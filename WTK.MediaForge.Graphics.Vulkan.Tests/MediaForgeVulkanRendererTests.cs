@@ -438,6 +438,32 @@ public class MediaForgeVulkanRendererTests
         handle.NotifyCaptureReleasedToConsumer();
     }
 
+    [Fact]
+    public void WaitIdleAsync_completes_without_device_wait()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        using (renderer)
+        {
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                renderer.Backend.WaitIdleAsync(TimeSpan.FromSeconds(5), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+                stopwatch.Stop();
+
+                Assert.True(stopwatch.ElapsedMilliseconds < 50);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
     private static bool TryCreateRenderer(out TestRendererContext? context)
     {
         context = null;
