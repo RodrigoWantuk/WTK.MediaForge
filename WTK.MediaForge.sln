@@ -33,6 +33,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTK.MediaForge.Graphics.D3D
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTK.MediaForge.Capture.Tests", "WTK.MediaForge.Capture.Tests\WTK.MediaForge.Capture.Tests.csproj", "{AD716676-62B9-4FFA-9DD5-B54EEC0D8789}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTK.MediaForge.Graphics.Vulkan.Tests", "WTK.MediaForge.Graphics.Vulkan.Tests\WTK.MediaForge.Graphics.Vulkan.Tests.csproj", "{E0469FCF-624C-4844-B872-BF94C8B734BA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -187,6 +189,18 @@ Global
 		{AD716676-62B9-4FFA-9DD5-B54EEC0D8789}.Release|x64.Build.0 = Release|Any CPU
 		{AD716676-62B9-4FFA-9DD5-B54EEC0D8789}.Release|x86.ActiveCfg = Release|Any CPU
 		{AD716676-62B9-4FFA-9DD5-B54EEC0D8789}.Release|x86.Build.0 = Release|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Debug|x64.Build.0 = Debug|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Debug|x86.Build.0 = Debug|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Release|x64.ActiveCfg = Release|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Release|x64.Build.0 = Release|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Release|x86.ActiveCfg = Release|Any CPU
+		{E0469FCF-624C-4844-B872-BF94C8B734BA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
