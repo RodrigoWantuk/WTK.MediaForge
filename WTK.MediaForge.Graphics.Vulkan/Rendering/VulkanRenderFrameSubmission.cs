@@ -10,7 +10,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly List<VulkanExternalTextureLease> _textureLeases;
-    private readonly List<VulkanOffscreenTargetHandle> _retainedOffscreenTargets;
+    private readonly VulkanSubmissionResourceScope _submissionResources;
     private RenderFrameSnapshot? _snapshot;
     private int _resourcesDisposed;
 
@@ -20,7 +20,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         CommandBuffer commandBuffer,
         Fence fence,
         IReadOnlyList<VulkanExternalTextureLease> textureLeases,
-        IReadOnlyList<VulkanOffscreenTargetHandle>? retainedOffscreenTargets,
+        VulkanSubmissionResourceScope submissionResources,
         IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
@@ -29,7 +29,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         CommandBuffer = commandBuffer;
         Fence = fence;
         _textureLeases = textureLeases.ToList();
-        _retainedOffscreenTargets = retainedOffscreenTargets?.ToList() ?? [];
+        _submissionResources = submissionResources ?? throw new ArgumentNullException(nameof(submissionResources));
     }
 
     public CommandBuffer CommandBuffer { get; }
@@ -67,23 +67,65 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
 
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
+        List<Exception>? errors = null;
 
         if (Fence.Handle != 0)
-            vk.DestroyFence(device, Fence, null);
+        {
+            try
+            {
+                vk.DestroyFence(device, Fence, null);
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+        }
 
         if (CommandBuffer.Handle != 0)
         {
-            var commandBuffer = CommandBuffer;
-            vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &commandBuffer);
+            try
+            {
+                var commandBuffer = CommandBuffer;
+                vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &commandBuffer);
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
         }
 
         foreach (var lease in _textureLeases)
-            lease.Dispose();
+        {
+            try
+            {
+                lease.Dispose();
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+        }
 
-        foreach (var offscreenTarget in _retainedOffscreenTargets)
-            offscreenTarget.ReleaseSubmissionReference();
+        try
+        {
+            _submissionResources.Dispose();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
 
-        Interlocked.Exchange(ref _snapshot, null)?.Dispose();
+        try
+        {
+            Interlocked.Exchange(ref _snapshot, null)?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+
+        if (errors is not null)
+            throw new AggregateException("Failed to dispose Vulkan submission cleanly.", errors);
     }
 
     private void WaitForFenceSync(TimeSpan timeout, CancellationToken cancellationToken)

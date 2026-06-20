@@ -43,6 +43,7 @@ The legacy WinForms preview path has been removed as a product path because it u
 - D3D11 ring physical dispose failure faults `FullyDisposed`.
 - Vulkan registry import creation occurs outside the global registry lock.
 - `VulkanExternalTextureRegistry` is internal. Imports created but not published because of dispose/removal races must be disposed before the failure is rethrown.
+- CP1 Vulkan command-buffer resources are retained by `VulkanSubmissionResourceScope` and released only from `VulkanRenderFrameSubmission.DisposeCompleted()` after the fence completes. This includes framebuffers, descriptor sets, and offscreen target references.
 - GPU wait APIs must use explicit timeouts.
 
 ## Remaining Blockers

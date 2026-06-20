@@ -161,6 +161,11 @@ public class RenderThreadTests
         {
             source.PublishFrame(1, MediaTime.Zero);
             renderThread.PublishFrame(BuildSnapshot(runtime, source, 1));
+
+            WaitUntil(
+                () => backend.SubmitCount >= 1 && renderThread.PendingTracker.PendingCount == 1,
+                TimeSpan.FromSeconds(5));
+
             source.PublishFrame(2, new MediaTime(16_000_000));
             renderThread.PublishFrame(BuildSnapshot(runtime, source, 2));
 
@@ -168,8 +173,13 @@ public class RenderThreadTests
                 () => diagnostics.Diagnostics.Any(d => d.Code == "render.frame_dropped_tracker_full"),
                 TimeSpan.FromSeconds(5));
 
-            backend.CompleteAllPending();
-            WaitUntil(() => renderThread.PendingTracker.PendingCount == 0, TimeSpan.FromSeconds(5));
+            WaitUntil(
+                () =>
+                {
+                    backend.CompleteAllPending();
+                    return renderThread.PendingTracker.PendingCount == 0;
+                },
+                TimeSpan.FromSeconds(5));
         }
         finally
         {

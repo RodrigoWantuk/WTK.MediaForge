@@ -31,6 +31,9 @@ Before considering a change complete, verify:
 - [ ] Fault injection uses `IVulkanRendererFaultInjector`.
 - [ ] `Dispose` does not mark the renderer disposed when active texture leases exist.
 - [ ] Terminal `Dispose` attempts target, registry, and device cleanup and aggregates failures.
+- [ ] CP1 framebuffers are not destroyed until the submitted command buffer fence completes and `DisposeCompleted()` runs.
+- [ ] CP1 descriptor sets allocated per command buffer are freed after the fence, not immediately and not only at renderer dispose.
+- [ ] CP1 offscreen target references are retained by submission resources and released after the fence.
 
 ## Registry
 

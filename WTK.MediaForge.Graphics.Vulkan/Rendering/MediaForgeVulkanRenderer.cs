@@ -199,7 +199,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         }
 
         List<VulkanExternalTextureLease>? textureLeases = null;
-        List<VulkanOffscreenTargetHandle>? retainedOffscreenTargets = null;
+        VulkanSubmissionResourceScope? submissionResources = null;
         CommandBuffer commandBuffer = default;
         Fence fence = default;
 
@@ -209,15 +209,17 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             var imports = textureLeases.Select(lease => lease.Import).ToList();
             var previousLayouts = imports.Select(import => import.CurrentLayout).ToArray();
             commandBuffer = BeginCommandBuffer();
+            submissionResources = _cp1Pipelines.CreateSubmissionResourceScope();
 
             try
             {
-                retainedOffscreenTargets = VulkanCp1OffscreenCompositor.Compose(
+                VulkanCp1OffscreenCompositor.Compose(
                     _cp1Pipelines,
                     commandBuffer,
                     snapshot,
                     _offscreenTargets,
-                    textureLeases);
+                    textureLeases,
+                    submissionResources);
 
                 if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
                     throw new InvalidOperationException("vkEndCommandBuffer failed.");
@@ -230,11 +232,8 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             }
             catch
             {
-                if (retainedOffscreenTargets is not null)
-                {
-                    foreach (var retained in retainedOffscreenTargets)
-                        retained.ReleaseSubmissionReference();
-                }
+                submissionResources.Dispose();
+                submissionResources = null;
 
                 for (var i = 0; i < imports.Count; i++)
                     imports[i].SetLayout(previousLayouts[i]);
@@ -248,11 +247,12 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                 commandBuffer,
                 fence,
                 textureLeases,
-                retainedOffscreenTargets,
+                submissionResources,
                 _diagnostics);
         }
         catch
         {
+            submissionResources?.Dispose();
             CleanupFailedSubmit(textureLeases, commandBuffer, fence);
             throw;
         }

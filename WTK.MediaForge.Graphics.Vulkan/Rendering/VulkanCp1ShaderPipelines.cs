@@ -50,22 +50,24 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
     public RenderPass RenderPass => _renderPass;
 
+    public VulkanSubmissionResourceScope CreateSubmissionResourceScope() =>
+        new(_vk, _deviceHandle, _descriptorPool);
+
     public void ComposeOutput(
         CommandBuffer commandBuffer,
         RenderOutputStateSnapshot output,
         RenderCanvasSnapshot canvas,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
         VulkanOffscreenRenderTarget outputTarget,
-        List<VulkanOffscreenTargetHandle> retainedTargets)
+        VulkanSubmissionResourceScope submissionResources)
     {
         var canvasTarget = new VulkanOffscreenRenderTarget(_device, canvas.Size);
         var canvasHandle = new VulkanOffscreenTargetHandle(canvasTarget);
-        canvasHandle.RetainForSubmission();
+        submissionResources.RetainOffscreenTarget(canvasHandle);
         canvasHandle.Retire();
-        retainedTargets.Add(canvasHandle);
 
-        RenderCanvasPass(commandBuffer, canvas, output, importsByHandle, canvasTarget);
-        RenderOutputPass(commandBuffer, output, canvas.Size, canvasTarget, outputTarget);
+        RenderCanvasPass(commandBuffer, canvas, output, importsByHandle, canvasTarget, submissionResources);
+        RenderOutputPass(commandBuffer, output, canvas.Size, canvasTarget, outputTarget, submissionResources);
     }
 
     private void RenderCanvasPass(
@@ -73,7 +75,8 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         RenderCanvasSnapshot canvas,
         RenderOutputStateSnapshot output,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
-        VulkanOffscreenRenderTarget canvasTarget)
+        VulkanOffscreenRenderTarget canvasTarget,
+        VulkanSubmissionResourceScope submissionResources)
     {
         TransitionForColorAttachment(_vk, commandBuffer, canvasTarget, canvasTarget.CurrentLayout);
         canvasTarget.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
@@ -88,6 +91,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             canvasTarget,
             canvas.Size,
             clearColor);
+        submissionResources.RetainFramebuffer(framebuffer);
 
         try
         {
@@ -108,6 +112,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
                 var pushConstants = Cp1PushConstantsBuilder.BuildSourceLayer(sourceLayer, frame, output.CanvasLayoutMode);
                 var descriptorSet = AllocateAndWriteDescriptorSet(import.ImageView);
+                submissionResources.RetainDescriptorSet(descriptorSet);
 
                 DrawTexturedLayer(
                     commandBuffer,
@@ -121,7 +126,6 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         finally
         {
             EndRenderPassInstance(commandBuffer);
-            DestroyFramebuffer(framebuffer);
         }
 
         TransitionToShaderRead(_vk, commandBuffer, canvasTarget);
@@ -133,7 +137,8 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         RenderOutputStateSnapshot output,
         FrameSize canvasSize,
         VulkanOffscreenRenderTarget canvasTarget,
-        VulkanOffscreenRenderTarget outputTarget)
+        VulkanOffscreenRenderTarget outputTarget,
+        VulkanSubmissionResourceScope submissionResources)
     {
         TransitionForColorAttachment(_vk, commandBuffer, outputTarget, outputTarget.CurrentLayout);
         outputTarget.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
@@ -149,11 +154,13 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             outputTarget,
             output.OutputSize,
             clearColor);
+        submissionResources.RetainFramebuffer(framebuffer);
 
         try
         {
             var pushConstants = Cp1PushConstantsBuilder.BuildOutputLetterbox(output, canvasSize);
             var descriptorSet = AllocateAndWriteDescriptorSet(canvasTarget.ImageView);
+            submissionResources.RetainDescriptorSet(descriptorSet);
 
             DrawFullscreen(
                 commandBuffer,
@@ -165,7 +172,6 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         finally
         {
             EndRenderPassInstance(commandBuffer);
-            DestroyFramebuffer(framebuffer);
         }
 
         outputTarget.CurrentLayout = ImageLayout.ShaderReadOnlyOptimal;
@@ -284,12 +290,6 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
         _vk.CmdBeginRenderPass(commandBuffer, &renderPassBegin, SubpassContents.Inline);
         return framebuffer;
-    }
-
-    private void DestroyFramebuffer(Framebuffer framebuffer)
-    {
-        if (framebuffer.Handle != 0)
-            _vk.DestroyFramebuffer(_deviceHandle, framebuffer, null);
     }
 
     private static void EndRenderPassInstance(Vk vk, CommandBuffer commandBuffer) =>

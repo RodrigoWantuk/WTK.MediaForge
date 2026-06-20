@@ -14,10 +14,11 @@ using Xunit;
 namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 
 [Trait("Category", TestCategories.Gpu)]
+[Collection("VulkanCp1")]
 public class Cp1OffscreenCompositionTests
 {
     [Fact]
-    public void Cp1_single_source_layer_renders_to_offscreen()
+    public async Task Cp1_single_source_layer_renders_to_offscreen()
     {
         if (!TryCreateSharedTexture(out var device, out var sharedHandle))
             return;
@@ -49,8 +50,7 @@ public class Cp1OffscreenCompositionTests
 
                 var snapshot = CreateCp1Snapshot(sharedHandle, canvasId, outputId);
                 var submission = backend.Submit(snapshot);
-                submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None).AsTask().GetAwaiter().GetResult();
-                submission.DisposeCompleted();
+                await ReleaseSubmissionAsync(submission);
 
                 Assert.Equal(1, backend.SubmitCount);
                 Assert.True(backend.TryGetOffscreenTargetSize(outputId, out var size));
@@ -67,7 +67,7 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
-    public void Offscreen_target_survives_unbind_until_submission_fence_completes()
+    public async Task Offscreen_target_survives_unbind_until_submission_fence_completes()
     {
         if (!TryCreateSharedTexture(out var device, out var sharedHandle))
             return;
@@ -112,14 +112,177 @@ public class Cp1OffscreenCompositionTests
                 Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.LiveCount);
                 Assert.Equal(0, VulkanOffscreenRenderTargetLifetime.DisposeCount);
 
-                submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None).AsTask().GetAwaiter().GetResult();
-                submission.DisposeCompleted();
+                await ReleaseSubmissionAsync(submission);
 
                 Assert.Equal(0, backend.TextureRegistryActiveLeaseCount);
                 Assert.Equal(0, VulkanOffscreenRenderTargetLifetime.LiveCount);
                 Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.DisposeCount);
 
                 snapshot.Dispose();
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Framebuffer_is_not_destroyed_before_submission_completes()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanSubmissionResourceLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+
+                using var snapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId);
+                var submission = backend.Submit(snapshot);
+
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
+
+                await submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
+
+                submission.DisposeCompleted();
+
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Descriptor_sets_are_released_after_submission_completes()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanSubmissionResourceLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+
+                using var snapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId);
+                var submission = backend.Submit(snapshot);
+
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.FreedDescriptorSets);
+
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.FreedDescriptorSets);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Repeated_cp1_submits_do_not_exhaust_descriptor_pool()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanSubmissionResourceLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+
+                for (var i = 0; i < 50; i++)
+                {
+                    using var snapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId);
+                    var submission = backend.Submit(snapshot);
+                    await ReleaseSubmissionAsync(submission);
+                }
+
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+                Assert.Equal(100, VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
+                Assert.Equal(100, VulkanSubmissionResourceLifetime.FreedDescriptorSets);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_submission_dispose_releases_framebuffers_and_descriptors()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanSubmissionResourceLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 1280, 720));
+
+                using var snapshot = CreateCp1Snapshot(context.SharedHandle, canvasId, outputId);
+                var submission = backend.Submit(snapshot);
+
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.FreedDescriptorSets);
             }
             finally
             {
@@ -181,6 +344,18 @@ public class Cp1OffscreenCompositionTests
         };
     }
 
+    private static RenderOutputBindingSnapshot CreateOffscreenBinding(
+        RenderOutputId outputId,
+        uint width,
+        uint height) =>
+        new()
+        {
+            OutputId = outputId,
+            TargetKind = RenderTargetKind.Offscreen,
+            SurfaceSize = new FrameSize(width, height),
+            BindingVersion = 1
+        };
+
     private static RenderFrameSnapshot CreateEmptySnapshot(long version) =>
         new()
         {
@@ -208,6 +383,30 @@ public class Cp1OffscreenCompositionTests
         {
             return false;
         }
+    }
+
+    private static bool TryCreateCp1Context(out Cp1TestContext? context)
+    {
+        context = null;
+
+        if (!TryCreateSharedTexture(out var device, out var sharedHandle))
+            return false;
+
+        if (!TryCreateRenderer(out var renderer))
+        {
+            sharedHandle.Dispose();
+            device.Dispose();
+            return false;
+        }
+
+        context = new Cp1TestContext(device, sharedHandle, renderer!);
+        return true;
+    }
+
+    private static async Task ReleaseSubmissionAsync(IRenderFrameSubmission submission)
+    {
+        await submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        submission.DisposeCompleted();
     }
 
     private static bool TryCreateRenderer(out TestRendererContext? context)
@@ -249,5 +448,35 @@ public class Cp1OffscreenCompositionTests
         public MediaForgeVulkanRenderer Backend { get; }
 
         public void Dispose() => Backend.Dispose();
+    }
+
+    private sealed class Cp1TestContext : IDisposable
+    {
+        private readonly D3D11GpuDevice _device;
+        private readonly D3D11SharedTextureFrameHandle _sharedHandle;
+        private readonly TestRendererContext _renderer;
+
+        public Cp1TestContext(
+            D3D11GpuDevice device,
+            D3D11SharedTextureFrameHandle sharedHandle,
+            TestRendererContext renderer)
+        {
+            _device = device;
+            _sharedHandle = sharedHandle;
+            _renderer = renderer;
+        }
+
+        public D3D11SharedTextureFrameHandle SharedHandle => _sharedHandle;
+
+        public RenderThreadGuard Guard => _renderer.Guard;
+
+        public MediaForgeVulkanRenderer Backend => _renderer.Backend;
+
+        public void Dispose()
+        {
+            _renderer.Dispose();
+            _sharedHandle.Dispose();
+            _device.Dispose();
+        }
     }
 }

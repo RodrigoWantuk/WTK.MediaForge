@@ -7,19 +7,18 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal static class VulkanCp1OffscreenCompositor
 {
-    public static List<VulkanOffscreenTargetHandle> Compose(
+    public static void Compose(
         VulkanCp1ShaderPipelines pipelines,
         CommandBuffer commandBuffer,
         RenderFrameSnapshot snapshot,
         IReadOnlyDictionary<RenderOutputId, VulkanOffscreenTargetHandle> offscreenTargets,
-        IReadOnlyList<VulkanExternalTextureLease> textureLeases)
+        IReadOnlyList<VulkanExternalTextureLease> textureLeases,
+        VulkanSubmissionResourceScope submissionResources)
     {
         ArgumentNullException.ThrowIfNull(pipelines);
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(offscreenTargets);
         ArgumentNullException.ThrowIfNull(textureLeases);
-
-        var retained = new List<VulkanOffscreenTargetHandle>();
 
         var importsByHandle = textureLeases.ToDictionary(
             lease => VulkanExternalTextureKey.From(lease.Import.SourceHandle),
@@ -46,8 +45,7 @@ internal static class VulkanCp1OffscreenCompositor
             if (!hasDrawableLayer)
                 continue;
 
-            targetHandle.RetainForSubmission();
-            retained.Add(targetHandle);
+            submissionResources.RetainOffscreenTarget(targetHandle);
 
             pipelines.ComposeOutput(
                 commandBuffer,
@@ -55,9 +53,7 @@ internal static class VulkanCp1OffscreenCompositor
                 canvas,
                 importsByHandle,
                 outputTarget,
-                retained);
+                submissionResources);
         }
-
-        return retained;
     }
 }
