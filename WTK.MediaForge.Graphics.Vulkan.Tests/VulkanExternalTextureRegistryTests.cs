@@ -146,6 +146,39 @@ public class VulkanExternalTextureRegistryTests
         }
     }
 
+    [Fact]
+    public void Registry_DisposeAsync_throws_if_refcount_active()
+    {
+        if (!TryCreateContext(out var context))
+            return;
+
+        var lease = context.Registry.Acquire(context.Handle);
+
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                context.Registry.DisposeAsync().AsTask().GetAwaiter().GetResult());
+        }
+        finally
+        {
+            lease.Dispose();
+            context.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Registry_DisposeAsync_succeeds_after_lease_release()
+    {
+        if (!TryCreateContext(out var context))
+            return;
+
+        using (context)
+        {
+            var lease = context!.Registry.Acquire(context.Handle);
+            lease.Dispose();
+        }
+    }
+
     private static bool TryCreateContext(out RegistryTestContext? context)
     {
         context = null;

@@ -108,6 +108,8 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
     public void CollectUnused()
     {
+        List<VulkanD3D11TextureImport>? importsToDispose = null;
+
         lock (_gate)
         {
             List<VulkanExternalTextureKey>? toRemove = null;
@@ -116,7 +118,7 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
             {
                 if (entry.SourceHandle.IsRetired && entry.RefCount == 0)
                 {
-                    entry.Import.Dispose();
+                    (importsToDispose ??= []).Add(entry.Import);
                     (toRemove ??= []).Add(key);
                 }
             }
@@ -127,22 +129,36 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
             foreach (var key in toRemove)
                 _entries.Remove(key);
         }
+
+        if (importsToDispose is null)
+            return;
+
+        foreach (var import in importsToDispose)
+            import.Dispose();
     }
 
     public ValueTask DisposeAsync()
     {
+        List<VulkanD3D11TextureImport> importsToDispose;
+
         lock (_gate)
         {
             if (_disposed)
                 return ValueTask.CompletedTask;
 
+            if (_entries.Values.Any(static entry => entry.RefCount > 0))
+            {
+                throw new InvalidOperationException(
+                    "Cannot dispose VulkanExternalTextureRegistry while texture leases are active.");
+            }
+
             _disposed = true;
-
-            foreach (var entry in _entries.Values)
-                entry.Import.Dispose();
-
+            importsToDispose = _entries.Values.Select(static entry => entry.Import).ToList();
             _entries.Clear();
         }
+
+        foreach (var import in importsToDispose)
+            import.Dispose();
 
         return ValueTask.CompletedTask;
     }
