@@ -12,5 +12,7 @@ public interface IRenderBackend
 
     void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize);
 
-    void Render(RenderFrameSnapshot snapshot);
+    IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot);
+
+    void WaitIdle();
 }

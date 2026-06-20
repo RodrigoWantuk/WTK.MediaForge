@@ -52,12 +52,15 @@ public sealed class NullRenderBackend : IRenderBackend
         }
     }
 
-    public void Render(RenderFrameSnapshot snapshot)
+    public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot)
     {
         _threadGuard.AssertOnRenderThread();
         ArgumentNullException.ThrowIfNull(snapshot);
 
         Interlocked.Increment(ref _renderCount);
         Volatile.Write(ref _lastProjectStateVersion, snapshot.ProjectStateVersion);
+        return new ImmediateRenderFrameSubmission(snapshot);
     }
+
+    public void WaitIdle() { }
 }

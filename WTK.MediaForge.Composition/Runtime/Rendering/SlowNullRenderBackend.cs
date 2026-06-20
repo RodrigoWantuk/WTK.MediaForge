@@ -35,7 +35,7 @@ public sealed class SlowNullRenderBackend : IRenderBackend
         _threadGuard.AssertOnRenderThread();
     }
 
-    public void Render(RenderFrameSnapshot snapshot)
+    public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot)
     {
         _threadGuard.AssertOnRenderThread();
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -44,5 +44,8 @@ public sealed class SlowNullRenderBackend : IRenderBackend
             Thread.Sleep(_renderDelay);
 
         Interlocked.Increment(ref _renderCount);
+        return new ImmediateRenderFrameSubmission(snapshot);
     }
+
+    public void WaitIdle() { }
 }

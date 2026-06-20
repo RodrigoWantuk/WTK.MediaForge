@@ -22,7 +22,7 @@ public class RenderThreadTests
         var backend = new NullRenderBackend(guard);
 
         Assert.Throws<InvalidOperationException>(() =>
-            backend.Render(CreateEmptySnapshot(version: 1)));
+            backend.Submit(CreateEmptySnapshot(version: 1)));
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class RenderThreadTests
     }
 
     [Fact]
-    public void RenderThread_disposes_snapshot_even_when_backend_does_not()
+    public void Completed_submission_disposes_snapshot_and_releases_lease()
     {
         var source = CreateRunningSource();
         source.PublishFrame(1, MediaTime.Zero);
@@ -84,15 +84,100 @@ public class RenderThreadTests
         runtime.RegisterFrameProvider(source);
 
         var guard = new RenderThreadGuard();
-        var backend = new NonDisposingNullRenderBackend(guard);
+        var backend = new ManualNullRenderBackend(guard);
+        using var renderThread = StartRenderThread(backend, guard, maxFramesInFlight: 4);
+
+        renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
+
+        WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        Assert.Equal(1, source.RetainCount);
+
+        backend.CompleteAllPending();
+        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void Submit_accepted_keeps_snapshot_alive_until_submission_completed()
+    {
+        var source = CreateRunningSource();
+        source.PublishFrame(1, MediaTime.Zero);
+
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var guard = new RenderThreadGuard();
+        var backend = new ManualNullRenderBackend(guard);
+        using var renderThread = StartRenderThread(backend, guard, maxFramesInFlight: 4);
+
+        renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
+
+        WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        Assert.Equal(1, source.RetainCount);
+        Assert.Equal(1, renderThread.PendingTracker.PendingCount);
+    }
+
+    [Fact]
+    public void Pending_tracker_limits_frames_in_flight()
+    {
+        var source = CreateRunningSource();
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var guard = new RenderThreadGuard();
+        var backend = new ManualNullRenderBackend(guard);
+        using var renderThread = StartRenderThread(backend, guard, maxFramesInFlight: 1);
+
+        for (var frame = 1; frame <= 5; frame++)
+        {
+            source.PublishFrame(frame, new MediaTime(frame * 16_000_000));
+            renderThread.PublishFrame(BuildSnapshot(runtime, source, frame));
+        }
+
+        WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        Assert.True(renderThread.PendingTracker.PendingCount <= 1);
+
+        backend.CompleteAllPending();
+        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void If_submit_throws_render_thread_disposes_snapshot()
+    {
+        var source = CreateRunningSource();
+        source.PublishFrame(1, MediaTime.Zero);
+
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var guard = new RenderThreadGuard();
+        var backend = new ThrowingSubmitNullRenderBackend(guard);
         using var renderThread = StartRenderThread(backend, guard);
+
+        renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
+
+        WaitUntil(() => backend.SubmitAttempts >= 1, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void Submit_returns_submission_but_tracker_add_fails_disposes_submission()
+    {
+        var source = CreateRunningSource();
+        source.PublishFrame(1, MediaTime.Zero);
+
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var guard = new RenderThreadGuard();
+        var backend = new NullRenderBackend(guard);
+        var tracker = new ThrowOnAddPendingRenderSubmissionTracker();
+        using var renderThread = new MediaForgeRenderThread(backend, guard, tracker);
+        renderThread.Start();
 
         renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
 
         WaitUntil(() => backend.RenderCount >= 1, TimeSpan.FromSeconds(5));
         WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
-
-        Assert.Equal(0, source.RetainCount);
     }
 
     [Fact]
@@ -160,9 +245,12 @@ public class RenderThreadTests
         Assert.False(renderThread.IsRunning);
     }
 
-    private static MediaForgeRenderThread StartRenderThread(IRenderBackend backend, RenderThreadGuard guard)
+    private static MediaForgeRenderThread StartRenderThread(
+        IRenderBackend backend,
+        RenderThreadGuard guard,
+        int maxFramesInFlight = 2)
     {
-        var renderThread = new MediaForgeRenderThread(backend, guard);
+        var renderThread = new MediaForgeRenderThread(backend, guard, maxFramesInFlight: maxFramesInFlight);
         renderThread.Start();
         return renderThread;
     }
@@ -232,18 +320,25 @@ public class RenderThreadTests
             Outputs = ImmutableArray<RenderOutputStateSnapshot>.Empty,
             FrameLeases = ImmutableArray<GpuFrameLease>.Empty
         };
+
+    private sealed class ThrowOnAddPendingRenderSubmissionTracker : PendingRenderSubmissionTracker
+    {
+        public override void Add(IRenderFrameSubmission submission) =>
+            throw new InvalidOperationException("Simulated tracker add failure.");
+    }
 }
 
-public sealed class NonDisposingNullRenderBackend : IRenderBackend
+public sealed class ManualNullRenderBackend : IRenderBackend
 {
     private readonly RenderThreadGuard _threadGuard;
+    private readonly List<ManualRenderFrameSubmission> _pending = [];
 
-    public NonDisposingNullRenderBackend(RenderThreadGuard threadGuard) =>
+    public ManualNullRenderBackend(RenderThreadGuard threadGuard) =>
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
 
-    public int RenderCount => Volatile.Read(ref _renderCount);
+    public int SubmitCount => Volatile.Read(ref _submitCount);
 
-    private int _renderCount;
+    private int _submitCount;
 
     public void BindOutput(RenderOutputBindingSnapshot binding) { }
 
@@ -251,9 +346,60 @@ public sealed class NonDisposingNullRenderBackend : IRenderBackend
 
     public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
 
-    public void Render(RenderFrameSnapshot snapshot)
+    public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot)
     {
         _threadGuard.AssertOnRenderThread();
-        Interlocked.Increment(ref _renderCount);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        Interlocked.Increment(ref _submitCount);
+        var submission = new ManualRenderFrameSubmission(snapshot);
+
+        lock (_pending)
+            _pending.Add(submission);
+
+        return submission;
     }
+
+    public void CompleteAllPending()
+    {
+        ManualRenderFrameSubmission[] copy;
+
+        lock (_pending)
+        {
+            copy = [.. _pending];
+            _pending.Clear();
+        }
+
+        foreach (var submission in copy)
+            submission.Complete();
+    }
+
+    public void WaitIdle() { }
+}
+
+public sealed class ThrowingSubmitNullRenderBackend : IRenderBackend
+{
+    private readonly RenderThreadGuard _threadGuard;
+
+    public ThrowingSubmitNullRenderBackend(RenderThreadGuard threadGuard) =>
+        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+
+    public int SubmitAttempts => Volatile.Read(ref _submitAttempts);
+
+    private int _submitAttempts;
+
+    public void BindOutput(RenderOutputBindingSnapshot binding) { }
+
+    public void UnbindOutput(RenderOutputId outputId) { }
+
+    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
+
+    public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot)
+    {
+        _threadGuard.AssertOnRenderThread();
+        Interlocked.Increment(ref _submitAttempts);
+        throw new InvalidOperationException("Simulated submit failure.");
+    }
+
+    public void WaitIdle() { }
 }

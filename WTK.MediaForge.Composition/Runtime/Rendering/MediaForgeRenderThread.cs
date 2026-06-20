@@ -7,6 +7,7 @@ public sealed class MediaForgeRenderThread : IDisposable
 {
     private readonly IRenderBackend _backend;
     private readonly RenderThreadGuard _threadGuard;
+    private readonly PendingRenderSubmissionTracker _pendingTracker;
     private readonly LatestSnapshotBuffer _snapshotBuffer = new();
     private readonly ConcurrentQueue<RenderCommand> _commands = new();
     private readonly ManualResetEventSlim _workSignal = new(false);
@@ -14,16 +15,23 @@ public sealed class MediaForgeRenderThread : IDisposable
     private int _disposed;
     private volatile int _stopRequested;
 
-    public MediaForgeRenderThread(IRenderBackend backend, RenderThreadGuard threadGuard)
+    public MediaForgeRenderThread(
+        IRenderBackend backend,
+        RenderThreadGuard threadGuard,
+        PendingRenderSubmissionTracker? pendingTracker = null,
+        int maxFramesInFlight = 2)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+        _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(maxFramesInFlight);
         _thread = new Thread(RenderLoop)
         {
             IsBackground = true,
             Name = "MediaForge.Render"
         };
     }
+
+    internal PendingRenderSubmissionTracker PendingTracker => _pendingTracker;
 
     public bool IsRunning => _thread.IsAlive;
 
@@ -102,6 +110,16 @@ public sealed class MediaForgeRenderThread : IDisposable
         }
         finally
         {
+            try
+            {
+                _backend.WaitIdle();
+            }
+            catch (Exception)
+            {
+                // TODO: Diagnostics.Record backend wait idle failure.
+            }
+
+            _pendingTracker.Dispose();
             _snapshotBuffer.Dispose();
             _workSignal.Dispose();
             _threadGuard.Clear();
@@ -127,6 +145,7 @@ public sealed class MediaForgeRenderThread : IDisposable
 
             ProcessCommands(maxCommands: null);
             RenderLatestSnapshot();
+            _pendingTracker.PollCompleted();
         }
         finally
         {
@@ -168,15 +187,24 @@ public sealed class MediaForgeRenderThread : IDisposable
     private void RenderLatestSnapshot()
     {
         _threadGuard.AssertOnRenderThread();
+        _pendingTracker.PollCompleted();
 
         var snapshot = _snapshotBuffer.AcquireLatest();
         if (snapshot is null)
             return;
 
+        IRenderFrameSubmission? submission = null;
+        var ownershipTransferred = false;
+
         try
         {
+            if (!_pendingTracker.CanAcceptFrame)
+                return;
+
             _threadGuard.AssertOnRenderThread();
-            _backend.Render(snapshot);
+            submission = _backend.Submit(snapshot);
+            _pendingTracker.Add(submission);
+            ownershipTransferred = true;
         }
         catch (Exception)
         {
@@ -184,13 +212,30 @@ public sealed class MediaForgeRenderThread : IDisposable
         }
         finally
         {
-            try
+            if (!ownershipTransferred)
             {
-                snapshot.Dispose();
-            }
-            catch (Exception)
-            {
-                // TODO: Diagnostics.Record snapshot dispose failure.
+                if (submission is not null)
+                {
+                    try
+                    {
+                        submission.Dispose();
+                    }
+                    catch (Exception)
+                    {
+                        // TODO: Diagnostics.Record submission dispose failure.
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        snapshot.Dispose();
+                    }
+                    catch (Exception)
+                    {
+                        // TODO: Diagnostics.Record snapshot dispose failure.
+                    }
+                }
             }
         }
     }
