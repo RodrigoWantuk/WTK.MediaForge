@@ -53,6 +53,8 @@ For commercial licensing, contact:
 
 [rodrigowantuk@gmail.com](mailto:rodrigowantuk@gmail.com)
 
+Also, if you like or found this Project useful, you can [buy me a coffee](https://buymeacoffee.com/rodrigowantuk)!
+
 Required Notice: Copyright Rodrigo Wantuk.
 
 ## Third-Party Components
