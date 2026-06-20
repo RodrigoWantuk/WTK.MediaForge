@@ -52,11 +52,33 @@ public sealed class MediaForgeRenderThread : IDisposable
 
     public void PublishFrame(RenderFrameSnapshot snapshot)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        _snapshotBuffer.Publish(snapshot);
-        _workSignal.Set();
+        var acceptedByBuffer = false;
+
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            _snapshotBuffer.Publish(snapshot);
+            acceptedByBuffer = true;
+            _workSignal.Set();
+        }
+        catch
+        {
+            if (!acceptedByBuffer)
+            {
+                try
+                {
+                    snapshot.Dispose();
+                }
+                catch (Exception)
+                {
+                    // TODO: Diagnostics.Record snapshot dispose failure.
+                }
+            }
+
+            throw;
+        }
     }
 
     public void Dispose()

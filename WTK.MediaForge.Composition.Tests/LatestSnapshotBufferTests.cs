@@ -70,7 +70,86 @@ public class LatestSnapshotBufferTests
         var buffer = new LatestSnapshotBuffer();
         buffer.Dispose();
 
-        Assert.Throws<ObjectDisposedException>(() => buffer.Publish(CreateSnapshotWithLease(1)));
+        var snapshot = CreateSnapshotWithLease(1);
+        Assert.Throws<ObjectDisposedException>(() => buffer.Publish(snapshot));
+        snapshot.Dispose();
+    }
+
+    [Fact]
+    public void Publish_after_dispose_throws_and_caller_owns_snapshot()
+    {
+        var source = CreateRunningSource();
+        source.PublishFrame(1, MediaTime.Zero);
+
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var buffer = new LatestSnapshotBuffer();
+        buffer.Dispose();
+
+        var snapshot = BuildSnapshot(runtime, source.Id, 1);
+        Assert.Equal(1, source.RetainCount);
+
+        Assert.Throws<ObjectDisposedException>(() => buffer.Publish(snapshot));
+
+        snapshot.Dispose();
+        Assert.Equal(0, source.RetainCount);
+    }
+
+    [Fact]
+    public void Publish_after_dispose_does_not_keep_snapshot_in_buffer()
+    {
+        var disposedBuffer = new LatestSnapshotBuffer();
+        disposedBuffer.Dispose();
+
+        var snapshot = CreateSnapshotWithLease(2);
+        Assert.Throws<ObjectDisposedException>(() => disposedBuffer.Publish(snapshot));
+        snapshot.Dispose();
+    }
+
+    [Fact]
+    public void Concurrent_publish_and_dispose_does_not_orphan_leases()
+    {
+        var source = CreateRunningSource();
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var buffer = new LatestSnapshotBuffer();
+        var publishErrors = 0;
+        var publishIterations = 200;
+
+        var publisher = new Thread(() =>
+        {
+            for (var i = 0; i < publishIterations; i++)
+            {
+                RenderFrameSnapshot? snapshot = null;
+
+                try
+                {
+                    snapshot = BuildSnapshot(runtime, source.Id, i + 1);
+                    buffer.Publish(snapshot);
+                    snapshot = null;
+                }
+                catch (ObjectDisposedException)
+                {
+                    Interlocked.Increment(ref publishErrors);
+                    snapshot?.Dispose();
+                }
+            }
+        });
+
+        var disposer = new Thread(() =>
+        {
+            Thread.Sleep(5);
+            buffer.Dispose();
+        });
+
+        publisher.Start();
+        disposer.Start();
+        publisher.Join(TimeSpan.FromSeconds(10));
+        disposer.Join(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, source.RetainCount);
     }
 
     private static FakeVideoFrameSource CreateRunningSource()

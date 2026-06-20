@@ -119,6 +119,28 @@ public class RenderThreadTests
     }
 
     [Fact]
+    public void PublishFrame_disposes_snapshot_when_render_thread_disposed()
+    {
+        var source = CreateRunningSource();
+        source.PublishFrame(1, MediaTime.Zero);
+
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var guard = new RenderThreadGuard();
+        var backend = new NullRenderBackend(guard);
+        var renderThread = new MediaForgeRenderThread(backend, guard);
+        renderThread.Start();
+        renderThread.Dispose();
+
+        var snapshot = BuildSnapshot(runtime, source, frameNumber: 1);
+        Assert.Equal(1, source.RetainCount);
+
+        Assert.Throws<ObjectDisposedException>(() => renderThread.PublishFrame(snapshot));
+        Assert.Equal(0, source.RetainCount);
+    }
+
+    [Fact]
     public void Dispose_stops_thread_and_drains_pending_snapshots()
     {
         var source = CreateRunningSource();

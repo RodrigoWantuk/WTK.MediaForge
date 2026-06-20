@@ -4,30 +4,52 @@ namespace WTK.MediaForge.Composition.Runtime;
 
 public sealed class LatestSnapshotBuffer : IDisposable
 {
+    private readonly object _gate = new();
     private RenderFrameSnapshot? _latest;
-    private int _disposed;
+    private bool _disposed;
 
     public void Publish(RenderFrameSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-        var previous = Interlocked.Exchange(ref _latest, snapshot);
+        RenderFrameSnapshot? previous;
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            previous = _latest;
+            _latest = snapshot;
+        }
+
         previous?.Dispose();
     }
 
     public RenderFrameSnapshot? AcquireLatest()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        return Interlocked.Exchange(ref _latest, null);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            var acquired = _latest;
+            _latest = null;
+            return acquired;
+        }
     }
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+        RenderFrameSnapshot? remaining;
 
-        var remaining = Interlocked.Exchange(ref _latest, null);
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            remaining = _latest;
+            _latest = null;
+        }
+
         remaining?.Dispose();
     }
 }
