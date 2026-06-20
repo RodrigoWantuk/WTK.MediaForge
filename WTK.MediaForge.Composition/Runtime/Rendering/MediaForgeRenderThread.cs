@@ -143,12 +143,15 @@ public sealed class MediaForgeRenderThread : IDisposable
             switch (command)
             {
                 case BindOutputCommand bind:
+                    _threadGuard.AssertOnRenderThread();
                     _backend.BindOutput(bind.Binding);
                     break;
                 case UnbindOutputCommand unbind:
+                    _threadGuard.AssertOnRenderThread();
                     _backend.UnbindOutput(unbind.OutputId);
                     break;
                 case ResizeOutputCommand resize:
+                    _threadGuard.AssertOnRenderThread();
                     _backend.ResizeOutput(resize.OutputId, resize.SurfaceSize);
                     break;
                 case StopRenderThreadCommand:
@@ -164,12 +167,15 @@ public sealed class MediaForgeRenderThread : IDisposable
 
     private void RenderLatestSnapshot()
     {
+        _threadGuard.AssertOnRenderThread();
+
         var snapshot = _snapshotBuffer.AcquireLatest();
         if (snapshot is null)
             return;
 
         try
         {
+            _threadGuard.AssertOnRenderThread();
             _backend.Render(snapshot);
         }
         catch (Exception)

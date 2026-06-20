@@ -19,11 +19,21 @@ public sealed class SlowNullRenderBackend : IRenderBackend
 
     private int _renderCount;
 
-    public void BindOutput(RenderOutputBindingSnapshot binding) { }
+    public void BindOutput(RenderOutputBindingSnapshot binding)
+    {
+        _threadGuard.AssertOnRenderThread();
+        ArgumentNullException.ThrowIfNull(binding);
+    }
 
-    public void UnbindOutput(RenderOutputId outputId) { }
+    public void UnbindOutput(RenderOutputId outputId)
+    {
+        _threadGuard.AssertOnRenderThread();
+    }
 
-    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
+    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize)
+    {
+        _threadGuard.AssertOnRenderThread();
+    }
 
     public void Render(RenderFrameSnapshot snapshot)
     {
