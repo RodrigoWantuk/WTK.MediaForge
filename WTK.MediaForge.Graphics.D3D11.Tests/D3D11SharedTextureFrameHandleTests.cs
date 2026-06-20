@@ -5,6 +5,7 @@ using Xunit;
 
 namespace WTK.MediaForge.Graphics.D3D11.Tests;
 
+[Trait("Category", TestCategories.Gpu)]
 public class D3D11SharedTextureFrameHandleTests
 {
     [Fact]

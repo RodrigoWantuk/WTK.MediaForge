@@ -9,6 +9,7 @@ using Xunit;
 namespace WTK.MediaForge.Capture.Tests;
 
 [Collection("GpuCapture")]
+[Trait("Category", TestCategories.Gpu)]
 public class D3D11GpuFrameSlotRingTests
 {
     [Fact]

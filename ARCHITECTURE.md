@@ -583,6 +583,24 @@ Registry and retirement:
 
 ---
 
+## Test tiers
+
+Three tiers keep `dotnet test` predictable:
+
+| Tier | Command | Scope |
+|------|---------|-------|
+| **Fast** (default dev/CI) | `./scripts/test.ps1 -Tier Fast` | Core, Diagnostics, Composition only — `Category!=GPU&Category!=Stress` |
+| **GPU smoke** | `./scripts/test.ps1 -Tier Gpu` | D3D11 → Vulkan → Capture sequentially, `Category=GPU&Category!=Stress` |
+| **Stress** | `./scripts/test.ps1 -Tier Stress` | Long loops (60s capture, 100× submit, 1000× acquire/release) |
+
+Rules:
+
+- Every test class in `*.Graphics.D3D11.Tests`, `*.Graphics.Vulkan.Tests`, and `*.Capture.Tests` must declare `[Trait("Category", TestCategories.Gpu)]` at class level. Run `./scripts/verify-gpu-traits.ps1` to verify.
+- Stress tests override with `[Trait("Category", TestCategories.Stress)]` on the method.
+- GPU assemblies use `[assembly: CollectionBehavior(DisableTestParallelization = true)]`; cross-project serialization is enforced by `test.ps1 -Tier Gpu`, not by running the full solution.
+
+---
+
 ## Disabled Draw Objects
 
 - **Validator** still validates `NestedCanvasId` references even when a `CanvasDrawObject` is disabled.

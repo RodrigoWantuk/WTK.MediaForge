@@ -215,11 +215,88 @@ public class PendingRenderSubmissionTrackerTests
         var tracker = new PendingRenderSubmissionTracker();
         tracker.Add(new FailingRenderFrameSubmission(CreateEmptySnapshot(1)));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<AggregateException>(() =>
             tracker.ShutdownAsync(
                 new ImmediateIdleRenderBackend(),
                 TimeSpan.FromSeconds(5),
                 CancellationToken.None).AsTask());
+
+        Assert.NotEmpty(ex.InnerExceptions);
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_attempts_all_submissions_even_when_one_dispose_fails()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        var failing = new FailingRenderFrameSubmission(CreateEmptySnapshot(1));
+        var succeeding = new ImmediateRenderFrameSubmission(CreateEmptySnapshot(2));
+        tracker.Add(failing);
+        tracker.Add(succeeding);
+
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            tracker.ShutdownAsync(
+                new ImmediateIdleRenderBackend(),
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).AsTask());
+
+        Assert.Equal(1, tracker.PendingCount);
+    }
+
+    [Fact]
+    public async Task Add_throws_when_shutdown_in_progress()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        tracker.Add(new FailingRenderFrameSubmission(CreateEmptySnapshot(1)));
+
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            tracker.ShutdownAsync(
+                new ImmediateIdleRenderBackend(),
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).AsTask());
+
+        Assert.Throws<InvalidOperationException>(() =>
+            tracker.Add(new ImmediateRenderFrameSubmission(CreateEmptySnapshot(2))));
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_failure_keeps_tracker_in_shutdown_state()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        tracker.Add(new FailingRenderFrameSubmission(CreateEmptySnapshot(1)));
+
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            tracker.ShutdownAsync(
+                new ImmediateIdleRenderBackend(),
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).AsTask());
+
+        Assert.False(tracker.CanAcceptFrame);
+        Assert.Equal(1, tracker.PendingCount);
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_retry_can_cleanup_remaining_pending()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        var submission = new RecoverableFailingRenderFrameSubmission(CreateEmptySnapshot(1));
+        tracker.Add(submission);
+
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            tracker.ShutdownAsync(
+                new ImmediateIdleRenderBackend(),
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).AsTask());
+
+        Assert.Equal(1, tracker.PendingCount);
+
+        submission.AllowDispose();
+
+        await tracker.ShutdownAsync(
+            new ImmediateIdleRenderBackend(),
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        Assert.Equal(0, tracker.PendingCount);
     }
 
     private static RenderFrameSnapshot CreateEmptySnapshot(long version) =>
@@ -268,6 +345,35 @@ public class PendingRenderSubmissionTrackerTests
 
         public void DisposeCompleted() =>
             throw new InvalidOperationException("Simulated dispose failure.");
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCompleted();
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecoverableFailingRenderFrameSubmission : IRenderFrameSubmission
+    {
+        private volatile bool _allowDispose;
+
+        public RecoverableFailingRenderFrameSubmission(RenderFrameSnapshot snapshot) =>
+            Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+
+        public RenderFrameSnapshot Snapshot { get; }
+
+        public bool IsCompleted => true;
+
+        public void AllowDispose() => _allowDispose = true;
+
+        public ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public void DisposeCompleted()
+        {
+            if (!_allowDispose)
+                throw new InvalidOperationException("Simulated dispose failure.");
+        }
 
         public ValueTask DisposeAsync()
         {

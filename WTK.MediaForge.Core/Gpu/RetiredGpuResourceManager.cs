@@ -2,9 +2,15 @@ using System.Diagnostics;
 
 namespace WTK.MediaForge.Core.Gpu;
 
+public sealed record RetiredGpuResourceFailure(
+    IRetiredGpuResource Resource,
+    Exception Exception,
+    DateTimeOffset Timestamp);
+
 public sealed class RetiredGpuResourceManager
 {
-    private readonly List<IRetiredGpuResource> _resources = [];
+    private readonly List<IRetiredGpuResource> _pending = [];
+    private readonly List<RetiredGpuResourceFailure> _failed = [];
     private readonly object _gate = new();
 
     public int PendingCount
@@ -12,7 +18,25 @@ public sealed class RetiredGpuResourceManager
         get
         {
             lock (_gate)
-                return _resources.Count;
+                return _pending.Count;
+        }
+    }
+
+    public int FailedCount
+    {
+        get
+        {
+            lock (_gate)
+                return _failed.Count;
+        }
+    }
+
+    public IReadOnlyList<RetiredGpuResourceFailure> Failures
+    {
+        get
+        {
+            lock (_gate)
+                return _failed.ToArray();
         }
     }
 
@@ -21,7 +45,7 @@ public sealed class RetiredGpuResourceManager
         get
         {
             lock (_gate)
-                return _resources.ToArray();
+                return _pending.ToArray();
         }
     }
 
@@ -31,8 +55,8 @@ public sealed class RetiredGpuResourceManager
 
         lock (_gate)
         {
-            if (!_resources.Any(r => ReferenceEquals(r, resource)))
-                _resources.Add(resource);
+            if (!_pending.Any(r => ReferenceEquals(r, resource)))
+                _pending.Add(resource);
         }
 
         TryFinalizeAll();
@@ -43,7 +67,7 @@ public sealed class RetiredGpuResourceManager
         IRetiredGpuResource[] snapshot;
 
         lock (_gate)
-            snapshot = _resources.ToArray();
+            snapshot = _pending.ToArray();
 
         foreach (var resource in snapshot)
         {
@@ -57,8 +81,38 @@ public sealed class RetiredGpuResourceManager
             }
         }
 
+        var completed = new List<IRetiredGpuResource>();
+        var failed = new List<RetiredGpuResourceFailure>();
+
         lock (_gate)
-            _resources.RemoveAll(r => r.FullyDisposed.IsCompletedSuccessfully);
+        {
+            foreach (var resource in _pending)
+            {
+                if (resource.FullyDisposed.IsCompletedSuccessfully)
+                {
+                    completed.Add(resource);
+                    continue;
+                }
+
+                if (resource.FullyDisposed.IsFaulted &&
+                    !_failed.Any(f => ReferenceEquals(f.Resource, resource)))
+                {
+                    failed.Add(new RetiredGpuResourceFailure(
+                        resource,
+                        FlattenException(resource.FullyDisposed.Exception),
+                        DateTimeOffset.UtcNow));
+                }
+            }
+
+            foreach (var resource in completed)
+                _pending.Remove(resource);
+
+            foreach (var failure in failed)
+            {
+                _pending.Remove(failure.Resource);
+                _failed.Add(failure);
+            }
+        }
     }
 
     public async ValueTask WaitForAllFinalizedAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -72,22 +126,49 @@ public sealed class RetiredGpuResourceManager
             cancellationToken.ThrowIfCancellationRequested();
             TryFinalizeAll();
 
-            IRetiredGpuResource[] pending;
+            List<Exception> faultedExceptions;
             lock (_gate)
             {
-                if (_resources.Count == 0)
+                if (_failed.Count > 0)
+                {
+                    faultedExceptions = _failed.Select(f => f.Exception).ToList();
+                }
+                else if (_pending.Count == 0)
+                {
                     return;
-
-                pending = _resources.ToArray();
+                }
+                else
+                {
+                    faultedExceptions = [];
+                }
             }
 
-            foreach (var resource in pending)
+            if (faultedExceptions.Count > 0)
+                throw new AggregateException("One or more retired GPU resources failed to finalize.", faultedExceptions);
+
+            IRetiredGpuResource[] pendingSnapshot;
+            lock (_gate)
+                pendingSnapshot = _pending.ToArray();
+
+            foreach (var resource in pendingSnapshot)
             {
                 if (resource.FullyDisposed.IsFaulted)
-                    await resource.FullyDisposed.ConfigureAwait(false);
+                {
+                    TryFinalizeAll();
+
+                    lock (_gate)
+                    {
+                        if (_failed.Count > 0)
+                        {
+                            throw new AggregateException(
+                                "One or more retired GPU resources failed to finalize.",
+                                _failed.Select(f => f.Exception));
+                        }
+                    }
+                }
             }
 
-            var waitTasks = pending
+            var waitTasks = pendingSnapshot
                 .Select(r => r.FullyDisposed)
                 .ToArray();
 
@@ -102,30 +183,52 @@ public sealed class RetiredGpuResourceManager
 
             if (completed == waitTask)
             {
-                foreach (var resource in pending)
-                {
-                    if (resource.FullyDisposed.IsFaulted)
-                        await resource.FullyDisposed.ConfigureAwait(false);
-                }
-
                 TryFinalizeAll();
 
                 lock (_gate)
                 {
-                    if (_resources.Count == 0)
+                    if (_failed.Count > 0)
+                    {
+                        throw new AggregateException(
+                            "One or more retired GPU resources failed to finalize.",
+                            _failed.Select(f => f.Exception));
+                    }
+
+                    if (_pending.Count == 0)
                         return;
                 }
             }
         }
 
+        TryFinalizeAll();
+
         lock (_gate)
         {
-            if (_resources.Count > 0)
+            if (_failed.Count > 0)
+            {
+                throw new AggregateException(
+                    "One or more retired GPU resources failed to finalize.",
+                    _failed.Select(f => f.Exception));
+            }
+
+            if (_pending.Count > 0)
             {
                 throw new TimeoutException(
                     "Retired GPU resources were not finalized before timeout.");
             }
         }
+    }
+
+    private static Exception FlattenException(Exception exception)
+    {
+        if (exception is AggregateException aggregate)
+        {
+            aggregate = aggregate.Flatten();
+            if (aggregate.InnerExceptions.Count == 1)
+                return aggregate.InnerExceptions[0];
+        }
+
+        return exception;
     }
 
     private static TimeSpan GetRemainingTime(long deadline)

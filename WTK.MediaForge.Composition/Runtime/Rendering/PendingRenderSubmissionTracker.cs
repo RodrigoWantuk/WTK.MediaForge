@@ -10,12 +10,19 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 /// </summary>
 public class PendingRenderSubmissionTracker : IDisposable
 {
+    private enum PendingTrackerState
+    {
+        Active,
+        ShutdownInProgress,
+        Disposed
+    }
+
     private readonly object _gate = new();
     private readonly List<IRenderFrameSubmission> _pending = [];
     private readonly HashSet<IRenderFrameSubmission> _cleanupFailureReported =
         new(SubmissionReferenceEqualityComparer.Instance);
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
-    private bool _disposed;
+    private PendingTrackerState _state = PendingTrackerState.Active;
 
     public PendingRenderSubmissionTracker(int maxFramesInFlight = 2, IMediaForgeDiagnosticsSink? diagnostics = null)
     {
@@ -42,7 +49,7 @@ public class PendingRenderSubmissionTracker : IDisposable
         get
         {
             lock (_gate)
-                return !_disposed && _pending.Count < MaxFramesInFlight;
+                return _state == PendingTrackerState.Active && _pending.Count < MaxFramesInFlight;
         }
     }
 
@@ -52,7 +59,14 @@ public class PendingRenderSubmissionTracker : IDisposable
 
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_state == PendingTrackerState.Disposed)
+                throw new ObjectDisposedException(nameof(PendingRenderSubmissionTracker));
+
+            if (_state == PendingTrackerState.ShutdownInProgress)
+            {
+                throw new InvalidOperationException(
+                    "Cannot add submissions while tracker shutdown is in progress.");
+            }
 
             if (_pending.Count >= MaxFramesInFlight)
                 throw new InvalidOperationException("Max frames in flight exceeded.");
@@ -66,7 +80,12 @@ public class PendingRenderSubmissionTracker : IDisposable
         List<IRenderFrameSubmission> completed;
 
         lock (_gate)
+        {
+            if (_state == PendingTrackerState.Disposed)
+                return;
+
             completed = _pending.Where(static submission => submission.IsCompleted).ToList();
+        }
 
         var disposed = new List<IRenderFrameSubmission>();
 
@@ -101,27 +120,50 @@ public class PendingRenderSubmissionTracker : IDisposable
             .WaitIdleAsync(GetRemainingTime(deadline), cancellationToken)
             .ConfigureAwait(false);
 
-        PollCompleted();
-
         List<IRenderFrameSubmission> remaining;
 
         lock (_gate)
         {
-            if (_disposed)
+            if (_state == PendingTrackerState.Disposed)
                 return;
 
-            _disposed = true;
+            _state = PendingTrackerState.ShutdownInProgress;
             remaining = [.. _pending];
-            _pending.Clear();
         }
+
+        var errors = new List<Exception>();
+        var disposed = new List<IRenderFrameSubmission>();
 
         foreach (var submission in remaining)
         {
-            await submission
-                .WaitForCompletionAsync(GetRemainingTime(deadline), cancellationToken)
-                .ConfigureAwait(false);
-            TryDisposeCompleted(submission, reportFailure: false, propagateFailure: true);
+            try
+            {
+                await submission
+                    .WaitForCompletionAsync(GetRemainingTime(deadline), cancellationToken)
+                    .ConfigureAwait(false);
+                submission.DisposeCompleted();
+                disposed.Add(submission);
+            }
+            catch (Exception ex)
+            {
+                errors.Add(ex);
+            }
         }
+
+        lock (_gate)
+        {
+            foreach (var submission in disposed)
+                _pending.Remove(submission);
+
+            if (errors.Count == 0)
+            {
+                _state = PendingTrackerState.Disposed;
+                _pending.Clear();
+            }
+        }
+
+        if (errors.Count > 0)
+            throw new AggregateException("Failed to shut down one or more render submissions.", errors);
     }
 
     private bool TryDisposeCompleted(
@@ -163,24 +205,49 @@ public class PendingRenderSubmissionTracker : IDisposable
 
         lock (_gate)
         {
-            if (_disposed)
+            if (_state == PendingTrackerState.Disposed)
                 return;
 
-            _disposed = true;
+            _state = PendingTrackerState.ShutdownInProgress;
             remaining = [.. _pending];
-            _pending.Clear();
         }
+
+        var errors = new List<Exception>();
+        var disposed = new List<IRenderFrameSubmission>();
 
         foreach (var submission in remaining)
         {
-            if (!submission.IsCompleted)
+            try
             {
-                throw new InvalidOperationException(
-                    "Cannot dispose tracker with incomplete submissions. Use ShutdownAsync instead.");
-            }
+                if (!submission.IsCompleted)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot dispose tracker with incomplete submissions. Use ShutdownAsync instead.");
+                }
 
-            TryDisposeCompleted(submission, reportFailure: false, propagateFailure: true);
+                submission.DisposeCompleted();
+                disposed.Add(submission);
+            }
+            catch (Exception ex)
+            {
+                errors.Add(ex);
+            }
         }
+
+        lock (_gate)
+        {
+            foreach (var submission in disposed)
+                _pending.Remove(submission);
+
+            if (errors.Count == 0)
+            {
+                _state = PendingTrackerState.Disposed;
+                _pending.Clear();
+            }
+        }
+
+        if (errors.Count > 0)
+            throw new AggregateException("Failed to dispose one or more render submissions.", errors);
     }
 
     private static TimeSpan GetRemainingTime(long deadline)

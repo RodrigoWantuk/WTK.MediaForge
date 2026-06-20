@@ -5,6 +5,7 @@ using Xunit;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 
+[Trait("Category", TestCategories.Gpu)]
 public class VulkanExternalTextureRegistryTests
 {
     [Fact]
@@ -127,6 +128,27 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
+    public void Repeated_acquire_release_smoke_keeps_registry_entry_count_stable()
+    {
+        if (!TryCreateContext(out var context))
+            return;
+
+        using (context)
+        {
+            for (var i = 0; i < 50; i++)
+            {
+                var lease = context.Registry.Acquire(context.Handle);
+                lease.Dispose();
+            }
+
+            Assert.Equal(1, context.Registry.EntryCount);
+            context.Registry.CollectUnused();
+            Assert.Equal(1, context.Registry.EntryCount);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", TestCategories.Stress)]
     public void Repeated_acquire_release_keeps_registry_entry_count_stable()
     {
         if (!TryCreateContext(out var context))

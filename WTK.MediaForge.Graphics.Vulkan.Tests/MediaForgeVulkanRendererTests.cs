@@ -13,6 +13,7 @@ using Xunit;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 
+[Trait("Category", TestCategories.Gpu)]
 public class MediaForgeVulkanRendererTests
 {
     [Fact]
@@ -170,8 +171,7 @@ public class MediaForgeVulkanRendererTests
         using (device)
         using (handle)
         {
-            handle.KeyedMutex.AcquireSync(D3D11SharedTextureSyncKeys.Producer, 1000);
-            handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
+            SimulateCaptureReleasedToConsumer(handle);
 
             var guard = renderer!.Guard;
             guard.BindToCurrentThread();
@@ -434,7 +434,7 @@ public class MediaForgeVulkanRendererTests
 
     private static void SimulateCaptureReleasedToConsumer(D3D11SharedTextureFrameHandle handle)
     {
-        handle.KeyedMutex.AcquireSync(D3D11SharedTextureSyncKeys.Producer, 1000);
+        handle.KeyedMutex.AcquireSync(handle.ProducerAcquireKey, 1000);
         handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
         handle.NotifyCaptureReleasedToConsumer();
     }
@@ -533,6 +533,42 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
+    public void Same_handle_survives_10_submits_without_timeout()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                for (var i = 0; i < 10; i++)
+                {
+                    var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+                    ReleaseSubmission(submission);
+                }
+
+                Assert.Equal(D3D11SharedTextureSyncKeys.Producer, handle.ProducerAcquireKey);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    [Trait("Category", TestCategories.Stress)]
     public void Same_handle_survives_repeated_submits_without_timeout()
     {
         if (!TryCreateRenderer(out var renderer))
@@ -740,8 +776,29 @@ public class MediaForgeVulkanRendererTests
         };
     }
 
-    private static void ReleaseSubmission(IRenderFrameSubmission submission) =>
-        submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    private static void ReleaseSubmission(
+        IRenderFrameSubmission submission,
+        TimeSpan? waitTimeout = null)
+    {
+        var timeout = waitTimeout ?? TimeSpan.FromSeconds(1);
+
+        try
+        {
+            submission.WaitForCompletionAsync(timeout, CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+
+            submission.DisposeCompleted();
+        }
+        catch (Exception ex)
+        {
+            throw new TimeoutException(
+                $"Submission did not complete/dispose within {timeout}. " +
+                "This usually indicates a Vulkan fence/keyed-mutex synchronization problem.",
+                ex);
+        }
+    }
 
     private static void WaitUntil(Func<bool> condition, TimeSpan timeout)
     {

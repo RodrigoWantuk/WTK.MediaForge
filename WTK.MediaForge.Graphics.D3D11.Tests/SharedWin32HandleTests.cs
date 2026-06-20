@@ -4,6 +4,7 @@ using Xunit;
 
 namespace WTK.MediaForge.Graphics.D3D11.Tests;
 
+[Trait("Category", TestCategories.Gpu)]
 public class SharedWin32HandleTests
 {
     [Fact]
@@ -66,7 +67,7 @@ public class SharedWin32HandleTests
             var duplicate = SharedWin32Handle.DuplicateFrom(handle.SharedHandle);
             duplicate.Dispose();
 
-            Assert.Throws<InvalidOperationException>(() => SharedWin32Handle.DuplicateFrom(duplicate));
+            Assert.Throws<ObjectDisposedException>(() => SharedWin32Handle.DuplicateFrom(duplicate));
         }
     }
 

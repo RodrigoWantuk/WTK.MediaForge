@@ -53,10 +53,74 @@ public class RetiredGpuResourceManagerTests
         manager.Add(resource);
 
         resource.Fault(new InvalidOperationException("Finalize failed"));
+        manager.TryFinalizeAll();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        Assert.Equal(0, manager.PendingCount);
+        Assert.Equal(1, manager.FailedCount);
+
+        var ex = await Assert.ThrowsAsync<AggregateException>(() =>
             manager.WaitForAllFinalizedAsync(TimeSpan.FromSeconds(1), CancellationToken.None)
                 .AsTask());
+
+        Assert.Contains(ex.InnerExceptions, inner => inner is InvalidOperationException);
+    }
+
+    [Fact]
+    public void Faulted_resource_moves_to_failed_resources()
+    {
+        var manager = new RetiredGpuResourceManager();
+        var resource = new FakeRetiredGpuResource(finalizeResult: false);
+        manager.Add(resource);
+
+        resource.Fault(new InvalidOperationException("Finalize failed"));
+        manager.TryFinalizeAll();
+
+        Assert.Equal(0, manager.PendingCount);
+        Assert.Equal(1, manager.FailedCount);
+        Assert.Same(resource, manager.Failures[0].Resource);
+    }
+
+    [Fact]
+    public void Faulted_resource_does_not_keep_pending_count_nonzero()
+    {
+        var manager = new RetiredGpuResourceManager();
+        var resource = new FakeRetiredGpuResource(finalizeResult: false);
+        manager.Add(resource);
+
+        resource.Fault(new InvalidOperationException("Finalize failed"));
+        manager.TryFinalizeAll();
+
+        Assert.Equal(0, manager.PendingCount);
+    }
+
+    [Fact]
+    public void Failed_resources_are_observable_after_fault()
+    {
+        var manager = new RetiredGpuResourceManager();
+        var resource = new FakeRetiredGpuResource(finalizeResult: false);
+        manager.Add(resource);
+
+        var fault = new InvalidOperationException("Finalize failed");
+        resource.Fault(fault);
+        manager.TryFinalizeAll();
+
+        var failure = Assert.Single(manager.Failures);
+        Assert.Same(resource, failure.Resource);
+        Assert.Same(fault, failure.Exception);
+    }
+
+    [Fact]
+    public void Faulted_resource_is_not_added_to_failures_twice()
+    {
+        var manager = new RetiredGpuResourceManager();
+        var resource = new FakeRetiredGpuResource(finalizeResult: false);
+        manager.Add(resource);
+
+        resource.Fault(new InvalidOperationException("Finalize failed"));
+        manager.TryFinalizeAll();
+        manager.TryFinalizeAll();
+
+        Assert.Equal(1, manager.FailedCount);
     }
 
     [Fact]

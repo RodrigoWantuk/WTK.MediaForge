@@ -7,9 +7,56 @@ using Xunit;
 namespace WTK.MediaForge.Capture.Tests;
 
 [Collection("GpuCapture")]
+[Trait("Category", TestCategories.Gpu)]
 public class GpuLifecycleStressTests
 {
     [Fact]
+    public async Task Provider_start_stop_dispose_leaves_no_retained_slots_smoke()
+    {
+        if (!TestGpuCaptureSupport.TryGetPrimaryCaptureSource(out var captureSource))
+            return;
+
+        var sourceId = SourceId.New();
+        var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
+
+        try
+        {
+            await provider.StartAsync(CancellationToken.None);
+        }
+        catch
+        {
+            return;
+        }
+
+        await WaitUntilAsync(
+            () =>
+            {
+                if (!provider.TryAcquireLatestFrame(out var probeLease))
+                    return false;
+
+                probeLease.Dispose();
+                return true;
+            },
+            TimeSpan.FromSeconds(5));
+
+        for (var i = 0; i < 120; i++)
+        {
+            if (provider.TryAcquireLatestFrame(out var lease))
+                lease.Dispose();
+
+            await Task.Delay(16);
+        }
+
+        await provider.StopAsync(CancellationToken.None);
+        await provider.DisposeAsync();
+
+        Assert.Equal(ProviderDisposeState.Disposed, provider.DisposeState);
+        Assert.Equal(0, provider.ActiveSlotRetainCount);
+        Assert.Equal(0, provider.RetiredResourceManager.PendingCount);
+    }
+
+    [Fact]
+    [Trait("Category", TestCategories.Stress)]
     public async Task Provider_start_stop_dispose_leaves_no_retained_slots()
     {
         if (!TestGpuCaptureSupport.TryGetPrimaryCaptureSource(out var captureSource))
