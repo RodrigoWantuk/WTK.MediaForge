@@ -6,4 +6,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="WTK.MediaForge.Core.Tests" />
+    <InternalsVisibleTo Include="WTK.MediaForge.Composition.Tests" />
+    <InternalsVisibleTo Include="WTK.MediaForge.Composition" />
+  </ItemGroup>
+
 </Project>
