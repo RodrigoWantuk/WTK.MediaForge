@@ -27,6 +27,7 @@ public static class MediaForgeProjectValidator
         var sourceIds = project.SourceDefinitions.Select(s => s.Id).ToHashSet();
 
         ValidateCanvases(project, canvasIds, sourceIds, issues);
+        issues.AddRange(CanvasGraphValidator.Validate(project));
         ValidateSourceDefinitions(project, sourceIds, issues);
         ValidateOutputs(project, canvasIds, issues);
 

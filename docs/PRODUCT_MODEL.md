@@ -472,8 +472,8 @@ P0 GPU lifecycle is **complete**. Product formalization proceeds in this order:
 | **H2** | Source type catalog + typed settings + serializer | Composition |
 | **H3** | Output type catalog + typed settings + expand `MediaForgeRenderOutput` | Composition |
 | **H4** | Effect model + snapshots + validator | Composition |
-| **H5** | `MediaForgeProjectEditor` | Composition |
 | **H6** | Graph validation (cycles, depth 8, schema versions) | Composition |
+| **H5** | `MediaForgeProjectEditor` | Composition |
 | **H7** | `MediaForgeEngine` skeleton + provider/sink factories | Composition |
 
 **Only after H7:**

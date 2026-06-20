@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using WTK.MediaForge.Composition.Runtime;
+using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
@@ -10,7 +11,7 @@ namespace WTK.MediaForge.Composition.Snapshots;
 
 public static class RenderFrameSnapshotFactory
 {
-    private const int MaxNestedCanvasDepth = 1;
+    private static int MaxNestedCanvasDepth => CanvasGraphLimits.MaxNestedCanvasDepth;
 
     public static SnapshotBuildResult Build(
         ProjectStateSnapshot projectState,
