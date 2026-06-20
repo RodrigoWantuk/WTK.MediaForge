@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
@@ -6,11 +7,16 @@ public sealed class SnapshotBuildResult : IDisposable
 {
     private int _disposed;
     private RenderFrameSnapshot? _snapshot;
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
 
-    private SnapshotBuildResult(RenderFrameSnapshot snapshot, ImmutableArray<SnapshotDiagnostic> diagnostics)
+    private SnapshotBuildResult(
+        RenderFrameSnapshot snapshot,
+        ImmutableArray<SnapshotDiagnostic> diagnostics,
+        IMediaForgeDiagnosticsSink? diagnosticsSink)
     {
         _snapshot = snapshot;
         Diagnostics = diagnostics;
+        _diagnostics = diagnosticsSink;
     }
 
     public RenderFrameSnapshot? Snapshot => _snapshot;
@@ -19,8 +25,9 @@ public sealed class SnapshotBuildResult : IDisposable
 
     public static SnapshotBuildResult Create(
         RenderFrameSnapshot snapshot,
-        ImmutableArray<SnapshotDiagnostic> diagnostics) =>
-        new(snapshot, diagnostics);
+        ImmutableArray<SnapshotDiagnostic> diagnostics,
+        IMediaForgeDiagnosticsSink? diagnosticsSink = null) =>
+        new(snapshot, diagnostics, diagnosticsSink);
 
     public RenderFrameSnapshot? TakeSnapshot()
     {
@@ -43,9 +50,15 @@ public sealed class SnapshotBuildResult : IDisposable
         {
             snapshot.Dispose();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // TODO: Diagnostics.Record snapshot dispose failure.
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "render.snapshot_dispose_failed",
+                "Failed to dispose render snapshot from build result.",
+                nameof(SnapshotBuildResult),
+                ex);
         }
     }
 }

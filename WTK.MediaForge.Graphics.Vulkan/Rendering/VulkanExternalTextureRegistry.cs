@@ -1,3 +1,4 @@
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
@@ -6,12 +7,16 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly VulkanHeadlessDevice _deviceContext;
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly Dictionary<VulkanExternalTextureKey, RegistryEntry> _entries = new();
     private bool _disposed;
 
-    internal VulkanExternalTextureRegistry(VulkanHeadlessDevice deviceContext)
+    internal VulkanExternalTextureRegistry(
+        VulkanHeadlessDevice deviceContext,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
+        _diagnostics = diagnostics;
     }
 
     internal int EntryCount
@@ -56,8 +61,15 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
                 {
                     import = VulkanD3D11TextureImport.Import(_deviceContext, handle);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "vulkan.texture_import_failed",
+                        ex.Message,
+                        nameof(VulkanExternalTextureRegistry),
+                        ex);
                     throw;
                 }
 

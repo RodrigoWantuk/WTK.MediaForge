@@ -3,6 +3,7 @@ using Vortice.DXGI;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Gpu.Slots;
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Capture.Gpu;
@@ -10,6 +11,7 @@ namespace WTK.MediaForge.Capture.Gpu;
 public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
 {
     private readonly D3D11GpuFrameSlot[] _slots;
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly TaskCompletionSource _fullyDisposedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _handlesDisposed;
     private int _disposed;
@@ -19,11 +21,24 @@ public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
         uint width,
         uint height,
         Format format = Format.B8G8R8A8_UNorm,
-        int slotCount = 3)
+        int slotCount = 3,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(device);
 
-        Ring = new GpuFrameSlotRing(slotCount, reusePhysicalResources: true);
+        _diagnostics = diagnostics;
+        Ring = new GpuFrameSlotRing(
+            slotCount,
+            reusePhysicalResources: true,
+            onResourceDisposeFailed: (ex, slotIndex) =>
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "capture.slot_resource_dispose_failed",
+                    "Failed to dispose GPU frame slot resource.",
+                    nameof(D3D11GpuFrameSlotRing),
+                    ex,
+                    slotIndex: slotIndex));
         _slots = new D3D11GpuFrameSlot[slotCount];
 
         for (var i = 0; i < slotCount; i++)
@@ -97,9 +112,16 @@ public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
             {
                 slot.Handle.Dispose();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // TODO: Diagnostics.Record handle dispose failure.
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "capture.handle_dispose_failed",
+                    "Failed to dispose D3D11 shared texture handle.",
+                    nameof(D3D11GpuFrameSlotRing),
+                    ex,
+                    slotIndex: slot.SlotIndex);
             }
         }
     }

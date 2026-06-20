@@ -5,6 +5,7 @@ using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
@@ -14,21 +15,27 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
     private readonly RenderThreadGuard _threadGuard;
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly VulkanExternalTextureRegistry _textureRegistry;
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
     private int _disposed;
 
-    public MediaForgeVulkanRenderer(RenderThreadGuard threadGuard)
+    public MediaForgeVulkanRenderer(RenderThreadGuard threadGuard, IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+        _diagnostics = diagnostics;
         _deviceContext = VulkanHeadlessDevice.Create();
-        _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext);
+        _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
     }
 
-    internal MediaForgeVulkanRenderer(RenderThreadGuard threadGuard, VulkanHeadlessDevice deviceContext)
+    internal MediaForgeVulkanRenderer(
+        RenderThreadGuard threadGuard,
+        VulkanHeadlessDevice deviceContext,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
-        _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext);
+        _diagnostics = diagnostics;
+        _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
     }
 
     internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;
@@ -125,7 +132,8 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
                 snapshot,
                 commandBuffer,
                 fence,
-                textureLeases);
+                textureLeases,
+                _diagnostics);
         }
         catch
         {

@@ -60,6 +60,33 @@ public class MediaForgeDiagnosticsTests
     }
 
     [Fact]
+    public void Injected_sink_takes_precedence_over_static_fallback()
+    {
+        var staticSink = new InMemoryDiagnosticsSink();
+        var injectedSink = new InMemoryDiagnosticsSink();
+        var previous = MediaForgeDiagnostics.Current;
+
+        try
+        {
+            MediaForgeDiagnostics.Current = staticSink;
+
+            MediaForgeDiagnostics.Report(
+                injectedSink,
+                MediaForgeDiagnosticSeverity.Error,
+                "injected.code",
+                "Injected message",
+                "TestComponent");
+
+            Assert.Single(injectedSink.Diagnostics);
+            Assert.Empty(staticSink.Diagnostics);
+        }
+        finally
+        {
+            MediaForgeDiagnostics.Current = previous;
+        }
+    }
+
+    [Fact]
     public void MediaForgeDiagnosticFactory_sets_timestamp_to_utc_now()
     {
         var before = DateTimeOffset.UtcNow;

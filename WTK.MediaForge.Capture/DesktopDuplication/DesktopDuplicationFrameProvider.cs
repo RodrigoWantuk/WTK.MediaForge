@@ -8,6 +8,7 @@ using WTK.MediaForge.Core.Gpu.Slots;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Core.Time;
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Capture.DesktopDuplication;
@@ -26,6 +27,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
     private const int DisposeWaitSeconds = 5;
 
     private readonly CaptureSourceInfo _captureSource;
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly object _stateGate = new();
     private readonly RetiredGpuResourceManager _retiredResourceManager = new();
     private readonly SemaphoreSlim _disposeGate = new(1, 1);
@@ -40,10 +42,14 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
     private int _disposeState = (int)ProviderDisposeState.Active;
     private int _state = (int)MediaSourceState.Stopped;
 
-    public DesktopDuplicationFrameProvider(SourceId id, CaptureSourceInfo captureSource)
+    public DesktopDuplicationFrameProvider(
+        SourceId id,
+        CaptureSourceInfo captureSource,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         Id = id;
         _captureSource = captureSource ?? throw new ArgumentNullException(nameof(captureSource));
+        _diagnostics = diagnostics;
     }
 
     public SourceId Id { get; }
@@ -128,6 +134,16 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
         {
             var timeout = new TimeoutException("Capture thread did not stop within the expected timeout.");
 
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "capture.thread_stop_timeout",
+                timeout.Message,
+                nameof(DesktopDuplicationFrameProvider),
+                timeout,
+                Id.Value,
+                Name);
+
             lock (_stateGate)
             {
                 Volatile.Write(ref _state, (int)MediaSourceState.Failed);
@@ -175,20 +191,32 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
         };
 
         var ownerRing = slotRing;
-        lease = GpuFrameLease.Create(frame, () =>
-        {
-            try
+        lease = GpuFrameLease.Create(
+            frame,
+            onRelease: () =>
             {
-                slotLease.Dispose();
-            }
-            finally
-            {
-                if (ownerRing.IsRetired)
-                    ownerRing.TryFinalizePhysicalResources();
+                try
+                {
+                    slotLease.Dispose();
+                }
+                finally
+                {
+                    if (ownerRing.IsRetired)
+                        ownerRing.TryFinalizePhysicalResources();
 
-                _retiredResourceManager.TryFinalizeAll();
-            }
-        });
+                    _retiredResourceManager.TryFinalizeAll();
+                }
+            },
+            onReleaseFailure: ex =>
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "capture.lease_release_failed",
+                    "Failed to release GPU frame lease.",
+                    nameof(DesktopDuplicationFrameProvider),
+                    ex,
+                    Id.Value,
+                    Name));
         return true;
     }
 
@@ -216,6 +244,16 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
             catch (TimeoutException ex)
             {
                 LastError = ex;
+
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "capture.dispose_timeout",
+                    ex.Message,
+                    nameof(DesktopDuplicationFrameProvider),
+                    ex,
+                    Id.Value,
+                    Name);
 
                 lock (_stateGate)
                     Volatile.Write(ref _state, (int)MediaSourceState.Failed);
@@ -246,7 +284,8 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
                     _session.TextureSize.Width,
                     _session.TextureSize.Height,
                     _session.TextureFormat,
-                    SlotCount));
+                    SlotCount,
+                    _diagnostics));
 
             lock (_stateGate)
                 Volatile.Write(ref _state, (int)MediaSourceState.Running);
@@ -258,6 +297,16 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
         catch (Exception ex)
         {
             LastError = ex;
+
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Fatal,
+                "capture.thread_failed",
+                ex.Message,
+                nameof(DesktopDuplicationFrameProvider),
+                ex,
+                Id.Value,
+                Name);
 
             lock (_stateGate)
                 Volatile.Write(ref _state, (int)MediaSourceState.Failed);
@@ -351,7 +400,8 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
             description.Width,
             description.Height,
             description.Format,
-            SlotCount);
+            SlotCount,
+            _diagnostics);
 
         var oldRing = Interlocked.Exchange(ref _slotRing, newRing);
 

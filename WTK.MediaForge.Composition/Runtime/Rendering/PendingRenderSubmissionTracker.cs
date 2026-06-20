@@ -1,19 +1,26 @@
 using System.Diagnostics;
+using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
+/// <summary>
+/// Tracks in-flight GPU render submissions without blocking on completion.
+/// Shutdown uses <see cref="ShutdownAsync"/> to wait with timeouts before destroying resources.
+/// </summary>
 public class PendingRenderSubmissionTracker : IDisposable
 {
     private readonly object _gate = new();
     private readonly List<IRenderFrameSubmission> _pending = [];
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private bool _disposed;
 
-    public PendingRenderSubmissionTracker(int maxFramesInFlight = 2)
+    public PendingRenderSubmissionTracker(int maxFramesInFlight = 2, IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         if (maxFramesInFlight < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFramesInFlight));
 
         MaxFramesInFlight = maxFramesInFlight;
+        _diagnostics = diagnostics;
     }
 
     public int MaxFramesInFlight { get; }
@@ -70,7 +77,7 @@ public class PendingRenderSubmissionTracker : IDisposable
         }
 
         foreach (var submission in completed)
-            submission.DisposeCompleted();
+            TryDisposeCompleted(submission);
     }
 
     public async ValueTask ShutdownAsync(
@@ -107,7 +114,25 @@ public class PendingRenderSubmissionTracker : IDisposable
             await submission
                 .WaitForCompletionAsync(GetRemainingTime(deadline), cancellationToken)
                 .ConfigureAwait(false);
+            TryDisposeCompleted(submission);
+        }
+    }
+
+    private void TryDisposeCompleted(IRenderFrameSubmission submission)
+    {
+        try
+        {
             submission.DisposeCompleted();
+        }
+        catch (Exception ex)
+        {
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "render.submission_dispose_failed",
+                "Failed to dispose completed render submission.",
+                nameof(PendingRenderSubmissionTracker),
+                ex);
         }
     }
 
@@ -135,7 +160,7 @@ public class PendingRenderSubmissionTracker : IDisposable
                     "Cannot dispose tracker with incomplete submissions. Use ShutdownAsync instead.");
             }
 
-            submission.DisposeCompleted();
+            TryDisposeCompleted(submission);
         }
     }
 

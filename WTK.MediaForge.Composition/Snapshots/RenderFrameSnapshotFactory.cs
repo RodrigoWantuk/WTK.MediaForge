@@ -4,6 +4,7 @@ using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Sources;
+using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
@@ -11,7 +12,10 @@ public static class RenderFrameSnapshotFactory
 {
     private const int MaxNestedCanvasDepth = 1;
 
-    public static SnapshotBuildResult Build(ProjectStateSnapshot projectState, CompositionRuntime runtime)
+    public static SnapshotBuildResult Build(
+        ProjectStateSnapshot projectState,
+        CompositionRuntime runtime,
+        IMediaForgeDiagnosticsSink? diagnosticsSink = null)
     {
         ArgumentNullException.ThrowIfNull(projectState);
         ArgumentNullException.ThrowIfNull(runtime);
@@ -38,19 +42,22 @@ public static class RenderFrameSnapshotFactory
                 ProjectStateVersion = projectState.Version,
                 Canvases = canvases,
                 Outputs = projectState.Outputs,
-                FrameLeases = leasesBySource.Values.ToImmutableArray()
+                FrameLeases = leasesBySource.Values.ToImmutableArray(),
+                Diagnostics = diagnosticsSink
             };
 
-            return SnapshotBuildResult.Create(snapshot, diagnostics.ToImmutableArray());
+            return SnapshotBuildResult.Create(snapshot, diagnostics.ToImmutableArray(), diagnosticsSink);
         }
         catch
         {
-            ReleaseLeases(leasesBySource.Values);
+            ReleaseLeases(leasesBySource.Values, diagnosticsSink);
             throw;
         }
     }
 
-    private static void ReleaseLeases(IEnumerable<GpuFrameLease> leases)
+    private static void ReleaseLeases(
+        IEnumerable<GpuFrameLease> leases,
+        IMediaForgeDiagnosticsSink? diagnostics)
     {
         foreach (var lease in leases)
         {
@@ -58,9 +65,15 @@ public static class RenderFrameSnapshotFactory
             {
                 lease.Dispose();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // TODO: Diagnostics.Record lease release failure.
+                MediaForgeDiagnostics.Report(
+                    diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "render.lease_release_failed",
+                    "Failed to release GPU frame lease during snapshot build rollback.",
+                    nameof(RenderFrameSnapshotFactory),
+                    ex);
             }
         }
     }

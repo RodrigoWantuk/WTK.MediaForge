@@ -1,6 +1,7 @@
 using Silk.NET.Vulkan;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
@@ -9,6 +10,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
     private const int DefaultDisposeWaitSeconds = 5;
 
     private readonly VulkanHeadlessDevice _deviceContext;
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly List<VulkanExternalTextureLease> _textureLeases;
     private RenderFrameSnapshot? _snapshot;
     private int _resourcesDisposed;
@@ -18,9 +20,11 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         RenderFrameSnapshot snapshot,
         CommandBuffer commandBuffer,
         Fence fence,
-        IReadOnlyList<VulkanExternalTextureLease> textureLeases)
+        IReadOnlyList<VulkanExternalTextureLease> textureLeases,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
+        _diagnostics = diagnostics;
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         CommandBuffer = commandBuffer;
         Fence = fence;
@@ -116,7 +120,17 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
 
             var remainingMs = deadline - Environment.TickCount64;
             if (remainingMs <= 0)
-                throw new TimeoutException("Timed out waiting for Vulkan submission fence to complete.");
+            {
+                var fenceTimeout = new TimeoutException("Timed out waiting for Vulkan submission fence to complete.");
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "vulkan.fence_wait_timeout",
+                    fenceTimeout.Message,
+                    nameof(VulkanRenderFrameSubmission),
+                    fenceTimeout);
+                throw fenceTimeout;
+            }
 
             var waitNs = (ulong)Math.Min(remainingMs * 1_000_000L, int.MaxValue);
             var fence = Fence;

@@ -7,6 +7,7 @@ public sealed class GpuFrameSlotRing : IDisposable
 {
     private readonly object _gate = new();
     private readonly SlotEntry[] _slots;
+    private readonly Action<Exception, int>? _onResourceDisposeFailed;
     private int? _latestSlotIndex;
     private bool _stopped;
     private bool _finalizeRequested;
@@ -14,16 +15,20 @@ public sealed class GpuFrameSlotRing : IDisposable
     private long _droppedFrames;
     private long _generationMismatches;
 
-    public GpuFrameSlotRing(int slotCount = 3, bool reusePhysicalResources = false)
+    public GpuFrameSlotRing(
+        int slotCount = 3,
+        bool reusePhysicalResources = false,
+        Action<Exception, int>? onResourceDisposeFailed = null)
     {
         if (slotCount < 1)
             throw new ArgumentOutOfRangeException(nameof(slotCount));
 
         SlotCount = slotCount;
         ReusePhysicalResources = reusePhysicalResources;
+        _onResourceDisposeFailed = onResourceDisposeFailed;
         _slots = new SlotEntry[slotCount];
         for (var i = 0; i < slotCount; i++)
-            _slots[i] = new SlotEntry();
+            _slots[i] = new SlotEntry { SlotIndex = i };
     }
 
     public int SlotCount { get; }
@@ -387,7 +392,7 @@ public sealed class GpuFrameSlotRing : IDisposable
         _disposed = true;
     }
 
-    private static void DestroySlotResourceLocked(
+    private void DestroySlotResourceLocked(
         SlotEntry entry,
         bool reusePhysicalResources,
         bool forceDisposePhysical = false)
@@ -400,9 +405,9 @@ public sealed class GpuFrameSlotRing : IDisposable
                 {
                     disposable.Dispose();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // TODO: Diagnostics.Record slot resource dispose failure.
+                    _onResourceDisposeFailed?.Invoke(ex, entry.SlotIndex);
                 }
             }
 
@@ -455,6 +460,8 @@ public sealed class GpuFrameSlotRing : IDisposable
 
     private sealed class SlotEntry
     {
+        public int SlotIndex;
+
         public GpuFrameSlotState State = GpuFrameSlotState.Free;
 
         public long Generation;

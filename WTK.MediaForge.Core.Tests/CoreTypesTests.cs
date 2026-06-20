@@ -98,10 +98,17 @@ public class GpuFrameLeaseTests
     }
 
     [Fact]
-    public void Dispose_continues_after_release_throws()
+    public void Dispose_invokes_onReleaseFailure_when_release_throws()
     {
-        var lease = GpuFrameLease.Create(default, () => throw new InvalidOperationException("release failed"));
+        Exception? captured = null;
+        var lease = GpuFrameLease.Create(
+            default,
+            () => throw new InvalidOperationException("release failed"),
+            ex => captured = ex);
 
         lease.Dispose();
+
+        Assert.NotNull(captured);
+        Assert.IsType<InvalidOperationException>(captured);
     }
 }

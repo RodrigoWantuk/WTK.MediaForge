@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
@@ -7,6 +8,7 @@ public sealed class MediaForgeRenderThread : IDisposable
 {
     private readonly IRenderBackend _backend;
     private readonly RenderThreadGuard _threadGuard;
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly PendingRenderSubmissionTracker _pendingTracker;
     private readonly LatestSnapshotBuffer _snapshotBuffer = new();
     private readonly ConcurrentQueue<RenderCommand> _commands = new();
@@ -20,11 +22,13 @@ public sealed class MediaForgeRenderThread : IDisposable
         IRenderBackend backend,
         RenderThreadGuard threadGuard,
         PendingRenderSubmissionTracker? pendingTracker = null,
-        int maxFramesInFlight = 2)
+        int maxFramesInFlight = 2,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
-        _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(maxFramesInFlight);
+        _diagnostics = diagnostics;
+        _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(maxFramesInFlight, diagnostics);
         _thread = new Thread(RenderLoop)
         {
             IsBackground = true,
@@ -80,9 +84,15 @@ public sealed class MediaForgeRenderThread : IDisposable
                 {
                     snapshot.Dispose();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // TODO: Diagnostics.Record snapshot dispose failure.
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "render.snapshot_dispose_failed",
+                        "Failed to dispose unpublished render snapshot.",
+                        nameof(MediaForgeRenderThread),
+                        ex);
                 }
             }
 
@@ -106,7 +116,17 @@ public sealed class MediaForgeRenderThread : IDisposable
                 _workSignal.Set();
 
                 if (!_thread.Join(TimeSpan.FromSeconds(10)))
+                {
                     stopException = new TimeoutException("Render thread did not stop within the expected timeout.");
+
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "render.thread_stop_timeout",
+                        stopException.Message,
+                        nameof(MediaForgeRenderThread),
+                        stopException);
+                }
             }
         }
         finally
@@ -206,9 +226,15 @@ public sealed class MediaForgeRenderThread : IDisposable
             _pendingTracker.Add(submission);
             ownershipTransferred = true;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // TODO: Diagnostics.Record render failure.
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "render.submit_failed",
+                "Render backend submit failed.",
+                nameof(MediaForgeRenderThread),
+                ex);
         }
         finally
         {
@@ -220,9 +246,15 @@ public sealed class MediaForgeRenderThread : IDisposable
                     {
                         submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        // TODO: Diagnostics.Record submission dispose failure.
+                        MediaForgeDiagnostics.Report(
+                            _diagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "render.submission_dispose_failed",
+                            "Failed to dispose render submission after submit failure.",
+                            nameof(MediaForgeRenderThread),
+                            ex);
                     }
                 }
                 else
@@ -231,9 +263,15 @@ public sealed class MediaForgeRenderThread : IDisposable
                     {
                         snapshot.Dispose();
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        // TODO: Diagnostics.Record snapshot dispose failure.
+                        MediaForgeDiagnostics.Report(
+                            _diagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "render.snapshot_dispose_failed",
+                            "Failed to dispose render snapshot after submit failure.",
+                            nameof(MediaForgeRenderThread),
+                            ex);
                     }
                 }
             }

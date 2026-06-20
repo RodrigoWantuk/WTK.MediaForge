@@ -4,17 +4,22 @@ public sealed class GpuFrameLease : IDisposable
 {
     private int _disposed;
     private readonly Action? _onRelease;
+    private readonly Action<Exception>? _onReleaseFailure;
 
-    private GpuFrameLease(GpuFrameReference frame, Action? onRelease)
+    private GpuFrameLease(GpuFrameReference frame, Action? onRelease, Action<Exception>? onReleaseFailure)
     {
         Frame = frame;
         _onRelease = onRelease;
+        _onReleaseFailure = onReleaseFailure;
     }
 
     public GpuFrameReference Frame { get; }
 
-    public static GpuFrameLease Create(GpuFrameReference frame, Action? onRelease = null) =>
-        new(frame, onRelease);
+    public static GpuFrameLease Create(
+        GpuFrameReference frame,
+        Action? onRelease = null,
+        Action<Exception>? onReleaseFailure = null) =>
+        new(frame, onRelease, onReleaseFailure);
 
     public void Dispose()
     {
@@ -28,9 +33,9 @@ public sealed class GpuFrameLease : IDisposable
         {
             _onRelease.Invoke();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // TODO: Diagnostics.Record lease release failure.
+            _onReleaseFailure?.Invoke(ex);
         }
     }
 }

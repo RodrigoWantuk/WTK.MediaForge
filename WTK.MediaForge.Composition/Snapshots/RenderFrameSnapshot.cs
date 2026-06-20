@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using WTK.MediaForge.Core.Gpu;
+using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
@@ -18,6 +19,8 @@ public sealed class RenderFrameSnapshot : IDisposable
     public ImmutableArray<GpuFrameLease> FrameLeases { get; init; } =
         ImmutableArray<GpuFrameLease>.Empty;
 
+    internal IMediaForgeDiagnosticsSink? Diagnostics { get; init; }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -29,9 +32,15 @@ public sealed class RenderFrameSnapshot : IDisposable
             {
                 lease.Dispose();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // TODO: Diagnostics.Record lease release failure.
+                MediaForgeDiagnostics.Report(
+                    Diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "render.lease_release_failed",
+                    "Failed to release GPU frame lease during snapshot dispose.",
+                    nameof(RenderFrameSnapshot),
+                    ex);
             }
         }
     }
