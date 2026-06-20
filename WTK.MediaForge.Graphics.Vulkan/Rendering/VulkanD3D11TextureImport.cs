@@ -41,6 +41,10 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
 
     public uint Height { get; }
 
+    public ImageLayout CurrentLayout { get; private set; } = ImageLayout.Undefined;
+
+    internal void SetLayout(ImageLayout layout) => CurrentLayout = layout;
+
     public static VulkanD3D11TextureImport Import(
         VulkanHeadlessDevice deviceContext,
         D3D11SharedTextureFrameHandle handle)

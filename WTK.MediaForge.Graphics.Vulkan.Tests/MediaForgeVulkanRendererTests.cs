@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Silk.NET.Vulkan;
 using Vortice.DXGI;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
@@ -436,6 +437,99 @@ public class MediaForgeVulkanRendererTests
         handle.KeyedMutex.AcquireSync(D3D11SharedTextureSyncKeys.Producer, 1000);
         handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
         handle.NotifyCaptureReleasedToConsumer();
+    }
+
+    [Fact]
+    public void QueueSubmit_failure_does_not_advance_import_layout()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                renderer.Backend.SimulateQueueSubmitFailure = true;
+
+                Assert.Throws<InvalidOperationException>(() =>
+                    renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle)));
+
+                using var lease = renderer.Backend.TextureRegistry.Acquire(handle);
+                Assert.Equal(ImageLayout.Undefined, lease.Import.CurrentLayout);
+            }
+            finally
+            {
+                renderer.Backend.SimulateQueueSubmitFailure = false;
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void Import_layout_starts_as_Undefined()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            using var lease = renderer!.Backend.TextureRegistry.Acquire(handle);
+            Assert.Equal(ImageLayout.Undefined, lease.Import.CurrentLayout);
+        }
+    }
+
+    [Fact]
+    public void Cached_import_second_submit_uses_General_to_General_transition()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var first = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+                ReleaseSubmission(first);
+
+                using (var lease = renderer.Backend.TextureRegistry.Acquire(handle))
+                    Assert.Equal(ImageLayout.General, lease.Import.CurrentLayout);
+
+                var second = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+                ReleaseSubmission(second);
+
+                using (var lease = renderer.Backend.TextureRegistry.Acquire(handle))
+                    Assert.Equal(ImageLayout.General, lease.Import.CurrentLayout);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
     }
 
     [Fact]

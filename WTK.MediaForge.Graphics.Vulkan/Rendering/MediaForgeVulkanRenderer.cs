@@ -115,23 +115,37 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         {
             textureLeases = AcquireTextureLeases(snapshot);
             var imports = textureLeases.Select(lease => lease.Import).ToList();
+            var previousLayouts = imports.Select(import => import.CurrentLayout).ToArray();
             commandBuffer = BeginCommandBuffer();
 
-            foreach (var import in imports)
+            try
             {
-                VulkanImageLayoutTransition.Transition(
-                    _deviceContext.Vk,
-                    commandBuffer,
-                    import.Image,
-                    ImageLayout.Undefined,
-                    ImageLayout.General);
+                foreach (var import in imports)
+                {
+                    VulkanImageLayoutTransition.Transition(
+                        _deviceContext.Vk,
+                        commandBuffer,
+                        import.Image,
+                        import.CurrentLayout,
+                        ImageLayout.General);
+                }
+
+                if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
+                    throw new InvalidOperationException("vkEndCommandBuffer failed.");
+
+                fence = CreateFence();
+                SubmitCommandBuffer(commandBuffer, imports, fence);
+
+                foreach (var import in imports)
+                    import.SetLayout(ImageLayout.General);
             }
+            catch
+            {
+                for (var i = 0; i < imports.Count; i++)
+                    imports[i].SetLayout(previousLayouts[i]);
 
-            if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
-                throw new InvalidOperationException("vkEndCommandBuffer failed.");
-
-            fence = CreateFence();
-            SubmitCommandBuffer(commandBuffer, imports, fence);
+                throw;
+            }
 
             return new VulkanRenderFrameSubmission(
                 _deviceContext,
