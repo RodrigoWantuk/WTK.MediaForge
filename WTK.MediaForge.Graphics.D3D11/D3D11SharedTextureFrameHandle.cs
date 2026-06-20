@@ -41,7 +41,8 @@ public sealed class D3D11SharedTextureFrameHandle : IGpuFrameHandle, IDisposable
 
     public GpuTextureId TextureId { get; }
 
-    public bool HasSharedHandle => !SharedHandle.IsInvalid;
+    public bool HasSharedHandle =>
+        Volatile.Read(ref _disposed) == 0 && !SharedHandle.IsInvalid && !SharedHandle.IsClosed;
 
     /// <summary>
     /// The keyed mutex key the D3D11 producer should acquire on the next capture.

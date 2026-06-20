@@ -24,8 +24,8 @@ public sealed class SharedWin32Handle : SafeHandleZeroOrMinusOneIsInvalid
     {
         ArgumentNullException.ThrowIfNull(source);
 
-        if (source.IsInvalid)
-            throw new InvalidOperationException("Cannot duplicate an invalid shared handle.");
+        if (source.IsInvalid || source.IsClosed)
+            throw new ObjectDisposedException(nameof(source), "Cannot duplicate a closed shared handle.");
 
         return DuplicateFromRaw(source.DangerousGetHandleForInterop());
     }

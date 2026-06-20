@@ -33,22 +33,22 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(handle);
 
-        if (handle.IsRetired)
+        if (!handle.HasSharedHandle)
         {
             throw new ObjectDisposedException(
                 nameof(handle),
-                "D3D11 shared texture is retired.");
+                "D3D11 shared texture handle is closed or unavailable.");
         }
 
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            if (handle.IsRetired)
+            if (!handle.HasSharedHandle)
             {
                 throw new ObjectDisposedException(
                     nameof(handle),
-                    "D3D11 shared texture is retired.");
+                    "D3D11 shared texture handle is closed or unavailable.");
             }
 
             var key = VulkanExternalTextureKey.From(handle);
@@ -84,6 +84,8 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
     internal void Release(VulkanExternalTextureKey key)
     {
+        VulkanD3D11TextureImport? importToDispose = null;
+
         lock (_gate)
         {
             if (!_entries.TryGetValue(key, out var entry))
@@ -93,7 +95,15 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
             if (entry.RefCount < 0)
                 throw new InvalidOperationException("External texture refcount underflow.");
+
+            if (entry.RefCount == 0 && entry.SourceHandle.IsRetired)
+            {
+                _entries.Remove(key);
+                importToDispose = entry.Import;
+            }
         }
+
+        importToDispose?.Dispose();
     }
 
     public void CollectUnused()

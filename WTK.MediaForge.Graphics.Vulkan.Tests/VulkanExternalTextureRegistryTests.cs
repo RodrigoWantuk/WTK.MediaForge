@@ -56,7 +56,7 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
-    public void Retired_handle_import_destroyed_after_last_lease_via_collect_unused()
+    public void Retired_handle_import_destroyed_on_last_lease_release()
     {
         if (!TryCreateContext(out var context))
             return;
@@ -67,14 +67,13 @@ public class VulkanExternalTextureRegistryTests
             context.Handle.MarkRetired();
 
             lease.Dispose();
-            context.Registry.CollectUnused();
 
             Assert.Equal(0, context.Registry.EntryCount);
         }
     }
 
     [Fact]
-    public void Acquire_throws_when_handle_is_retired()
+    public void Acquire_retired_handle_before_first_lease_is_allowed()
     {
         if (!TryCreateContext(out var context))
             return;
@@ -83,12 +82,15 @@ public class VulkanExternalTextureRegistryTests
         {
             context.Handle.MarkRetired();
 
-            Assert.Throws<ObjectDisposedException>(() => context.Registry.Acquire(context.Handle));
+            using var lease = context.Registry.Acquire(context.Handle);
+            lease.Dispose();
+
+            Assert.Equal(0, context.Registry.EntryCount);
         }
     }
 
     [Fact]
-    public void Acquire_double_check_rejects_retired_inside_lock()
+    public void Acquire_retired_handle_with_live_lease_is_allowed()
     {
         if (!TryCreateContext(out var context))
             return;
@@ -96,12 +98,31 @@ public class VulkanExternalTextureRegistryTests
         using (context)
         {
             using var firstLease = context.Registry.Acquire(context.Handle);
-
             context.Handle.MarkRetired();
 
-            Assert.Throws<ObjectDisposedException>(() => context.Registry.Acquire(context.Handle));
-            firstLease.Dispose();
-            context.Registry.CollectUnused();
+            using var secondLease = context.Registry.Acquire(context.Handle);
+
+            Assert.Same(firstLease.Import, secondLease.Import);
+        }
+    }
+
+    [Fact]
+    public void Acquire_disposed_or_closed_handle_throws()
+    {
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (device)
+        {
+            using var deviceContext = VulkanHeadlessDevice.Create();
+            var registry = new VulkanExternalTextureRegistry(deviceContext);
+
+            handle.Dispose();
+
+            Assert.Throws<ObjectDisposedException>(() => registry.Acquire(handle));
+
+            registry.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            deviceContext.Dispose();
         }
     }
 
