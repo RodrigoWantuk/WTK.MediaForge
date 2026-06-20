@@ -36,11 +36,13 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `IRenderFrameSubmission` does not inherit or implement disposable cleanup APIs.
 - `IRenderBackend` exposes only `WaitIdleAsync(timeout, cancellationToken)`.
 - `MediaForgeVulkanRenderer` is internal and created through `MediaForgeVulkanRenderBackendFactory`.
+- `MediaForgeVulkanRenderer.Dispose` preflights active registry leases before marking the renderer disposed. Once terminal dispose starts, it attempts target, registry, and device cleanup and aggregates cleanup failures.
 - Renderer fault testing uses `IVulkanRendererFaultInjector`.
 - External texture identity is `VulkanExternalTextureKey = GpuTextureId + Width + Height + Format`.
 - Provider lifecycle is serialized through one `_lifecycleGate`.
 - D3D11 ring physical dispose failure faults `FullyDisposed`.
 - Vulkan registry import creation occurs outside the global registry lock.
+- `VulkanExternalTextureRegistry` is internal. Imports created but not published because of dispose/removal races must be disposed before the failure is rethrown.
 - GPU wait APIs must use explicit timeouts.
 
 ## Remaining Blockers

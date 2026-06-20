@@ -1,6 +1,6 @@
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-public sealed class VulkanExternalTextureLease : IDisposable
+internal sealed class VulkanExternalTextureLease : IDisposable
 {
     private readonly VulkanExternalTextureRegistry.RegistryEntry _entry;
     private readonly VulkanExternalTextureRegistry _registry;

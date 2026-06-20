@@ -29,12 +29,18 @@ Before considering a change complete, verify:
 - [ ] Public creation is through factory.
 - [ ] No `Simulate*` properties exist.
 - [ ] Fault injection uses `IVulkanRendererFaultInjector`.
+- [ ] `Dispose` does not mark the renderer disposed when active texture leases exist.
+- [ ] Terminal `Dispose` attempts target, registry, and device cleanup and aggregates failures.
 
 ## Registry
 
+- [ ] `VulkanExternalTextureRegistry` is internal.
 - [ ] `VulkanExternalTextureRegistry.Acquire` does not call Vulkan import creation inside `lock (_gate)`.
+- [ ] Unpublished imports are disposed when publish fails because the registry was disposed or the entry was removed.
 - [ ] Failed import creation does not leave stuck entries.
+- [ ] Acquire can retry cleanly after import creation failure.
 - [ ] Concurrent acquire of the same texture creates one import.
+- [ ] Concurrent acquire of different textures can create independently.
 
 ## Texture Identity
 

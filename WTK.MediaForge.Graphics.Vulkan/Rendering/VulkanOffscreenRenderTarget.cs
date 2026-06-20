@@ -3,7 +3,7 @@ using WTK.MediaForge.Core.Frames;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-internal sealed unsafe class VulkanOffscreenRenderTarget : IDisposable
+internal sealed unsafe class VulkanOffscreenRenderTarget : IVulkanOffscreenRenderTarget
 {
     private readonly VulkanHeadlessDevice _deviceContext;
     private Image _image;

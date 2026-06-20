@@ -10,6 +10,13 @@ namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 public class VulkanExternalTextureRegistryTests
 {
     [Fact]
+    public void VulkanExternalTextureRegistry_is_not_public()
+    {
+        Assert.False(typeof(VulkanExternalTextureRegistry).IsPublic);
+        Assert.True(typeof(VulkanExternalTextureRegistry).IsNotPublic);
+    }
+
+    [Fact]
     public void Same_handle_reuses_same_vulkan_import()
     {
         if (!TryCreateContext(out var context))
@@ -216,6 +223,181 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
+    public void Acquire_does_not_hold_registry_lock_while_creating_import()
+    {
+        VulkanExternalTextureRegistry? registry = null;
+        using var lockProbeCompleted = new ManualResetEventSlim();
+
+        var factory = new DelegatingImportFactory((deviceContext, handle) =>
+        {
+            var probe = Task.Run(() =>
+            {
+                _ = registry!.EntryCount;
+                lockProbeCompleted.Set();
+            });
+
+            if (!lockProbeCompleted.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("Registry lock was held while creating a Vulkan import.");
+
+            probe.GetAwaiter().GetResult();
+            return VulkanD3D11TextureImport.Import(deviceContext, handle);
+        });
+
+        if (!TryCreateContext(out var context, factory))
+            return;
+
+        registry = context.Registry;
+
+        using (context)
+        using (var lease = context.Registry.Acquire(context.Handle))
+        {
+            Assert.True(lockProbeCompleted.IsSet);
+        }
+    }
+
+    [Fact]
+    public async Task Concurrent_acquire_different_textures_can_create_independently()
+    {
+        if (!TryCreateSharedTexture(out var device, out var firstHandle))
+            return;
+
+        using (device)
+        using (firstHandle)
+        using (var secondHandle = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, 64, 64))
+        using (var bothImportsEntered = new CountdownEvent(2))
+        {
+            var factory = new DelegatingImportFactory((deviceContext, handle) =>
+            {
+                bothImportsEntered.Signal();
+
+                if (!bothImportsEntered.Wait(TimeSpan.FromSeconds(5)))
+                    throw new TimeoutException("Different texture imports did not create independently.");
+
+                return VulkanD3D11TextureImport.Import(deviceContext, handle);
+            });
+
+            VulkanHeadlessDevice deviceContext;
+            try
+            {
+                deviceContext = VulkanHeadlessDevice.Create();
+            }
+            catch
+            {
+                return;
+            }
+
+            using var context = new RegistryTestContext(
+                deviceContext,
+                new VulkanExternalTextureRegistry(deviceContext, importFactory: factory),
+                firstHandle);
+
+            var firstTask = Task.Run(() => context.Registry.Acquire(firstHandle));
+            var secondTask = Task.Run(() => context.Registry.Acquire(secondHandle));
+
+            var leases = await Task.WhenAll(firstTask, secondTask);
+
+            try
+            {
+                Assert.Equal(2, context.Registry.EntryCount);
+                Assert.NotSame(leases[0].Import, leases[1].Import);
+            }
+            finally
+            {
+                foreach (var lease in leases)
+                    lease.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void Import_failure_does_not_leave_creating_entry_stuck()
+    {
+        var factory = new DelegatingImportFactory((_, _) =>
+            throw new InvalidOperationException("controlled import failure"));
+
+        if (!TryCreateContext(out var context, factory))
+            return;
+
+        using (context)
+        {
+            Assert.Throws<InvalidOperationException>(() => context.Registry.Acquire(context.Handle));
+            Assert.Equal(0, context.Registry.EntryCount);
+        }
+    }
+
+    [Fact]
+    public void Acquire_after_import_failure_can_retry_cleanly()
+    {
+        var shouldFail = true;
+        var factory = new DelegatingImportFactory((deviceContext, handle) =>
+        {
+            if (shouldFail)
+            {
+                shouldFail = false;
+                throw new InvalidOperationException("controlled import failure");
+            }
+
+            return VulkanD3D11TextureImport.Import(deviceContext, handle);
+        });
+
+        if (!TryCreateContext(out var context, factory))
+            return;
+
+        using (context)
+        {
+            Assert.Throws<InvalidOperationException>(() => context.Registry.Acquire(context.Handle));
+            Assert.Equal(0, context.Registry.EntryCount);
+
+            using var lease = context.Registry.Acquire(context.Handle);
+
+            Assert.Equal(2, factory.ImportCallCount);
+            Assert.Equal(1, context.Registry.EntryCount);
+        }
+    }
+
+    [Fact]
+    public async Task DisposeAsync_during_import_creation_disposes_created_import()
+    {
+        VulkanD3D11TextureImport? createdImport = null;
+        using var importCreated = new ManualResetEventSlim();
+        using var allowImportReturn = new ManualResetEventSlim();
+
+        var factory = new DelegatingImportFactory((deviceContext, handle) =>
+        {
+            createdImport = VulkanD3D11TextureImport.Import(deviceContext, handle);
+            importCreated.Set();
+
+            if (!allowImportReturn.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("Timed out waiting to return controlled import.");
+
+            return createdImport;
+        });
+
+        if (!TryCreateContext(out var context, factory))
+            return;
+
+        try
+        {
+            var acquireTask = Task.Run(() => context.Registry.Acquire(context.Handle));
+
+            Assert.True(importCreated.Wait(TimeSpan.FromSeconds(5)));
+
+            await context.Registry.DisposeAsync();
+            allowImportReturn.Set();
+
+            await Assert.ThrowsAsync<ObjectDisposedException>(async () => await acquireTask);
+
+            Assert.NotNull(createdImport);
+            Assert.True(createdImport.IsDisposed);
+        }
+        finally
+        {
+            allowImportReturn.Set();
+            context.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task Registry_DisposeAsync_throws_if_refcount_active()
     {
         if (!TryCreateContext(out var context))
@@ -248,7 +430,9 @@ public class VulkanExternalTextureRegistryTests
         }
     }
 
-    private static bool TryCreateContext([NotNullWhen(true)] out RegistryTestContext? context)
+    private static bool TryCreateContext(
+        [NotNullWhen(true)] out RegistryTestContext? context,
+        IVulkanExternalTextureImportFactory? importFactory = null)
     {
         context = null;
 
@@ -258,7 +442,10 @@ public class VulkanExternalTextureRegistryTests
         try
         {
             var deviceContext = VulkanHeadlessDevice.Create();
-            context = new RegistryTestContext(deviceContext, new VulkanExternalTextureRegistry(deviceContext), handle);
+            context = new RegistryTestContext(
+                deviceContext,
+                new VulkanExternalTextureRegistry(deviceContext, importFactory: importFactory),
+                handle);
             device.Dispose();
             return true;
         }
@@ -317,6 +504,28 @@ public class VulkanExternalTextureRegistryTests
             Registry.DisposeAsync().AsTask().GetAwaiter().GetResult();
             Handle.Dispose();
             DeviceContext.Dispose();
+        }
+    }
+
+    private sealed class DelegatingImportFactory : IVulkanExternalTextureImportFactory
+    {
+        private readonly Func<VulkanHeadlessDevice, D3D11SharedTextureFrameHandle, VulkanD3D11TextureImport> _import;
+        private int _importCallCount;
+
+        public DelegatingImportFactory(
+            Func<VulkanHeadlessDevice, D3D11SharedTextureFrameHandle, VulkanD3D11TextureImport> import)
+        {
+            _import = import;
+        }
+
+        public int ImportCallCount => Volatile.Read(ref _importCallCount);
+
+        public VulkanD3D11TextureImport Import(
+            VulkanHeadlessDevice deviceContext,
+            D3D11SharedTextureFrameHandle handle)
+        {
+            Interlocked.Increment(ref _importCallCount);
+            return _import(deviceContext, handle);
         }
     }
 }

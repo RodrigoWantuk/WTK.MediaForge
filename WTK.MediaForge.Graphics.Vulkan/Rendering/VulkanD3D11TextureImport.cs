@@ -43,6 +43,8 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
 
     public ImageLayout CurrentLayout { get; private set; } = ImageLayout.Undefined;
 
+    internal bool IsDisposed => _disposed;
+
     internal void SetLayout(ImageLayout layout) => CurrentLayout = layout;
 
     public static VulkanD3D11TextureImport Import(

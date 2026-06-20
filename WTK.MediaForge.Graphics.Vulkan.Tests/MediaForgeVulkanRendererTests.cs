@@ -35,6 +35,110 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
+    public async Task Renderer_Dispose_throws_before_marking_disposed_when_texture_leases_are_active()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (device)
+        using (handle)
+        {
+            var lease = renderer!.Backend.TextureRegistry.Acquire(handle);
+
+            try
+            {
+                var ex = Assert.Throws<InvalidOperationException>(() => renderer.Backend.Dispose());
+                Assert.Contains("texture leases are active", ex.Message);
+
+                renderer.Guard.BindToCurrentThread();
+                try
+                {
+                    await renderer.Backend.WaitIdleAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
+                }
+                finally
+                {
+                    renderer.Guard.Clear();
+                }
+            }
+            finally
+            {
+                lease.Dispose();
+                renderer.Backend.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void Renderer_Dispose_can_be_retried_after_active_lease_is_released()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (device)
+        using (handle)
+        {
+            var lease = renderer!.Backend.TextureRegistry.Acquire(handle);
+
+            Assert.Throws<InvalidOperationException>(() => renderer.Backend.Dispose());
+
+            lease.Dispose();
+            renderer.Backend.Dispose();
+
+            Assert.Throws<ObjectDisposedException>(() =>
+                renderer.Backend.TextureRegistry.Acquire(handle));
+        }
+    }
+
+    [Fact]
+    public void Renderer_Dispose_attempts_device_cleanup_even_if_target_dispose_fails()
+    {
+        var guard = new RenderThreadGuard();
+        VulkanHeadlessDevice deviceContext;
+
+        try
+        {
+            deviceContext = VulkanHeadlessDevice.Create();
+        }
+        catch
+        {
+            return;
+        }
+
+        var deviceCleanupAttempted = false;
+        var renderer = new MediaForgeVulkanRenderer(
+            guard,
+            deviceContext,
+            diagnostics: null,
+            NullVulkanRendererFaultInjector.Instance,
+            static (_, size) => new ThrowingOffscreenRenderTarget(size),
+            () =>
+            {
+                deviceCleanupAttempted = true;
+                deviceContext.Dispose();
+            });
+
+        guard.BindToCurrentThread();
+        try
+        {
+            renderer.BindOutput(CreateOffscreenBinding(RenderOutputId.New(), 64, 64));
+        }
+        finally
+        {
+            guard.Clear();
+        }
+
+        var ex = Assert.Throws<AggregateException>(() => renderer.Dispose());
+        Assert.Contains(ex.InnerExceptions, static inner => inner.Message.Contains("target dispose failed"));
+        Assert.True(deviceCleanupAttempted);
+    }
+
+    [Fact]
     public void Submit_returns_submission_that_completes_via_fence_poll()
     {
         if (!TryCreateRenderer(out var renderer))
@@ -864,6 +968,19 @@ public class MediaForgeVulkanRendererTests
         Assert.True(backend.GetType().IsNotPublic);
     }
 
+    private static RenderOutputBindingSnapshot CreateOffscreenBinding(
+        RenderOutputId outputId,
+        uint width,
+        uint height) =>
+        new()
+        {
+            OutputId = outputId,
+            TargetKind = RenderTargetKind.Offscreen,
+            NativeHandle = 0,
+            SurfaceSize = new FrameSize(width, height),
+            BindingVersion = 1
+        };
+
     private static RenderFrameSnapshot CreateSnapshotWithManyD3D11Frames(
         IReadOnlyList<D3D11SharedTextureFrameHandle> handles)
     {
@@ -1235,5 +1352,19 @@ public class MediaForgeVulkanRendererTests
         }
 
         public int ActiveRetainCount => _ring.GetRefCount(_slotIndex);
+    }
+
+    private sealed class ThrowingOffscreenRenderTarget : IVulkanOffscreenRenderTarget
+    {
+        public ThrowingOffscreenRenderTarget(FrameSize size)
+        {
+            Size = size;
+        }
+
+        public FrameSize Size { get; private set; }
+
+        public void Resize(FrameSize newSize) => Size = newSize;
+
+        public void Dispose() => throw new InvalidOperationException("target dispose failed");
     }
 }

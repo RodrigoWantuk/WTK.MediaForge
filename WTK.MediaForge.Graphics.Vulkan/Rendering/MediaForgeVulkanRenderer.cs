@@ -20,8 +20,10 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
     private readonly VulkanExternalTextureRegistry _textureRegistry;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly IVulkanRendererFaultInjector _faultInjector;
+    private readonly Func<VulkanHeadlessDevice, FrameSize, IVulkanOffscreenRenderTarget> _offscreenTargetFactory;
+    private readonly Action _disposeDevice;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
-    private readonly ConcurrentDictionary<RenderOutputId, VulkanOffscreenRenderTarget> _offscreenTargets = new();
+    private readonly ConcurrentDictionary<RenderOutputId, IVulkanOffscreenRenderTarget> _offscreenTargets = new();
     private int _disposed;
 
     internal MediaForgeVulkanRenderer(
@@ -36,12 +38,16 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
         RenderThreadGuard threadGuard,
         VulkanHeadlessDevice deviceContext,
         IMediaForgeDiagnosticsSink? diagnostics,
-        IVulkanRendererFaultInjector faultInjector)
+        IVulkanRendererFaultInjector faultInjector,
+        Func<VulkanHeadlessDevice, FrameSize, IVulkanOffscreenRenderTarget>? offscreenTargetFactory = null,
+        Action? disposeDevice = null)
     {
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
         _faultInjector = faultInjector ?? throw new ArgumentNullException(nameof(faultInjector));
+        _offscreenTargetFactory = offscreenTargetFactory ?? CreateOffscreenRenderTarget;
+        _disposeDevice = disposeDevice ?? _deviceContext.Dispose;
         _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
     }
 
@@ -68,6 +74,11 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
     public int SubmitCount => Volatile.Read(ref _submitCount);
 
     private int _submitCount;
+
+    private static IVulkanOffscreenRenderTarget CreateOffscreenRenderTarget(
+        VulkanHeadlessDevice deviceContext,
+        FrameSize size) =>
+        new VulkanOffscreenRenderTarget(deviceContext, size);
 
     internal static bool TryCreate(
         RenderThreadGuard threadGuard,
@@ -108,7 +119,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
             if (_offscreenTargets.TryRemove(binding.OutputId, out var existing))
                 existing.Dispose();
 
-            _offscreenTargets[binding.OutputId] = new VulkanOffscreenRenderTarget(
+            _offscreenTargets[binding.OutputId] = _offscreenTargetFactory(
                 _deviceContext,
                 binding.SurfaceSize);
         }
@@ -286,16 +297,55 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
 
     public void Dispose()
     {
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
+        if (_textureRegistry.ActiveLeaseCount > 0)
+        {
+            throw new InvalidOperationException(
+                "Cannot dispose MediaForgeVulkanRenderer while texture leases are active. " +
+                "All render submissions must be completed and disposed through PendingRenderSubmissionTracker first.");
+        }
+
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
+        List<Exception>? errors = null;
+
         foreach (var target in _offscreenTargets.Values)
-            target.Dispose();
+        {
+            try
+            {
+                target.Dispose();
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+        }
 
         _offscreenTargets.Clear();
 
-        _textureRegistry.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        _deviceContext.Dispose();
+        try
+        {
+            _textureRegistry.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+
+        try
+        {
+            _disposeDevice();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+
+        if (errors is not null)
+            throw new AggregateException("Failed to dispose Vulkan renderer cleanly.", errors);
     }
 
     private List<VulkanExternalTextureLease> AcquireTextureLeases(IReadOnlyList<D3D11SharedTextureFrameHandle> handles)

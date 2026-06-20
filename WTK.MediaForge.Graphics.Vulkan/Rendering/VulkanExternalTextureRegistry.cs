@@ -3,20 +3,23 @@ using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
+internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
+    private readonly IVulkanExternalTextureImportFactory _importFactory;
     private readonly Dictionary<VulkanExternalTextureKey, RegistryEntry> _entries = new();
     private bool _disposed;
 
     internal VulkanExternalTextureRegistry(
         VulkanHeadlessDevice deviceContext,
-        IMediaForgeDiagnosticsSink? diagnostics = null)
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        IVulkanExternalTextureImportFactory? importFactory = null)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
+        _importFactory = importFactory ?? VulkanExternalTextureImportFactory.Instance;
     }
 
     internal int EntryCount
@@ -91,9 +94,11 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
             if (isCreator)
             {
+                VulkanD3D11TextureImport? createdImport = null;
+
                 try
                 {
-                    var import = VulkanD3D11TextureImport.Import(_deviceContext, handle);
+                    createdImport = _importFactory.Import(_deviceContext, handle);
 
                     lock (_gate)
                     {
@@ -101,19 +106,37 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
                         if (!_entries.TryGetValue(key, out var current) || !ReferenceEquals(current, entry))
                         {
-                            import.Dispose();
                             throw new ObjectDisposedException(
                                 nameof(VulkanExternalTextureRegistry),
                                 "Registry entry was removed while creating import.");
                         }
 
-                        current.PublishImport(import, handle);
+                        current.PublishImport(createdImport, handle);
+                        createdImport = null;
                         current.RefCount++;
                         return new VulkanExternalTextureLease(current, this);
                     }
                 }
                 catch (Exception ex)
                 {
+                    if (createdImport is not null)
+                    {
+                        try
+                        {
+                            createdImport.Dispose();
+                        }
+                        catch (Exception disposeEx)
+                        {
+                            MediaForgeDiagnostics.Report(
+                                _diagnostics,
+                                MediaForgeDiagnosticSeverity.Error,
+                                "vulkan.texture_import_dispose_failed",
+                                "Failed to dispose unpublished Vulkan texture import.",
+                                nameof(VulkanExternalTextureRegistry),
+                                disposeEx);
+                        }
+                    }
+
                     lock (_gate)
                     {
                         if (_entries.TryGetValue(key, out var current) && ReferenceEquals(current, entry))
