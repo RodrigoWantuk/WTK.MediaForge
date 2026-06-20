@@ -601,6 +601,13 @@ Rules:
 
 ---
 
+## Known technical debt (GPU lifecycle)
+
+- `RetiredGpuResourceManager.WaitForAllFinalizedAsync` — functional but verbose; simplify after test stabilization settles.
+- `VulkanExternalTextureRegistry.Acquire` — Vulkan import creation runs inside the global registry lock; refactor to short lock + create-outside-lock + publish entry pattern when multi-source frames become common.
+
+---
+
 ## Disabled Draw Objects
 
 - **Validator** still validates `NestedCanvasId` references even when a `CanvasDrawObject` is disabled.

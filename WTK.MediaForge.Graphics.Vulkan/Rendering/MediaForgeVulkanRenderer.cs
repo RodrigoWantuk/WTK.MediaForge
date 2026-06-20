@@ -46,9 +46,16 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
     /// </summary>
     internal bool SimulateQueueSubmitFailure { get; set; }
 
+    /// <summary>
+    /// When greater than zero, throws on the Nth texture acquire attempt during <see cref="Submit"/>.
+    /// For unit tests only.
+    /// </summary>
+    internal int SimulateAcquireFailureOnAttempt { get; set; }
+
     public int SubmitCount => Volatile.Read(ref _submitCount);
 
     private int _submitCount;
+    private int _acquireAttemptCounter;
 
     public static bool TryCreate(RenderThreadGuard threadGuard, out MediaForgeVulkanRenderer? renderer)
     {
@@ -106,6 +113,7 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         ArgumentNullException.ThrowIfNull(snapshot);
 
         Interlocked.Increment(ref _submitCount);
+        _acquireAttemptCounter = 0;
 
         List<VulkanExternalTextureLease>? textureLeases = null;
         CommandBuffer commandBuffer = default;
@@ -223,10 +231,43 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         var handles = RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot);
         var leases = new List<VulkanExternalTextureLease>(handles.Count);
 
-        foreach (var handle in handles)
-            leases.Add(_textureRegistry.Acquire(handle));
+        try
+        {
+            foreach (var handle in handles)
+            {
+                if (SimulateAcquireFailureOnAttempt > 0 &&
+                    ++_acquireAttemptCounter == SimulateAcquireFailureOnAttempt)
+                {
+                    throw new InvalidOperationException("Simulated texture acquire failure for tests.");
+                }
 
-        return leases;
+                leases.Add(_textureRegistry.Acquire(handle));
+            }
+
+            return leases;
+        }
+        catch
+        {
+            foreach (var lease in leases)
+            {
+                try
+                {
+                    lease.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "vulkan.texture_lease_dispose_failed",
+                        "Failed to dispose texture lease after partial acquire failure.",
+                        nameof(MediaForgeVulkanRenderer),
+                        ex);
+                }
+            }
+
+            throw;
+        }
     }
 
     private CommandBuffer BeginCommandBuffer()

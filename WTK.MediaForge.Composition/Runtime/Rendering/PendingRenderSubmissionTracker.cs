@@ -112,6 +112,15 @@ public class PendingRenderSubmissionTracker : IDisposable
     {
         ArgumentNullException.ThrowIfNull(backend);
 
+        lock (_gate)
+        {
+            if (_state == PendingTrackerState.Disposed)
+                return;
+
+            if (_state == PendingTrackerState.Active)
+                _state = PendingTrackerState.ShutdownInProgress;
+        }
+
         var deadline = Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
 
         PollCompleted();
@@ -127,7 +136,6 @@ public class PendingRenderSubmissionTracker : IDisposable
             if (_state == PendingTrackerState.Disposed)
                 return;
 
-            _state = PendingTrackerState.ShutdownInProgress;
             remaining = [.. _pending];
         }
 

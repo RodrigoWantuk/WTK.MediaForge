@@ -299,6 +299,29 @@ public class PendingRenderSubmissionTrackerTests
         Assert.Equal(0, tracker.PendingCount);
     }
 
+    [Fact]
+    public async Task Add_throws_immediately_after_ShutdownAsync_starts()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        var manual = new ManualRenderFrameSubmission(CreateEmptySnapshot(1));
+        tracker.Add(manual);
+
+        var backend = new DelayedWaitIdleRenderBackend();
+        var shutdownTask = tracker.ShutdownAsync(
+            backend,
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        await backend.WaitUntilWaitIdleEnteredAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            tracker.Add(new ImmediateRenderFrameSubmission(CreateEmptySnapshot(2))));
+
+        backend.ReleaseWaitIdle();
+        manual.Complete();
+        await shutdownTask;
+    }
+
     private static RenderFrameSnapshot CreateEmptySnapshot(long version) =>
         new()
         {
@@ -329,6 +352,42 @@ public class PendingRenderSubmissionTrackerTests
 
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
+    }
+
+    private sealed class DelayedWaitIdleRenderBackend : IRenderBackend
+    {
+        private readonly TaskCompletionSource _waitIdleEntered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseWaitIdle =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task WaitUntilWaitIdleEnteredAsync(TimeSpan timeout)
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            await _waitIdleEntered.Task.WaitAsync(cts.Token).ConfigureAwait(false);
+        }
+
+        public void ReleaseWaitIdle() => _releaseWaitIdle.TrySetResult();
+
+        public void BindOutput(RenderOutputBindingSnapshot binding) { }
+
+        public void UnbindOutput(RenderOutputId outputId) { }
+
+        public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
+
+        public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
+            new ImmediateRenderFrameSubmission(snapshot);
+
+        public void WaitIdle() { }
+
+        public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            new(WaitIdleAsyncCore(cancellationToken));
+
+        private async Task WaitIdleAsyncCore(CancellationToken cancellationToken)
+        {
+            _waitIdleEntered.TrySetResult();
+            await _releaseWaitIdle.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private sealed class FailingRenderFrameSubmission : IRenderFrameSubmission

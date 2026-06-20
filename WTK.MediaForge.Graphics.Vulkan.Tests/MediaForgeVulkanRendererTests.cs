@@ -398,6 +398,53 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
+    public void AcquireTextureLeases_disposes_already_acquired_leases_when_later_acquire_fails()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var firstHandle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (firstHandle)
+        {
+            var secondHandle = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, width: 64, height: 64);
+            var thirdHandle = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, width: 64, height: 64);
+
+            using (secondHandle)
+            using (thirdHandle)
+            {
+                SimulateCaptureReleasedToConsumer(firstHandle);
+                SimulateCaptureReleasedToConsumer(secondHandle);
+                SimulateCaptureReleasedToConsumer(thirdHandle);
+
+                var guard = renderer!.Guard;
+                guard.BindToCurrentThread();
+
+                try
+                {
+                    renderer.Backend.SimulateAcquireFailureOnAttempt = 3;
+
+                    Assert.Throws<InvalidOperationException>(() =>
+                        renderer.Backend.Submit(CreateSnapshotWithThreeD3D11Frames(firstHandle, secondHandle, thirdHandle)));
+
+                    renderer.Backend.SimulateAcquireFailureOnAttempt = 0;
+
+                    var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(firstHandle));
+                    ReleaseSubmission(submission);
+                }
+                finally
+                {
+                    renderer.Backend.SimulateAcquireFailureOnAttempt = 0;
+                    guard.Clear();
+                }
+            }
+        }
+    }
+
+    [Fact]
     public void QueueSubmit_failure_does_not_mark_handle_as_producer()
     {
         if (!TryCreateRenderer(out var renderer))
@@ -734,6 +781,58 @@ public class MediaForgeVulkanRendererTests
 
         return (snapshot, probe);
     }
+
+    private static RenderFrameSnapshot CreateSnapshotWithThreeD3D11Frames(
+        D3D11SharedTextureFrameHandle first,
+        D3D11SharedTextureFrameHandle second,
+        D3D11SharedTextureFrameHandle third)
+    {
+        static GpuFrameReference ToFrame(D3D11SharedTextureFrameHandle handle) =>
+            new()
+            {
+                Backend = GpuFrameBackend.D3D11SharedTexture,
+                Handle = handle,
+                TextureSize = handle.TextureSize,
+                LogicalSize = handle.TextureSize,
+                SourceId = SourceId.New(),
+                FrameNumber = 1
+            };
+
+        var frames = new[] { ToFrame(first), ToFrame(second), ToFrame(third) };
+
+        return new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 1,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = CanvasId.New(),
+                    Name = "Main",
+                    Size = first.TextureSize,
+                    Objects =
+                    [
+                        CreateLayerSnapshot(frames[0], "Layer1"),
+                        CreateLayerSnapshot(frames[1], "Layer2"),
+                        CreateLayerSnapshot(frames[2], "Layer3")
+                    ]
+                }
+            ]
+        };
+    }
+
+    private static RenderSourceLayerDrawObjectSnapshot CreateLayerSnapshot(GpuFrameReference frame, string name) =>
+        new()
+        {
+            Id = DrawObjectId.New(),
+            Name = name,
+            SourceId = frame.SourceId,
+            Transform = new Transform2D
+            {
+                Size = new CanvasSize(frame.TextureSize.Width, frame.TextureSize.Height)
+            },
+            BoundFrame = frame
+        };
 
     private static RenderFrameSnapshot CreateSnapshotWithD3D11Frame(D3D11SharedTextureFrameHandle handle)
     {

@@ -6,6 +6,8 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 public sealed class MediaForgeRenderThread : IDisposable
 {
+    private static readonly TimeSpan FailedSubmitDisposeTimeout = TimeSpan.FromSeconds(1);
+
     private readonly IRenderBackend _backend;
     private readonly RenderThreadGuard _threadGuard;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
@@ -256,7 +258,12 @@ public sealed class MediaForgeRenderThread : IDisposable
                 {
                     try
                     {
-                        submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                        submission
+                            .WaitForCompletionAsync(FailedSubmitDisposeTimeout, CancellationToken.None)
+                            .AsTask()
+                            .GetAwaiter()
+                            .GetResult();
+                        submission.DisposeCompleted();
                     }
                     catch (Exception ex)
                     {
