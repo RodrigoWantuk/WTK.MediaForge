@@ -8,6 +8,7 @@ using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Time;
+using WTK.MediaForge.Diagnostics;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests;
@@ -165,6 +166,62 @@ public class PendingRenderSubmissionTrackerTests
         Assert.Equal(0, source.RetainCount);
     }
 
+    [Fact]
+    public void PollCompleted_does_not_remove_submission_when_DisposeCompleted_fails()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        var submission = new FailingRenderFrameSubmission(CreateEmptySnapshot(1));
+        tracker.Add(submission);
+
+        tracker.PollCompleted();
+
+        Assert.Equal(1, tracker.PendingCount);
+    }
+
+    [Fact]
+    public void Failed_dispose_can_be_retried_on_next_poll()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        var submission = new FailOnceRenderFrameSubmission(CreateEmptySnapshot(1));
+        tracker.Add(submission);
+
+        tracker.PollCompleted();
+        Assert.Equal(1, tracker.PendingCount);
+
+        tracker.PollCompleted();
+        Assert.Equal(0, tracker.PendingCount);
+    }
+
+    [Fact]
+    public void PollCompleted_reports_dispose_failure_once_while_keeping_submission_pending()
+    {
+        var sink = new InMemoryDiagnosticsSink();
+        var tracker = new PendingRenderSubmissionTracker(diagnostics: sink);
+        var submission = new FailingRenderFrameSubmission(CreateEmptySnapshot(1));
+        tracker.Add(submission);
+
+        tracker.PollCompleted();
+        tracker.PollCompleted();
+        tracker.PollCompleted();
+
+        Assert.Equal(1, tracker.PendingCount);
+        Assert.Single(sink.Diagnostics);
+        Assert.Equal("render.submission_dispose_failed", sink.Diagnostics[0].Code);
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_propagates_DisposeCompleted_failure()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        tracker.Add(new FailingRenderFrameSubmission(CreateEmptySnapshot(1)));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            tracker.ShutdownAsync(
+                new ImmediateIdleRenderBackend(),
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).AsTask());
+    }
+
     private static RenderFrameSnapshot CreateEmptySnapshot(long version) =>
         new()
         {
@@ -195,5 +252,54 @@ public class PendingRenderSubmissionTrackerTests
 
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
+    }
+
+    private sealed class FailingRenderFrameSubmission : IRenderFrameSubmission
+    {
+        public FailingRenderFrameSubmission(RenderFrameSnapshot snapshot) =>
+            Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+
+        public RenderFrameSnapshot Snapshot { get; }
+
+        public bool IsCompleted => true;
+
+        public ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public void DisposeCompleted() =>
+            throw new InvalidOperationException("Simulated dispose failure.");
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCompleted();
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FailOnceRenderFrameSubmission : IRenderFrameSubmission
+    {
+        private int _disposeAttempts;
+
+        public FailOnceRenderFrameSubmission(RenderFrameSnapshot snapshot) =>
+            Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+
+        public RenderFrameSnapshot Snapshot { get; }
+
+        public bool IsCompleted => true;
+
+        public ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public void DisposeCompleted()
+        {
+            if (Interlocked.Increment(ref _disposeAttempts) == 1)
+                throw new InvalidOperationException("Simulated first dispose failure.");
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCompleted();
+            return ValueTask.CompletedTask;
+        }
     }
 }

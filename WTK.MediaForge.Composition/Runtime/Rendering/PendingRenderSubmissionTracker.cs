@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
@@ -11,6 +12,8 @@ public class PendingRenderSubmissionTracker : IDisposable
 {
     private readonly object _gate = new();
     private readonly List<IRenderFrameSubmission> _pending = [];
+    private readonly HashSet<IRenderFrameSubmission> _cleanupFailureReported =
+        new(SubmissionReferenceEqualityComparer.Instance);
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private bool _disposed;
 
@@ -63,21 +66,24 @@ public class PendingRenderSubmissionTracker : IDisposable
         List<IRenderFrameSubmission> completed;
 
         lock (_gate)
-        {
-            completed = [];
+            completed = _pending.Where(static submission => submission.IsCompleted).ToList();
 
-            for (var i = _pending.Count - 1; i >= 0; i--)
-            {
-                if (_pending[i].IsCompleted)
-                {
-                    completed.Add(_pending[i]);
-                    _pending.RemoveAt(i);
-                }
-            }
-        }
+        var disposed = new List<IRenderFrameSubmission>();
 
         foreach (var submission in completed)
-            TryDisposeCompleted(submission);
+        {
+            if (TryDisposeCompleted(submission, reportFailure: true, propagateFailure: false))
+                disposed.Add(submission);
+        }
+
+        if (disposed.Count == 0)
+            return;
+
+        lock (_gate)
+        {
+            foreach (var submission in disposed)
+                _pending.Remove(submission);
+        }
     }
 
     public async ValueTask ShutdownAsync(
@@ -114,25 +120,38 @@ public class PendingRenderSubmissionTracker : IDisposable
             await submission
                 .WaitForCompletionAsync(GetRemainingTime(deadline), cancellationToken)
                 .ConfigureAwait(false);
-            TryDisposeCompleted(submission);
+            TryDisposeCompleted(submission, reportFailure: false, propagateFailure: true);
         }
     }
 
-    private void TryDisposeCompleted(IRenderFrameSubmission submission)
+    private bool TryDisposeCompleted(
+        IRenderFrameSubmission submission,
+        bool reportFailure,
+        bool propagateFailure)
     {
         try
         {
             submission.DisposeCompleted();
+            _cleanupFailureReported.Remove(submission);
+            return true;
         }
         catch (Exception ex)
         {
-            MediaForgeDiagnostics.Report(
-                _diagnostics,
-                MediaForgeDiagnosticSeverity.Error,
-                "render.submission_dispose_failed",
-                "Failed to dispose completed render submission.",
-                nameof(PendingRenderSubmissionTracker),
-                ex);
+            if (reportFailure && _cleanupFailureReported.Add(submission))
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "render.submission_dispose_failed",
+                    "Failed to dispose completed render submission.",
+                    nameof(PendingRenderSubmissionTracker),
+                    ex);
+            }
+
+            if (propagateFailure)
+                throw;
+
+            return false;
         }
     }
 
@@ -160,7 +179,7 @@ public class PendingRenderSubmissionTracker : IDisposable
                     "Cannot dispose tracker with incomplete submissions. Use ShutdownAsync instead.");
             }
 
-            TryDisposeCompleted(submission);
+            TryDisposeCompleted(submission, reportFailure: false, propagateFailure: true);
         }
     }
 
@@ -171,5 +190,14 @@ public class PendingRenderSubmissionTracker : IDisposable
             return TimeSpan.Zero;
 
         return TimeSpan.FromSeconds((double)remainingTicks / Stopwatch.Frequency);
+    }
+
+    private sealed class SubmissionReferenceEqualityComparer : IEqualityComparer<IRenderFrameSubmission>
+    {
+        public static SubmissionReferenceEqualityComparer Instance { get; } = new();
+
+        public bool Equals(IRenderFrameSubmission? x, IRenderFrameSubmission? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(IRenderFrameSubmission obj) => RuntimeHelpers.GetHashCode(obj);
     }
 }
