@@ -533,6 +533,41 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
+    public void Same_handle_survives_repeated_submits_without_timeout()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                for (var i = 0; i < 100; i++)
+                {
+                    var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+                    ReleaseSubmission(submission);
+                }
+
+                Assert.Equal(D3D11SharedTextureSyncKeys.Producer, handle.ProducerAcquireKey);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public void WaitIdleAsync_completes_without_device_wait()
     {
         if (!TryCreateRenderer(out var renderer))
