@@ -10,6 +10,8 @@
     <InternalsVisibleTo Include="WTK.MediaForge.Core.Tests" />
     <InternalsVisibleTo Include="WTK.MediaForge.Composition.Tests" />
     <InternalsVisibleTo Include="WTK.MediaForge.Composition" />
+    <InternalsVisibleTo Include="WTK.MediaForge.Capture.Tests" />
+    <InternalsVisibleTo Include="WTK.MediaForge.Capture" />
   </ItemGroup>
 
 </Project>

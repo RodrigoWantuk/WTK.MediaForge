@@ -1,4 +1,5 @@
 using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Time;
 
 namespace WTK.MediaForge.Core.Gpu.Slots;
 
@@ -12,18 +13,21 @@ public sealed class GpuFrameSlotRing : IDisposable
     private long _droppedFrames;
     private long _generationMismatches;
 
-    public GpuFrameSlotRing(int slotCount = 3)
+    public GpuFrameSlotRing(int slotCount = 3, bool reusePhysicalResources = false)
     {
         if (slotCount < 1)
             throw new ArgumentOutOfRangeException(nameof(slotCount));
 
         SlotCount = slotCount;
+        ReusePhysicalResources = reusePhysicalResources;
         _slots = new SlotEntry[slotCount];
         for (var i = 0; i < slotCount; i++)
             _slots[i] = new SlotEntry();
     }
 
     public int SlotCount { get; }
+
+    public bool ReusePhysicalResources { get; }
 
     public long DroppedFrameCount => Interlocked.Read(ref _droppedFrames);
 
@@ -75,10 +79,28 @@ public sealed class GpuFrameSlotRing : IDisposable
         }
     }
 
-    public void CompleteWrite(int slotIndex, IGpuFrameHandle handle, long frameNumber = 0)
+    public void InitializeSlot(int slotIndex, IGpuFrameHandle handle)
     {
         ArgumentNullException.ThrowIfNull(handle);
 
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            var entry = _slots[slotIndex];
+            entry.Handle = handle;
+            entry.State = GpuFrameSlotState.Free;
+            entry.Generation = 0;
+            entry.RefCount = 0;
+            entry.FrameNumber = 0;
+            entry.ContentToken = 0;
+            entry.TimestampTicks = 0;
+            entry.ResourceDisposed = false;
+        }
+    }
+
+    public void CompleteWrite(int slotIndex, IGpuFrameHandle? handle = null, long frameNumber = 0, long timestampTicks = 0)
+    {
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -91,10 +113,15 @@ public sealed class GpuFrameSlotRing : IDisposable
             if (entry.State != GpuFrameSlotState.Writing)
                 throw new InvalidOperationException($"Slot {slotIndex} is not in Writing state.");
 
+            if (handle is not null)
+                entry.Handle = handle;
+            else if (entry.Handle is null)
+                throw new InvalidOperationException($"Slot {slotIndex} has no handle.");
+
             entry.Generation++;
             entry.ContentToken++;
-            entry.Handle = handle;
             entry.FrameNumber = frameNumber;
+            entry.TimestampTicks = timestampTicks;
             entry.State = GpuFrameSlotState.Published;
             PublishLatestLocked(slotIndex);
         }
@@ -166,8 +193,16 @@ public sealed class GpuFrameSlotRing : IDisposable
             _latestSlotIndex = null;
 
             for (var i = 0; i < _slots.Length; i++)
-                FinalizeSlotOnStopLocked(_slots[i]);
+                FinalizeSlotOnDisposeLocked(_slots[i]);
         }
+    }
+
+    private void FinalizeSlotOnDisposeLocked(SlotEntry entry)
+    {
+        if (entry.RefCount > 0 && entry.State is GpuFrameSlotState.Published or GpuFrameSlotState.Free)
+            entry.State = GpuFrameSlotState.DisposePending;
+
+        DestroySlotResourceLocked(entry, forceDisposePhysical: true);
     }
 
     internal void Release(int slotIndex, long generation)
@@ -292,12 +327,34 @@ public sealed class GpuFrameSlotRing : IDisposable
             entry.State = GpuFrameSlotState.DisposePending;
     }
 
-    private static void DestroySlotResourceLocked(SlotEntry entry)
+    private static void DestroySlotResourceLocked(
+        SlotEntry entry,
+        bool reusePhysicalResources,
+        bool forceDisposePhysical = false)
     {
-        entry.Handle = null;
-        entry.ResourceDisposed = true;
+        if (!reusePhysicalResources || forceDisposePhysical)
+        {
+            if (entry.Handle is IDisposable disposable && !entry.ResourceDisposed)
+            {
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch (Exception)
+                {
+                    // TODO: Diagnostics.Record slot resource dispose failure.
+                }
+            }
+
+            entry.Handle = null;
+            entry.ResourceDisposed = true;
+        }
+
         entry.State = GpuFrameSlotState.Free;
     }
+
+    private void DestroySlotResourceLocked(SlotEntry entry, bool forceDisposePhysical = false) =>
+        DestroySlotResourceLocked(entry, ReusePhysicalResources, forceDisposePhysical);
 
     private GpuFrameSlotLease CreateLeaseLocked(int slotIndex, SlotEntry entry)
     {
@@ -309,7 +366,10 @@ public sealed class GpuFrameSlotRing : IDisposable
             Handle = handle,
             TextureSize = default,
             LogicalSize = default,
-            FrameNumber = entry.FrameNumber
+            FrameNumber = entry.FrameNumber,
+            Timestamp = entry.TimestampTicks > 0
+                ? MediaTime.FromStopwatchTicks(entry.TimestampTicks)
+                : MediaTime.Zero
         };
 
         return new GpuFrameSlotLease(this, slotIndex, entry.Generation, frame);
@@ -340,6 +400,8 @@ public sealed class GpuFrameSlotRing : IDisposable
         public IGpuFrameHandle? Handle;
 
         public long FrameNumber;
+
+        public long TimestampTicks;
 
         public long ContentToken;
 
