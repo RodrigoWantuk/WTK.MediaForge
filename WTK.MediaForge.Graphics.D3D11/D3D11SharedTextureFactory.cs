@@ -1,6 +1,7 @@
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Gpu;
 using SharedResourceFlags = Vortice.DXGI.SharedResourceFlags;
 
 namespace WTK.MediaForge.Graphics.D3D11;

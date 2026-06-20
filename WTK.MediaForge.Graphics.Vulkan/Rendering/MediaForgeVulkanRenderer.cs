@@ -13,6 +13,7 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
 {
     private readonly RenderThreadGuard _threadGuard;
     private readonly VulkanHeadlessDevice _deviceContext;
+    private readonly VulkanExternalTextureRegistry _textureRegistry;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
     private int _disposed;
 
@@ -20,13 +21,17 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
     {
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _deviceContext = VulkanHeadlessDevice.Create();
+        _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext);
     }
 
     internal MediaForgeVulkanRenderer(RenderThreadGuard threadGuard, VulkanHeadlessDevice deviceContext)
     {
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
+        _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext);
     }
+
+    internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;
 
     public int SubmitCount => Volatile.Read(ref _submitCount);
 
@@ -89,13 +94,14 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
 
         Interlocked.Increment(ref _submitCount);
 
-        List<VulkanD3D11TextureImport>? imports = null;
+        List<VulkanExternalTextureLease>? textureLeases = null;
         CommandBuffer commandBuffer = default;
         Fence fence = default;
 
         try
         {
-            imports = ImportSharedTextures(snapshot).ToList();
+            textureLeases = AcquireTextureLeases(snapshot);
+            var imports = textureLeases.Select(lease => lease.Import).ToList();
             commandBuffer = BeginCommandBuffer();
 
             foreach (var import in imports)
@@ -119,17 +125,17 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
                 snapshot,
                 commandBuffer,
                 fence,
-                imports);
+                textureLeases);
         }
         catch
         {
-            CleanupFailedSubmit(imports, commandBuffer, fence);
+            CleanupFailedSubmit(textureLeases, commandBuffer, fence);
             throw;
         }
     }
 
     private void CleanupFailedSubmit(
-        List<VulkanD3D11TextureImport>? imports,
+        List<VulkanExternalTextureLease>? textureLeases,
         CommandBuffer commandBuffer,
         Fence fence)
     {
@@ -145,11 +151,11 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
             vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &localCommandBuffer);
         }
 
-        if (imports is null)
+        if (textureLeases is null)
             return;
 
-        foreach (var import in imports)
-            import.Dispose();
+        foreach (var lease in textureLeases)
+            lease.Dispose();
     }
 
     public void WaitIdle()
@@ -172,18 +178,19 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
+        _textureRegistry.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _deviceContext.Dispose();
     }
 
-    private IReadOnlyList<VulkanD3D11TextureImport> ImportSharedTextures(RenderFrameSnapshot snapshot)
+    private List<VulkanExternalTextureLease> AcquireTextureLeases(RenderFrameSnapshot snapshot)
     {
         var handles = RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot);
-        var imports = new List<VulkanD3D11TextureImport>(handles.Count);
+        var leases = new List<VulkanExternalTextureLease>(handles.Count);
 
         foreach (var handle in handles)
-            imports.Add(VulkanD3D11TextureImport.Import(_deviceContext, handle));
+            leases.Add(_textureRegistry.Acquire(handle));
 
-        return imports;
+        return leases;
     }
 
     private CommandBuffer BeginCommandBuffer()

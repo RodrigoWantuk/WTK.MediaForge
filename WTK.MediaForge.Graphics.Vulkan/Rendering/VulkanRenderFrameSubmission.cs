@@ -9,7 +9,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
     private const int DefaultDisposeWaitSeconds = 5;
 
     private readonly VulkanHeadlessDevice _deviceContext;
-    private readonly List<VulkanD3D11TextureImport> _imports;
+    private readonly List<VulkanExternalTextureLease> _textureLeases;
     private RenderFrameSnapshot? _snapshot;
     private int _resourcesDisposed;
 
@@ -18,13 +18,13 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         RenderFrameSnapshot snapshot,
         CommandBuffer commandBuffer,
         Fence fence,
-        IReadOnlyList<VulkanD3D11TextureImport> imports)
+        IReadOnlyList<VulkanExternalTextureLease> textureLeases)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         CommandBuffer = commandBuffer;
         Fence = fence;
-        _imports = imports.ToList();
+        _textureLeases = textureLeases.ToList();
     }
 
     public CommandBuffer CommandBuffer { get; }
@@ -72,11 +72,8 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
             vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &commandBuffer);
         }
 
-        foreach (var import in _imports)
-        {
-            import.SourceHandle.NotifyVulkanReleasedToProducer();
-            import.Dispose();
-        }
+        foreach (var lease in _textureLeases)
+            lease.Dispose();
 
         Interlocked.Exchange(ref _snapshot, null)?.Dispose();
     }
