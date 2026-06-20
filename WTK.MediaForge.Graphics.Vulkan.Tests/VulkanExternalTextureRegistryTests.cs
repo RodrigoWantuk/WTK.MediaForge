@@ -356,6 +356,54 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
+    public async Task Waiter_observes_import_failure_without_silent_retry_loop()
+    {
+        using var importEntered = new ManualResetEventSlim();
+        using var allowFailure = new ManualResetEventSlim();
+        var importCalls = 0;
+
+        var factory = new DelegatingImportFactory((_, _) =>
+        {
+            if (Interlocked.Increment(ref importCalls) == 1)
+            {
+                importEntered.Set();
+
+                if (!allowFailure.Wait(TimeSpan.FromSeconds(5)))
+                    throw new TimeoutException("Timed out waiting to release controlled import failure.");
+
+                throw new InvalidOperationException("controlled import failure");
+            }
+
+            throw new InvalidOperationException("unexpected silent import retry");
+        });
+
+        if (!TryCreateContext(out var context, factory))
+            return;
+
+        using (context)
+        {
+            var creatorTask = Task.Run(() => context.Registry.Acquire(context.Handle));
+
+            Assert.True(importEntered.Wait(TimeSpan.FromSeconds(5)));
+
+            var waiterTask = Task.Run(() => context.Registry.Acquire(context.Handle));
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+
+            allowFailure.Set();
+
+            var creatorError = await Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await creatorTask);
+            var waiterError = await Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await waiterTask);
+
+            Assert.Equal("controlled import failure", creatorError.Message);
+            Assert.Equal("controlled import failure", waiterError.Message);
+            Assert.Equal(1, factory.ImportCallCount);
+            Assert.Equal(0, context.Registry.EntryCount);
+        }
+    }
+
+    [Fact]
     public async Task DisposeAsync_during_import_creation_disposes_created_import()
     {
         VulkanD3D11TextureImport? createdImport = null;

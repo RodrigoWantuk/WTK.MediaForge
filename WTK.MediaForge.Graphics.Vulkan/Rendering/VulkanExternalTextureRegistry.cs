@@ -76,12 +76,6 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
                         entry.RefCount++;
                         return new VulkanExternalTextureLease(entry, this);
                     }
-
-                    if (entry.Creation.Task.IsFaulted)
-                    {
-                        _entries.Remove(key);
-                        entry = null;
-                    }
                 }
 
                 if (entry is null)
@@ -164,7 +158,13 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
             }
             catch
             {
-                continue;
+                lock (_gate)
+                {
+                    if (_entries.TryGetValue(key, out var current) && ReferenceEquals(current, entry))
+                        _entries.Remove(key);
+                }
+
+                throw;
             }
 
             lock (_gate)
