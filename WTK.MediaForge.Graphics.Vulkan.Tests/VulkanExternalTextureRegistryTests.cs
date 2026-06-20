@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Vortice.DXGI;
 using WTK.MediaForge.Graphics.D3D11;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
@@ -108,7 +109,7 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
-    public void Acquire_disposed_or_closed_handle_throws()
+    public async Task Acquire_disposed_or_closed_handle_throws()
     {
         if (!TryCreateSharedTexture(out var device, out var handle))
             return;
@@ -122,7 +123,7 @@ public class VulkanExternalTextureRegistryTests
 
             Assert.Throws<ObjectDisposedException>(() => registry.Acquire(handle));
 
-            registry.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await registry.DisposeAsync();
             deviceContext.Dispose();
         }
     }
@@ -215,7 +216,7 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
-    public void Registry_DisposeAsync_throws_if_refcount_active()
+    public async Task Registry_DisposeAsync_throws_if_refcount_active()
     {
         if (!TryCreateContext(out var context))
             return;
@@ -224,8 +225,8 @@ public class VulkanExternalTextureRegistryTests
 
         try
         {
-            Assert.Throws<InvalidOperationException>(() =>
-                context.Registry.DisposeAsync().AsTask().GetAwaiter().GetResult());
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                context.Registry.DisposeAsync().AsTask());
         }
         finally
         {
@@ -247,7 +248,7 @@ public class VulkanExternalTextureRegistryTests
         }
     }
 
-    private static bool TryCreateContext(out RegistryTestContext? context)
+    private static bool TryCreateContext([NotNullWhen(true)] out RegistryTestContext? context)
     {
         context = null;
 

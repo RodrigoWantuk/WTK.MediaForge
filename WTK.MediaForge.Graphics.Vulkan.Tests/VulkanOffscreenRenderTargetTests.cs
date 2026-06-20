@@ -100,6 +100,37 @@ public class VulkanOffscreenRenderTargetTests
     }
 
     [Fact]
+    public void ResizeOutput_offscreen_rejects_zero_dimensions_and_keeps_existing_target()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        using (renderer)
+        {
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                renderer.Backend.BindOutput(CreateOffscreenBinding(outputId, 640, 480));
+
+                Assert.Throws<ArgumentOutOfRangeException>(() =>
+                    renderer.Backend.ResizeOutput(outputId, new FrameSize(0, 600)));
+
+                Assert.Equal(1, renderer.Backend.OffscreenTargetCount);
+                Assert.True(renderer.Backend.TryGetOffscreenTargetSize(outputId, out var size));
+                Assert.Equal(640u, size.Width);
+                Assert.Equal(480u, size.Height);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public void UnbindOutput_offscreen_disposes_target()
     {
         if (!TryCreateRenderer(out var renderer))

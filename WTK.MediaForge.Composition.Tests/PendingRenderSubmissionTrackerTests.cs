@@ -16,6 +16,13 @@ namespace WTK.MediaForge.Composition.Tests;
 public class PendingRenderSubmissionTrackerTests
 {
     [Fact]
+    public void Submission_types_do_not_expose_IDisposable_cleanup()
+    {
+        Assert.False(typeof(IDisposable).IsAssignableFrom(typeof(ImmediateRenderFrameSubmission)));
+        Assert.False(typeof(IDisposable).IsAssignableFrom(typeof(ManualRenderFrameSubmission)));
+    }
+
+    [Fact]
     public void Add_throws_when_tracker_disposed()
     {
         var tracker = new PendingRenderSubmissionTracker();
@@ -23,7 +30,7 @@ public class PendingRenderSubmissionTrackerTests
         tracker.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => tracker.Add(submission));
-        submission.Dispose();
+        DisposeCompleted(submission);
     }
 
     [Fact]
@@ -102,10 +109,10 @@ public class PendingRenderSubmissionTrackerTests
     }
 
     [Fact]
-    public void Submit_returns_submission_but_tracker_add_fails_disposes_submission()
+    public async Task Submit_returns_submission_but_tracker_add_fails_disposes_submission()
     {
         var source = new FakeVideoFrameSource(SourceId.New(), "Fake", new FrameSize(640, 480));
-        source.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await source.StartAsync(CancellationToken.None);
         source.PublishFrame(1, MediaTime.Zero);
 
         var runtime = new CompositionRuntime();
@@ -156,8 +163,8 @@ public class PendingRenderSubmissionTrackerTests
         {
             if (!ownershipTransferred)
             {
-                if (submission is ImmediateRenderFrameSubmission immediate)
-                    immediate.Dispose();
+                if (submission is not null)
+                    DisposeCompleted(submission);
                 else
                     snapshot.Dispose();
             }
@@ -387,6 +394,16 @@ public class PendingRenderSubmissionTrackerTests
             Outputs = ImmutableArray<RenderOutputStateSnapshot>.Empty,
             FrameLeases = ImmutableArray<Core.Gpu.GpuFrameLease>.Empty
         };
+
+    private static void DisposeCompleted(IRenderFrameSubmission submission)
+    {
+        submission
+            .WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+        submission.DisposeCompleted();
+    }
 
     private sealed class ThrowOnAddPendingRenderSubmissionTracker : PendingRenderSubmissionTracker
     {

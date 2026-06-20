@@ -108,49 +108,55 @@ internal sealed unsafe class VulkanD3D11TextureImport : IDisposable
         if (vk.CreateImage(device, &imageCreateInfo, null, out Image image) != Result.Success)
             throw new InvalidOperationException("Create imported Vulkan image failed.");
 
-        vk.GetImageMemoryRequirements(device, image, out MemoryRequirements memoryRequirements);
+        DeviceMemory memory = default;
 
-        var importedHandle = importedSharedHandle.DangerousGetHandleForInterop();
-
-        var importMemoryInfo = new ImportMemoryWin32HandleInfoKHR
+        try
         {
-            SType = StructureType.ImportMemoryWin32HandleInfoKhr,
-            HandleType = ExternalMemoryHandleTypeFlags.D3D11TextureBit,
-            Handle = importedHandle
-        };
+            vk.GetImageMemoryRequirements(device, image, out MemoryRequirements memoryRequirements);
 
-        var dedicatedAllocateInfo = new MemoryDedicatedAllocateInfo
-        {
-            SType = StructureType.MemoryDedicatedAllocateInfo,
-            PNext = &importMemoryInfo,
-            Image = image,
-            Buffer = default
-        };
+            var importedHandle = importedSharedHandle.DangerousGetHandleForInterop();
 
-        var allocateInfo = new MemoryAllocateInfo
-        {
-            SType = StructureType.MemoryAllocateInfo,
-            PNext = &dedicatedAllocateInfo,
-            AllocationSize = memoryRequirements.Size,
-            MemoryTypeIndex = findMemoryType(
-                memoryRequirements.MemoryTypeBits,
-                MemoryPropertyFlags.DeviceLocalBit)
-        };
+            var importMemoryInfo = new ImportMemoryWin32HandleInfoKHR
+            {
+                SType = StructureType.ImportMemoryWin32HandleInfoKhr,
+                HandleType = ExternalMemoryHandleTypeFlags.D3D11TextureBit,
+                Handle = importedHandle
+            };
 
-        if (vk.AllocateMemory(device, &allocateInfo, null, out DeviceMemory memory) != Result.Success)
-        {
-            vk.DestroyImage(device, image, null);
-            throw new InvalidOperationException("Allocate imported Vulkan memory failed.");
+            var dedicatedAllocateInfo = new MemoryDedicatedAllocateInfo
+            {
+                SType = StructureType.MemoryDedicatedAllocateInfo,
+                PNext = &importMemoryInfo,
+                Image = image,
+                Buffer = default
+            };
+
+            var allocateInfo = new MemoryAllocateInfo
+            {
+                SType = StructureType.MemoryAllocateInfo,
+                PNext = &dedicatedAllocateInfo,
+                AllocationSize = memoryRequirements.Size,
+                MemoryTypeIndex = findMemoryType(
+                    memoryRequirements.MemoryTypeBits,
+                    MemoryPropertyFlags.DeviceLocalBit)
+            };
+
+            if (vk.AllocateMemory(device, &allocateInfo, null, out memory) != Result.Success)
+                throw new InvalidOperationException("Allocate imported Vulkan memory failed.");
+
+            if (vk.BindImageMemory(device, image, memory, 0) != Result.Success)
+                throw new InvalidOperationException("Bind imported Vulkan image memory failed.");
+
+            return new VulkanD3D11TextureImport(vk, device, image, memory, importedSharedHandle, sourceHandle);
         }
-
-        if (vk.BindImageMemory(device, image, memory, 0) != Result.Success)
+        catch
         {
-            vk.FreeMemory(device, memory, null);
-            vk.DestroyImage(device, image, null);
-            throw new InvalidOperationException("Bind imported Vulkan image memory failed.");
-        }
+            if (memory.Handle != 0)
+                vk.FreeMemory(device, memory, null);
 
-        return new VulkanD3D11TextureImport(vk, device, image, memory, importedSharedHandle, sourceHandle);
+            vk.DestroyImage(device, image, null);
+            throw;
+        }
     }
 
     public void Dispose()

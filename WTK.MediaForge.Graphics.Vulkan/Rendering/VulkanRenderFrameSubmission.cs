@@ -5,10 +5,8 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmission, IDisposable
+internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmission
 {
-    private const int DefaultDisposeWaitSeconds = 5;
-
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly List<VulkanExternalTextureLease> _textureLeases;
@@ -80,15 +78,6 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
             lease.Dispose();
 
         Interlocked.Exchange(ref _snapshot, null)?.Dispose();
-    }
-
-    public void Dispose()
-    {
-        WaitForCompletionAsync(TimeSpan.FromSeconds(DefaultDisposeWaitSeconds), CancellationToken.None)
-            .AsTask()
-            .GetAwaiter()
-            .GetResult();
-        DisposeCompleted();
     }
 
     private void WaitForFenceSync(TimeSpan timeout, CancellationToken cancellationToken)

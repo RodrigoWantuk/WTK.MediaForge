@@ -2,10 +2,8 @@ using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public sealed class ImmediateRenderFrameSubmission : IRenderFrameSubmission, IDisposable
+public sealed class ImmediateRenderFrameSubmission : IRenderFrameSubmission
 {
-    private const int DefaultDisposeWaitSeconds = 5;
-
     private RenderFrameSnapshot? _snapshot;
     private int _resourcesDisposed;
 
@@ -28,14 +26,5 @@ public sealed class ImmediateRenderFrameSubmission : IRenderFrameSubmission, IDi
             return;
 
         Interlocked.Exchange(ref _snapshot, null)?.Dispose();
-    }
-
-    public void Dispose()
-    {
-        WaitForCompletionAsync(TimeSpan.FromSeconds(DefaultDisposeWaitSeconds), CancellationToken.None)
-            .AsTask()
-            .GetAwaiter()
-            .GetResult();
-        DisposeCompleted();
     }
 }

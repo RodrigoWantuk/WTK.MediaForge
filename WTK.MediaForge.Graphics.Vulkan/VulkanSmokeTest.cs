@@ -128,14 +128,17 @@ public sealed unsafe class VulkanSmokeTest : IDisposable
         if (deviceCount == 0)
             throw new InvalidOperationException("No Vulkan physical devices found.");
 
-        var devices = stackalloc PhysicalDevice[(int)deviceCount];
-        _vk.EnumeratePhysicalDevices(_instance, &deviceCount, devices);
+        var devices = new PhysicalDevice[(int)deviceCount];
+        fixed (PhysicalDevice* devicesPtr = devices)
+        {
+            _vk.EnumeratePhysicalDevices(_instance, &deviceCount, devicesPtr);
+        }
 
         var lines = new List<string>();
 
         for (uint i = 0; i < deviceCount; i++)
         {
-            var device = devices[i];
+            var device = devices[(int)i];
 
             _vk.GetPhysicalDeviceProperties(device, out var properties);
 
@@ -144,28 +147,31 @@ public sealed unsafe class VulkanSmokeTest : IDisposable
             uint queueFamilyCount = 0;
             _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, null);
 
-            var queueFamilies = stackalloc QueueFamilyProperties[(int)queueFamilyCount];
-            _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
-
             bool hasGraphicsPresentQueue = false;
 
-            for (uint queueIndex = 0; queueIndex < queueFamilyCount; queueIndex++)
+            var queueFamilies = new QueueFamilyProperties[(int)queueFamilyCount];
+            fixed (QueueFamilyProperties* queueFamiliesPtr = queueFamilies)
             {
-                bool supportsGraphics =
-                    (queueFamilies[queueIndex].QueueFlags & QueueFlags.GraphicsBit) != 0;
+                _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamiliesPtr);
 
-                Bool32 supportsPresent = false;
-
-                _khrSurface.GetPhysicalDeviceSurfaceSupport(
-                    device,
-                    queueIndex,
-                    _surface,
-                    &supportsPresent);
-
-                if (supportsGraphics && supportsPresent)
+                for (uint queueIndex = 0; queueIndex < queueFamilyCount; queueIndex++)
                 {
-                    hasGraphicsPresentQueue = true;
-                    break;
+                    bool supportsGraphics =
+                        (queueFamiliesPtr[queueIndex].QueueFlags & QueueFlags.GraphicsBit) != 0;
+
+                    Bool32 supportsPresent = false;
+
+                    _khrSurface.GetPhysicalDeviceSurfaceSupport(
+                        device,
+                        queueIndex,
+                        _surface,
+                        &supportsPresent);
+
+                    if (supportsGraphics && supportsPresent)
+                    {
+                        hasGraphicsPresentQueue = true;
+                        break;
+                    }
                 }
             }
 

@@ -229,11 +229,11 @@ public class ProjectValidatorFiniteTests
 public class RenderFrameSnapshotFactorySafetyTests
 {
     [Fact]
-    public void Disabled_nested_canvas_does_not_acquire_inner_source_frames()
+    public async Task Disabled_nested_canvas_does_not_acquire_inner_source_frames()
     {
         var innerSourceId = SourceId.New();
         var innerSource = new FakeVideoFrameSource(innerSourceId, "Inner", new FrameSize(640, 480));
-        innerSource.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await innerSource.StartAsync(CancellationToken.None);
         innerSource.PublishFrame(1, MediaTime.Zero);
 
         var runtime = new CompositionRuntime();
@@ -277,11 +277,11 @@ public class RenderFrameSnapshotFactorySafetyTests
     }
 
     [Fact]
-    public void Disabled_source_layer_does_not_acquire_frame()
+    public async Task Disabled_source_layer_does_not_acquire_frame()
     {
         var sourceId = SourceId.New();
         var source = new FakeVideoFrameSource(sourceId, "Fake", new FrameSize(640, 480));
-        source.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await source.StartAsync(CancellationToken.None);
         source.PublishFrame(1, MediaTime.Zero);
 
         var runtime = new CompositionRuntime();
@@ -319,11 +319,11 @@ public class RenderFrameSnapshotFactorySafetyTests
     }
 
     [Fact]
-    public void Build_releases_leases_when_build_fails_after_acquire()
+    public async Task Build_releases_leases_when_build_fails_after_acquire()
     {
         var goodSourceId = SourceId.New();
         var goodSource = new FakeVideoFrameSource(goodSourceId, "Good", new FrameSize(640, 480));
-        goodSource.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await goodSource.StartAsync(CancellationToken.None);
         goodSource.PublishFrame(1, MediaTime.Zero);
 
         var badSourceId = SourceId.New();
@@ -372,11 +372,11 @@ public class RenderFrameSnapshotFactorySafetyTests
     }
 
     [Fact]
-    public void Source_no_frame_diagnostic_has_warning_severity()
+    public async Task Source_no_frame_diagnostic_has_warning_severity()
     {
         var sourceId = SourceId.New();
         var source = new FakeVideoFrameSource(sourceId, "Fake", new FrameSize(640, 480));
-        source.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await source.StartAsync(CancellationToken.None);
 
         var runtime = new CompositionRuntime();
         runtime.RegisterFrameProvider(source);

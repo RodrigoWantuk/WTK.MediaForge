@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Reflection;
 using Silk.NET.Vulkan;
 using Vortice.DXGI;
 using WTK.MediaForge.Composition.Runtime.Rendering;
@@ -17,6 +18,22 @@ namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 [Trait("Category", TestCategories.Gpu)]
 public class MediaForgeVulkanRendererTests
 {
+    [Fact]
+    public void Vulkan_submission_type_does_not_expose_IDisposable_cleanup()
+    {
+        Assert.False(typeof(IDisposable).IsAssignableFrom(typeof(VulkanRenderFrameSubmission)));
+    }
+
+    [Fact]
+    public void Vulkan_headless_device_does_not_expose_synchronous_WaitIdle()
+    {
+        var method = typeof(VulkanHeadlessDevice).GetMethod(
+            "WaitIdle",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        Assert.Null(method);
+    }
+
     [Fact]
     public void Submit_returns_submission_that_completes_via_fence_poll()
     {
@@ -200,7 +217,7 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
-    public void WaitForCompletionAsync_completes_outstanding_submissions()
+    public async Task WaitForCompletionAsync_completes_outstanding_submissions()
     {
         if (!TryCreateRenderer(out var renderer))
             return;
@@ -217,10 +234,7 @@ public class MediaForgeVulkanRendererTests
 
                 try
                 {
-                    submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
-                        .AsTask()
-                        .GetAwaiter()
-                        .GetResult();
+                    await submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
                     Assert.True(submission.IsCompleted);
                     submission.DisposeCompleted();
                     Assert.Equal(0, retainProbe.ActiveRetainCount);
@@ -756,7 +770,7 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
-    public void WaitIdleAsync_completes_without_device_wait()
+    public async Task WaitIdleAsync_completes_without_device_wait()
     {
         if (!TryCreateRenderer(out var renderer))
             return;
@@ -769,7 +783,7 @@ public class MediaForgeVulkanRendererTests
             try
             {
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                renderer.Backend.WaitIdleAsync(TimeSpan.FromSeconds(5), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+                await renderer.Backend.WaitIdleAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
                 stopwatch.Stop();
 
                 Assert.True(stopwatch.ElapsedMilliseconds < 50);

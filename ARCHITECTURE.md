@@ -272,8 +272,8 @@ Examples:
 
 ```text
 D3D11GpuDevice
-D3D11TextureFrame
-D3D11SharedTexture
+D3D11SharedTextureFrameHandle
+D3D11SharedTextureFactory
 D3D11AdapterInfo
 ```
 
@@ -284,12 +284,11 @@ Contains the Vulkan renderer and Vulkan resource management.
 Examples:
 
 ```text
-VulkanPreviewRenderer
-VulkanDevice
-VulkanSwapchain
-VulkanImage
-VulkanPipeline
-VulkanRenderTarget
+MediaForgeVulkanRenderBackendFactory
+MediaForgeVulkanRenderer
+VulkanExternalTextureRegistry
+VulkanD3D11TextureImport
+VulkanOffscreenRenderTarget
 ```
 
 #### `WTK.MediaForge.Graphics.Interop`
@@ -710,8 +709,8 @@ D3D11 shared handle
 D3D11 keyed mutex
 Vulkan external memory
 Vulkan dedicated allocation
-Vulkan swapchain
-WinForms preview panel
+Vulkan render backend submission
+Render-thread submission tracking
 ```
 
 This validates the main GPU-first approach without converting the desktop frame into a `Bitmap` or `byte[]`.
@@ -1250,12 +1249,12 @@ Renderer:
 
 ---
 
-## Current POC Status
+## Current Runtime Status
 
 Validated:
 
 ```text
-.NET 8 WinForms host
+.NET 8 WinForms host shell
 Desktop monitor enumeration (including rotated outputs)
 Desktop Duplication API capture
 D3D11 texture capture
@@ -1263,37 +1262,34 @@ D3D11 GPU-to-GPU CopyResource
 D3D11 shared NT handle creation
 D3D11 keyed mutex usage
 Vulkan instance creation
-WinForms Panel to Vulkan surface
-Vulkan swapchain presentation
 Vulkan external memory import
 D3D11 texture reaching Vulkan
-Shader-based preview (Fit + rotation + text overlay)
 Phase 1 composition foundation (project model, validator, snapshots, render thread)
 Vulkan IRenderBackend bridge (headless submit, external texture import, keyed mutex)
 GPU lifecycle hardening P0 (provider gate, ring fault propagation, dedupe, ArrayPool, submission/backend contracts)
 Offscreen render target scaffolding (RenderTargetKind.Offscreen, VulkanOffscreenRenderTarget)
 ```
 
-Current POC renderer path:
+Current hardened renderer path:
 
 ```text
-D3D11 imported image
-  -> Vulkan ImageView + Sampler
-  -> desktop_preview.vert / desktop_preview.frag
-  -> Fit layout + display rotation
-  -> swapchain
+DesktopDuplicationFrameProvider
+  -> RenderFrameSnapshot
+  -> MediaForgeRenderThread
+  -> PendingRenderSubmissionTracker
+  -> MediaForgeVulkanRenderer
+  -> VulkanRenderFrameSubmission
 ```
 
-Catalog shaders (`mf.*`) and `IRenderBackend` Vulkan bridge are defined but not yet wired into `Form1`.
+Catalog shaders (`mf.*`) and the `IRenderBackend` Vulkan bridge are defined. The WinForms shell must not re-enable preview until it uses the hardened render-thread backend.
 
 Known limitations:
 
 ```text
-POC preview uses a single-source path, not the full compositor runtime
+Win32 swapchain binding through IRenderBackend is not implemented yet
 Nested canvas rendering is modeled in snapshots but not yet composited into offscreen targets
 Offscreen targets exist but Submit does not render into them yet
 Full multi-output composition is phase 2
-Win32 swapchain binding through IRenderBackend is not implemented yet
 ```
 
 Next architectural step:
@@ -1301,7 +1297,7 @@ Next architectural step:
 ```text
 Minimal compositing pass: source layers -> offscreen target (fit mode)
   -> mf.* shader catalog pipelines
-  -> optional gradual migration from VulkanPreviewRenderer
+  -> Win32 preview binding through IRenderBackend
 ```
 
 ---

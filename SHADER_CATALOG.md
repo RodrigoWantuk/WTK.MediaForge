@@ -1,6 +1,6 @@
 # WTK MediaForge Shader Catalog
 
-Stable catalog ids for the modular composition shader family. Each draw object type maps to one pipeline kind via `RenderDrawObjectPipelineMapper`.
+Stable catalog ids for the modular composition shader family. Each draw object type maps to one pipeline kind through `RenderDrawObjectPipelineMapper`.
 
 ## Naming
 
@@ -10,9 +10,9 @@ Stable catalog ids for the modular composition shader family. Each draw object t
 | `mf.solid` | Solid | `SolidDrawObject` |
 | `mf.text` | Text | `TextDrawObject` |
 | `mf.canvas.composite` | CanvasComposite | `CanvasDrawObject` |
-| `mf.output.letterbox` | OutputLetterbox | Render output target (canvas → surface) |
+| `mf.output.letterbox` | OutputLetterbox | Render output target |
 
-## GLSL skeletons
+## GLSL Skeletons
 
 Embedded in `WTK.MediaForge.Graphics.Vulkan/Shaders/Catalog/`:
 
@@ -25,7 +25,7 @@ Embedded in `WTK.MediaForge.Graphics.Vulkan/Shaders/Catalog/`:
 | `mf_canvas_composite.frag` | Nested canvas texture |
 | `mf_output_letterbox.frag` | Canvas fit into output surface |
 
-## UV pipeline (source layer)
+## UV Pipeline
 
 Order is fixed and matches `CoordinateSystem.CompositionPipelineOrder`:
 
@@ -39,19 +39,19 @@ color = texture(sourceTexture, uvRaw);
 
 ## Managed API
 
-- `ShaderPipelineKind` — enum
-- `ShaderPipelineDescriptor` — catalog metadata
-- `ShaderPipelineCatalog` — registry
-- `RenderDrawObjectPipelineMapper` — draw object → pipeline kind
+- `ShaderPipelineKind`
+- `ShaderPipelineDescriptor`
+- `ShaderPipelineCatalog`
+- `RenderDrawObjectPipelineMapper`
 
-## Snapshot ownership
+## Snapshot Ownership
 
-**Current (E0):** `IRenderBackend.Submit` returns `IRenderFrameSubmission`, which owns the snapshot until disposed. `MediaForgeRenderThread` uses `PendingRenderSubmissionTracker` to poll completed submissions and dispose them outside the tracker lock. The backend never disposes snapshots directly.
+`IRenderBackend.Submit` returns `IRenderFrameSubmission`, which owns the snapshot until completion cleanup. `MediaForgeRenderThread` uses `PendingRenderSubmissionTracker` to poll completed submissions and call `DisposeCompleted()` outside the tracker lock. The backend never disposes snapshots directly.
 
-With `NullRenderBackend` / `ImmediateRenderFrameSubmission`, submissions complete immediately and are disposed on the next poll or during shutdown (`WaitIdle` → tracker dispose → buffer dispose).
+With `NullRenderBackend` / `ImmediateRenderFrameSubmission`, submissions complete immediately and are cleaned up on the next poll or during shutdown through `WaitForCompletionAsync(timeout, ct)` then `DisposeCompleted()`.
 
-**Buffer rules:** `LatestSnapshotBuffer.Publish` uses a lock; rejected publishes (buffer disposed) do not dispose the caller's snapshot. `PublishFrame` disposes on failure before ownership transfer.
+`LatestSnapshotBuffer.Publish` uses a lock; rejected publishes do not dispose the caller's snapshot. `PublishFrame` disposes on failure before ownership transfer.
 
-## POC note
+## Current Status
 
-`desktop_preview.vert/frag` remain the active POC preview path. Catalog shaders are the foundation for the compositor backend (phase 2 Vulkan bridge).
+The old `desktop_preview.vert/frag` POC path has been removed. Catalog shaders are the only shader family for product composition work.

@@ -19,7 +19,8 @@ internal sealed unsafe class VulkanOffscreenRenderTarget : IDisposable
             throw new ArgumentOutOfRangeException(nameof(size), "Offscreen target dimensions must be greater than zero.");
 
         Size = size;
-        CreateResources(size.Width, size.Height);
+        var resources = CreateResources(size.Width, size.Height);
+        ApplyResources(resources);
     }
 
     public FrameSize Size { get; private set; }
@@ -40,9 +41,11 @@ internal sealed unsafe class VulkanOffscreenRenderTarget : IDisposable
         if (newSize == Size)
             return;
 
+        var resources = CreateResources(newSize.Width, newSize.Height);
+
         DestroyResources();
         Size = newSize;
-        CreateResources(newSize.Width, newSize.Height);
+        ApplyResources(resources);
         CurrentLayout = ImageLayout.Undefined;
     }
 
@@ -54,87 +57,117 @@ internal sealed unsafe class VulkanOffscreenRenderTarget : IDisposable
         DestroyResources();
     }
 
-    private void CreateResources(uint width, uint height)
+    private CreatedResources CreateResources(uint width, uint height)
     {
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
+        Image image = default;
+        DeviceMemory memory = default;
+        ImageView imageView = default;
 
-        var imageInfo = new ImageCreateInfo
+        try
         {
-            SType = StructureType.ImageCreateInfo,
-            ImageType = ImageType.Type2D,
-            Format = Format.R8G8B8A8Unorm,
-            Extent = new Extent3D(width, height, 1),
-            MipLevels = 1,
-            ArrayLayers = 1,
-            Samples = SampleCountFlags.Count1Bit,
-            Tiling = ImageTiling.Optimal,
-            Usage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit,
-            SharingMode = SharingMode.Exclusive,
-            InitialLayout = ImageLayout.Undefined
-        };
-
-        if (vk.CreateImage(device, &imageInfo, null, out _image) != Result.Success)
-            throw new InvalidOperationException("vkCreateImage failed for offscreen render target.");
-
-        vk.GetImageMemoryRequirements(device, _image, out MemoryRequirements requirements);
-
-        var allocInfo = new MemoryAllocateInfo
-        {
-            SType = StructureType.MemoryAllocateInfo,
-            AllocationSize = requirements.Size,
-            MemoryTypeIndex = _deviceContext.FindMemoryType(
-                requirements.MemoryTypeBits,
-                MemoryPropertyFlags.DeviceLocalBit)
-        };
-
-        if (vk.AllocateMemory(device, &allocInfo, null, out _memory) != Result.Success)
-            throw new InvalidOperationException("vkAllocateMemory failed for offscreen render target.");
-
-        if (vk.BindImageMemory(device, _image, _memory, 0) != Result.Success)
-            throw new InvalidOperationException("vkBindImageMemory failed for offscreen render target.");
-
-        var viewInfo = new ImageViewCreateInfo
-        {
-            SType = StructureType.ImageViewCreateInfo,
-            Image = _image,
-            ViewType = ImageViewType.Type2D,
-            Format = Format.R8G8B8A8Unorm,
-            SubresourceRange = new ImageSubresourceRange
+            var imageInfo = new ImageCreateInfo
             {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = 0,
-                LayerCount = 1
-            }
-        };
+                SType = StructureType.ImageCreateInfo,
+                ImageType = ImageType.Type2D,
+                Format = Format.R8G8B8A8Unorm,
+                Extent = new Extent3D(width, height, 1),
+                MipLevels = 1,
+                ArrayLayers = 1,
+                Samples = SampleCountFlags.Count1Bit,
+                Tiling = ImageTiling.Optimal,
+                Usage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit,
+                SharingMode = SharingMode.Exclusive,
+                InitialLayout = ImageLayout.Undefined
+            };
 
-        if (vk.CreateImageView(device, &viewInfo, null, out _imageView) != Result.Success)
-            throw new InvalidOperationException("vkCreateImageView failed for offscreen render target.");
+            if (vk.CreateImage(device, &imageInfo, null, out image) != Result.Success)
+                throw new InvalidOperationException("vkCreateImage failed for offscreen render target.");
+
+            vk.GetImageMemoryRequirements(device, image, out MemoryRequirements requirements);
+
+            var allocInfo = new MemoryAllocateInfo
+            {
+                SType = StructureType.MemoryAllocateInfo,
+                AllocationSize = requirements.Size,
+                MemoryTypeIndex = _deviceContext.FindMemoryType(
+                    requirements.MemoryTypeBits,
+                    MemoryPropertyFlags.DeviceLocalBit)
+            };
+
+            if (vk.AllocateMemory(device, &allocInfo, null, out memory) != Result.Success)
+                throw new InvalidOperationException("vkAllocateMemory failed for offscreen render target.");
+
+            if (vk.BindImageMemory(device, image, memory, 0) != Result.Success)
+                throw new InvalidOperationException("vkBindImageMemory failed for offscreen render target.");
+
+            var viewInfo = new ImageViewCreateInfo
+            {
+                SType = StructureType.ImageViewCreateInfo,
+                Image = image,
+                ViewType = ImageViewType.Type2D,
+                Format = Format.R8G8B8A8Unorm,
+                SubresourceRange = new ImageSubresourceRange
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    BaseMipLevel = 0,
+                    LevelCount = 1,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                }
+            };
+
+            if (vk.CreateImageView(device, &viewInfo, null, out imageView) != Result.Success)
+                throw new InvalidOperationException("vkCreateImageView failed for offscreen render target.");
+
+            return new CreatedResources(image, memory, imageView);
+        }
+        catch
+        {
+            DestroyResources(image, memory, imageView);
+            throw;
+        }
+    }
+
+    private void ApplyResources(CreatedResources resources)
+    {
+        _image = resources.Image;
+        _memory = resources.Memory;
+        _imageView = resources.ImageView;
     }
 
     private void DestroyResources()
     {
+        DestroyResources(_image, _memory, _imageView);
+        _image = default;
+        _memory = default;
+        _imageView = default;
+    }
+
+    private void DestroyResources(Image image, DeviceMemory memory, ImageView imageView)
+    {
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
 
-        if (_imageView.Handle != 0)
+        if (imageView.Handle != 0)
         {
-            vk.DestroyImageView(device, _imageView, null);
-            _imageView = default;
+            vk.DestroyImageView(device, imageView, null);
         }
 
-        if (_image.Handle != 0)
+        if (image.Handle != 0)
         {
-            vk.DestroyImage(device, _image, null);
-            _image = default;
+            vk.DestroyImage(device, image, null);
         }
 
-        if (_memory.Handle != 0)
+        if (memory.Handle != 0)
         {
-            vk.FreeMemory(device, _memory, null);
-            _memory = default;
+            vk.FreeMemory(device, memory, null);
         }
     }
+
+    private readonly record struct CreatedResources(
+        Image Image,
+        DeviceMemory Memory,
+        ImageView ImageView);
 }

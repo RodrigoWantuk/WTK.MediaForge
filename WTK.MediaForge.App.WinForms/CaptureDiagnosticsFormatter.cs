@@ -1,7 +1,5 @@
 using System.Text;
 using WTK.MediaForge.Core.Capture;
-using WTK.MediaForge.Core.Frames;
-using WTK.MediaForge.Graphics.D3D11;
 using WTK.MediaForge.Graphics.Vulkan;
 
 namespace WMF.Testing;
@@ -30,48 +28,6 @@ internal static class CaptureDiagnosticsFormatter
         }
 
         AppendRenderer(builder, session, renderer, resolvedShaderRotation: null);
-
-        return builder.ToString().TrimEnd();
-    }
-
-    public static string Build(
-        CaptureSourceInfo? source,
-        CaptureSessionInfo? session,
-        CaptureFrameStats frameStats,
-        D3D11TextureFrame frame,
-        VulkanRendererInfo? renderer,
-        double fps)
-    {
-        var builder = new StringBuilder();
-
-        if (source is not null)
-            AppendSource(builder, source);
-
-        if (session is not null)
-            AppendSession(builder, session);
-
-        FrameSize frameSize = frame.Size;
-        bool logicalTextureMatch = source is not null &&
-            source.LogicalSize.Width == frameSize.Width &&
-            source.LogicalSize.Height == frameSize.Height;
-
-        builder.AppendLine(
-            $"Frame #{frame.FrameNumber} | tex={frameSize} | FPS={fps:0.0} | accum={frameStats.AccumulatedFrames} | protected={frameStats.ProtectedContentMaskedOut} | coalesced={frameStats.RectsCoalesced} | logical==tex={logicalTextureMatch}");
-
-        builder.AppendLine(
-            $"D3D sizes: acquired={frameStats.AcquiredTextureSize} | owned={frameStats.OwnedTextureSize} | mismatch={frameStats.TextureSizeMismatch}");
-
-        if (frameStats.CenterPixelReadSucceeded && frameStats.CenterPixel is { } centerPixel)
-        {
-            builder.AppendLine(
-                $"D3D center pixel: {centerPixel} | likelyEmpty={centerPixel.IsLikelyEmpty}");
-        }
-        else
-        {
-            builder.AppendLine("D3D center pixel: read failed");
-        }
-
-        AppendRenderer(builder, session, renderer, renderer?.ResolvedShaderRotation);
 
         return builder.ToString().TrimEnd();
     }

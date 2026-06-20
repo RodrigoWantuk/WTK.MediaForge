@@ -79,12 +79,6 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         throw new InvalidOperationException("Failed to find suitable Vulkan memory type.");
     }
 
-    public void WaitIdle()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _vk.DeviceWaitIdle(_device);
-    }
-
     public void Dispose()
     {
         if (_disposed)

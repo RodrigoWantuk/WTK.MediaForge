@@ -13,11 +13,11 @@ namespace WTK.MediaForge.Composition.Tests;
 public class GpuFrameSlotRingIntegrationTests
 {
     [Fact]
-    public void Lease_keeps_slot_retained_until_submission_completes()
+    public async Task Lease_keeps_slot_retained_until_submission_completes()
     {
         var sourceId = SourceId.New();
         var source = new FakeGpuFrameSlotRingVideoFrameSource(sourceId, "Ring", new FrameSize(640, 480));
-        source.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await source.StartAsync(CancellationToken.None);
 
         var runtime = new CompositionRuntime();
         runtime.RegisterFrameProvider(source);
