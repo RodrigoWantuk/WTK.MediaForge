@@ -40,6 +40,12 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
 
     internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;
 
+    /// <summary>
+    /// When true, <see cref="SubmitCommandBuffer"/> throws before updating keyed mutex state.
+    /// For unit tests only.
+    /// </summary>
+    internal bool SimulateQueueSubmitFailure { get; set; }
+
     public int SubmitCount => Volatile.Read(ref _submitCount);
 
     private int _submitCount;
@@ -266,7 +272,7 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
             {
                 acquireSyncs[i] = imports[i].Memory;
                 releaseSyncs[i] = imports[i].Memory;
-                acquireKeys[i] = D3D11SharedTextureSyncKeys.Consumer;
+                acquireKeys[i] = imports[i].SourceHandle.ProducerAcquireKey;
                 releaseKeys[i] = D3D11SharedTextureSyncKeys.Producer;
                 acquireTimeouts[i] = 1_000_000_000;
             }
@@ -296,7 +302,13 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
             PCommandBuffers = commandBuffers
         };
 
+        if (SimulateQueueSubmitFailure)
+            throw new InvalidOperationException("vkQueueSubmit failed.");
+
         if (vk.QueueSubmit(_deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
             throw new InvalidOperationException("vkQueueSubmit failed.");
+
+        foreach (var import in imports)
+            import.SourceHandle.NotifyVulkanReleasedToProducer();
     }
 }

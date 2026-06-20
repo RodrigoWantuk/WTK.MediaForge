@@ -43,15 +43,29 @@ public sealed class D3D11SharedTextureFrameHandle : IGpuFrameHandle, IDisposable
 
     public bool HasSharedHandle => !SharedHandle.IsInvalid;
 
+    /// <summary>
+    /// The keyed mutex key the D3D11 producer should acquire on the next capture.
+    /// After capture releases to consumer, this becomes <see cref="D3D11SharedTextureSyncKeys.Consumer"/>.
+    /// After a successful Vulkan queue submit, this becomes <see cref="D3D11SharedTextureSyncKeys.Producer"/>
+    /// even before the submission fence completes — the GPU may still be releasing the mutex,
+    /// and <see cref="IDXGIKeyedMutex.AcquireSync"/> will block until it is available.
+    /// </summary>
     public ulong ProducerAcquireKey => Volatile.Read(ref _producerAcquireKey);
 
     public bool IsRetired => Volatile.Read(ref _isRetired) != 0;
 
     public void MarkRetired() => Volatile.Write(ref _isRetired, 1);
 
+    /// <summary>
+    /// Records that capture released the texture to the consumer key.
+    /// </summary>
     public void NotifyCaptureReleasedToConsumer() =>
         Volatile.Write(ref _producerAcquireKey, D3D11SharedTextureSyncKeys.Consumer);
 
+    /// <summary>
+    /// Records that Vulkan accepted a queue submission that will release the mutex to the producer key.
+    /// Does not mean the GPU has finished — only that release to producer is scheduled on the queue.
+    /// </summary>
     public void NotifyVulkanReleasedToProducer() =>
         Volatile.Write(ref _producerAcquireKey, D3D11SharedTextureSyncKeys.Producer);
 

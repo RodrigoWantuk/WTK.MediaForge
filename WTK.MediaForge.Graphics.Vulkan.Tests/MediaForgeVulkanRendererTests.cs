@@ -232,6 +232,212 @@ public class MediaForgeVulkanRendererTests
         }
     }
 
+    [Fact]
+    public void Vulkan_submit_updates_handle_key_to_producer_after_successful_submit()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+            Assert.Equal(D3D11SharedTextureSyncKeys.Consumer, handle.ProducerAcquireKey);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+
+                try
+                {
+                    Assert.Equal(D3D11SharedTextureSyncKeys.Producer, handle.ProducerAcquireKey);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void Capture_after_successful_queue_submit_uses_producer_key_even_before_fence_completion()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+
+                try
+                {
+                    // Key updates immediately after QueueSubmit succeeds, regardless of fence completion.
+                    Assert.Equal(D3D11SharedTextureSyncKeys.Producer, handle.ProducerAcquireKey);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void Second_submit_uses_current_handle_key_and_does_not_timeout()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var first = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+                ReleaseSubmission(first);
+
+                Assert.Equal(D3D11SharedTextureSyncKeys.Producer, handle.ProducerAcquireKey);
+
+                var second = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+
+                try
+                {
+                    WaitUntil(() => second.IsCompleted, TimeSpan.FromSeconds(5));
+                    Assert.True(second.IsCompleted);
+                }
+                finally
+                {
+                    ReleaseSubmission(second);
+                }
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void Capture_can_reuse_handle_after_vulkan_submission_completed()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle));
+
+                try
+                {
+                    WaitUntil(() => submission.IsCompleted, TimeSpan.FromSeconds(5));
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
+
+                handle.KeyedMutex.AcquireSync(handle.ProducerAcquireKey, 1000);
+                handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
+                handle.NotifyCaptureReleasedToConsumer();
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void QueueSubmit_failure_does_not_mark_handle_as_producer()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                renderer.Backend.SimulateQueueSubmitFailure = true;
+
+                Assert.Throws<InvalidOperationException>(() =>
+                    renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle)));
+
+                Assert.Equal(D3D11SharedTextureSyncKeys.Consumer, handle.ProducerAcquireKey);
+            }
+            finally
+            {
+                renderer.Backend.SimulateQueueSubmitFailure = false;
+                guard.Clear();
+            }
+        }
+    }
+
+    private static void SimulateCaptureReleasedToConsumer(D3D11SharedTextureFrameHandle handle)
+    {
+        handle.KeyedMutex.AcquireSync(D3D11SharedTextureSyncKeys.Producer, 1000);
+        handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
+        handle.NotifyCaptureReleasedToConsumer();
+    }
+
     private static bool TryCreateRenderer(out TestRendererContext? context)
     {
         context = null;
