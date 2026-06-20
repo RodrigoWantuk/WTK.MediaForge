@@ -560,10 +560,24 @@ RenderThread acquires snapshot from LatestSnapshotBuffer
 Key rules:
 
 - `IRenderBackend` creates submissions; `PendingRenderSubmissionTracker` on the render thread manages `MaxFramesInFlight`, polling, and disposal.
+- `MediaForgeVulkanRenderer.WaitIdleAsync` is a documented no-op — the tracker waits submission fences via `ShutdownAsync`; do not create untracked internal submissions in the Vulkan backend.
 - Backend never disposes snapshots directly.
 - If `Submit` fails before acceptance, the render thread disposes the snapshot.
 - If the tracker is full, drop the newly acquired snapshot (low latency over rendering every frame).
-- Shutdown order: stop accepting frames → `backend.WaitIdle()` → `pendingTracker.Dispose()` → `snapshotBuffer.Dispose()`.
+- `PollCompleted` removes a submission from the pending list only after successful `DisposeCompleted`; shutdown propagates dispose failures.
+- Shutdown order: stop accepting frames → `pendingTracker.ShutdownAsync(backend, timeout)` → `snapshotBuffer.Dispose()`.
+
+D3D11/Vulkan shared texture sync:
+
+- `D3D11SharedTextureFrameHandle.ProducerAcquireKey` is the next keyed mutex key the D3D11 producer should acquire.
+- After capture releases to consumer, the key becomes `Consumer`; after a successful Vulkan `QueueSubmit`, `NotifyVulkanReleasedToProducer()` sets the key back to `Producer` (scheduled release — not fence complete).
+- Vulkan submit acquires `ProducerAcquireKey` dynamically and releases to `Producer`.
+
+Registry and retirement:
+
+- `IsRetired` on the D3D11 handle is a **collection hint**, not an acquire barrier — pending snapshots may still import retired handles while leases are alive.
+- `VulkanExternalTextureRegistry` rejects closed/disposed handles (`!HasSharedHandle`); `CollectUnused` and last lease `Release` destroy retired imports when `RefCount == 0`.
+- Cached Vulkan imports track `CurrentLayout`; layout advances only after successful `QueueSubmit`.
 
 `CPU finished submitting ≠ GPU finished using` — GPU resources live until submission/fence completion.
 
