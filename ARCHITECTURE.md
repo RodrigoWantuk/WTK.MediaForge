@@ -605,6 +605,8 @@ Rules:
 
 - `RetiredGpuResourceManager.WaitForAllFinalizedAsync` — functional but verbose; simplify after test stabilization settles.
 - `VulkanExternalTextureRegistry.Acquire` — Vulkan import creation runs inside the global registry lock; refactor to short lock + create-outside-lock + publish entry pattern when multi-source frames become common.
+- `MediaForgeVulkanRenderer` test hooks (`SimulateQueueSubmitFailure`, `SimulateAcquireFailureOnAttempt`) — replace with injectable registry/fault interface when test surface grows.
+- `AcquireTextureLeases` partial lease dispose failure — cleanup loop is exception-safe but lacks a dedicated test (registry fake/injectable needed).
 
 ---
 

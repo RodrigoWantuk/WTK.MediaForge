@@ -322,6 +322,63 @@ public class PendingRenderSubmissionTrackerTests
         await shutdownTask;
     }
 
+    [Fact]
+    public async Task ShutdownAsync_waitIdle_failure_keeps_tracker_in_shutdown_state()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        tracker.Add(new ManualRenderFrameSubmission(CreateEmptySnapshot(1)));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            tracker.ShutdownAsync(
+                new FailingWaitIdleRenderBackend(),
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).AsTask());
+
+        Assert.False(tracker.CanAcceptFrame);
+        Assert.Equal(1, tracker.PendingCount);
+    }
+
+    [Fact]
+    public async Task Add_throws_after_waitIdle_failure_during_shutdown()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        tracker.Add(new ManualRenderFrameSubmission(CreateEmptySnapshot(1)));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            tracker.ShutdownAsync(
+                new FailingWaitIdleRenderBackend(),
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).AsTask());
+
+        Assert.Throws<InvalidOperationException>(() =>
+            tracker.Add(new ImmediateRenderFrameSubmission(CreateEmptySnapshot(2))));
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_waitIdle_failure_can_retry_after_backend_recovers()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        var manual = new ManualRenderFrameSubmission(CreateEmptySnapshot(1));
+        tracker.Add(manual);
+
+        var backend = new FailOnceWaitIdleRenderBackend();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            tracker.ShutdownAsync(
+                backend,
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).AsTask());
+
+        manual.Complete();
+
+        await tracker.ShutdownAsync(
+            backend,
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        Assert.Equal(0, tracker.PendingCount);
+    }
+
     private static RenderFrameSnapshot CreateEmptySnapshot(long version) =>
         new()
         {
@@ -387,6 +444,49 @@ public class PendingRenderSubmissionTrackerTests
         {
             _waitIdleEntered.TrySetResult();
             await _releaseWaitIdle.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class FailingWaitIdleRenderBackend : IRenderBackend
+    {
+        public void BindOutput(RenderOutputBindingSnapshot binding) { }
+
+        public void UnbindOutput(RenderOutputId outputId) { }
+
+        public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
+
+        public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
+            new ImmediateRenderFrameSubmission(snapshot);
+
+        public void WaitIdle() { }
+
+        public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.FromException(new InvalidOperationException("Simulated WaitIdle failure."));
+    }
+
+    private sealed class FailOnceWaitIdleRenderBackend : IRenderBackend
+    {
+        private int _waitIdleCalls;
+
+        public void BindOutput(RenderOutputBindingSnapshot binding) { }
+
+        public void UnbindOutput(RenderOutputId outputId) { }
+
+        public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
+
+        public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
+            new ImmediateRenderFrameSubmission(snapshot);
+
+        public void WaitIdle() { }
+
+        public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _waitIdleCalls) == 1)
+            {
+                return ValueTask.FromException(new InvalidOperationException("Simulated WaitIdle failure."));
+            }
+
+            return ValueTask.CompletedTask;
         }
     }
 

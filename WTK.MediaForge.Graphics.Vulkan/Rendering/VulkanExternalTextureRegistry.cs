@@ -28,6 +28,15 @@ public sealed class VulkanExternalTextureRegistry : IAsyncDisposable
         }
     }
 
+    internal int ActiveLeaseCount
+    {
+        get
+        {
+            lock (_gate)
+                return _entries.Values.Sum(static entry => entry.RefCount);
+        }
+    }
+
     public VulkanExternalTextureLease Acquire(D3D11SharedTextureFrameHandle handle)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

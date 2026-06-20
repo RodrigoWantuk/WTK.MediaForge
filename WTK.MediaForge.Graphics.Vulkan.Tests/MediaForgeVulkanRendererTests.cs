@@ -398,7 +398,7 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
-    public void AcquireTextureLeases_disposes_already_acquired_leases_when_later_acquire_fails()
+    public void AcquireTextureLeases_failure_releases_all_previously_acquired_registry_leases()
     {
         if (!TryCreateRenderer(out var renderer))
             return;
@@ -430,10 +430,14 @@ public class MediaForgeVulkanRendererTests
                     Assert.Throws<InvalidOperationException>(() =>
                         renderer.Backend.Submit(CreateSnapshotWithThreeD3D11Frames(firstHandle, secondHandle, thirdHandle)));
 
+                    Assert.Equal(0, renderer.Backend.TextureRegistryActiveLeaseCount);
+
                     renderer.Backend.SimulateAcquireFailureOnAttempt = 0;
 
                     var submission = renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(firstHandle));
                     ReleaseSubmission(submission);
+
+                    Assert.Equal(0, renderer.Backend.TextureRegistryActiveLeaseCount);
                 }
                 finally
                 {

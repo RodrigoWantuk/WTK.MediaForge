@@ -40,6 +40,8 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
 
     internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;
 
+    internal int TextureRegistryActiveLeaseCount => _textureRegistry.ActiveLeaseCount;
+
     /// <summary>
     /// When true, <see cref="SubmitCommandBuffer"/> throws before updating keyed mutex state.
     /// For unit tests only.
