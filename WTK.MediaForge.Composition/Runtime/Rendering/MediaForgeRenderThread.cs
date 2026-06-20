@@ -14,7 +14,9 @@ public sealed class MediaForgeRenderThread : IDisposable
     private readonly ConcurrentQueue<RenderCommand> _commands = new();
     private readonly ManualResetEventSlim _workSignal = new(false);
     private readonly Thread _thread;
+    private readonly TimeSpan _joinTimeout;
     private int _disposed;
+    private int _workSignalDisposed;
     private volatile int _stopRequested;
     private Exception? _shutdownCleanupError;
 
@@ -23,12 +25,14 @@ public sealed class MediaForgeRenderThread : IDisposable
         RenderThreadGuard threadGuard,
         PendingRenderSubmissionTracker? pendingTracker = null,
         int maxFramesInFlight = 2,
-        IMediaForgeDiagnosticsSink? diagnostics = null)
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        TimeSpan? joinTimeout = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _diagnostics = diagnostics;
         _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(maxFramesInFlight, diagnostics);
+        _joinTimeout = joinTimeout ?? TimeSpan.FromSeconds(10);
         _thread = new Thread(RenderLoop)
         {
             IsBackground = true,
@@ -37,6 +41,8 @@ public sealed class MediaForgeRenderThread : IDisposable
     }
 
     internal PendingRenderSubmissionTracker PendingTracker => _pendingTracker;
+
+    internal bool WorkSignalDisposedForTests => Volatile.Read(ref _workSignalDisposed) != 0;
 
     public bool IsRunning => _thread.IsAlive;
 
@@ -106,6 +112,7 @@ public sealed class MediaForgeRenderThread : IDisposable
             return;
 
         Exception? stopException = null;
+        var threadStopped = true;
 
         try
         {
@@ -115,7 +122,8 @@ public sealed class MediaForgeRenderThread : IDisposable
                 _commands.Enqueue(new StopRenderThreadCommand());
                 _workSignal.Set();
 
-                if (!_thread.Join(TimeSpan.FromSeconds(10)))
+                threadStopped = _thread.Join(_joinTimeout);
+                if (!threadStopped)
                 {
                     stopException = new TimeoutException("Render thread did not stop within the expected timeout.");
 
@@ -131,7 +139,11 @@ public sealed class MediaForgeRenderThread : IDisposable
         }
         finally
         {
-            _workSignal.Dispose();
+            if (threadStopped || !_thread.IsAlive)
+            {
+                _workSignal.Dispose();
+                Volatile.Write(ref _workSignalDisposed, 1);
+            }
         }
 
         if (_shutdownCleanupError is not null)

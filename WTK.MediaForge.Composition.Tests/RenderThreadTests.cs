@@ -258,6 +258,26 @@ public class RenderThreadTests
         Assert.False(renderThread.IsRunning);
     }
 
+    [Fact]
+    public void Render_thread_does_not_dispose_work_signal_when_join_times_out()
+    {
+        var guard = new RenderThreadGuard();
+        var backend = new ManualNullRenderBackend(guard);
+        var tracker = new PendingRenderSubmissionTracker();
+        tracker.Add(new ManualRenderFrameSubmission(CreateEmptySnapshot(version: 1)));
+
+        var renderThread = new MediaForgeRenderThread(
+            backend,
+            guard,
+            tracker,
+            joinTimeout: TimeSpan.FromMilliseconds(50));
+
+        renderThread.Start();
+
+        Assert.Throws<TimeoutException>(() => renderThread.Dispose());
+        Assert.False(renderThread.WorkSignalDisposedForTests);
+    }
+
     private static MediaForgeRenderThread StartRenderThread(
         IRenderBackend backend,
         RenderThreadGuard guard,
