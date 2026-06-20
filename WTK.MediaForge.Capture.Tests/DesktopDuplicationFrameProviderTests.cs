@@ -55,6 +55,150 @@ public class DesktopDuplicationFrameProviderTests
     }
 
     [Fact]
+    public async Task StopAsync_does_not_destroy_retained_resources()
+    {
+        if (!TestGpuCaptureSupport.TryGetPrimaryCaptureSource(out var captureSource))
+            return;
+
+        var sourceId = SourceId.New();
+        var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
+        await provider.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(
+            () =>
+            {
+                if (!provider.TryAcquireLatestFrame(out var probeLease))
+                    return false;
+
+                probeLease.Dispose();
+                return true;
+            },
+            TimeSpan.FromSeconds(5));
+
+        Assert.True(provider.TryAcquireLatestFrame(out var lease));
+        await provider.StopAsync(CancellationToken.None);
+
+        Assert.True(provider.ActiveSlotRetainCount >= 1);
+        lease.Dispose();
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_waits_for_retired_rings_after_last_lease()
+    {
+        if (!TestGpuCaptureSupport.TryGetPrimaryCaptureSource(out var captureSource))
+            return;
+
+        var sourceId = SourceId.New();
+        var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
+        await provider.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(
+            () =>
+            {
+                if (!provider.TryAcquireLatestFrame(out var probeLease))
+                    return false;
+
+                probeLease.Dispose();
+                return true;
+            },
+            TimeSpan.FromSeconds(5));
+
+        Assert.True(provider.TryAcquireLatestFrame(out var lease));
+        await provider.StopAsync(CancellationToken.None);
+        Assert.Equal(1, provider.RetiredResourceManager.PendingCount);
+
+        lease.Dispose();
+        await provider.DisposeAsync();
+
+        Assert.Equal(ProviderDisposeState.Disposed, provider.DisposeState);
+        Assert.Equal(0, provider.RetiredResourceManager.PendingCount);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_times_out_if_lease_never_released()
+    {
+        if (!TestGpuCaptureSupport.TryGetPrimaryCaptureSource(out var captureSource))
+            return;
+
+        var sourceId = SourceId.New();
+        var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
+        await provider.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(
+            () =>
+            {
+                if (!provider.TryAcquireLatestFrame(out var probeLease))
+                    return false;
+
+                probeLease.Dispose();
+                return true;
+            },
+            TimeSpan.FromSeconds(5));
+
+        Assert.True(provider.TryAcquireLatestFrame(out var lease));
+        await provider.StopAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<TimeoutException>(() => provider.DisposeAsync().AsTask());
+
+        Assert.Equal(ProviderDisposeState.DisposeTimedOut, provider.DisposeState);
+        Assert.Equal(1, provider.RetiredResourceManager.PendingCount);
+
+        lease.Dispose();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_retry_succeeds_after_lease_released()
+    {
+        if (!TestGpuCaptureSupport.TryGetPrimaryCaptureSource(out var captureSource))
+            return;
+
+        var sourceId = SourceId.New();
+        var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
+        await provider.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(
+            () =>
+            {
+                if (!provider.TryAcquireLatestFrame(out var probeLease))
+                    return false;
+
+                probeLease.Dispose();
+                return true;
+            },
+            TimeSpan.FromSeconds(5));
+
+        Assert.True(provider.TryAcquireLatestFrame(out var lease));
+        await provider.StopAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<TimeoutException>(() => provider.DisposeAsync().AsTask());
+        Assert.Equal(ProviderDisposeState.DisposeTimedOut, provider.DisposeState);
+
+        lease.Dispose();
+        await provider.DisposeAsync();
+
+        Assert.Equal(ProviderDisposeState.Disposed, provider.DisposeState);
+        Assert.Equal(0, provider.RetiredResourceManager.PendingCount);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_concurrent_calls_are_serialized()
+    {
+        if (!TestGpuCaptureSupport.TryGetPrimaryCaptureSource(out var captureSource))
+            return;
+
+        var sourceId = SourceId.New();
+        var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
+
+        var first = provider.DisposeAsync().AsTask();
+        var second = provider.DisposeAsync().AsTask();
+
+        await Task.WhenAll(first, second);
+
+        Assert.Equal(ProviderDisposeState.Disposed, provider.DisposeState);
+    }
+
+    [Fact]
     public async Task Stop_try_acquire_returns_false()
     {
         if (!TestGpuCaptureSupport.TryGetPrimaryCaptureSource(out var captureSource))

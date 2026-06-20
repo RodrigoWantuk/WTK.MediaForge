@@ -12,13 +12,23 @@ using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Capture.DesktopDuplication;
 
-public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisposable
+internal enum ProviderDisposeState
+{
+    Active,
+    Disposing,
+    DisposeTimedOut,
+    Disposed,
+}
+
+public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyncDisposable, IDisposable
 {
     private const int SlotCount = 3;
+    private const int DisposeWaitSeconds = 5;
 
     private readonly CaptureSourceInfo _captureSource;
     private readonly object _stateGate = new();
     private readonly RetiredGpuResourceManager _retiredResourceManager = new();
+    private readonly SemaphoreSlim _disposeGate = new(1, 1);
 
     private DesktopDuplicationSession? _session;
     private D3D11GpuFrameSlotRing? _slotRing;
@@ -27,6 +37,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
     private TaskCompletionSource? _startTcs;
     private long _frameNumber;
     private int _disposed;
+    private int _disposeState = (int)ProviderDisposeState.Active;
     private int _state = (int)MediaSourceState.Stopped;
 
     public DesktopDuplicationFrameProvider(SourceId id, CaptureSourceInfo captureSource)
@@ -46,6 +57,8 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
     internal GpuFrameSlotRing? Ring => Volatile.Read(ref _slotRing)?.Ring;
 
     internal RetiredGpuResourceManager RetiredResourceManager => _retiredResourceManager;
+
+    internal ProviderDisposeState DisposeState => (ProviderDisposeState)Volatile.Read(ref _disposeState);
 
     internal int ActiveSlotRetainCount
     {
@@ -179,20 +192,45 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
         return true;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+        await _disposeGate.WaitAsync().ConfigureAwait(false);
 
-        StopAsync(CancellationToken.None).GetAwaiter().GetResult();
-        TryFinalizeRetiredRings();
-
-        if (_retiredResourceManager.PendingCount > 0)
+        try
         {
-            throw new InvalidOperationException(
-                "Cannot dispose provider while retired slot rings still have active leases.");
+            if ((ProviderDisposeState)Volatile.Read(ref _disposeState) == ProviderDisposeState.Disposed)
+                return;
+
+            Volatile.Write(ref _disposeState, (int)ProviderDisposeState.Disposing);
+
+            try
+            {
+                await StopAsync(CancellationToken.None).ConfigureAwait(false);
+                await _retiredResourceManager
+                    .WaitForAllFinalizedAsync(TimeSpan.FromSeconds(DisposeWaitSeconds), CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                Volatile.Write(ref _disposeState, (int)ProviderDisposeState.Disposed);
+                Interlocked.Exchange(ref _disposed, 1);
+            }
+            catch (TimeoutException ex)
+            {
+                LastError = ex;
+
+                lock (_stateGate)
+                    Volatile.Write(ref _state, (int)MediaSourceState.Failed);
+
+                Volatile.Write(ref _disposeState, (int)ProviderDisposeState.DisposeTimedOut);
+                throw;
+            }
+        }
+        finally
+        {
+            _disposeGate.Release();
         }
     }
+
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     private void CaptureThreadMain()
     {
