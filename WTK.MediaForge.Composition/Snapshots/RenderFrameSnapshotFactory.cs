@@ -128,6 +128,7 @@ public static class RenderFrameSnapshotFactory
                 EffectiveCrop = effectiveCrop,
                 Opacity = sourceLayer.Opacity,
                 BlendMode = sourceLayer.BlendMode,
+                Effects = sourceLayer.Effects,
                 SourceId = sourceLayer.SourceId,
                 LayoutMode = sourceLayer.LayoutMode,
                 ContentRotationOverride = sourceLayer.ContentRotationOverride,
@@ -149,6 +150,7 @@ public static class RenderFrameSnapshotFactory
                 EffectiveCrop = effectiveCrop,
                 Opacity = text.Opacity,
                 BlendMode = text.BlendMode,
+                Effects = text.Effects,
                 Text = text.Text,
                 TextColor = text.TextColor,
                 FontSize = text.FontSize
@@ -162,6 +164,7 @@ public static class RenderFrameSnapshotFactory
                 EffectiveCrop = effectiveCrop,
                 Opacity = solid.Opacity,
                 BlendMode = solid.BlendMode,
+                Effects = solid.Effects,
                 FillColor = solid.FillColor
             },
             CanvasDrawObjectSnapshot nested => nested.Enabled
@@ -190,6 +193,7 @@ public static class RenderFrameSnapshotFactory
             EffectiveCrop = effectiveCrop,
             Opacity = nested.Opacity,
             BlendMode = nested.BlendMode,
+            Effects = nested.Effects,
             NestedCanvas = null
         };
 
@@ -242,6 +246,7 @@ public static class RenderFrameSnapshotFactory
             EffectiveCrop = effectiveCrop,
             Opacity = nested.Opacity,
             BlendMode = nested.BlendMode,
+            Effects = nested.Effects,
             NestedCanvas = nestedCanvas
         };
     }

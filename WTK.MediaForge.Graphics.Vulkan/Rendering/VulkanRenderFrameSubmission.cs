@@ -10,6 +10,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly List<VulkanExternalTextureLease> _textureLeases;
+    private readonly List<VulkanOffscreenTargetHandle> _retainedOffscreenTargets;
     private RenderFrameSnapshot? _snapshot;
     private int _resourcesDisposed;
 
@@ -19,6 +20,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         CommandBuffer commandBuffer,
         Fence fence,
         IReadOnlyList<VulkanExternalTextureLease> textureLeases,
+        IReadOnlyList<VulkanOffscreenTargetHandle>? retainedOffscreenTargets,
         IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
@@ -27,6 +29,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         CommandBuffer = commandBuffer;
         Fence = fence;
         _textureLeases = textureLeases.ToList();
+        _retainedOffscreenTargets = retainedOffscreenTargets?.ToList() ?? [];
     }
 
     public CommandBuffer CommandBuffer { get; }
@@ -76,6 +79,9 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
 
         foreach (var lease in _textureLeases)
             lease.Dispose();
+
+        foreach (var offscreenTarget in _retainedOffscreenTargets)
+            offscreenTarget.ReleaseSubmissionReference();
 
         Interlocked.Exchange(ref _snapshot, null)?.Dispose();
     }

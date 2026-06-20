@@ -14,6 +14,209 @@ namespace WTK.MediaForge.Composition.Tests;
 public class RenderFrameSnapshotFactoryTests
 {
     [Fact]
+    public void RenderFrameSnapshot_preserves_effects_on_source_layer()
+    {
+        var sourceId = SourceId.New();
+        var effectId = EffectId.New();
+        var source = CreateRunningSource(sourceId);
+        source.PublishFrame(1, MediaTime.Zero);
+
+        var projectState = CreateProjectStateWithEffects(
+            sourceId,
+            new ChromaKeyEffectSnapshot { Id = effectId, Name = "Key", Similarity = 0.35f },
+            drawObjectFactory: (effects, sid) => new SourceLayerDrawObjectSnapshot
+            {
+                Id = DrawObjectId.New(),
+                Name = "Layer",
+                SourceId = sid,
+                Transform = new Transform2D { Size = new CanvasSize(640, 480) },
+                Effects = effects
+            });
+
+        AssertEffectsPreserved<RenderSourceLayerDrawObjectSnapshot, ChromaKeyEffectSnapshot>(
+            projectState, source, effectId, e => Assert.Equal(0.35f, e.Similarity));
+    }
+
+    [Fact]
+    public void RenderFrameSnapshot_preserves_effects_on_text()
+    {
+        var effectId = EffectId.New();
+        var projectState = CreateProjectStateWithEffects(
+            SourceId.New(),
+            new ColorCorrectionEffectSnapshot { Id = effectId, Name = "Grade", Brightness = 0.1f },
+            drawObjectFactory: (effects, _) => new TextDrawObjectSnapshot
+            {
+                Id = DrawObjectId.New(),
+                Name = "Title",
+                Transform = new Transform2D { Size = new CanvasSize(200, 64) },
+                Effects = effects
+            },
+            requiresSource: false);
+
+        AssertEffectsPreserved<RenderTextDrawObjectSnapshot, ColorCorrectionEffectSnapshot>(
+            projectState, source: null, effectId, e => Assert.Equal(0.1f, e.Brightness));
+    }
+
+    [Fact]
+    public void RenderFrameSnapshot_preserves_effects_on_solid()
+    {
+        var effectId = EffectId.New();
+        var projectState = CreateProjectStateWithEffects(
+            SourceId.New(),
+            new BlurEffectSnapshot { Id = effectId, Name = "Soft", Radius = 8f },
+            drawObjectFactory: (effects, _) => new SolidDrawObjectSnapshot
+            {
+                Id = DrawObjectId.New(),
+                Name = "Bar",
+                Transform = new Transform2D { Size = new CanvasSize(100, 100) },
+                Effects = effects
+            },
+            requiresSource: false);
+
+        AssertEffectsPreserved<RenderSolidDrawObjectSnapshot, BlurEffectSnapshot>(
+            projectState, source: null, effectId, e => Assert.Equal(8f, e.Radius));
+    }
+
+    [Fact]
+    public void RenderFrameSnapshot_preserves_effects_on_canvas_layer()
+    {
+        var sourceId = SourceId.New();
+        var effectId = EffectId.New();
+        var source = CreateRunningSource(sourceId);
+        source.PublishFrame(1, MediaTime.Zero);
+
+        var nestedCanvasId = CanvasId.New();
+        var projectState = new ProjectStateSnapshot
+        {
+            Version = 1,
+            Canvases =
+            [
+                new CanvasStateSnapshot
+                {
+                    Id = CanvasId.New(),
+                    Name = "Main",
+                    Size = new FrameSize(1920, 1080),
+                    Objects =
+                    [
+                        new CanvasDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "PiP",
+                            NestedCanvasId = nestedCanvasId,
+                            Transform = new Transform2D { Size = new CanvasSize(320, 240) },
+                            Effects = [new TransitionEffectSnapshot { Id = effectId, Name = "Fade", Progress = 0.5f }]
+                        }
+                    ]
+                },
+                new CanvasStateSnapshot
+                {
+                    Id = nestedCanvasId,
+                    Name = "Nested",
+                    Size = new FrameSize(640, 480),
+                    Objects =
+                    [
+                        new SourceLayerDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Nested Layer",
+                            SourceId = sourceId,
+                            Transform = new Transform2D { Size = new CanvasSize(640, 480) }
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        using var result = RenderFrameSnapshotFactory.Build(projectState, runtime);
+        var pip = Assert.IsType<RenderCanvasDrawObjectSnapshot>(result.TakeSnapshot()!.Canvases[0].Objects[0]);
+        var effect = Assert.IsType<TransitionEffectSnapshot>(Assert.Single(pip.Effects));
+        Assert.Equal(effectId, effect.Id);
+        Assert.Equal(0.5f, effect.Progress);
+    }
+
+    [Fact]
+    public void Disabled_canvas_layer_preserves_effects()
+    {
+        var effectId = EffectId.New();
+        var projectState = new ProjectStateSnapshot
+        {
+            Version = 1,
+            Canvases =
+            [
+                new CanvasStateSnapshot
+                {
+                    Id = CanvasId.New(),
+                    Name = "Main",
+                    Size = new FrameSize(1920, 1080),
+                    Objects =
+                    [
+                        new CanvasDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Disabled PiP",
+                            Enabled = false,
+                            NestedCanvasId = CanvasId.New(),
+                            Transform = new Transform2D { Size = new CanvasSize(320, 240) },
+                            Effects = [new BlurEffectSnapshot { Id = effectId, Name = "Soft", Radius = 4f }]
+                        }
+                    ]
+                }
+            ]
+        };
+
+        using var result = RenderFrameSnapshotFactory.Build(projectState, new CompositionRuntime());
+        var pip = Assert.IsType<RenderCanvasDrawObjectSnapshot>(result.TakeSnapshot()!.Canvases[0].Objects[0]);
+        Assert.False(pip.Enabled);
+        Assert.Null(pip.NestedCanvas);
+        var effect = Assert.IsType<BlurEffectSnapshot>(Assert.Single(pip.Effects));
+        Assert.Equal(effectId, effect.Id);
+    }
+
+    private static void AssertEffectsPreserved<TRender, TEffect>(
+        ProjectStateSnapshot projectState,
+        FakeVideoFrameSource? source,
+        EffectId effectId,
+        Action<TEffect> assertEffect)
+        where TRender : RenderDrawObjectSnapshot
+        where TEffect : EffectStateSnapshot
+    {
+        var runtime = new CompositionRuntime();
+        if (source is not null)
+            runtime.RegisterFrameProvider(source);
+
+        using var result = RenderFrameSnapshotFactory.Build(projectState, runtime);
+        var renderObject = Assert.IsType<TRender>(result.TakeSnapshot()!.Canvases[0].Objects[0]);
+        var effect = Assert.IsType<TEffect>(Assert.Single(renderObject.Effects));
+        Assert.Equal(effectId, effect.Id);
+        assertEffect(effect);
+    }
+
+    private static ProjectStateSnapshot CreateProjectStateWithEffects(
+        SourceId sourceId,
+        EffectStateSnapshot effect,
+        Func<ImmutableArray<EffectStateSnapshot>, SourceId, DrawObjectStateSnapshot> drawObjectFactory,
+        bool requiresSource = true)
+    {
+        return new ProjectStateSnapshot
+        {
+            Version = 1,
+            Canvases =
+            [
+                new CanvasStateSnapshot
+                {
+                    Id = CanvasId.New(),
+                    Name = "Main",
+                    Size = new FrameSize(1920, 1080),
+                    Objects = [drawObjectFactory([effect], sourceId)]
+                }
+            ]
+        };
+    }
+
+    [Fact]
     public void Build_binds_source_frames_with_effective_crop()
     {
         var sourceId = SourceId.New();

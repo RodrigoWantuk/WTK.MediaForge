@@ -4,7 +4,7 @@ using WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 namespace WTK.MediaForge.Graphics.Vulkan;
 
-public sealed class MediaForgeVulkanRenderBackendFactory
+public sealed class MediaForgeVulkanRenderBackendFactory : IRenderBackendFactory
 {
     public bool TryCreate(
         RenderThreadGuard threadGuard,

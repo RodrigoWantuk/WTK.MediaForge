@@ -14,7 +14,7 @@ public sealed class MediaForgeRenderThread : IDisposable
     private readonly PendingRenderSubmissionTracker _pendingTracker;
     private readonly LatestSnapshotBuffer _snapshotBuffer = new();
     private readonly ConcurrentQueue<RenderCommand> _commands = new();
-    private readonly ManualResetEventSlim _workSignal = new(false);
+    private readonly AutoResetEvent _workSignal = new(false);
     private readonly Thread _thread;
     private readonly TimeSpan _joinTimeout;
     private int _disposed;
@@ -164,9 +164,26 @@ public sealed class MediaForgeRenderThread : IDisposable
             while (_stopRequested == 0)
             {
                 ProcessCommands(maxCommands: null);
-                RenderLatestSnapshot();
-                _workSignal.Wait(50);
-                _workSignal.Reset();
+
+                if (_stopRequested == 0)
+                    RenderLatestSnapshot();
+
+                if (_stopRequested != 0)
+                    break;
+
+                if (!_commands.IsEmpty || _snapshotBuffer.HasPending)
+                    continue;
+
+                _pendingTracker.PollCompleted();
+
+                if (!_commands.IsEmpty || _snapshotBuffer.HasPending)
+                    continue;
+
+                var idleWait = _pendingTracker.PendingCount > 0
+                    ? TimeSpan.FromMilliseconds(16)
+                    : Timeout.InfiniteTimeSpan;
+
+                _workSignal.WaitOne(idleWait);
             }
 
             ProcessCommands(maxCommands: null);
@@ -233,7 +250,15 @@ public sealed class MediaForgeRenderThread : IDisposable
         try
         {
             if (!_pendingTracker.CanAcceptFrame)
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Warning,
+                    "render.frame_dropped_tracker_full",
+                    "Render frame dropped because the pending submission tracker is full.",
+                    nameof(MediaForgeRenderThread));
                 return;
+            }
 
             _threadGuard.AssertOnRenderThread();
             submission = _backend.Submit(snapshot);

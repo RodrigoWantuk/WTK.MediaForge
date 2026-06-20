@@ -164,6 +164,16 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
             }
             catch
             {
+                continue;
+            }
+
+            lock (_gate)
+            {
+                if (_entries.TryGetValue(key, out entry) && entry.IsReady)
+                {
+                    entry.RefCount++;
+                    return new VulkanExternalTextureLease(entry, this);
+                }
             }
         }
     }

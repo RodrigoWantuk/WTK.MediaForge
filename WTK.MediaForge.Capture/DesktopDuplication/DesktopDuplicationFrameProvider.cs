@@ -399,6 +399,8 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
 
     private void CaptureLoop(CancellationToken cancellationToken)
     {
+        var idleBackoffMs = 0;
+
         while (!cancellationToken.IsCancellationRequested)
         {
             var session = _session;
@@ -408,7 +410,13 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAsyn
                 break;
 
             if (!session.TryAcquireNextFrame(out var desktopTexture, out _))
+            {
+                idleBackoffMs = idleBackoffMs == 0 ? 1 : Math.Min(idleBackoffMs * 2, 16);
+                Thread.Sleep(idleBackoffMs);
                 continue;
+            }
+
+            idleBackoffMs = 0;
 
             try
             {

@@ -105,6 +105,17 @@ public sealed class MediaForgeProjectEditor
         };
 
         parentCanvas.Objects.Add(layer);
+
+        var validation = MediaForgeProjectValidator.Validate(Project);
+        if (!validation.IsValid)
+        {
+            parentCanvas.Objects.Remove(layer);
+            var issue = validation.Issues.FirstOrDefault(i =>
+                i.Code is "canvas.nested.self" or "canvas.nested.cycle" or "canvas.nested.depth")
+                ?? validation.Issues[0];
+            throw new InvalidOperationException(issue.Message);
+        }
+
         return layer;
     }
 

@@ -10,6 +10,24 @@ namespace WTK.MediaForge.Composition.Tests;
 public class MediaForgeProjectEditorTests
 {
     [Fact]
+    public void Editor_add_nested_canvas_rejects_indirect_cycle_and_rolls_back()
+    {
+        var editor = new MediaForgeProjectEditor(new());
+        var canvasA = editor.CreateCanvas("A", new FrameSize(1920, 1080));
+        var canvasB = editor.CreateCanvas("B", new FrameSize(1280, 720));
+
+        editor.AddCanvasLayer(canvasA.Id, canvasB.Id, new Transform2D { Size = new CanvasSize(320, 240) });
+        Assert.Single(canvasA.Objects);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            editor.AddCanvasLayer(canvasB.Id, canvasA.Id, new Transform2D { Size = new CanvasSize(320, 240) }));
+
+        Assert.Empty(canvasB.Objects);
+        Assert.Single(canvasA.Objects);
+        editor.ValidateOrThrow();
+    }
+
+    [Fact]
     public void Editor_builds_valid_minimal_project()
     {
         var editor = new MediaForgeProjectEditor(new());

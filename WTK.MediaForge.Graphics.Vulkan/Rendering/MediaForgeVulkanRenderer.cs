@@ -23,7 +23,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
     private readonly Func<VulkanHeadlessDevice, FrameSize, IVulkanOffscreenRenderTarget> _offscreenTargetFactory;
     private readonly Action _disposeDevice;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
-    private readonly ConcurrentDictionary<RenderOutputId, IVulkanOffscreenRenderTarget> _offscreenTargets = new();
+    private readonly ConcurrentDictionary<RenderOutputId, VulkanOffscreenTargetHandle> _offscreenTargets = new();
     private int _disposed;
 
     internal MediaForgeVulkanRenderer(
@@ -55,13 +55,14 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
 
     internal int TextureRegistryActiveLeaseCount => _textureRegistry.ActiveLeaseCount;
 
-    internal int OffscreenTargetCount => _offscreenTargets.Count;
+    internal int OffscreenTargetCount =>
+        _offscreenTargets.Values.Count(handle => handle.IsAlive);
 
     internal bool TryGetOffscreenTargetSize(RenderOutputId outputId, out FrameSize size)
     {
-        if (_offscreenTargets.TryGetValue(outputId, out var target))
+        if (_offscreenTargets.TryGetValue(outputId, out var handle) && handle.IsAlive)
         {
-            size = target.Size;
+            size = handle.Target.Size;
             return true;
         }
 
@@ -117,11 +118,10 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
             }
 
             if (_offscreenTargets.TryRemove(binding.OutputId, out var existing))
-                existing.Dispose();
+                existing.Retire();
 
-            _offscreenTargets[binding.OutputId] = _offscreenTargetFactory(
-                _deviceContext,
-                binding.SurfaceSize);
+            _offscreenTargets[binding.OutputId] = new VulkanOffscreenTargetHandle(
+                _offscreenTargetFactory(_deviceContext, binding.SurfaceSize));
         }
 
         _bindings[binding.OutputId] = binding;
@@ -135,7 +135,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
         _bindings.TryRemove(outputId, out _);
 
         if (_offscreenTargets.TryRemove(outputId, out var target))
-            target.Dispose();
+            target.Retire();
     }
 
     public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize)
@@ -162,9 +162,20 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
             };
 
             if (existing.TargetKind == RenderTargetKind.Offscreen &&
-                _offscreenTargets.TryGetValue(outputId, out var target))
+                _offscreenTargets.TryGetValue(outputId, out var handle) &&
+                handle.IsAlive &&
+                handle.Target.Size != surfaceSize)
             {
-                target.Resize(surfaceSize);
+                _offscreenTargets.TryRemove(outputId, out _);
+                handle.Retire();
+                _offscreenTargets[outputId] = new VulkanOffscreenTargetHandle(
+                    _offscreenTargetFactory(_deviceContext, surfaceSize));
+            }
+            else if (existing.TargetKind == RenderTargetKind.Offscreen &&
+                     _offscreenTargets.TryGetValue(outputId, out var resizeHandle) &&
+                     resizeHandle.IsAlive)
+            {
+                resizeHandle.Target.Resize(surfaceSize);
             }
         }
     }
@@ -186,6 +197,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
         }
 
         List<VulkanExternalTextureLease>? textureLeases = null;
+        List<VulkanOffscreenTargetHandle>? retainedOffscreenTargets = null;
         CommandBuffer commandBuffer = default;
         Fence fence = default;
 
@@ -208,6 +220,13 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
                         ImageLayout.General);
                 }
 
+                retainedOffscreenTargets = VulkanCp1OffscreenCompositor.Compose(
+                    _deviceContext.Vk,
+                    commandBuffer,
+                    snapshot,
+                    _offscreenTargets,
+                    textureLeases);
+
                 if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
                     throw new InvalidOperationException("vkEndCommandBuffer failed.");
 
@@ -219,6 +238,12 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
             }
             catch
             {
+                if (retainedOffscreenTargets is not null)
+                {
+                    foreach (var retained in retainedOffscreenTargets)
+                        retained.ReleaseSubmissionReference();
+                }
+
                 for (var i = 0; i < imports.Count; i++)
                     imports[i].SetLayout(previousLayouts[i]);
 
@@ -231,6 +256,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
                 commandBuffer,
                 fence,
                 textureLeases,
+                retainedOffscreenTargets,
                 _diagnostics);
         }
         catch
@@ -316,7 +342,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposa
         {
             try
             {
-                target.Dispose();
+                target.Retire();
             }
             catch (Exception ex)
             {

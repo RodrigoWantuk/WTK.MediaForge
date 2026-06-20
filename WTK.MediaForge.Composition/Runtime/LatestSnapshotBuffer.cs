@@ -24,6 +24,18 @@ public sealed class LatestSnapshotBuffer : IDisposable
         previous?.Dispose();
     }
 
+    public bool HasPending
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _latest is not null;
+            }
+        }
+    }
+
     public RenderFrameSnapshot? AcquireLatest()
     {
         lock (_gate)

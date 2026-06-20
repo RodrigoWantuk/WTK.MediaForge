@@ -1,0 +1,43 @@
+namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
+
+internal sealed class VulkanOffscreenTargetHandle : IDisposable
+{
+    private IVulkanOffscreenRenderTarget? _target;
+    private int _submissionRefs;
+    private int _retired;
+
+    public VulkanOffscreenTargetHandle(IVulkanOffscreenRenderTarget target) =>
+        _target = target ?? throw new ArgumentNullException(nameof(target));
+
+    public IVulkanOffscreenRenderTarget Target =>
+        _target ?? throw new ObjectDisposedException(nameof(VulkanOffscreenTargetHandle));
+
+    public bool IsAlive => _target is not null;
+
+    public void RetainForSubmission()
+    {
+        ObjectDisposedException.ThrowIf(_target is null, this);
+        Interlocked.Increment(ref _submissionRefs);
+    }
+
+    public void ReleaseSubmissionReference()
+    {
+        if (Interlocked.Decrement(ref _submissionRefs) == 0 && Volatile.Read(ref _retired) != 0)
+            DisposeTarget();
+    }
+
+    public void Retire()
+    {
+        Volatile.Write(ref _retired, 1);
+        if (Volatile.Read(ref _submissionRefs) == 0)
+            DisposeTarget();
+    }
+
+    public void Dispose() => Retire();
+
+    private void DisposeTarget()
+    {
+        var target = Interlocked.Exchange(ref _target, null);
+        target?.Dispose();
+    }
+}

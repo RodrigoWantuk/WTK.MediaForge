@@ -170,7 +170,7 @@ public sealed class MediaForgeCanvas
 - Canvas is the unit of visual composition (not Preview/Program — those are UI conventions).
 - Nested canvas: `CanvasDrawObject` references `NestedCanvasId`.
 - **Cycles are forbidden** (Commit H6).
-- **Max nesting depth: 8** (product contract). Current snapshot builder uses `MaxNestedCanvasDepth = 1` as a temporary technical limit, not the final product limit.
+- **Max nesting depth: 8** (product contract). Enforced by [`CanvasGraphValidator`](../WTK.MediaForge.Composition/Validation/CanvasGraphValidator.cs) and [`RenderFrameSnapshotFactory`](../WTK.MediaForge.Composition/Snapshots/RenderFrameSnapshotFactory.cs) via shared [`CanvasGraphLimits.MaxNestedCanvasDepth`](../WTK.MediaForge.Composition/Validation/CanvasGraphLimits.cs).
 
 **Rendering strategy (target):**
 

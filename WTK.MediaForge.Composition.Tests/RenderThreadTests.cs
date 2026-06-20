@@ -8,11 +8,13 @@ using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Sources;
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Core.Time;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests;
 
+[Collection("RenderThread")]
 public class RenderThreadTests
 {
     [Fact]
@@ -140,6 +142,32 @@ public class RenderThreadTests
         Assert.True(renderThread.PendingTracker.PendingCount <= 1);
 
         backend.CompleteAllPending();
+        WaitUntil(() => renderThread.PendingTracker.PendingCount == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void Render_thread_reports_diagnostic_when_tracker_full()
+    {
+        var source = CreateRunningSource();
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        var diagnostics = new ListDiagnosticsSink();
+        var guard = new RenderThreadGuard();
+        var backend = new ManualNullRenderBackend(guard);
+        using var renderThread = StartRenderThread(backend, guard, maxFramesInFlight: 1, diagnostics: diagnostics);
+
+        source.PublishFrame(1, MediaTime.Zero);
+        renderThread.PublishFrame(BuildSnapshot(runtime, source, 1));
+        source.PublishFrame(2, new MediaTime(16_000_000));
+        renderThread.PublishFrame(BuildSnapshot(runtime, source, 2));
+
+        WaitUntil(
+            () => diagnostics.Diagnostics.Any(d => d.Code == "render.frame_dropped_tracker_full"),
+            TimeSpan.FromSeconds(5));
+
+        backend.CompleteAllPending();
+        WaitUntil(() => renderThread.PendingTracker.PendingCount == 0, TimeSpan.FromSeconds(5));
     }
 
     [Fact]
@@ -281,9 +309,14 @@ public class RenderThreadTests
     private static MediaForgeRenderThread StartRenderThread(
         IRenderBackend backend,
         RenderThreadGuard guard,
-        int maxFramesInFlight = 2)
+        int maxFramesInFlight = 2,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
-        var renderThread = new MediaForgeRenderThread(backend, guard, maxFramesInFlight: maxFramesInFlight);
+        var renderThread = new MediaForgeRenderThread(
+            backend,
+            guard,
+            maxFramesInFlight: maxFramesInFlight,
+            diagnostics: diagnostics);
         renderThread.Start();
         return renderThread;
     }

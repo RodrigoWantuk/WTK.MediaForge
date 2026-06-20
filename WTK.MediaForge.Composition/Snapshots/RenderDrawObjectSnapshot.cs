@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using WTK.MediaForge.Core.Capture;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Geometry;
@@ -22,6 +23,8 @@ public abstract class RenderDrawObjectSnapshot
     public float Opacity { get; init; } = 1f;
 
     public BlendMode BlendMode { get; init; } = BlendMode.Normal;
+
+    public ImmutableArray<EffectStateSnapshot> Effects { get; init; } = [];
 }
 
 public sealed class RenderSourceLayerDrawObjectSnapshot : RenderDrawObjectSnapshot

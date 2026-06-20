@@ -9,6 +9,7 @@ using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests;
 
+[Collection("RenderThread")]
 public class MediaForgeRenderThreadDiagnosticsTests
 {
     [Fact]
