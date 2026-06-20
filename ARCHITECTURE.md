@@ -22,6 +22,38 @@ The project aims to provide a lighter and more modular alternative to traditiona
 
 ---
 
+## Architecture layers
+
+WTK MediaForge is intentionally split into two layers. **Do not mix them.**
+
+```text
+Product Model / Composition Model     Runtime / GPU Execution Model
+─────────────────────────────────     ─────────────────────────────
+MediaForgeProject                     CompositionRuntime
+SourceDefinitions                     IVideoFrameProvider (live sources)
+Canvases + DrawObjects                ProjectStateSnapshot → RenderFrameSnapshot
+Outputs (+ effects, planned)          MediaForgeRenderThread + IRenderBackend
+MediaForgeProjectEditor (planned)     PendingRenderSubmissionTracker, GpuFrameLease
+MediaForgeEngine facade (planned)     Source providers + output sinks (planned)
+```
+
+| Layer | Document | Purpose |
+|-------|----------|---------|
+| **Product** | [docs/PRODUCT_MODEL.md](docs/PRODUCT_MODEL.md) | What the user composes: sources, canvases, effects, outputs, editor, engine API |
+| **Runtime** | This file (`ARCHITECTURE.md`) | How GPU frames, leases, snapshots, and the render backend execute safely |
+
+**Product rules (summary):**
+
+- All video inputs use `SourceLayerDrawObject` + `MediaForgeSourceDefinition` — never `WebcamDrawObject`, `NdiDrawObject`, etc.
+- All destinations use `MediaForgeRenderOutput` with a typed output id (planned) — never ad hoc renderer hooks.
+- Effects belong on `MediaForgeEffect` (planned), not as loose properties on draw objects.
+- UI and apps must use `MediaForgeProjectEditor` (planned), not mutate project lists directly.
+- Apps must use `MediaForgeEngine` (planned), not wire runtime components manually.
+
+P0 GPU lifecycle hardening is **complete**. Next work is product-model formalization (commits H1–H7 in [docs/PRODUCT_MODEL.md](docs/PRODUCT_MODEL.md)), then minimal compositing, then real sources/outputs.
+
+---
+
 ## Naming Guidelines
 
 The public project name is:
@@ -506,7 +538,7 @@ The renderer should not own the editable project state directly. It should rende
 
 ## Scene Snapshots
 
-The UI thread edits `MediaForgeProject` while capture runs on source threads and rendering runs on a dedicated render thread.
+The UI thread (or coordinator) edits `MediaForgeProject` while capture runs on source threads and rendering runs on a dedicated render thread. See [docs/PRODUCT_MODEL.md](docs/PRODUCT_MODEL.md) for the product-side model that feeds this pipeline.
 
 Two-stage snapshot pipeline (phase 1 foundation):
 
@@ -1295,10 +1327,29 @@ Full multi-output composition is phase 2
 Next architectural step:
 
 ```text
-Minimal compositing pass: source layers -> offscreen target (fit mode)
-  -> mf.* shader catalog pipelines
-  -> Win32 preview binding through IRenderBackend
+Product layer (H2–H7): source/output catalogs, effects, editor, engine facade
+Runtime layer: minimal compositing pass (source layers → offscreen target, fit mode)
+  → mf.* shader catalog pipelines
+  → Win32 preview binding through IRenderBackend
 ```
+
+---
+
+## Product model formalization (H1–H7)
+
+Status: **H1 done** ([docs/PRODUCT_MODEL.md](docs/PRODUCT_MODEL.md)). Implementation commits H2–H7 pending.
+
+| Commit | Scope |
+|--------|--------|
+| H1 | Product contract documentation |
+| H2 | `MediaSourceTypes`, typed source settings, `MediaSourceSettingsSerializer` |
+| H3 | `RenderOutputTypes`, typed output settings, expand `MediaForgeRenderOutput` |
+| H4 | `MediaForgeEffect` pipeline on draw objects |
+| H5 | `MediaForgeProjectEditor` |
+| H6 | Canvas cycle detection, max depth 8, schema validation |
+| H7 | `MediaForgeEngine` + provider/sink factory skeletons |
+
+No new source or output implementations (webcam, NDI, RTSP, MP4, preview UI, streaming) until H7 is complete.
 
 ---
 
