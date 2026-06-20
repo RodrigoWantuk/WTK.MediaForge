@@ -35,13 +35,15 @@ public static class D3D11SharedTextureFactory
         };
 
         var texture = device.CreateTexture2D(description);
-        var sharedHandle = CreateSharedHandle(texture);
+        var rawSharedHandle = CreateSharedHandle(texture);
 
-        if (sharedHandle == 0)
+        if (rawSharedHandle == 0)
         {
             texture.Dispose();
             throw new InvalidOperationException("Failed to create D3D11 shared NT handle.");
         }
+
+        var sharedHandle = SharedWin32Handle.FromOwnedRaw(rawSharedHandle);
 
         var keyedMutex = texture.QueryInterface<IDXGIKeyedMutex>();
 

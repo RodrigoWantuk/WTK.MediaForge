@@ -44,7 +44,7 @@ internal static class RenderFrameSnapshotGpuFrames
         List<D3D11SharedTextureFrameHandle> handles,
         HashSet<nint> seen)
     {
-        if (!handle.HasSharedHandle || !seen.Add(handle.SharedHandle))
+        if (!handle.HasSharedHandle || !seen.Add(handle.SharedHandle.DangerousGetHandleForInterop()))
             return;
 
         handles.Add(handle);

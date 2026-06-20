@@ -25,7 +25,7 @@ public class D3D11SharedTextureFrameHandleTests
 
             Assert.Equal(GpuFrameBackend.D3D11SharedTexture, handle.Backend);
             Assert.True(handle.HasSharedHandle);
-            Assert.NotEqual(0, handle.SharedHandle);
+            Assert.False(handle.SharedHandle.IsInvalid);
             Assert.Equal(64u, handle.TextureSize.Width);
             Assert.Equal(64u, handle.TextureSize.Height);
             Assert.Equal(Format.B8G8R8A8_UNorm, handle.Format);
