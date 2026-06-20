@@ -229,6 +229,54 @@ public class ProjectValidatorFiniteTests
 public class RenderFrameSnapshotFactorySafetyTests
 {
     [Fact]
+    public void Disabled_nested_canvas_does_not_acquire_inner_source_frames()
+    {
+        var innerSourceId = SourceId.New();
+        var innerSource = new FakeVideoFrameSource(innerSourceId, "Inner", new FrameSize(640, 480));
+        innerSource.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        innerSource.PublishFrame(1, MediaTime.Zero);
+
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(innerSource);
+
+        var nestedCanvasId = CanvasId.New();
+
+        var projectState = new ProjectStateSnapshot
+        {
+            Version = 1,
+            Canvases =
+            [
+                new CanvasStateSnapshot
+                {
+                    Id = CanvasId.New(),
+                    Name = "Main",
+                    Size = new FrameSize(1280, 720),
+                    Objects =
+                    [
+                        new CanvasDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Disabled PiP",
+                            Enabled = false,
+                            NestedCanvasId = nestedCanvasId,
+                            Transform = new Transform2D
+                            {
+                                Position = new CanvasPoint(100, 100),
+                                Size = new CanvasSize(320, 240)
+                            }
+                        }
+                    ]
+                }
+            ]
+        };
+
+        using var result = RenderFrameSnapshotFactory.Build(projectState, runtime);
+
+        Assert.Equal(0, innerSource.RetainCount);
+        Assert.Empty(result.Snapshot!.FrameLeases);
+    }
+
+    [Fact]
     public void Disabled_source_layer_does_not_acquire_frame()
     {
         var sourceId = SourceId.New();

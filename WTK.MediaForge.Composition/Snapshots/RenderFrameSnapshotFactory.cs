@@ -150,17 +150,34 @@ public static class RenderFrameSnapshotFactory
                 BlendMode = solid.BlendMode,
                 FillColor = solid.FillColor
             },
-            CanvasDrawObjectSnapshot nested => BuildNestedCanvasDrawObject(
-                nested,
-                effectiveCrop,
-                canvasLookup,
-                runtime,
-                leasesBySource,
-                diagnostics,
-                nestingDepth),
+            CanvasDrawObjectSnapshot nested => nested.Enabled
+                ? BuildNestedCanvasDrawObject(
+                    nested,
+                    effectiveCrop,
+                    canvasLookup,
+                    runtime,
+                    leasesBySource,
+                    diagnostics,
+                    nestingDepth)
+                : CreateDisabledCanvasDrawObjectSnapshot(nested, effectiveCrop),
             _ => throw new NotSupportedException($"Unsupported draw object snapshot type: {drawObject.GetType().Name}.")
         };
     }
+
+    private static RenderCanvasDrawObjectSnapshot CreateDisabledCanvasDrawObjectSnapshot(
+        CanvasDrawObjectSnapshot nested,
+        NormalizedRect effectiveCrop) =>
+        new()
+        {
+            Id = nested.Id,
+            Name = nested.Name,
+            Enabled = nested.Enabled,
+            Transform = nested.Transform,
+            EffectiveCrop = effectiveCrop,
+            Opacity = nested.Opacity,
+            BlendMode = nested.BlendMode,
+            NestedCanvas = null
+        };
 
     private static RenderCanvasDrawObjectSnapshot BuildNestedCanvasDrawObject(
         CanvasDrawObjectSnapshot nested,
