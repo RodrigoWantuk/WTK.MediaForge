@@ -4,14 +4,14 @@ using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmission
+internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmission, IDisposable
 {
-    private const ulong FenceWaitTimeoutNs = 5_000_000_000;
+    private const int DefaultDisposeWaitSeconds = 5;
 
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly List<VulkanD3D11TextureImport> _imports;
     private RenderFrameSnapshot? _snapshot;
-    private int _disposed;
+    private int _resourcesDisposed;
 
     public VulkanRenderFrameSubmission(
         VulkanHeadlessDevice deviceContext,
@@ -35,7 +35,10 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
     {
         get
         {
-            if (Volatile.Read(ref _disposed) != 0)
+            if (Volatile.Read(ref _resourcesDisposed) != 0)
+                return true;
+
+            if (Fence.Handle == 0)
                 return true;
 
             var status = _deviceContext.Vk.GetFenceStatus(_deviceContext.Device, Fence);
@@ -43,16 +46,19 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         }
     }
 
-    public void Dispose()
+    public ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+        WaitForFenceSync(timeout, cancellationToken);
+        return ValueTask.CompletedTask;
+    }
 
-        if (!WaitForCompletionIfNeeded())
-        {
-            Volatile.Write(ref _disposed, 0);
-            throw new TimeoutException("Timed out waiting for Vulkan submission fence before dispose.");
-        }
+    public void DisposeCompleted()
+    {
+        if (!IsCompleted)
+            throw new InvalidOperationException("Submission is not completed.");
+
+        if (Interlocked.Exchange(ref _resourcesDisposed, 1) != 0)
+            return;
 
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
@@ -75,28 +81,60 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         Interlocked.Exchange(ref _snapshot, null)?.Dispose();
     }
 
-    private bool WaitForCompletionIfNeeded()
+    public void Dispose()
     {
+        WaitForCompletionAsync(TimeSpan.FromSeconds(DefaultDisposeWaitSeconds), CancellationToken.None)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+        DisposeCompleted();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        WaitForCompletionAsync(TimeSpan.FromSeconds(DefaultDisposeWaitSeconds), CancellationToken.None)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+        DisposeCompleted();
+        return ValueTask.CompletedTask;
+    }
+
+    private void WaitForFenceSync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _resourcesDisposed) != 0 || IsCompleted)
+            return;
+
         if (Fence.Handle == 0)
-            return true;
+            return;
 
-        if (_deviceContext.Vk.GetFenceStatus(_deviceContext.Device, Fence) == Result.Success)
-            return true;
+        var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
 
-        var fence = Fence;
-        var result = _deviceContext.Vk.WaitForFences(
-            _deviceContext.Device,
-            1,
-            in fence,
-            true,
-            FenceWaitTimeoutNs);
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
 
-        if (result == Result.Success)
-            return true;
+            if (_deviceContext.Vk.GetFenceStatus(_deviceContext.Device, Fence) == Result.Success)
+                return;
 
-        if (result == Result.Timeout)
-            return false;
+            var remainingMs = deadline - Environment.TickCount64;
+            if (remainingMs <= 0)
+                throw new TimeoutException("Timed out waiting for Vulkan submission fence to complete.");
 
-        throw new InvalidOperationException($"vkWaitForFences failed during submission dispose: {result}");
+            var waitNs = (ulong)Math.Min(remainingMs * 1_000_000L, int.MaxValue);
+            var fence = Fence;
+            var result = _deviceContext.Vk.WaitForFences(
+                _deviceContext.Device,
+                1,
+                in fence,
+                true,
+                waitNs);
+
+            if (result == Result.Success)
+                return;
+
+            if (result != Result.Timeout)
+                throw new InvalidOperationException($"vkWaitForFences failed while waiting for completion: {result}");
+        }
     }
 }

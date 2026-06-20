@@ -22,7 +22,7 @@ public class PendingRenderSubmissionTrackerTests
         tracker.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => tracker.Add(submission));
-        submission.Dispose();
+        submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -41,11 +41,47 @@ public class PendingRenderSubmissionTrackerTests
     }
 
     [Fact]
+    public void DisposeCompleted_throws_when_submission_not_completed()
+    {
+        var submission = new ManualRenderFrameSubmission(CreateEmptySnapshot(1));
+
+        Assert.Throws<InvalidOperationException>(() => submission.DisposeCompleted());
+    }
+
+    [Fact]
+    public void DisposeCompleted_is_idempotent_when_submission_completed()
+    {
+        var submission = new ImmediateRenderFrameSubmission(CreateEmptySnapshot(1));
+
+        submission.DisposeCompleted();
+        submission.DisposeCompleted();
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_waits_for_incomplete_submissions()
+    {
+        var tracker = new PendingRenderSubmissionTracker();
+        var manual = new ManualRenderFrameSubmission(CreateEmptySnapshot(1));
+        tracker.Add(manual);
+
+        var shutdownTask = tracker.ShutdownAsync(
+            new ImmediateIdleRenderBackend(),
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        await Task.Delay(50);
+        manual.Complete();
+
+        await shutdownTask;
+        Assert.Equal(0, tracker.PendingCount);
+    }
+
+    [Fact]
     public void Dispose_releases_all_pending_snapshots()
     {
         var tracker = new PendingRenderSubmissionTracker();
-        tracker.Add(new ManualRenderFrameSubmission(CreateEmptySnapshot(1)));
-        tracker.Add(new ManualRenderFrameSubmission(CreateEmptySnapshot(2)));
+        tracker.Add(new ImmediateRenderFrameSubmission(CreateEmptySnapshot(1)));
+        tracker.Add(new ImmediateRenderFrameSubmission(CreateEmptySnapshot(2)));
 
         tracker.Dispose();
 
@@ -120,7 +156,7 @@ public class PendingRenderSubmissionTrackerTests
             if (!ownershipTransferred)
             {
                 if (submission is not null)
-                    submission.Dispose();
+                    submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 else
                     snapshot.Dispose();
             }
@@ -142,5 +178,22 @@ public class PendingRenderSubmissionTrackerTests
     {
         public override void Add(IRenderFrameSubmission submission) =>
             throw new InvalidOperationException("Simulated tracker add failure.");
+    }
+
+    private sealed class ImmediateIdleRenderBackend : IRenderBackend
+    {
+        public void BindOutput(RenderOutputBindingSnapshot binding) { }
+
+        public void UnbindOutput(RenderOutputId outputId) { }
+
+        public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) { }
+
+        public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
+            new ImmediateRenderFrameSubmission(snapshot);
+
+        public void WaitIdle() { }
+
+        public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
     }
 }

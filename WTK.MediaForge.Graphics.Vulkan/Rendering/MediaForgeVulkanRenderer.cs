@@ -159,6 +159,14 @@ public sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IDisposabl
         _deviceContext.WaitIdle();
     }
 
+    public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        _threadGuard.AssertOnRenderThread();
+
+        return new ValueTask(Task.Run(_deviceContext.WaitIdle, cancellationToken).WaitAsync(timeout, cancellationToken));
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

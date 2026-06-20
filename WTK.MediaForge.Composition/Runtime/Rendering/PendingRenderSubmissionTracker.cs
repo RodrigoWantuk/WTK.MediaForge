@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 public class PendingRenderSubmissionTracker : IDisposable
@@ -68,20 +70,26 @@ public class PendingRenderSubmissionTracker : IDisposable
         }
 
         foreach (var submission in completed)
-        {
-            try
-            {
-                submission.Dispose();
-            }
-            catch (Exception)
-            {
-                // TODO: Diagnostics.Record submission dispose failure.
-            }
-        }
+            submission.DisposeCompleted();
     }
 
-    public void Dispose()
+    public async ValueTask ShutdownAsync(
+        IRenderBackend backend,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(backend);
+
+        var deadline = Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
+
+        PollCompleted();
+
+        await backend
+            .WaitIdleAsync(GetRemainingTime(deadline), cancellationToken)
+            .ConfigureAwait(false);
+
+        PollCompleted();
+
         List<IRenderFrameSubmission> remaining;
 
         lock (_gate)
@@ -96,14 +104,47 @@ public class PendingRenderSubmissionTracker : IDisposable
 
         foreach (var submission in remaining)
         {
-            try
-            {
-                submission.Dispose();
-            }
-            catch (Exception)
-            {
-                // TODO: Diagnostics.Record submission dispose failure.
-            }
+            await submission
+                .WaitForCompletionAsync(GetRemainingTime(deadline), cancellationToken)
+                .ConfigureAwait(false);
+            submission.DisposeCompleted();
         }
+    }
+
+    public void Dispose()
+    {
+        PollCompleted();
+
+        List<IRenderFrameSubmission> remaining;
+
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            remaining = [.. _pending];
+            _pending.Clear();
+        }
+
+        foreach (var submission in remaining)
+        {
+            if (!submission.IsCompleted)
+            {
+                throw new InvalidOperationException(
+                    "Cannot dispose tracker with incomplete submissions. Use ShutdownAsync instead.");
+            }
+
+            submission.DisposeCompleted();
+        }
+    }
+
+    private static TimeSpan GetRemainingTime(long deadline)
+    {
+        var remainingTicks = deadline - Stopwatch.GetTimestamp();
+        if (remainingTicks <= 0)
+            return TimeSpan.Zero;
+
+        return TimeSpan.FromSeconds((double)remainingTicks / Stopwatch.Frequency);
     }
 }

@@ -2,10 +2,13 @@ using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-public sealed class ManualRenderFrameSubmission : IRenderFrameSubmission
+public sealed class ManualRenderFrameSubmission : IRenderFrameSubmission, IDisposable
 {
+    private const int DefaultDisposeWaitSeconds = 5;
+
     private RenderFrameSnapshot? _snapshot;
     private volatile bool _completed;
+    private int _resourcesDisposed;
 
     public ManualRenderFrameSubmission(RenderFrameSnapshot snapshot)
     {
@@ -16,8 +19,48 @@ public sealed class ManualRenderFrameSubmission : IRenderFrameSubmission
 
     public void Complete() => _completed = true;
 
+    public async ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (_completed)
+            return;
+
+        var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+
+        while (!_completed)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (Environment.TickCount64 >= deadline)
+                throw new TimeoutException("Timed out waiting for manual submission to complete.");
+
+            await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public void DisposeCompleted()
+    {
+        if (!_completed)
+            throw new InvalidOperationException("Submission is not completed.");
+
+        if (Interlocked.Exchange(ref _resourcesDisposed, 1) != 0)
+            return;
+
+        Interlocked.Exchange(ref _snapshot, null)?.Dispose();
+    }
+
     public void Dispose()
     {
-        Interlocked.Exchange(ref _snapshot, null)?.Dispose();
+        WaitForCompletionAsync(TimeSpan.FromSeconds(DefaultDisposeWaitSeconds), CancellationToken.None)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+        DisposeCompleted();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await WaitForCompletionAsync(TimeSpan.FromSeconds(DefaultDisposeWaitSeconds), CancellationToken.None)
+            .ConfigureAwait(false);
+        DisposeCompleted();
     }
 }

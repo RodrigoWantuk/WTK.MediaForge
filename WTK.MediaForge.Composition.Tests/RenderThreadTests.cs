@@ -114,6 +114,8 @@ public class RenderThreadTests
         WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
         Assert.Equal(1, source.RetainCount);
         Assert.Equal(1, renderThread.PendingTracker.PendingCount);
+
+        backend.CompleteAllPending();
     }
 
     [Fact]
@@ -136,6 +138,8 @@ public class RenderThreadTests
         WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
 
         Assert.True(renderThread.PendingTracker.PendingCount <= 1);
+
+        backend.CompleteAllPending();
     }
 
     [Fact]
@@ -359,6 +363,12 @@ public class RenderThreadTests
             _threadGuard.AssertOnRenderThread();
             WaitIdleCalledOnRenderThread = true;
         }
+
+        public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            WaitIdle();
+            return ValueTask.CompletedTask;
+        }
     }
 }
 
@@ -418,6 +428,9 @@ public sealed class ManualNullRenderBackend : IRenderBackend
     }
 
     public void WaitIdle() { }
+
+    public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }
 
 public sealed class ThrowingSubmitNullRenderBackend : IRenderBackend
@@ -445,4 +458,7 @@ public sealed class ThrowingSubmitNullRenderBackend : IRenderBackend
     }
 
     public void WaitIdle() { }
+
+    public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }

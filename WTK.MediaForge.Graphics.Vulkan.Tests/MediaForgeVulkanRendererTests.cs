@@ -28,10 +28,17 @@ public class MediaForgeVulkanRendererTests
             try
             {
                 var snapshot = CreateEmptySnapshot();
-                using var submission = renderer.Backend.Submit(snapshot);
+                var submission = renderer.Backend.Submit(snapshot);
 
-                WaitUntil(() => submission.IsCompleted, TimeSpan.FromSeconds(5));
-                Assert.True(submission.IsCompleted);
+                try
+                {
+                    WaitUntil(() => submission.IsCompleted, TimeSpan.FromSeconds(5));
+                    Assert.True(submission.IsCompleted);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
             }
             finally
             {
@@ -54,15 +61,22 @@ public class MediaForgeVulkanRendererTests
             try
             {
                 var snapshot = CreateEmptySnapshot();
-                using var submission = renderer.Backend.Submit(snapshot);
+                var submission = renderer.Backend.Submit(snapshot);
 
-                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-                while (!submission.IsCompleted && stopwatch.ElapsedMilliseconds < 5000)
-                    Assert.True(submission.IsCompleted || stopwatch.ElapsedMilliseconds < 5000);
+                    while (!submission.IsCompleted && stopwatch.ElapsedMilliseconds < 5000)
+                        Assert.True(submission.IsCompleted || stopwatch.ElapsedMilliseconds < 5000);
 
-                stopwatch.Stop();
-                Assert.True(stopwatch.ElapsedMilliseconds < 5000);
+                    stopwatch.Stop();
+                    Assert.True(stopwatch.ElapsedMilliseconds < 5000);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
             }
             finally
             {
@@ -85,12 +99,20 @@ public class MediaForgeVulkanRendererTests
             try
             {
                 var (snapshot, retainProbe) = CreateSnapshotWithRetainProbe();
-                using var submission = renderer.Backend.Submit(snapshot);
-                WaitUntil(() => submission.IsCompleted, TimeSpan.FromSeconds(5));
+                var submission = renderer.Backend.Submit(snapshot);
 
-                Assert.Equal(1, retainProbe.ActiveRetainCount);
-                submission.Dispose();
-                Assert.Equal(0, retainProbe.ActiveRetainCount);
+                try
+                {
+                    WaitUntil(() => submission.IsCompleted, TimeSpan.FromSeconds(5));
+
+                    Assert.Equal(1, retainProbe.ActiveRetainCount);
+                    submission.DisposeCompleted();
+                    Assert.Equal(0, retainProbe.ActiveRetainCount);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
             }
             finally
             {
@@ -156,9 +178,17 @@ public class MediaForgeVulkanRendererTests
             try
             {
                 var snapshot = CreateSnapshotWithD3D11Frame(handle);
-                using var submission = renderer.Backend.Submit(snapshot);
-                WaitUntil(() => submission.IsCompleted, TimeSpan.FromSeconds(5));
-                Assert.True(submission.IsCompleted);
+                var submission = renderer.Backend.Submit(snapshot);
+
+                try
+                {
+                    WaitUntil(() => submission.IsCompleted, TimeSpan.FromSeconds(5));
+                    Assert.True(submission.IsCompleted);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
             }
             finally
             {
@@ -181,12 +211,19 @@ public class MediaForgeVulkanRendererTests
             try
             {
                 var (snapshot, retainProbe) = CreateSnapshotWithRetainProbe();
-                using var submission = renderer.Backend.Submit(snapshot);
+                var submission = renderer.Backend.Submit(snapshot);
 
-                renderer.Backend.WaitIdle();
-                Assert.True(submission.IsCompleted);
-                submission.Dispose();
-                Assert.Equal(0, retainProbe.ActiveRetainCount);
+                try
+                {
+                    renderer.Backend.WaitIdle();
+                    Assert.True(submission.IsCompleted);
+                    submission.DisposeCompleted();
+                    Assert.Equal(0, retainProbe.ActiveRetainCount);
+                }
+                finally
+                {
+                    ReleaseSubmission(submission);
+                }
             }
             finally
             {
@@ -341,6 +378,9 @@ public class MediaForgeVulkanRendererTests
             ]
         };
     }
+
+    private static void ReleaseSubmission(IRenderFrameSubmission submission) =>
+        submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     private static void WaitUntil(Func<bool> condition, TimeSpan timeout)
     {

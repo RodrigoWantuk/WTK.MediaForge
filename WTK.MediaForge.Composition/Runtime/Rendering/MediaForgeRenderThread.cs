@@ -136,10 +136,12 @@ public sealed class MediaForgeRenderThread : IDisposable
             }
 
             ProcessCommands(maxCommands: null);
-            _pendingTracker.PollCompleted();
-            _backend.WaitIdle();
-            _pendingTracker.Dispose();
             _snapshotBuffer.Dispose();
+            _pendingTracker
+                .ShutdownAsync(_backend, TimeSpan.FromSeconds(10), CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
         }
         catch (Exception ex)
         {
@@ -216,7 +218,7 @@ public sealed class MediaForgeRenderThread : IDisposable
                 {
                     try
                     {
-                        submission.Dispose();
+                        submission.DisposeAsync().AsTask().GetAwaiter().GetResult();
                     }
                     catch (Exception)
                     {
