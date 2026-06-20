@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Validation.Effects;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
 
@@ -145,6 +146,8 @@ public static class MediaForgeProjectValidator
 
         if (drawObject.Crop is { } crop && !crop.IsValid)
             issues.Add(ValidationIssue.Error("drawobject.crop.invalid", $"Draw object '{drawObject.Name}' has invalid crop."));
+
+        issues.AddRange(EffectValidation.ValidateDrawObjectEffects(drawObject, canvasName));
 
         switch (drawObject)
         {

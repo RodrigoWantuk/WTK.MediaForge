@@ -20,6 +20,7 @@ public static class MediaForgeProjectJsonOptions
         options.Converters.Add(new DrawObjectIdJsonConverter());
         options.Converters.Add(new RenderOutputIdJsonConverter());
         options.Converters.Add(new MediaSourceTypeIdJsonConverter());
+        options.Converters.Add(new EffectIdJsonConverter());
         options.Converters.Add(new RenderOutputTypeIdJsonConverter());
         options.Converters.Add(new ColorRgbaJsonConverter());
         options.Converters.Add(new FrameSizeJsonConverter());

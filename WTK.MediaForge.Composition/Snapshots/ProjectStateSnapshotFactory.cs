@@ -55,8 +55,11 @@ public static class ProjectStateSnapshotFactory
             LetterboxColor = output.LetterboxColor
         };
 
-    private static DrawObjectStateSnapshot CloneDrawObject(MediaForgeDrawObject drawObject) =>
-        drawObject switch
+    private static DrawObjectStateSnapshot CloneDrawObject(MediaForgeDrawObject drawObject)
+    {
+        var effects = EffectSnapshotFactory.CloneEffects(drawObject.Effects);
+
+        return drawObject switch
         {
             SourceLayerDrawObject sourceLayer => new SourceLayerDrawObjectSnapshot
             {
@@ -67,6 +70,7 @@ public static class ProjectStateSnapshotFactory
                 Crop = sourceLayer.Crop,
                 Opacity = sourceLayer.Opacity,
                 BlendMode = sourceLayer.BlendMode,
+                Effects = effects,
                 SourceId = sourceLayer.SourceId,
                 LayoutMode = sourceLayer.LayoutMode,
                 ContentRotationOverride = sourceLayer.ContentRotationOverride
@@ -80,6 +84,7 @@ public static class ProjectStateSnapshotFactory
                 Crop = text.Crop,
                 Opacity = text.Opacity,
                 BlendMode = text.BlendMode,
+                Effects = effects,
                 Text = text.Text,
                 TextColor = text.TextColor,
                 FontSize = text.FontSize
@@ -93,6 +98,7 @@ public static class ProjectStateSnapshotFactory
                 Crop = solid.Crop,
                 Opacity = solid.Opacity,
                 BlendMode = solid.BlendMode,
+                Effects = effects,
                 FillColor = solid.FillColor
             },
             CanvasDrawObject nested => new CanvasDrawObjectSnapshot
@@ -104,8 +110,10 @@ public static class ProjectStateSnapshotFactory
                 Crop = nested.Crop,
                 Opacity = nested.Opacity,
                 BlendMode = nested.BlendMode,
+                Effects = effects,
                 NestedCanvasId = nested.NestedCanvasId
             },
             _ => throw new NotSupportedException($"Unsupported draw object type: {drawObject.GetType().Name}.")
         };
+    }
 }

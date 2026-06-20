@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
@@ -26,4 +27,6 @@ public abstract class MediaForgeDrawObject
     public float Opacity { get; set; } = 1f;
 
     public BlendMode BlendMode { get; set; } = BlendMode.Normal;
+
+    public List<MediaForgeEffect> Effects { get; set; } = [];
 }
