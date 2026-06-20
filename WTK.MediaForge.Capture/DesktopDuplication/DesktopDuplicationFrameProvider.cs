@@ -18,7 +18,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
 
     private readonly CaptureSourceInfo _captureSource;
     private readonly object _stateGate = new();
-    private readonly List<D3D11GpuFrameSlotRing> _retiredRings = [];
+    private readonly RetiredGpuResourceManager _retiredResourceManager = new();
 
     private DesktopDuplicationSession? _session;
     private D3D11GpuFrameSlotRing? _slotRing;
@@ -45,6 +45,8 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
 
     internal GpuFrameSlotRing? Ring => Volatile.Read(ref _slotRing)?.Ring;
 
+    internal RetiredGpuResourceManager RetiredResourceManager => _retiredResourceManager;
+
     internal int ActiveSlotRetainCount
     {
         get
@@ -58,12 +60,12 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
                     total += current.Ring.GetRefCount(i);
             }
 
-            lock (_retiredRings)
+            foreach (var retired in _retiredResourceManager.PendingResources)
             {
-                foreach (var retired in _retiredRings)
+                if (retired is D3D11GpuFrameSlotRing ring)
                 {
-                    for (var i = 0; i < retired.Ring.SlotCount; i++)
-                        total += retired.Ring.GetRefCount(i);
+                    for (var i = 0; i < ring.Ring.SlotCount; i++)
+                        total += ring.Ring.GetRefCount(i);
                 }
             }
 
@@ -159,7 +161,21 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
             Rotation = _captureSource.Rotation,
         };
 
-        lease = GpuFrameLease.Create(frame, slotLease.Dispose);
+        var ownerRing = slotRing;
+        lease = GpuFrameLease.Create(frame, () =>
+        {
+            try
+            {
+                slotLease.Dispose();
+            }
+            finally
+            {
+                if (ownerRing.IsRetired)
+                    ownerRing.TryFinalizePhysicalResources();
+
+                _retiredResourceManager.TryFinalizeAll();
+            }
+        });
         return true;
     }
 
@@ -171,13 +187,10 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
         StopAsync(CancellationToken.None).GetAwaiter().GetResult();
         TryFinalizeRetiredRings();
 
-        lock (_retiredRings)
+        if (_retiredResourceManager.PendingCount > 0)
         {
-            if (_retiredRings.Count > 0)
-            {
-                throw new InvalidOperationException(
-                    "Cannot dispose provider while retired slot rings still have active leases.");
-            }
+            throw new InvalidOperationException(
+                "Cannot dispose provider while retired slot rings still have active leases.");
         }
     }
 
@@ -307,8 +320,7 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
         if (oldRing is not null)
         {
             oldRing.Retire();
-            lock (_retiredRings)
-                _retiredRings.Add(oldRing);
+            _retiredResourceManager.Add(oldRing);
         }
     }
 
@@ -320,19 +332,8 @@ public sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IDisp
             return;
 
         current.Retire();
-        lock (_retiredRings)
-            _retiredRings.Add(current);
+        _retiredResourceManager.Add(current);
     }
 
-    private void TryFinalizeRetiredRings()
-    {
-        lock (_retiredRings)
-        {
-            for (var i = _retiredRings.Count - 1; i >= 0; i--)
-            {
-                if (_retiredRings[i].TryFinalizePhysicalResources())
-                    _retiredRings.RemoveAt(i);
-            }
-        }
-    }
+    private void TryFinalizeRetiredRings() => _retiredResourceManager.TryFinalizeAll();
 }

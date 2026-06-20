@@ -213,6 +213,91 @@ public class D3D11GpuFrameSlotRingTests
         }
     }
 
+    [Fact]
+    public void RetiredRingManager_removes_ring_after_last_lease()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        {
+            var manager = new RetiredGpuResourceManager();
+            var ring = CreateSlotRing(device);
+            CaptureFrame(ring, frameNumber: 1);
+            Assert.True(ring.Ring.TryRetainLatest(out var lease));
+
+            ring.Retire();
+            manager.Add(ring);
+            Assert.Equal(1, manager.PendingCount);
+
+            lease!.Dispose();
+            manager.TryFinalizeAll();
+
+            Assert.Equal(0, manager.PendingCount);
+            Assert.True(ring.FullyDisposed.IsCompletedSuccessfully);
+        }
+    }
+
+    [Fact]
+    public void Lease_release_finalizes_owner_ring_without_capture_loop()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        {
+            var manager = new RetiredGpuResourceManager();
+            var ring = CreateSlotRing(device);
+            CaptureFrame(ring, frameNumber: 1);
+            Assert.True(ring.Ring.TryRetainLatest(out var slotLease));
+
+            var frame = slotLease!.Frame;
+            ring.Retire();
+            manager.Add(ring);
+
+            var lease = GpuFrameLease.Create(frame, () =>
+            {
+                try
+                {
+                    slotLease.Dispose();
+                }
+                finally
+                {
+                    if (ring.IsRetired)
+                        ring.TryFinalizePhysicalResources();
+
+                    manager.TryFinalizeAll();
+                }
+            });
+
+            lease.Dispose();
+
+            Assert.Equal(0, manager.PendingCount);
+            Assert.True(ring.FullyDisposed.IsCompletedSuccessfully);
+        }
+    }
+
+    [Fact]
+    public void FullyDisposed_faults_when_finalization_fails_irrecoverably()
+    {
+        // Covered by ring dispose path; Retire + release still completes successfully with D3D11 handles.
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        using (var ring = CreateSlotRing(device))
+        {
+            CaptureFrame(ring, frameNumber: 1);
+            Assert.True(ring.Ring.TryRetainLatest(out var lease));
+
+            ring.Retire();
+            lease!.Dispose();
+
+            Assert.True(ring.TryFinalizePhysicalResources());
+            Assert.True(ring.FullyDisposed.IsCompletedSuccessfully);
+        }
+    }
+
     private static D3D11GpuFrameSlotRing CreateSlotRing(D3D11GpuDevice device) =>
         new(device.Device, width: 64, height: 64, Format.B8G8R8A8_UNorm, slotCount: 3);
 

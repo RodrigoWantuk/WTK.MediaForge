@@ -1,14 +1,16 @@
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Gpu.Slots;
 using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Capture.Gpu;
 
-public sealed class D3D11GpuFrameSlotRing : IDisposable
+public sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
 {
     private readonly D3D11SharedTextureFrameHandle[] _handles;
+    private readonly TaskCompletionSource _fullyDisposedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _handlesDisposed;
     private int _disposed;
 
@@ -33,22 +35,44 @@ public sealed class D3D11GpuFrameSlotRing : IDisposable
 
     public GpuFrameSlotRing Ring { get; }
 
+    public Task FullyDisposed => _fullyDisposedTcs.Task;
+
     public bool IsFullyDisposed => Volatile.Read(ref _disposed) != 0;
+
+    private int _retired;
+
+    public bool IsRetired => Volatile.Read(ref _retired) != 0;
 
     public D3D11SharedTextureFrameHandle GetHandle(int slotIndex) => _handles[slotIndex];
 
-    public void Retire() => Ring.Stop();
+    public void Retire()
+    {
+        Volatile.Write(ref _retired, 1);
+        Ring.Stop();
+    }
 
     public bool TryFinalizePhysicalResources()
     {
-        Ring.RequestFinalize();
+        if (_fullyDisposedTcs.Task.IsCompleted)
+            return _fullyDisposedTcs.Task.IsCompletedSuccessfully;
 
-        if (!Ring.IsFullyDisposed)
-            return false;
+        try
+        {
+            Ring.RequestFinalize();
 
-        DisposeHandlesIfNeeded();
-        Volatile.Write(ref _disposed, 1);
-        return true;
+            if (!Ring.IsFullyDisposed)
+                return false;
+
+            DisposeHandlesIfNeeded();
+            Volatile.Write(ref _disposed, 1);
+            _fullyDisposedTcs.TrySetResult();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _fullyDisposedTcs.TrySetException(ex);
+            throw;
+        }
     }
 
     public void Dispose()
