@@ -105,6 +105,26 @@ public class VulkanExternalTextureRegistryTests
         }
     }
 
+    [Fact]
+    public void Repeated_acquire_release_keeps_registry_entry_count_stable()
+    {
+        if (!TryCreateContext(out var context))
+            return;
+
+        using (context)
+        {
+            for (var i = 0; i < 1000; i++)
+            {
+                var lease = context.Registry.Acquire(context.Handle);
+                lease.Dispose();
+            }
+
+            Assert.Equal(1, context.Registry.EntryCount);
+            context.Registry.CollectUnused();
+            Assert.Equal(1, context.Registry.EntryCount);
+        }
+    }
+
     private static bool TryCreateContext(out RegistryTestContext? context)
     {
         context = null;

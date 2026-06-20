@@ -13,6 +13,7 @@ using Xunit;
 
 namespace WTK.MediaForge.Capture.Tests;
 
+[Collection("GpuCapture")]
 public class DesktopDuplicationFrameProviderTests
 {
     [Fact]
