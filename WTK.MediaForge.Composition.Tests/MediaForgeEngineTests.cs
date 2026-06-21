@@ -19,6 +19,23 @@ namespace WTK.MediaForge.Composition.Tests;
 public class MediaForgeEngineTests
 {
     [Fact]
+    public async Task Engine_state_transitions_idle_loaded_running_idle()
+    {
+        await using var engine = CreateEngine();
+
+        Assert.Equal(MediaForgeEngineState.Idle, engine.State);
+
+        await engine.LoadProjectAsync(CreateValidProject());
+        Assert.Equal(MediaForgeEngineState.Loaded, engine.State);
+
+        await engine.StartAsync();
+        Assert.Equal(MediaForgeEngineState.Running, engine.State);
+
+        await engine.StopAsync();
+        Assert.Equal(MediaForgeEngineState.Idle, engine.State);
+    }
+
+    [Fact]
     public async Task LoadProjectAsync_rejects_invalid_project()
     {
         await using var engine = CreateEngine();
@@ -36,6 +53,46 @@ public class MediaForgeEngineTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             engine.LoadProjectAsync(project));
+    }
+
+    [Fact]
+    public async Task LoadProjectAsync_does_not_retain_external_project_reference()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+
+        await engine.LoadProjectAsync(project);
+
+        Assert.NotSame(project, engine.CurrentProject);
+        Assert.NotSame(project.Canvases[0], engine.CurrentProject.Canvases[0]);
+        Assert.NotSame(project.Outputs[0], engine.CurrentProject.Outputs[0]);
+    }
+
+    [Fact]
+    public async Task LoadProjectAsync_migration_does_not_mutate_caller_project()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        project.SourceDefinitions[0].TypeId = LegacyMediaSourceTypeIds.DesktopCapture;
+
+        await engine.LoadProjectAsync(project);
+
+        Assert.Equal(LegacyMediaSourceTypeIds.DesktopCapture, project.SourceDefinitions[0].TypeId);
+        Assert.Equal(MediaSourceTypes.Desktop, engine.CurrentProject.SourceDefinitions[0].TypeId);
+    }
+
+    [Fact]
+    public async Task External_project_mutation_after_load_does_not_change_engine_project()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+
+        await engine.LoadProjectAsync(project);
+        project.Canvases[0].Name = "Mutated outside engine";
+        project.Outputs[0].Name = "Mutated output";
+
+        Assert.NotEqual(project.Canvases[0].Name, engine.CurrentProject.Canvases[0].Name);
+        Assert.NotEqual(project.Outputs[0].Name, engine.CurrentProject.Outputs[0].Name);
     }
 
     [Fact]
@@ -564,11 +621,11 @@ public class MediaForgeEngineTests
             await engine.StartAsync();
             Assert.True(backendFactory.Backend!.WaitForSubmitEntered(TimeSpan.FromSeconds(5)));
 
-            await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+        await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
 
-            Assert.Contains(
-                diagnostics.Diagnostics,
-                d => d.Severity == MediaForgeDiagnosticSeverity.Fatal &&
+        Assert.Contains(
+            diagnostics.Diagnostics,
+            d => d.Severity == MediaForgeDiagnosticSeverity.Fatal &&
                     d.Code == "engine.backend_dispose_skipped_render_thread_alive");
         }
         finally
@@ -578,6 +635,76 @@ public class MediaForgeEngineTests
             backendFactory.Backend?.Dispose();
             await engine.DisposeAsync();
         }
+    }
+
+    [Fact]
+    public async Task Engine_failed_stop_sets_state_failed()
+    {
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new BlockingSubmitRenderBackendFactory();
+        var engine = CreateEngine(providerFactory, backendFactory);
+        engine.RenderThreadJoinTimeoutForTests = TimeSpan.FromMilliseconds(50);
+
+        try
+        {
+            await engine.LoadProjectAsync(CreateValidProject());
+            await engine.StartAsync();
+            Assert.True(backendFactory.Backend!.WaitForSubmitEntered(TimeSpan.FromSeconds(5)));
+
+            await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+
+            Assert.Equal(MediaForgeEngineState.Failed, engine.State);
+            Assert.NotNull(engine.RenderThreadForTests);
+            Assert.NotNull(engine.BackendForTests);
+        }
+        finally
+        {
+            backendFactory.Backend?.ReleaseSubmit();
+            _ = backendFactory.Backend?.WaitForSubmitExited(TimeSpan.FromSeconds(5));
+            backendFactory.Backend?.Dispose();
+            await engine.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Engine_cleanup_error_sets_state_failed()
+    {
+        var providerFactory = new ThrowingStopMediaSourceProviderFactory();
+        await using var engine = CreateEngine(providerFactory);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+
+        await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+
+        Assert.Equal(MediaForgeEngineState.Failed, engine.State);
+    }
+
+    [Fact]
+    public async Task Engine_dispose_after_failed_stop_preserves_failed_state()
+    {
+        var providerFactory = new ThrowingStopMediaSourceProviderFactory();
+        var engine = CreateEngine(providerFactory);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+        await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+
+        await engine.DisposeAsync();
+
+        Assert.Equal(MediaForgeEngineState.Failed, engine.State);
+    }
+
+    [Fact]
+    public async Task Engine_start_after_failed_state_throws_clear_exception()
+    {
+        var providerFactory = new ThrowingStopMediaSourceProviderFactory();
+        await using var engine = CreateEngine(providerFactory);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+        await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.StartAsync());
+
+        Assert.Contains("failed state", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
