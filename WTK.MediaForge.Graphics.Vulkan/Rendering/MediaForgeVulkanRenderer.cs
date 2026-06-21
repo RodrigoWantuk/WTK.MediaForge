@@ -86,6 +86,27 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         return false;
     }
 
+    internal bool TryReadOffscreenPixel(
+        RenderOutputId outputId,
+        uint x,
+        uint y,
+        out VulkanReadbackPixel pixel)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        _threadGuard.AssertOnRenderThread();
+
+        if (_offscreenTargets.TryGetValue(outputId, out var handle) &&
+            handle.IsAlive &&
+            handle.Target is VulkanOffscreenRenderTarget target)
+        {
+            pixel = VulkanOffscreenReadback.ReadPixel(target, x, y);
+            return true;
+        }
+
+        pixel = default;
+        return false;
+    }
+
     internal IVulkanRendererFaultInjector FaultInjector => _faultInjector;
 
     public int SubmitCount => Volatile.Read(ref _submitCount);

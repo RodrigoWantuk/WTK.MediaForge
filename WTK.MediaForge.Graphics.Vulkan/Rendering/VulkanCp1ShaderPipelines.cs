@@ -44,8 +44,8 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         _sourceLayerFragmentModule = CreateShaderModule(VulkanShaderBytecode.SourceLayerFragment);
         _outputLetterboxFragmentModule = CreateShaderModule(VulkanShaderBytecode.OutputLetterboxFragment);
 
-        _sourceLayerPipeline = CreateGraphicsPipeline(_vertexModule, _sourceLayerFragmentModule);
-        _outputLetterboxPipeline = CreateGraphicsPipeline(_vertexModule, _outputLetterboxFragmentModule);
+        _sourceLayerPipeline = CreateGraphicsPipeline(_vertexModule, _sourceLayerFragmentModule, enableAlphaBlend: true);
+        _outputLetterboxPipeline = CreateGraphicsPipeline(_vertexModule, _outputLetterboxFragmentModule, enableAlphaBlend: false);
     }
 
     public RenderPass RenderPass => _renderPass;
@@ -585,7 +585,10 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         return renderPass;
     }
 
-    private Pipeline CreateGraphicsPipeline(ShaderModule vertexModule, ShaderModule fragmentModule)
+    private Pipeline CreateGraphicsPipeline(
+        ShaderModule vertexModule,
+        ShaderModule fragmentModule,
+        bool enableAlphaBlend)
     {
         var entryPoint = (byte*)SilkMarshal.StringToPtr("main");
         try
@@ -650,7 +653,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                                  ColorComponentFlags.GBit |
                                  ColorComponentFlags.BBit |
                                  ColorComponentFlags.ABit,
-                BlendEnable = true,
+                BlendEnable = enableAlphaBlend,
                 SrcColorBlendFactor = BlendFactor.SrcAlpha,
                 DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
                 ColorBlendOp = BlendOp.Add,

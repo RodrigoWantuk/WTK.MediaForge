@@ -1,8 +1,10 @@
 using Vortice.DXGI;
+using Vortice.Mathematics;
 using Silk.NET.Vulkan;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
@@ -120,6 +122,277 @@ public class Cp1OffscreenCompositionTests
                 Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.DisposeCount);
 
                 snapshot.Dispose();
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_renders_expected_center_pixel()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(64, 64) },
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_source_layer_fit_outputs_transparent_outside_content_area()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(128, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(128, 64) },
+                    layerLayoutMode: LayoutMode.Fit,
+                    outputCanvasLayoutMode: LayoutMode.Fit,
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 4, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 0, expectedB: 0, expectedA: 0);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_source_layer_fill_crops_without_transparent_bars()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(128, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(128, 64) },
+                    layerLayoutMode: LayoutMode.Fill,
+                    outputCanvasLayoutMode: LayoutMode.Fit,
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 4, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_source_layer_stretch_fills_entire_box()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(128, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(128, 64) },
+                    layerLayoutMode: LayoutMode.Stretch,
+                    outputCanvasLayoutMode: LayoutMode.Fit,
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 4, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_respects_opacity_on_source_layer()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(64, 64) },
+                    opacity: 0.5f,
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 128, expectedG: 0, expectedB: 0, expectedA: 128, tolerance: 2);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_letterbox_outputs_letterbox_color()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 128, 64));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: new FrameSize(64, 64),
+                    outputSize: new FrameSize(128, 64),
+                    transform: new Transform2D { Size = new CanvasSize(64, 64) },
+                    outputCanvasLayoutMode: LayoutMode.Fit,
+                    outputLetterboxColor: ColorRgba.From(0, 1, 0, 1));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 4, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 255, expectedB: 0, expectedA: 255);
             }
             finally
             {
@@ -492,8 +765,21 @@ public class Cp1OffscreenCompositionTests
     private static RenderFrameSnapshot CreateCp1Snapshot(
         D3D11SharedTextureFrameHandle sharedHandle,
         CanvasId canvasId,
-        RenderOutputId outputId)
+        RenderOutputId outputId,
+        FrameSize? canvasSize = null,
+        FrameSize? outputSize = null,
+        Transform2D? transform = null,
+        LayoutMode layerLayoutMode = LayoutMode.Fit,
+        LayoutMode outputCanvasLayoutMode = LayoutMode.Fit,
+        ColorRgba? outputLetterboxColor = null,
+        float opacity = 1f)
     {
+        var resolvedCanvasSize = canvasSize ?? new FrameSize(1920, 1080);
+        var resolvedOutputSize = outputSize ?? new FrameSize(1280, 720);
+        var resolvedTransform = transform ?? new Transform2D
+        {
+            Size = new CanvasSize(resolvedCanvasSize.Width, resolvedCanvasSize.Height)
+        };
         var frame = new GpuFrameReference
         {
             Backend = GpuFrameBackend.D3D11SharedTexture,
@@ -513,7 +799,7 @@ public class Cp1OffscreenCompositionTests
                 {
                     Id = canvasId,
                     Name = "Program",
-                    Size = new FrameSize(1920, 1080),
+                    Size = resolvedCanvasSize,
                     Objects =
                     [
                         new RenderSourceLayerDrawObjectSnapshot
@@ -521,7 +807,9 @@ public class Cp1OffscreenCompositionTests
                             Id = DrawObjectId.New(),
                             Name = "Desktop",
                             SourceId = frame.SourceId,
-                            Transform = new Transform2D { Size = new CanvasSize(1920, 1080) },
+                            Transform = resolvedTransform,
+                            LayoutMode = layerLayoutMode,
+                            Opacity = opacity,
                             BoundFrame = frame
                         }
                     ]
@@ -535,11 +823,47 @@ public class Cp1OffscreenCompositionTests
                     Name = "Offscreen",
                     TypeId = RenderOutputTypes.Offscreen,
                     CanvasId = canvasId,
-                    OutputSize = new FrameSize(1280, 720),
-                    CanvasLayoutMode = LayoutMode.Fit
+                    OutputSize = resolvedOutputSize,
+                    CanvasLayoutMode = outputCanvasLayoutMode,
+                    LetterboxColor = outputLetterboxColor ?? ColorRgba.Black
                 }
             ]
         };
+    }
+
+    private static void FillSharedTexture(
+        D3D11GpuDevice device,
+        D3D11SharedTextureFrameHandle handle,
+        ColorRgba color)
+    {
+        handle.KeyedMutex.AcquireSync(handle.ProducerAcquireKey, 1000);
+
+        try
+        {
+            using var renderTargetView = device.Device.CreateRenderTargetView(handle.Texture);
+            device.Context.ClearRenderTargetView(
+                renderTargetView,
+                new Color4(color.R, color.G, color.B, color.A));
+        }
+        finally
+        {
+            handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
+            handle.NotifyCaptureReleasedToConsumer();
+        }
+    }
+
+    private static void AssertPixelNear(
+        VulkanReadbackPixel pixel,
+        byte expectedR,
+        byte expectedG,
+        byte expectedB,
+        byte expectedA,
+        byte tolerance = 1)
+    {
+        Assert.InRange((int)pixel.R, expectedR - tolerance, expectedR + tolerance);
+        Assert.InRange((int)pixel.G, expectedG - tolerance, expectedG + tolerance);
+        Assert.InRange((int)pixel.B, expectedB - tolerance, expectedB + tolerance);
+        Assert.InRange((int)pixel.A, expectedA - tolerance, expectedA + tolerance);
     }
 
     private static RenderOutputBindingSnapshot CreateOffscreenBinding(
@@ -669,6 +993,8 @@ public class Cp1OffscreenCompositionTests
         }
 
         public D3D11SharedTextureFrameHandle SharedHandle => _sharedHandle;
+
+        public D3D11GpuDevice Device => _device;
 
         public RenderThreadGuard Guard => _renderer.Guard;
 

@@ -49,6 +49,14 @@ internal static unsafe class VulkanImageLayoutTransition
                 (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.ShaderReadBit, AccessFlags.ShaderReadBit),
             (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.ColorAttachmentOptimal) =>
                 (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ColorAttachmentOutputBit, AccessFlags.ShaderReadBit, AccessFlags.ColorAttachmentWriteBit),
+            (ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferSrcOptimal) =>
+                (PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferReadBit),
+            (ImageLayout.ColorAttachmentOptimal, ImageLayout.TransferSrcOptimal) =>
+                (PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit, AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit),
+            (ImageLayout.TransferSrcOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+                (PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.TransferReadBit, AccessFlags.ShaderReadBit),
+            (ImageLayout.TransferSrcOptimal, ImageLayout.ColorAttachmentOptimal) =>
+                (PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit, AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentWriteBit),
             _ => throw new InvalidOperationException(
                 $"Unsupported image layout transition: {oldLayout} -> {newLayout}.")
         };

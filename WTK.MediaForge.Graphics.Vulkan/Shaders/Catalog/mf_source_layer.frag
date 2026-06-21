@@ -70,6 +70,13 @@ void main()
         params.cropRect.w - params.cropRect.y);
 
     vec2 uvInCropped = computeLayoutUv(vUv, params.layoutMode, croppedSize, params.boxSize);
+    if (uvInCropped.x < 0.0 || uvInCropped.x > 1.0 ||
+        uvInCropped.y < 0.0 || uvInCropped.y > 1.0)
+    {
+        outColor = vec4(0.0);
+        return;
+    }
+
     vec2 uvLogical = mapCroppedUvToFullLogicalUv(uvInCropped, params.cropRect);
     vec2 uvRaw = rotateUv(uvLogical, params.contentRotation);
 
