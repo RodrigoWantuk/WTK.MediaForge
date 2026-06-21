@@ -66,6 +66,13 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     internal IRenderBackend? BackendForTests => _backend;
 
+    internal ProjectStateSnapshot? ProjectStateForTests => _projectState;
+
+    internal int OutputSinkCountForTests => _outputSinks.Count;
+
+    internal IRenderOutputSink? GetOutputSinkForTests(RenderOutputId outputId) =>
+        _outputSinks.TryGetValue(outputId, out var entry) ? entry.Sink : null;
+
     public async Task LoadProjectAsync(MediaForgeProject project, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -283,14 +290,17 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(edit);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             EnsureCanMutateProject();
 
-            var editor = new MediaForgeProjectEditor(CurrentProject);
+            var workingCopy = MediaForgeProjectCloner.DeepClone(CurrentProject);
+            var editor = new MediaForgeProjectEditor(workingCopy);
             edit(editor);
             editor.ValidateOrThrow();
+
+            CurrentProject = workingCopy;
 
             if (_lifecycleState == EngineLifecycleState.Running)
             {
@@ -330,14 +340,27 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     $"No output sink factory registered for type '{target.TypeId.Value}'.");
             }
 
-            if (_outputSinks.TryGetValue(outputId, out var existing))
-                await existing.Sink.DisposeAsync().ConfigureAwait(false);
+            var newSink = _outputSinkFactory.CreateSink(target);
+            OutputSinkEntry? oldEntry = null;
+            var sinkAccepted = false;
 
-            var sink = _outputSinkFactory.CreateSink(target);
-            _outputSinks[outputId] = new OutputSinkEntry(sink, target);
+            try
+            {
+                if (_lifecycleState == EngineLifecycleState.Running)
+                    EnqueueBindOutput(output, newSink, target);
 
-            if (_lifecycleState == EngineLifecycleState.Running)
-                EnqueueBindOutput(output, sink, target);
+                _outputSinks.TryGetValue(outputId, out oldEntry);
+                _outputSinks[outputId] = new OutputSinkEntry(newSink, target);
+                sinkAccepted = true;
+            }
+            finally
+            {
+                if (!sinkAccepted)
+                    await newSink.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (oldEntry is not null)
+                await oldEntry.Sink.DisposeAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -352,11 +375,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_outputSinks.Remove(outputId, out var entry))
-                await entry.Sink.DisposeAsync().ConfigureAwait(false);
+            if (!_outputSinks.TryGetValue(outputId, out var entry))
+                return;
 
             if (_lifecycleState == EngineLifecycleState.Running)
                 _renderThread?.EnqueueCommand(new UnbindOutputCommand { OutputId = outputId });
+
+            _outputSinks.Remove(outputId);
+
+            await entry.Sink.DisposeAsync().ConfigureAwait(false);
         }
         finally
         {

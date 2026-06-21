@@ -73,6 +73,70 @@ internal sealed class ThrowingDisposeRenderBackendFactory : IRenderBackendFactor
     }
 }
 
+internal sealed class UnbindTrackingRenderBackendFactory : IRenderBackendFactory
+{
+    public UnbindTrackingRenderBackend? Backend { get; private set; }
+
+    public bool TryCreate(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        out IRenderBackend? backend)
+    {
+        Backend = new UnbindTrackingRenderBackend(threadGuard);
+        backend = Backend;
+        return true;
+    }
+}
+
+internal sealed class UnbindTrackingRenderBackend : IRenderBackend
+{
+    private readonly RenderThreadGuard _threadGuard;
+    private readonly ManualResetEventSlim _unbindReceived = new(false);
+
+    public UnbindTrackingRenderBackend(RenderThreadGuard threadGuard) =>
+        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+
+    public int UnbindCount => Volatile.Read(ref _unbindCount);
+
+    public bool Disposed { get; private set; }
+
+    private int _unbindCount;
+
+    public void BindOutput(RenderOutputBindingSnapshot binding)
+    {
+        _threadGuard.AssertOnRenderThread();
+    }
+
+    public void UnbindOutput(RenderOutputId outputId)
+    {
+        _threadGuard.AssertOnRenderThread();
+        Interlocked.Increment(ref _unbindCount);
+        _unbindReceived.Set();
+    }
+
+    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize)
+    {
+        _threadGuard.AssertOnRenderThread();
+    }
+
+    public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot)
+    {
+        _threadGuard.AssertOnRenderThread();
+        return new ImmediateRenderFrameSubmission(snapshot);
+    }
+
+    public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    public bool WaitForUnbind(TimeSpan timeout) => _unbindReceived.Wait(timeout);
+
+    public void Dispose()
+    {
+        Disposed = true;
+        _unbindReceived.Dispose();
+    }
+}
+
 internal sealed class ThrowingDisposeRenderBackend : IRenderBackend
 {
     private readonly NullRenderBackend _inner;
@@ -203,6 +267,106 @@ internal sealed class FakeRenderOutputSink : IRenderOutputSink
         };
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal sealed class RecordingRenderOutputSink : IRenderOutputSink
+{
+    private readonly Func<bool>? _waitBeforeDispose;
+
+    public RecordingRenderOutputSink(
+        RenderOutputTarget target,
+        string name,
+        Func<bool>? waitBeforeDispose = null)
+    {
+        Target = target ?? throw new ArgumentNullException(nameof(target));
+        Name = name;
+        _waitBeforeDispose = waitBeforeDispose;
+    }
+
+    public string Name { get; }
+
+    public RenderOutputTarget Target { get; }
+
+    public bool ThrowOnCreateBinding { get; set; }
+
+    public bool ThrowOnDispose { get; set; }
+
+    public int CreateBindingCount => Volatile.Read(ref _createBindingCount);
+
+    public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+    private int _createBindingCount;
+    private int _disposeCount;
+
+    public RenderOutputBindingSnapshot CreateBinding(
+        RenderOutputId outputId,
+        FrameSize surfaceSize,
+        long bindingVersion)
+    {
+        Interlocked.Increment(ref _createBindingCount);
+
+        if (ThrowOnCreateBinding)
+            throw new InvalidOperationException($"Sink '{Name}' failed to create binding.");
+
+        return new()
+        {
+            OutputId = outputId,
+            TargetKind = Target.TypeId == RenderOutputTypes.Offscreen
+                ? RenderTargetKind.Offscreen
+                : RenderTargetKind.Win32Hwnd,
+            NativeHandle = Target is WinFormsPreviewRenderOutputTarget preview
+                ? preview.WindowHandle
+                : 0,
+            SurfaceSize = surfaceSize,
+            BindingVersion = bindingVersion
+        };
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        if (_waitBeforeDispose is not null && !_waitBeforeDispose())
+            throw new TimeoutException($"Sink '{Name}' was disposed before the expected render command was observed.");
+
+        Interlocked.Increment(ref _disposeCount);
+
+        if (ThrowOnDispose)
+            throw new InvalidOperationException($"Sink '{Name}' failed to dispose.");
+
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class RecordingRenderOutputSinkFactory : IRenderOutputSinkFactory
+{
+    private readonly Queue<RecordingRenderOutputSink> _sinks = new();
+
+    public bool ThrowOnCreateSink { get; set; }
+
+    public IReadOnlyList<RecordingRenderOutputSink> CreatedSinks => _createdSinks;
+
+    private readonly List<RecordingRenderOutputSink> _createdSinks = [];
+
+    public void Enqueue(RecordingRenderOutputSink sink)
+    {
+        ArgumentNullException.ThrowIfNull(sink);
+        _sinks.Enqueue(sink);
+    }
+
+    public bool CanCreate(RenderOutputTypeId typeId) =>
+        typeId == RenderOutputTypes.PreviewWindow || typeId == RenderOutputTypes.Offscreen;
+
+    public IRenderOutputSink CreateSink(RenderOutputTarget target)
+    {
+        if (ThrowOnCreateSink)
+            throw new InvalidOperationException("Configured sink factory failure.");
+
+        var sink = _sinks.Count > 0
+            ? _sinks.Dequeue()
+            : new RecordingRenderOutputSink(target, $"sink-{_createdSinks.Count + 1}");
+
+        _createdSinks.Add(sink);
+        return sink;
+    }
 }
 
 internal sealed class FakeRenderOutputSinkFactory : IRenderOutputSinkFactory

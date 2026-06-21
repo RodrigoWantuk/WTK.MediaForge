@@ -55,6 +55,75 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task ApplyProjectUpdate_invalid_update_does_not_mutate_CurrentProject()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        await engine.LoadProjectAsync(project);
+        var output = engine.CurrentProject.Outputs[0];
+        var originalCanvasId = output.CanvasId;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.ApplyProjectUpdateAsync(e => e.Project.Outputs[0].CanvasId = CanvasId.New()));
+
+        Assert.Same(output, engine.CurrentProject.Outputs[0]);
+        Assert.Equal(originalCanvasId, engine.CurrentProject.Outputs[0].CanvasId);
+    }
+
+    [Fact]
+    public async Task ApplyProjectUpdate_invalid_update_does_not_replace_ProjectStateSnapshot()
+    {
+        await using var engine = CreateEngine();
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+        var projectState = engine.ProjectStateForTests;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.ApplyProjectUpdateAsync(e => e.Project.Outputs[0].CanvasId = CanvasId.New()));
+
+        Assert.Same(projectState, engine.ProjectStateForTests);
+    }
+
+    [Fact]
+    public async Task ApplyProjectUpdate_invalid_update_does_not_publish_frame()
+    {
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        await using var engine = CreateEngine(backendFactory: backendFactory);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+        await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        var submitCount = backendFactory.Backend!.SubmitCount;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.ApplyProjectUpdateAsync(e => e.Project.Outputs[0].CanvasId = CanvasId.New()));
+
+        await Task.Delay(100);
+        Assert.Equal(submitCount, backendFactory.Backend.SubmitCount);
+        backendFactory.Backend.CompleteAllPending();
+    }
+
+    [Fact]
+    public async Task ApplyProjectUpdate_valid_update_replaces_project_and_publishes_frame_when_running()
+    {
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        await using var engine = CreateEngine(backendFactory: backendFactory);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+        await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        var originalProject = engine.CurrentProject;
+        var submitCount = backendFactory.Backend!.SubmitCount;
+        var canvasId = engine.CurrentProject.Canvases[0].Id;
+
+        await engine.ApplyProjectUpdateAsync(e =>
+            e.AddText(canvasId, "Live", new Transform2D { Size = new CanvasSize(200, 64) }));
+
+        Assert.NotSame(originalProject, engine.CurrentProject);
+        Assert.Contains(engine.CurrentProject.Canvases[0].Objects, o => o.Name == "Text");
+        await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount > submitCount, TimeSpan.FromSeconds(5));
+        backendFactory.Backend.CompleteAllPending();
+    }
+
+    [Fact]
     public async Task BindOutputAsync_requires_matching_type()
     {
         await using var engine = CreateEngine();
@@ -64,6 +133,158 @@ public class MediaForgeEngineTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             engine.BindOutputAsync(output.Id, new OffscreenRenderOutputTarget()));
+    }
+
+    [Fact]
+    public async Task BindOutput_CreateSink_failure_keeps_existing_sink()
+    {
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var oldSink = new RecordingRenderOutputSink(CreatePreviewTarget(1), "old");
+        sinkFactory.Enqueue(oldSink);
+        await using var engine = CreateEngine(outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        sinkFactory.ThrowOnCreateSink = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(2)));
+
+        Assert.Same(oldSink, engine.GetOutputSinkForTests(outputId));
+        Assert.Equal(0, oldSink.DisposeCount);
+    }
+
+    [Fact]
+    public async Task BindOutput_CreateBinding_failure_keeps_existing_sink()
+    {
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var oldSink = new RecordingRenderOutputSink(CreatePreviewTarget(1), "old");
+        var newSink = new RecordingRenderOutputSink(CreatePreviewTarget(2), "new")
+        {
+            ThrowOnCreateBinding = true
+        };
+        sinkFactory.Enqueue(oldSink);
+        sinkFactory.Enqueue(newSink);
+        await using var engine = CreateEngine(outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(2)));
+
+        Assert.Same(oldSink, engine.GetOutputSinkForTests(outputId));
+        Assert.Equal(0, oldSink.DisposeCount);
+        Assert.Equal(1, newSink.DisposeCount);
+    }
+
+    [Fact]
+    public async Task BindOutput_EnqueueCommand_failure_disposes_new_sink_and_keeps_old_sink()
+    {
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var oldSink = new RecordingRenderOutputSink(CreatePreviewTarget(1), "old");
+        var newSink = new RecordingRenderOutputSink(CreatePreviewTarget(2), "new");
+        sinkFactory.Enqueue(oldSink);
+        sinkFactory.Enqueue(newSink);
+        await using var engine = CreateEngine(outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        engine.RenderThreadForTests!.Dispose();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(2)));
+
+        Assert.Same(oldSink, engine.GetOutputSinkForTests(outputId));
+        Assert.Equal(0, oldSink.DisposeCount);
+        Assert.Equal(1, newSink.DisposeCount);
+    }
+
+    [Fact]
+    public async Task BindOutput_success_disposes_old_sink_after_new_binding_is_accepted()
+    {
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var oldSink = new RecordingRenderOutputSink(CreatePreviewTarget(1), "old");
+        var newSink = new RecordingRenderOutputSink(CreatePreviewTarget(2), "new");
+        sinkFactory.Enqueue(oldSink);
+        sinkFactory.Enqueue(newSink);
+        await using var engine = CreateEngine(outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(2));
+
+        Assert.Same(newSink, engine.GetOutputSinkForTests(outputId));
+        Assert.Equal(1, oldSink.DisposeCount);
+        Assert.Equal(0, newSink.DisposeCount);
+    }
+
+    [Fact]
+    public async Task UnbindOutput_enqueues_unbind_before_disposing_sink()
+    {
+        var backendFactory = new UnbindTrackingRenderBackendFactory();
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var sink = new RecordingRenderOutputSink(
+            CreatePreviewTarget(1),
+            "old",
+            waitBeforeDispose: () => backendFactory.Backend!.WaitForUnbind(TimeSpan.FromSeconds(5)));
+        sinkFactory.Enqueue(sink);
+        await using var engine = CreateEngine(
+            backendFactory: backendFactory,
+            outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        await engine.UnbindOutputAsync(outputId);
+
+        Assert.Equal(1, sink.DisposeCount);
+        Assert.Equal(1, backendFactory.Backend!.UnbindCount);
+        Assert.Null(engine.GetOutputSinkForTests(outputId));
+    }
+
+    [Fact]
+    public async Task UnbindOutput_dispose_failure_does_not_leave_output_registered()
+    {
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var sink = new RecordingRenderOutputSink(CreatePreviewTarget(1), "old")
+        {
+            ThrowOnDispose = true
+        };
+        sinkFactory.Enqueue(sink);
+        await using var engine = CreateEngine(outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.UnbindOutputAsync(outputId));
+
+        Assert.Null(engine.GetOutputSinkForTests(outputId));
+        Assert.Equal(0, engine.OutputSinkCountForTests);
+    }
+
+    [Fact]
+    public async Task UnbindOutput_missing_output_is_noop()
+    {
+        await using var engine = CreateEngine();
+        await engine.LoadProjectAsync(CreateValidProject());
+
+        await engine.UnbindOutputAsync(RenderOutputId.New());
+
+        Assert.Equal(0, engine.OutputSinkCountForTests);
     }
 
     [Fact]
@@ -257,13 +478,19 @@ public class MediaForgeEngineTests
 
     private static MediaForgeEngine CreateEngine(
         IMediaSourceProviderFactory? providerFactory = null,
-        IRenderBackendFactory? backendFactory = null)
+        IRenderBackendFactory? backendFactory = null,
+        IRenderOutputSinkFactory? outputSinkFactory = null,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         return new MediaForgeEngine(
             providerFactory ?? new FakeMediaSourceProviderFactory(),
-            new FakeRenderOutputSinkFactory(),
-            backendFactory ?? new RecordingRenderBackendFactory());
+            outputSinkFactory ?? new FakeRenderOutputSinkFactory(),
+            backendFactory ?? new RecordingRenderBackendFactory(),
+            diagnostics);
     }
+
+    private static WinFormsPreviewRenderOutputTarget CreatePreviewTarget(nint handle) =>
+        new() { WindowHandle = handle };
 
     private static MediaForgeProject CreateValidProject()
     {
