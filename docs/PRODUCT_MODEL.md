@@ -139,7 +139,7 @@ Current public sink contracts:
 - `RenderOutputSinkBackpressureMode`
 - `RenderOutputFrameLease`
 - `RenderOutputFrameInfo`
-- `CpuReadbackSink`
+- `FrameNotificationSink`
 
 The output architecture is:
 
@@ -147,10 +147,11 @@ The output architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-The same `RenderOutput` can feed multiple sinks. `CpuReadbackSink` is the first
-functional public sink for diagnostics, tests, and samples; it is not the main
-GPU-first path for production preview or encoding. Productive preview, NDI, MP4,
-streaming, virtual camera, and audio outputs remain blocked.
+The same `RenderOutput` can feed multiple sinks. `FrameNotificationSink` is the
+first functional public sink for completed-frame metadata in diagnostics, tests,
+and samples. It is not CPU readback and not the main GPU-first path for
+production preview or encoding. Productive preview, NDI, MP4, streaming,
+virtual camera, and audio outputs remain blocked.
 
 ## Engine
 

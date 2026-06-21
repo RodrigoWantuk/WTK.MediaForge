@@ -11,7 +11,7 @@ track.
 - **CP2 infrastructure preflight:** descriptor capacity and registry waiter timeout complete
 - **Product model formalization (H1-H7):** foundation complete
 - **Public API stabilization (PAPI-1-PAPI-8):** complete
-- **Public runtime/sink foundation:** complete for safe project ownership, timeouts, render pump, and CPU readback sink
+- **Public runtime/sink foundation:** complete for safe project ownership, timeouts, render pump, and completed-frame notification sink
 - **CP2/multi-layer and product integrations:** blocked until this roadmap explicitly starts the next renderer track
 
 ## Blocking Rule
@@ -80,7 +80,7 @@ Documentation, tests, and API contract work remain allowed.
 3. Internal `RenderOutputSinkDispatcher` uses bounded per-sink queues and does not run sink work on the render thread.
 4. Sink backpressure and frame delivery failures are reported through diagnostics.
 5. One `RenderOutput` can feed multiple sinks without rendering the canvas more than once per frame.
-6. `CpuReadbackSink` provides the first public sample/test sink.
+6. `FrameNotificationSink` provides the first public sample/test sink.
 7. Public output targets moved out of `Runtime.Outputs`; `WinFormsPreviewRenderOutputTarget` rejects a zero window handle.
 
 ## Completed - Public API Stabilization

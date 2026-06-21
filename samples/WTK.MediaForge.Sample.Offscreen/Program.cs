@@ -17,9 +17,9 @@ var project = MediaForgeProjectBuilder.Create()
 
 await engine.LoadProjectAsync(project);
 
-var sink = new CpuReadbackSink(onFrame: (frame, _) =>
+var sink = new FrameNotificationSink(onFrame: (frame, _) =>
 {
-    Console.WriteLine($"Output {frame.OutputId} frame {frame.FrameNumber} {frame.Size}");
+    Console.WriteLine($"Output {frame.OutputId} completed frame {frame.FrameNumber} {frame.Size}");
     firstFrame.TrySetResult();
     return ValueTask.CompletedTask;
 });

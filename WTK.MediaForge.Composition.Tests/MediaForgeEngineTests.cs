@@ -565,11 +565,11 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
-    public async Task RenderOutput_can_attach_cpu_readback_sink()
+    public async Task RenderOutput_can_attach_frame_notification_sink()
     {
         await using var engine = CreateEngine();
         var project = CreateOffscreenProject();
-        var sink = new CpuReadbackSink();
+        var sink = new FrameNotificationSink();
 
         await engine.LoadProjectAsync(project);
         await engine.AttachSinkAsync(project.Outputs[0].Id, sink);
@@ -583,8 +583,8 @@ public class MediaForgeEngineTests
     {
         await using var engine = CreateEngine();
         var project = CreateOffscreenProject();
-        var first = new CpuReadbackSink();
-        var second = new CpuReadbackSink();
+        var first = new FrameNotificationSink();
+        var second = new FrameNotificationSink();
 
         await engine.LoadProjectAsync(project);
         await engine.AttachSinkAsync(project.Outputs[0].Id, first);
@@ -603,7 +603,7 @@ public class MediaForgeEngineTests
         var project = CreateOffscreenProject();
         var frameReady = new TaskCompletionSource<RenderOutputFrameInfo>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var sink = new CpuReadbackSink(onFrame: (frame, _) =>
+        var sink = new FrameNotificationSink(onFrame: (frame, _) =>
         {
             frameReady.TrySetResult(frame);
             return ValueTask.CompletedTask;
@@ -809,12 +809,12 @@ public class MediaForgeEngineTests
         var project = CreateOffscreenProject();
         var firstReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var first = new CpuReadbackSink(onFrame: (_, _) =>
+        var first = new FrameNotificationSink(onFrame: (_, _) =>
         {
             firstReady.TrySetResult();
             return ValueTask.CompletedTask;
         });
-        var second = new CpuReadbackSink(onFrame: (_, _) =>
+        var second = new FrameNotificationSink(onFrame: (_, _) =>
         {
             secondReady.TrySetResult();
             return ValueTask.CompletedTask;
@@ -833,13 +833,13 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
-    public async Task CpuReadbackSink_receives_at_least_one_frame_from_sample_project()
+    public async Task FrameNotificationSink_receives_at_least_one_completed_frame_from_sample_project()
     {
         await using var engine = CreateEngine();
         engine.RenderFramesPerSecond = 1;
         var project = CreateOffscreenProject();
         var frameReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var sink = new CpuReadbackSink(onFrame: (_, _) =>
+        var sink = new FrameNotificationSink(onFrame: (_, _) =>
         {
             frameReady.TrySetResult();
             return ValueTask.CompletedTask;
@@ -1144,7 +1144,7 @@ public class MediaForgeEngineTests
         await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
             engine.BindOutputAsync(outputId, CreatePreviewTarget(3)));
         await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
-            engine.AttachSinkAsync(outputId, new CpuReadbackSink()));
+            engine.AttachSinkAsync(outputId, new FrameNotificationSink()));
         await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
             engine.ApplyProjectUpdateAsync(editor =>
                 editor.Project.Canvases[0].Name = "Blocked"));

@@ -117,8 +117,8 @@ Current public sink contracts:
 - `RenderOutputFrameInfo`
 - `RenderPixelFormat`
 - `RenderBackendKind`
-- `CpuReadbackSink`
-- `CpuReadbackFrameEventArgs`
+- `FrameNotificationSink`
+- `FrameNotificationEventArgs`
 
 The product architecture is:
 
@@ -126,7 +126,7 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `CpuReadbackSink` is intended for diagnostics, samples, and tests; it is not the main high-performance product path for preview, encoding, NDI, or streaming.
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback.
 
 Real preview, NDI, MP4, streaming, and audio outputs remain blocked until the renderer composition track is stable.
 
@@ -239,7 +239,7 @@ Current post-PAPI status:
 - Public runtime ownership and engine state are hardened.
 - A continuous render pump exists.
 - Public render output sinks exist with bounded asynchronous dispatch.
-- CPU readback sink proves public frame delivery for samples/tests.
+- Frame notification sink proves completed public frame delivery for samples/tests.
 - CP1 now honors canvas background and clips source layers to the canvas.
 
 NDI, encoder, streaming, MP4, webcam, RTSP, productive WinForms preview, UI designer, and plugin APIs remain blocked until the renderer composition track is explicitly resumed.

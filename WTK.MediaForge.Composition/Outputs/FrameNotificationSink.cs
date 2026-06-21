@@ -1,18 +1,18 @@
 namespace WTK.MediaForge.Composition.Outputs;
 
-public sealed class CpuReadbackSink : IRenderOutputSink
+public sealed class FrameNotificationSink : IRenderOutputSink
 {
     private readonly Func<RenderOutputFrameInfo, CancellationToken, ValueTask>? _onFrame;
     private int _started;
 
-    public CpuReadbackSink(
+    public FrameNotificationSink(
         RenderOutputSinkBackpressureMode backpressureMode = RenderOutputSinkBackpressureMode.KeepLatest,
         Func<RenderOutputFrameInfo, CancellationToken, ValueTask>? onFrame = null)
         : this(RenderOutputSinkId.New(), backpressureMode, onFrame)
     {
     }
 
-    public CpuReadbackSink(
+    public FrameNotificationSink(
         RenderOutputSinkId id,
         RenderOutputSinkBackpressureMode backpressureMode = RenderOutputSinkBackpressureMode.KeepLatest,
         Func<RenderOutputFrameInfo, CancellationToken, ValueTask>? onFrame = null)
@@ -27,11 +27,11 @@ public sealed class CpuReadbackSink : IRenderOutputSink
 
     public RenderOutputSinkId Id { get; }
 
-    public RenderOutputSinkKind Kind => RenderOutputSinkKind.CpuReadback;
+    public RenderOutputSinkKind Kind => RenderOutputSinkKind.FrameNotification;
 
     public RenderOutputSinkBackpressureMode BackpressureMode { get; }
 
-    public event EventHandler<CpuReadbackFrameEventArgs>? FrameReady;
+    public event EventHandler<FrameNotificationEventArgs>? FrameReady;
 
     public ValueTask StartAsync(
         RenderOutputSinkContext context,
@@ -51,10 +51,10 @@ public sealed class CpuReadbackSink : IRenderOutputSink
         cancellationToken.ThrowIfCancellationRequested();
 
         if (Volatile.Read(ref _started) == 0)
-            throw new InvalidOperationException("CpuReadbackSink must be started before receiving frames.");
+            throw new InvalidOperationException("FrameNotificationSink must be started before receiving frames.");
 
         var info = frame.Info;
-        FrameReady?.Invoke(this, new CpuReadbackFrameEventArgs(info));
+        FrameReady?.Invoke(this, new FrameNotificationEventArgs(info));
 
         if (_onFrame is not null)
             await _onFrame(info, cancellationToken).ConfigureAwait(false);

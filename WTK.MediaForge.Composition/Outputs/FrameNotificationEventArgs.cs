@@ -1,8 +1,8 @@
 namespace WTK.MediaForge.Composition.Outputs;
 
-public sealed class CpuReadbackFrameEventArgs : EventArgs
+public sealed class FrameNotificationEventArgs : EventArgs
 {
-    internal CpuReadbackFrameEventArgs(RenderOutputFrameInfo frame) =>
+    internal FrameNotificationEventArgs(RenderOutputFrameInfo frame) =>
         Frame = frame ?? throw new ArgumentNullException(nameof(frame));
 
     public RenderOutputFrameInfo Frame { get; }

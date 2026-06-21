@@ -2,7 +2,7 @@ namespace WTK.MediaForge.Composition.Outputs;
 
 public enum RenderOutputSinkKind
 {
-    CpuReadback,
+    FrameNotification,
     Preview,
     Encoder,
     Streaming,
