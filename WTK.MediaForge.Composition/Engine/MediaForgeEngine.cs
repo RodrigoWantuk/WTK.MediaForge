@@ -153,7 +153,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 foreach (var (outputId, entry) in _outputSinks)
                 {
                     var output = CurrentProject.Outputs.First(o => o.Id == outputId);
-                    EnqueueBindOutput(output, entry.Sink, entry.Target);
+                    await EnqueueBindOutputAsync(output, entry.Sink, entry.Target).ConfigureAwait(false);
                 }
 
                 PublishCurrentRenderFrame();
@@ -374,7 +374,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             try
             {
                 if (_lifecycleState == EngineLifecycleState.Running)
-                    EnqueueBindOutput(output, newSink, target);
+                    await EnqueueBindOutputAsync(output, newSink, target).ConfigureAwait(false);
 
                 _outputSinks.TryGetValue(outputId, out oldEntry);
                 _outputSinks[outputId] = new OutputSinkEntry(newSink, target);
@@ -408,8 +408,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (!_outputSinks.TryGetValue(outputId, out var entry))
                 return;
 
-            if (_lifecycleState == EngineLifecycleState.Running)
-                _renderThread?.EnqueueCommand(new UnbindOutputCommand { OutputId = outputId });
+            if (_lifecycleState == EngineLifecycleState.Running && _renderThread is not null)
+                await _renderThread.EnqueueCommandAsync(new UnbindOutputCommand { OutputId = outputId }).ConfigureAwait(false);
 
             _outputSinks.Remove(outputId);
 
@@ -427,14 +427,14 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _gate.Dispose();
     }
 
-    private void EnqueueBindOutput(
+    private Task EnqueueBindOutputAsync(
         MediaForgeRenderOutput output,
         IRenderOutputSink sink,
         RenderOutputTarget target)
     {
         var bindingVersion = Interlocked.Increment(ref _bindingVersion);
         var binding = sink.CreateBinding(output.Id, output.OutputSize, bindingVersion);
-        _renderThread!.EnqueueCommand(new BindOutputCommand { Binding = binding });
+        return _renderThread!.EnqueueCommandAsync(new BindOutputCommand { Binding = binding });
     }
 
     private void PublishCurrentRenderFrame()

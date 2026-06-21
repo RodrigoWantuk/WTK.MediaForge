@@ -88,6 +88,117 @@ internal sealed class UnbindTrackingRenderBackendFactory : IRenderBackendFactory
     }
 }
 
+internal sealed class CommandTrackingRenderBackendFactory : IRenderBackendFactory
+{
+    private readonly bool _throwOnBind;
+    private readonly bool _throwOnUnbind;
+
+    public CommandTrackingRenderBackendFactory(
+        bool throwOnBind = false,
+        bool throwOnUnbind = false)
+    {
+        _throwOnBind = throwOnBind;
+        _throwOnUnbind = throwOnUnbind;
+    }
+
+    public CommandTrackingRenderBackend? Backend { get; private set; }
+
+    public bool TryCreate(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        out IRenderBackend? backend)
+    {
+        Backend = new CommandTrackingRenderBackend(threadGuard)
+        {
+            ThrowOnBind = _throwOnBind,
+            ThrowOnUnbind = _throwOnUnbind
+        };
+        backend = Backend;
+        return true;
+    }
+}
+
+internal sealed class CommandTrackingRenderBackend : IRenderBackend
+{
+    private readonly RenderThreadGuard _threadGuard;
+    private readonly ManualResetEventSlim _bindEntered = new(false);
+    private readonly ManualResetEventSlim _releaseBind = new(true);
+
+    public CommandTrackingRenderBackend(RenderThreadGuard threadGuard) =>
+        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+
+    public bool ThrowOnBind { get; set; }
+
+    public bool ThrowOnUnbind { get; set; }
+
+    public bool BlockBindUntilReleased { get; set; }
+
+    public int BindCount => Volatile.Read(ref _bindCount);
+
+    public int UnbindCount => Volatile.Read(ref _unbindCount);
+
+    public bool Disposed { get; private set; }
+
+    private int _bindCount;
+    private int _unbindCount;
+
+    public void BindOutput(RenderOutputBindingSnapshot binding)
+    {
+        _threadGuard.AssertOnRenderThread();
+        _bindEntered.Set();
+
+        if (BlockBindUntilReleased && !_releaseBind.Wait(TimeSpan.FromSeconds(5)))
+            throw new TimeoutException("Timed out waiting for test to release bind command.");
+
+        if (ThrowOnBind)
+            throw new InvalidOperationException("Configured bind command failure.");
+
+        Interlocked.Increment(ref _bindCount);
+    }
+
+    public void UnbindOutput(RenderOutputId outputId)
+    {
+        _threadGuard.AssertOnRenderThread();
+
+        if (ThrowOnUnbind)
+            throw new InvalidOperationException("Configured unbind command failure.");
+
+        Interlocked.Increment(ref _unbindCount);
+    }
+
+    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize)
+    {
+        _threadGuard.AssertOnRenderThread();
+    }
+
+    public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot)
+    {
+        _threadGuard.AssertOnRenderThread();
+        return new ImmediateRenderFrameSubmission(snapshot);
+    }
+
+    public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    public bool WaitForBindEntered(TimeSpan timeout) => _bindEntered.Wait(timeout);
+
+    public void ResetBindRelease()
+    {
+        _bindEntered.Reset();
+        _releaseBind.Reset();
+        BlockBindUntilReleased = true;
+    }
+
+    public void ReleaseBind() => _releaseBind.Set();
+
+    public void Dispose()
+    {
+        Disposed = true;
+        _bindEntered.Dispose();
+        _releaseBind.Dispose();
+    }
+}
+
 internal sealed class UnbindTrackingRenderBackend : IRenderBackend
 {
     private readonly RenderThreadGuard _threadGuard;

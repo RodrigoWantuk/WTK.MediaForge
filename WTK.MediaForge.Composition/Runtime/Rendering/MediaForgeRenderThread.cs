@@ -63,6 +63,11 @@ internal sealed class MediaForgeRenderThread : IDisposable
 
     public void EnqueueCommand(RenderCommand command)
     {
+        _ = EnqueueCommandAsync(command);
+    }
+
+    public Task EnqueueCommandAsync(RenderCommand command)
+    {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         ArgumentNullException.ThrowIfNull(command);
 
@@ -72,6 +77,8 @@ internal sealed class MediaForgeRenderThread : IDisposable
             _stopRequested = 1;
 
         _workSignal.Set();
+
+        return command.Completion;
     }
 
     public void PublishFrame(RenderFrameSnapshot snapshot)
@@ -200,6 +207,7 @@ internal sealed class MediaForgeRenderThread : IDisposable
         catch (Exception ex)
         {
             _shutdownCleanupError = ex;
+            FailPendingCommands(ex);
         }
         finally
         {
@@ -213,29 +221,51 @@ internal sealed class MediaForgeRenderThread : IDisposable
 
         while (_commands.TryDequeue(out var command))
         {
-            switch (command)
+            try
             {
-                case BindOutputCommand bind:
-                    _threadGuard.AssertOnRenderThread();
-                    _backend.BindOutput(bind.Binding);
-                    break;
-                case UnbindOutputCommand unbind:
-                    _threadGuard.AssertOnRenderThread();
-                    _backend.UnbindOutput(unbind.OutputId);
-                    break;
-                case ResizeOutputCommand resize:
-                    _threadGuard.AssertOnRenderThread();
-                    _backend.ResizeOutput(resize.OutputId, resize.SurfaceSize);
-                    break;
-                case StopRenderThreadCommand:
-                    _stopRequested = 1;
-                    break;
+                switch (command)
+                {
+                    case BindOutputCommand bind:
+                        _threadGuard.AssertOnRenderThread();
+                        _backend.BindOutput(bind.Binding);
+                        break;
+                    case UnbindOutputCommand unbind:
+                        _threadGuard.AssertOnRenderThread();
+                        _backend.UnbindOutput(unbind.OutputId);
+                        break;
+                    case ResizeOutputCommand resize:
+                        _threadGuard.AssertOnRenderThread();
+                        _backend.ResizeOutput(resize.OutputId, resize.SurfaceSize);
+                        break;
+                    case StopRenderThreadCommand:
+                        _stopRequested = 1;
+                        break;
+                }
+
+                command.Complete();
+            }
+            catch (Exception ex)
+            {
+                command.Fail(ex);
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "render.command_failed",
+                    "Render command failed.",
+                    nameof(MediaForgeRenderThread),
+                    ex);
             }
 
             processed++;
             if (maxCommands is int limit && processed >= limit)
                 break;
         }
+    }
+
+    private void FailPendingCommands(Exception exception)
+    {
+        while (_commands.TryDequeue(out var command))
+            command.Fail(exception);
     }
 
     private void RenderLatestSnapshot()

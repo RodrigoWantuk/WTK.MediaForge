@@ -188,6 +188,48 @@ public class RenderThreadTests
     }
 
     [Fact]
+    public async Task RenderThread_command_failure_does_not_silently_kill_engine()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var guard = new RenderThreadGuard();
+        var backend = new OneShotFailingBindRenderBackend(guard);
+        using var renderThread = StartRenderThread(backend, guard, diagnostics: diagnostics);
+        var outputId = RenderOutputId.New();
+
+        var failedCommand = new BindOutputCommand
+        {
+            Binding = new RenderOutputBindingSnapshot
+            {
+                OutputId = outputId,
+                TargetKind = RenderTargetKind.Win32Hwnd,
+                NativeHandle = 123,
+                SurfaceSize = new FrameSize(1280, 720),
+                BindingVersion = 1
+            }
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            renderThread.EnqueueCommandAsync(failedCommand));
+
+        Assert.True(renderThread.IsRunning);
+        Assert.Contains(diagnostics.Diagnostics, d => d.Code == "render.command_failed");
+
+        await renderThread.EnqueueCommandAsync(new BindOutputCommand
+        {
+            Binding = new RenderOutputBindingSnapshot
+            {
+                OutputId = outputId,
+                TargetKind = RenderTargetKind.Win32Hwnd,
+                NativeHandle = 456,
+                SurfaceSize = new FrameSize(1280, 720),
+                BindingVersion = 2
+            }
+        });
+
+        Assert.Equal(1, backend.SuccessfulBindCount);
+    }
+
+    [Fact]
     public void If_submit_throws_render_thread_disposes_snapshot()
     {
         var source = CreateRunningSource();
@@ -434,6 +476,48 @@ public class RenderThreadTests
             WaitIdleCalledOnRenderThread = true;
             return ValueTask.CompletedTask;
         }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class OneShotFailingBindRenderBackend : IRenderBackend
+    {
+        private readonly RenderThreadGuard _threadGuard;
+        private int _remainingFailures = 1;
+
+        public OneShotFailingBindRenderBackend(RenderThreadGuard threadGuard) =>
+            _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+
+        public int SuccessfulBindCount => Volatile.Read(ref _successfulBindCount);
+
+        private int _successfulBindCount;
+
+        public void BindOutput(RenderOutputBindingSnapshot binding)
+        {
+            _threadGuard.AssertOnRenderThread();
+            if (Interlocked.Exchange(ref _remainingFailures, 0) == 1)
+                throw new InvalidOperationException("Configured one-shot bind failure.");
+
+            Interlocked.Increment(ref _successfulBindCount);
+        }
+
+        public void UnbindOutput(RenderOutputId outputId)
+        {
+            _threadGuard.AssertOnRenderThread();
+        }
+
+        public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize)
+        {
+            _threadGuard.AssertOnRenderThread();
+        }
+
+        public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot) =>
+            new ImmediateRenderFrameSubmission(snapshot);
+
+        public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
 
         public void Dispose()
         {

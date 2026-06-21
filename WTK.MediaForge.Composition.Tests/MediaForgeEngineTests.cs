@@ -207,6 +207,37 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task BindOutput_backend_failure_keeps_existing_sink_and_throws_to_caller()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var backendFactory = new CommandTrackingRenderBackendFactory();
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var oldSink = new RecordingRenderOutputSink(CreatePreviewTarget(1), "old");
+        var newSink = new RecordingRenderOutputSink(CreatePreviewTarget(2), "new");
+        sinkFactory.Enqueue(oldSink);
+        sinkFactory.Enqueue(newSink);
+        await using var engine = CreateEngine(
+            backendFactory: backendFactory,
+            outputSinkFactory: sinkFactory,
+            diagnostics: diagnostics);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        backendFactory.Backend!.ThrowOnBind = true;
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(2)));
+
+        Assert.Contains("Configured bind command failure", ex.Message, StringComparison.Ordinal);
+        Assert.Same(oldSink, engine.GetOutputSinkForTests(outputId));
+        Assert.Equal(0, oldSink.DisposeCount);
+        Assert.Equal(1, newSink.DisposeCount);
+        Assert.Contains(diagnostics.Diagnostics, d => d.Code == "render.command_failed");
+    }
+
+    [Fact]
     public async Task BindOutput_success_disposes_old_sink_after_new_binding_is_accepted()
     {
         var sinkFactory = new RecordingRenderOutputSinkFactory();
@@ -252,6 +283,31 @@ public class MediaForgeEngineTests
         Assert.Equal(1, sink.DisposeCount);
         Assert.Equal(1, backendFactory.Backend!.UnbindCount);
         Assert.Null(engine.GetOutputSinkForTests(outputId));
+    }
+
+    [Fact]
+    public async Task UnbindOutput_backend_failure_keeps_output_registered()
+    {
+        var backendFactory = new CommandTrackingRenderBackendFactory();
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var sink = new RecordingRenderOutputSink(CreatePreviewTarget(1), "old");
+        sinkFactory.Enqueue(sink);
+        await using var engine = CreateEngine(
+            backendFactory: backendFactory,
+            outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        backendFactory.Backend!.ThrowOnUnbind = true;
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.UnbindOutputAsync(outputId));
+
+        Assert.Contains("Configured unbind command failure", ex.Message, StringComparison.Ordinal);
+        Assert.Same(sink, engine.GetOutputSinkForTests(outputId));
+        Assert.Equal(0, sink.DisposeCount);
     }
 
     [Fact]
@@ -371,6 +427,55 @@ public class MediaForgeEngineTests
         await WaitUntilAsync(
             () => backendFactory.Backend?.Bindings.ContainsKey(project.Outputs[0].Id) == true,
             TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task StartAsync_prebound_output_backend_bind_failure_rolls_back_start()
+    {
+        var backendFactory = new CommandTrackingRenderBackendFactory(throwOnBind: true);
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        var sink = new RecordingRenderOutputSink(CreatePreviewTarget(1), "prebound");
+        sinkFactory.Enqueue(sink);
+        await using var engine = CreateEngine(
+            backendFactory: backendFactory,
+            outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.StartAsync());
+
+        Assert.False(engine.IsRunning);
+        Assert.Null(engine.RenderThreadForTests);
+        Assert.True(backendFactory.Backend!.Disposed);
+        Assert.Same(sink, engine.GetOutputSinkForTests(outputId));
+    }
+
+    [Fact]
+    public async Task RenderThread_command_completion_is_observed_by_engine()
+    {
+        var backendFactory = new CommandTrackingRenderBackendFactory();
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        sinkFactory.Enqueue(new RecordingRenderOutputSink(CreatePreviewTarget(1), "blocked"));
+        await using var engine = CreateEngine(
+            backendFactory: backendFactory,
+            outputSinkFactory: sinkFactory);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        backendFactory.Backend!.ResetBindRelease();
+
+        var bindTask = engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+
+        Assert.True(backendFactory.Backend.WaitForBindEntered(TimeSpan.FromSeconds(5)));
+        Assert.False(bindTask.IsCompleted);
+
+        backendFactory.Backend.ReleaseBind();
+        await bindTask;
+
+        Assert.Equal(1, backendFactory.Backend.BindCount);
     }
 
     [Fact]
