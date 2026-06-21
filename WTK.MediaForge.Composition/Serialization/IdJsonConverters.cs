@@ -4,7 +4,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Serialization;
 
-public sealed class SourceIdJsonConverter : JsonConverter<SourceId>
+internal sealed class SourceIdJsonConverter : JsonConverter<SourceId>
 {
     public override SourceId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         new(reader.GetGuid());
@@ -13,7 +13,7 @@ public sealed class SourceIdJsonConverter : JsonConverter<SourceId>
         writer.WriteStringValue(value.Value);
 }
 
-public sealed class CanvasIdJsonConverter : JsonConverter<CanvasId>
+internal sealed class CanvasIdJsonConverter : JsonConverter<CanvasId>
 {
     public override CanvasId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         new(reader.GetGuid());
@@ -22,7 +22,7 @@ public sealed class CanvasIdJsonConverter : JsonConverter<CanvasId>
         writer.WriteStringValue(value.Value);
 }
 
-public sealed class DrawObjectIdJsonConverter : JsonConverter<DrawObjectId>
+internal sealed class DrawObjectIdJsonConverter : JsonConverter<DrawObjectId>
 {
     public override DrawObjectId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         new(reader.GetGuid());
@@ -31,7 +31,7 @@ public sealed class DrawObjectIdJsonConverter : JsonConverter<DrawObjectId>
         writer.WriteStringValue(value.Value);
 }
 
-public sealed class RenderOutputIdJsonConverter : JsonConverter<RenderOutputId>
+internal sealed class RenderOutputIdJsonConverter : JsonConverter<RenderOutputId>
 {
     public override RenderOutputId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         new(reader.GetGuid());
@@ -40,7 +40,7 @@ public sealed class RenderOutputIdJsonConverter : JsonConverter<RenderOutputId>
         writer.WriteStringValue(value.Value);
 }
 
-public sealed class MediaSourceTypeIdJsonConverter : JsonConverter<MediaSourceTypeId>
+internal sealed class MediaSourceTypeIdJsonConverter : JsonConverter<MediaSourceTypeId>
 {
     public override MediaSourceTypeId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         new(reader.GetString() ?? string.Empty);
@@ -49,7 +49,7 @@ public sealed class MediaSourceTypeIdJsonConverter : JsonConverter<MediaSourceTy
         writer.WriteStringValue(value.Value);
 }
 
-public sealed class EffectIdJsonConverter : JsonConverter<EffectId>
+internal sealed class EffectIdJsonConverter : JsonConverter<EffectId>
 {
     public override EffectId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         new(reader.GetGuid());
@@ -58,7 +58,7 @@ public sealed class EffectIdJsonConverter : JsonConverter<EffectId>
         writer.WriteStringValue(value.Value);
 }
 
-public sealed class RenderOutputTypeIdJsonConverter : JsonConverter<RenderOutputTypeId>
+internal sealed class RenderOutputTypeIdJsonConverter : JsonConverter<RenderOutputTypeId>
 {
     public override RenderOutputTypeId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         new(reader.GetString() ?? string.Empty);

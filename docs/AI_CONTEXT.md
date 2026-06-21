@@ -44,7 +44,10 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Vulkan registry import creation occurs outside the global registry lock.
 - `VulkanExternalTextureRegistry` is internal. Imports created but not published because of dispose/removal races must be disposed before the failure is rethrown.
 - CP1 Vulkan command-buffer resources are retained by `VulkanSubmissionResourceScope` and released only from `VulkanRenderFrameSubmission.DisposeCompleted()` after the fence completes. This includes framebuffers, descriptor sets, and offscreen target references.
-- Public product API boundaries are defined in `docs/PUBLIC_API.md`. Runtime, snapshot, render-thread, backend, source-provider, output-sink, GPU lease, D3D11 slot-ring, and Vulkan implementation types are internal details.
+- Public product API boundaries are defined in `docs/PUBLIC_API.md` and enforced by `Public_api_matches_approved_allowlist`.
+- `MediaForgeWindows.CreateEngine` is the public Windows entrypoint. The public parameterless `MediaForgeEngine` constructor was removed.
+- `MediaForgeProjectBuilder` is the happy-path public authoring API for desktop-to-canvas-to-offscreen projects.
+- Runtime, snapshot, render-thread, backend, source-provider, output-sink, GPU lease, D3D11 physical slot-ring, and Vulkan implementation types are internal details.
 - GPU wait APIs must use explicit timeouts.
 - `MediaForgeEngine.ApplyProjectUpdateAsync`, `BindOutputAsync`, and `UnbindOutputAsync` are transactional. Failed updates/binds must preserve the previous public engine state.
 - `MediaForgeEngine.StopAsync` must not dispose the backend if the render thread is still alive after dispose timeout. It reports `engine.backend_dispose_skipped_render_thread_alive` as fatal and leaves a controlled leak instead of risking use-after-free.
@@ -55,7 +58,7 @@ The legacy WinForms preview path has been removed as a product path because it u
 
 The application shell must not re-enable capture preview until it is wired through the hardened runtime path. The old direct `DesktopDuplicationCaptureSource -> VulkanPreviewRenderer` path must not return.
 
-CP1 offscreen visual proof exists, but CP2 multi-layer, CP3 nested canvas, chroma/effects, productive preview, and real source/output integrations remain blocked until the PAPI track is complete or the roadmap explicitly changes.
+PAPI is complete. CP2 multi-layer, CP3 nested canvas, chroma/effects, productive preview, and real source/output integrations remain blocked until the roadmap explicitly starts the next renderer track.
 
 ## Review Style Expected
 

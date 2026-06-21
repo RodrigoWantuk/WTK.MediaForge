@@ -9,7 +9,8 @@ Before considering a change complete, verify:
 - [ ] No swallowed exceptions in physical resource cleanup.
 - [ ] Tests added for every lifetime change.
 - [ ] Runtime/GPU/snapshot internals are not exposed as public product API.
-- [ ] PAPI is advanced before CP2, nested canvas, preview, NDI, encoder, webcam, RTSP, MP4, streaming, or audio work.
+- [ ] Public API changes update `docs/PUBLIC_API.md` and `Public_api_matches_approved_allowlist`.
+- [ ] CP2, nested canvas, preview, NDI, encoder, webcam, RTSP, MP4, streaming, or audio work starts only after the roadmap explicitly opens that track.
 - [ ] `dotnet test` passes.
 - [ ] `scripts/test.ps1 -Tier Fast` passes.
 - [ ] `scripts/test.ps1 -Tier Gpu` passes when touching GPU code.
@@ -60,6 +61,9 @@ Before considering a change complete, verify:
 - [ ] `UnbindOutputAsync` enqueues unbind before sink disposal.
 - [ ] `StopAsync` skips backend dispose when render thread is still alive and reports a fatal diagnostic.
 - [ ] Backend dispose still runs when render thread cleanup failed after the thread stopped.
+- [ ] Render commands used by public engine APIs are acknowledged before the public call returns success.
+- [ ] Public engine failures use typed public exceptions.
+- [ ] Engine diagnostics/state/frame-drop events are raised without allowing event-handler failures to kill the render thread.
 
 ## Texture Identity
 

@@ -6,7 +6,7 @@ using WTK.MediaForge.Core.Geometry;
 
 namespace WTK.MediaForge.Composition.Serialization;
 
-public sealed class ColorRgbaJsonConverter : JsonConverter<ColorRgba>
+internal sealed class ColorRgbaJsonConverter : JsonConverter<ColorRgba>
 {
     public override ColorRgba Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -49,7 +49,7 @@ public sealed class ColorRgbaJsonConverter : JsonConverter<ColorRgba>
     }
 }
 
-public sealed class FrameSizeJsonConverter : JsonConverter<FrameSize>
+internal sealed class FrameSizeJsonConverter : JsonConverter<FrameSize>
 {
     public override FrameSize Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -89,7 +89,7 @@ public sealed class FrameSizeJsonConverter : JsonConverter<FrameSize>
     }
 }
 
-public sealed class NormalizedRectJsonConverter : JsonConverter<NormalizedRect>
+internal sealed class NormalizedRectJsonConverter : JsonConverter<NormalizedRect>
 {
     public override NormalizedRect Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

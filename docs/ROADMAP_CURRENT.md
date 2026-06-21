@@ -10,12 +10,12 @@ track.
 - **CP1 visual correctness proof:** complete for first source/offscreen path
 - **CP2 infrastructure preflight:** descriptor capacity and registry waiter timeout complete
 - **Product model formalization (H1-H7):** foundation complete
-- **Public API stabilization (PAPI-1-PAPI-8):** PAPI-1 complete, PAPI-2 next
-- **CP2/multi-layer and product integrations:** blocked until PAPI is complete or this roadmap is explicitly changed
+- **Public API stabilization (PAPI-1-PAPI-8):** complete
+- **CP2/multi-layer and product integrations:** blocked until this roadmap explicitly starts the next renderer track
 
 ## Blocking Rule
 
-Do not implement the following until PAPI-2 through PAPI-8 are complete:
+Do not implement the following until the roadmap explicitly starts the next renderer track:
 
 - CP2 multi-layer compositor
 - CP3 nested canvas compositor
@@ -66,20 +66,20 @@ Documentation, tests, and API contract work remain allowed.
 6. Registry waiters use timeout diagnostics instead of blocking indefinitely.
 7. Many-layer CP1 submit infrastructure does not exhaust descriptors.
 
-## Current - Public API Stabilization
+## Completed - Public API Stabilization
 
 See [PUBLIC_API.md](PUBLIC_API.md) for the public product API boundary.
 
 | # | Commit | Status |
 |---|---|---|
 | PAPI-1 | Public API audit | Complete |
-| PAPI-2 | `MediaForgeWindows.CreateEngine` | Next |
-| PAPI-3 | `MediaForgeProjectBuilder` | Pending |
-| PAPI-4 | Public engine state/runtime API | Pending |
-| PAPI-5 | Typed `RenderOutputTarget` contracts | Pending |
-| PAPI-6 | Public validation/runtime exceptions | Pending |
-| PAPI-7 | Public engine events | Pending |
-| PAPI-8 | Offscreen sample | Pending |
+| PAPI-2 | `MediaForgeWindows.CreateEngine` | Complete |
+| PAPI-3 | `MediaForgeProjectBuilder` | Complete |
+| PAPI-4 | Public engine state/runtime API | Complete |
+| PAPI-5 | Typed `RenderOutputTarget` contracts | Complete foundation |
+| PAPI-6 | Public validation/runtime exceptions | Complete |
+| PAPI-7 | Public engine events | Complete |
+| PAPI-8 | Offscreen sample | Complete |
 
 PAPI must make the supported external usage possible without exposing:
 
@@ -106,7 +106,7 @@ See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for the product contract.
 | H6 | Graph validation, cycles, depth 8 | Complete foundation |
 | H7 | Engine facade skeleton | Complete foundation |
 
-## After PAPI-8
+## Current - After PAPI-8
 
 1. Reassess CP2 scope with current tests green.
 2. CP2 multi-layer basics.

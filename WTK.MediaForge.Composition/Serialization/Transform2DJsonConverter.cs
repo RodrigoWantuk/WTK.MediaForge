@@ -4,7 +4,7 @@ using WTK.MediaForge.Core.Geometry;
 
 namespace WTK.MediaForge.Composition.Serialization;
 
-public sealed class Transform2DJsonConverter : JsonConverter<Transform2D>
+internal sealed class Transform2DJsonConverter : JsonConverter<Transform2D>
 {
     public override Transform2D Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

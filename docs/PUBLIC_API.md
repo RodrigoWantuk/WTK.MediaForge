@@ -21,16 +21,17 @@ Current public authoring types:
 - `CanvasDrawObject`
 - `MediaForgeEffect`
 - `MediaForgeProjectEditor`
+- `MediaForgeProjectBuilder`
+- `SourceLayerBuilder`
+- `TextLayerBuilder`
+- `CanvasLayerBuilder`
 - `MediaForgeProjectLoader`
 - `MediaForgeProjectSerializer`
 - `MediaForgeProjectMigrator`
 - `MediaForgeProjectValidator`
 - `ProjectValidationResult`
+- `MediaForgeProjectValidationException`
 - `ValidationIssue`
-
-Planned public authoring type:
-
-- `MediaForgeProjectBuilder`
 
 Applications should not directly construct render snapshots, runtime snapshots, GPU leases, render threads, or backend submissions.
 
@@ -38,26 +39,28 @@ Applications should not directly construct render snapshots, runtime snapshots, 
 
 The public runtime surface is the supported way to operate a composition.
 
-Current public runtime type:
+Current public runtime types:
 
 - `MediaForgeEngine`
-
-The current engine remains an early facade. Its internal consistency has been
-hardened:
-
-- project updates are transactional
-- output bind/unbind operations are transactional
-- shutdown skips backend disposal if the render thread is still alive
-
-This does not make the public SDK complete. The product-level Windows creation
-facade is still PAPI-2.
-
-Planned public runtime types:
-
 - `MediaForgeWindows`
 - `MediaForgeEngineOptions`
 - `MediaForgeEngineState`
 - `MediaForgeEngineException`
+- `MediaForgeUnsupportedFeatureException`
+- `MediaForgeDiagnosticEventArgs`
+- `MediaForgeEngineStateChangedEventArgs`
+- `MediaForgeFrameDroppedEventArgs`
+
+The engine API now has product-level public entry through `MediaForgeWindows.CreateEngine`.
+Engine operations are observable:
+
+- project validation failures throw `MediaForgeProjectValidationException`
+- lifecycle/runtime failures throw `MediaForgeEngineException`
+- unsupported planned features throw `MediaForgeUnsupportedFeatureException`
+- project updates and output bind/unbind operations are transactional
+- render-thread command failures are reported to the caller
+- shutdown skips backend disposal if the render thread is still alive
+- diagnostics, state changes, and frame drops are exposed as events
 
 Applications must not manually wire `CompositionRuntime`, `MediaForgeRenderThread`, `RenderThreadGuard`, `IRenderBackendFactory`, `IRenderOutputSinkFactory`, or `IMediaSourceProviderFactory`.
 
@@ -130,13 +133,18 @@ Current public diagnostics:
 - `ListDiagnosticsSink`
 - `InMemoryDiagnosticsSink`
 
-Planned public diagnostics:
+## 7. Advanced Low-Level API
 
-- `MediaForgeDiagnosticEventArgs`
-- `MediaForgeEngineStateChangedEventArgs`
-- `MediaForgeFrameDroppedEventArgs`
+The primary SDK path does not require D3D11, Vulkan, GPU slot, or native handle
+types. Some low-level assemblies still expose advanced types for diagnostics,
+interop, and implementation-level tests. Those types are explicitly frozen by
+`Public_api_matches_approved_allowlist`.
 
-## 7. Internal GPU/Runtime APIs
+Advanced public types are allowed only when they are intentionally listed in the
+public API allowlist test. New low-level public types must update this document
+and the allowlist in the same change.
+
+## 8. Internal GPU/Runtime APIs
 
 The following categories are internal implementation details:
 
@@ -148,7 +156,7 @@ The following categories are internal implementation details:
 - Render frame snapshots
 - Snapshot factories
 - GPU frame leases
-- GPU slot rings and D3D11 slot rings
+- D3D11 physical slot-ring implementation
 - Vulkan renderer implementation
 - Vulkan external texture registry
 - Vulkan imported texture/image-view resources
@@ -157,7 +165,7 @@ The following categories are internal implementation details:
 
 These types may be visible to test assemblies or implementation assemblies through `InternalsVisibleTo`; that does not make them product API.
 
-## 8. Prohibited Public Exposure
+## 9. Prohibited Public Exposure
 
 The following types must not be public:
 
@@ -183,6 +191,7 @@ The following types must not be public:
 - `DesktopDuplicationFrameProvider`
 - `MediaForgeVulkanRenderer`
 - `MediaForgeVulkanRenderBackendFactory`
+- `VulkanSmokeTest`
 - `VulkanExternalTextureRegistry`
 - `VulkanD3D11TextureImport`
 
@@ -191,12 +200,12 @@ PAPI status:
 | # | Work | Status |
 |---|---|---|
 | PAPI-1 | Public API audit | Complete |
-| PAPI-2 | `MediaForgeWindows.CreateEngine` | Next |
-| PAPI-3 | `MediaForgeProjectBuilder` | Pending |
-| PAPI-4 | Public engine state/runtime API | Pending |
-| PAPI-5 | Typed render output targets | Pending |
-| PAPI-6 | Public validation/runtime exceptions | Pending |
-| PAPI-7 | Public engine events | Pending |
-| PAPI-8 | Offscreen sample | Pending |
+| PAPI-2 | `MediaForgeWindows.CreateEngine` | Complete |
+| PAPI-3 | `MediaForgeProjectBuilder` | Complete |
+| PAPI-4 | Public engine state/runtime API | Complete |
+| PAPI-5 | Typed render output targets | Complete foundation |
+| PAPI-6 | Public validation/runtime exceptions | Complete |
+| PAPI-7 | Public engine events | Complete |
+| PAPI-8 | Offscreen sample | Complete |
 
-NDI, encoder, streaming, MP4, webcam, RTSP, productive WinForms preview, UI designer, and plugin APIs remain blocked until the PAPI track is complete.
+NDI, encoder, streaming, MP4, webcam, RTSP, productive WinForms preview, UI designer, and plugin APIs remain blocked until the renderer composition track is explicitly resumed.

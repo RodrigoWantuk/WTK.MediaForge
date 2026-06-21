@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 
 namespace WTK.MediaForge.Graphics.Vulkan;
 
-public sealed unsafe class VulkanSmokeTest : IDisposable
+internal sealed unsafe class VulkanSmokeTest : IDisposable
 {
     private readonly Vk _vk;
 
