@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
@@ -21,16 +22,21 @@ internal class PendingRenderSubmissionTracker : IDisposable
     private readonly List<IRenderFrameSubmission> _pending = [];
     private readonly HashSet<IRenderFrameSubmission> _cleanupFailureReported =
         new(SubmissionReferenceEqualityComparer.Instance);
+    private readonly RenderOutputSinkDispatcher? _sinkDispatcher;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private PendingTrackerState _state = PendingTrackerState.Active;
 
-    public PendingRenderSubmissionTracker(int maxFramesInFlight = 2, IMediaForgeDiagnosticsSink? diagnostics = null)
+    public PendingRenderSubmissionTracker(
+        int maxFramesInFlight = 2,
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        RenderOutputSinkDispatcher? sinkDispatcher = null)
     {
         if (maxFramesInFlight < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFramesInFlight));
 
         MaxFramesInFlight = maxFramesInFlight;
         _diagnostics = diagnostics;
+        _sinkDispatcher = sinkDispatcher;
     }
 
     public int MaxFramesInFlight { get; }
@@ -91,6 +97,11 @@ internal class PendingRenderSubmissionTracker : IDisposable
 
         foreach (var submission in completed)
         {
+            PublishOutputFrames(submission);
+
+            if (submission.HasOutstandingOutputFrameLeases)
+                continue;
+
             if (TryDisposeCompleted(submission, reportFailure: true, propagateFailure: false))
                 disposed.Add(submission);
         }
@@ -149,6 +160,13 @@ internal class PendingRenderSubmissionTracker : IDisposable
                 await submission
                     .WaitForCompletionAsync(GetRemainingTime(deadline), cancellationToken)
                     .ConfigureAwait(false);
+
+                PublishOutputFrames(submission);
+
+                await submission
+                    .WaitForOutputFrameLeasesAsync(GetRemainingTime(deadline), cancellationToken)
+                    .ConfigureAwait(false);
+
                 submission.DisposeCompleted();
                 disposed.Add(submission);
             }
@@ -233,6 +251,8 @@ internal class PendingRenderSubmissionTracker : IDisposable
                         "Cannot dispose tracker with incomplete submissions. Use ShutdownAsync instead.");
                 }
 
+                PublishOutputFrames(submission);
+
                 submission.DisposeCompleted();
                 disposed.Add(submission);
             }
@@ -265,6 +285,15 @@ internal class PendingRenderSubmissionTracker : IDisposable
             return TimeSpan.Zero;
 
         return TimeSpan.FromSeconds((double)remainingTicks / Stopwatch.Frequency);
+    }
+
+    private void PublishOutputFrames(IRenderFrameSubmission submission)
+    {
+        if (submission.OutputFramesAcquired)
+            return;
+
+        var frames = submission.AcquireOutputFrames();
+        _sinkDispatcher?.PublishCompletedFrames(frames);
     }
 
     private sealed class SubmissionReferenceEqualityComparer : IEqualityComparer<IRenderFrameSubmission>

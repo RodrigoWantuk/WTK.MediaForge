@@ -7,6 +7,14 @@ internal interface IRenderFrameSubmission
     /// </summary>
     bool IsCompleted { get; }
 
+    bool OutputFramesAcquired { get; }
+
+    bool HasOutstandingOutputFrameLeases { get; }
+
+    RenderedOutputFrameBatch AcquireOutputFrames();
+
+    ValueTask WaitForOutputFrameLeasesAsync(TimeSpan timeout, CancellationToken cancellationToken);
+
     /// <summary>
     /// Destroys submission resources without waiting for GPU completion.
     /// Idempotent when already disposed. Throws if the submission is not completed.

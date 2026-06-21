@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
-using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Diagnostics;
 using PublicRenderOutputSink = WTK.MediaForge.Composition.Outputs.IRenderOutputSink;
@@ -186,9 +186,9 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             throw new AggregateException("Failed to detach one or more render output sinks.", errors);
     }
 
-    public void PublishFrame(RenderFrameSnapshot snapshot)
+    public void PublishCompletedFrames(RenderedOutputFrameBatch frameBatch)
     {
-        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(frameBatch);
 
         List<(SinkRegistration Registration, RenderOutputFrameLease Lease)> deliveries = [];
 
@@ -197,29 +197,29 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             if (_disposed)
                 return;
 
-            foreach (var output in snapshot.Outputs)
+            foreach (var frame in frameBatch.Frames)
             {
-                if (!_registrations.TryGetValue(output.Id, out var registrations) ||
+                if (!_registrations.TryGetValue(frame.OutputId, out var registrations) ||
                     registrations.Count == 0)
                 {
                     continue;
                 }
 
-                var frameNumber = NextFrameNumberLocked(output.Id);
+                var frameNumber = NextFrameNumberLocked(frame.OutputId);
                 var timestamp = _clock.Elapsed;
 
                 foreach (var registration in registrations)
                 {
                     var info = new RenderOutputFrameInfo(
-                        output.Id,
+                        frame.OutputId,
                         registration.Sink.Id,
                         frameNumber,
                         timestamp,
-                        output.OutputSize,
-                        RenderPixelFormat.Rgba8Unorm,
-                        RenderBackendKind.Vulkan);
+                        frame.Size,
+                        frame.Format,
+                        frame.BackendKind);
 
-                    deliveries.Add((registration, new RenderOutputFrameLease(info)));
+                    deliveries.Add((registration, frameBatch.CreateLease(frame, info)));
                 }
             }
         }

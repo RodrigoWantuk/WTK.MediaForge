@@ -517,12 +517,31 @@ public class PendingRenderSubmissionTrackerTests
 
     private sealed class FailingRenderFrameSubmission : IRenderFrameSubmission
     {
-        public FailingRenderFrameSubmission(RenderFrameSnapshot snapshot) =>
+        private readonly RenderedOutputFrameBatch _outputFrames;
+        private int _outputFramesAcquired;
+
+        public FailingRenderFrameSubmission(RenderFrameSnapshot snapshot)
+        {
             Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+            _outputFrames = RenderedOutputFrameBatch.FromSnapshot(snapshot);
+        }
 
         public RenderFrameSnapshot Snapshot { get; }
 
         public bool IsCompleted => true;
+
+        public bool OutputFramesAcquired => Volatile.Read(ref _outputFramesAcquired) != 0;
+
+        public bool HasOutstandingOutputFrameLeases => _outputFrames.HasOutstandingLeases;
+
+        public RenderedOutputFrameBatch AcquireOutputFrames()
+        {
+            Interlocked.Exchange(ref _outputFramesAcquired, 1);
+            return _outputFrames;
+        }
+
+        public ValueTask WaitForOutputFrameLeasesAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            _outputFrames.WaitForLeasesReleasedAsync(timeout, cancellationToken);
 
         public ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
@@ -533,16 +552,34 @@ public class PendingRenderSubmissionTrackerTests
 
     private sealed class RecoverableFailingRenderFrameSubmission : IRenderFrameSubmission
     {
+        private readonly RenderedOutputFrameBatch _outputFrames;
         private volatile bool _allowDispose;
+        private int _outputFramesAcquired;
 
-        public RecoverableFailingRenderFrameSubmission(RenderFrameSnapshot snapshot) =>
+        public RecoverableFailingRenderFrameSubmission(RenderFrameSnapshot snapshot)
+        {
             Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+            _outputFrames = RenderedOutputFrameBatch.FromSnapshot(snapshot);
+        }
 
         public RenderFrameSnapshot Snapshot { get; }
 
         public bool IsCompleted => true;
 
+        public bool OutputFramesAcquired => Volatile.Read(ref _outputFramesAcquired) != 0;
+
+        public bool HasOutstandingOutputFrameLeases => _outputFrames.HasOutstandingLeases;
+
         public void AllowDispose() => _allowDispose = true;
+
+        public RenderedOutputFrameBatch AcquireOutputFrames()
+        {
+            Interlocked.Exchange(ref _outputFramesAcquired, 1);
+            return _outputFrames;
+        }
+
+        public ValueTask WaitForOutputFrameLeasesAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            _outputFrames.WaitForLeasesReleasedAsync(timeout, cancellationToken);
 
         public ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
@@ -556,14 +593,32 @@ public class PendingRenderSubmissionTrackerTests
 
     private sealed class FailOnceRenderFrameSubmission : IRenderFrameSubmission
     {
+        private readonly RenderedOutputFrameBatch _outputFrames;
         private int _disposeAttempts;
+        private int _outputFramesAcquired;
 
-        public FailOnceRenderFrameSubmission(RenderFrameSnapshot snapshot) =>
+        public FailOnceRenderFrameSubmission(RenderFrameSnapshot snapshot)
+        {
             Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+            _outputFrames = RenderedOutputFrameBatch.FromSnapshot(snapshot);
+        }
 
         public RenderFrameSnapshot Snapshot { get; }
 
         public bool IsCompleted => true;
+
+        public bool OutputFramesAcquired => Volatile.Read(ref _outputFramesAcquired) != 0;
+
+        public bool HasOutstandingOutputFrameLeases => _outputFrames.HasOutstandingLeases;
+
+        public RenderedOutputFrameBatch AcquireOutputFrames()
+        {
+            Interlocked.Exchange(ref _outputFramesAcquired, 1);
+            return _outputFrames;
+        }
+
+        public ValueTask WaitForOutputFrameLeasesAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            _outputFrames.WaitForLeasesReleasedAsync(timeout, cancellationToken);
 
         public ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;

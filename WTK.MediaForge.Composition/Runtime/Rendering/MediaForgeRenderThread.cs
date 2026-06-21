@@ -12,7 +12,6 @@ internal sealed class MediaForgeRenderThread : IDisposable
     private readonly IRenderBackend _backend;
     private readonly RenderThreadGuard _threadGuard;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
-    private readonly RenderOutputSinkDispatcher? _sinkDispatcher;
     private readonly PendingRenderSubmissionTracker _pendingTracker;
     private readonly LatestSnapshotBuffer _snapshotBuffer = new();
     private readonly ConcurrentQueue<RenderCommand> _commands = new();
@@ -38,8 +37,10 @@ internal sealed class MediaForgeRenderThread : IDisposable
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _diagnostics = diagnostics;
-        _sinkDispatcher = sinkDispatcher;
-        _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(maxFramesInFlight, diagnostics);
+        _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(
+            maxFramesInFlight,
+            diagnostics,
+            sinkDispatcher);
         _joinTimeout = joinTimeout ?? TimeSpan.FromSeconds(10);
         _submissionShutdownTimeout = submissionShutdownTimeout ?? TimeSpan.FromSeconds(10);
         _thread = new Thread(RenderLoop)
@@ -303,7 +304,6 @@ internal sealed class MediaForgeRenderThread : IDisposable
             _threadGuard.AssertOnRenderThread();
             submission = _backend.Submit(snapshot);
             _pendingTracker.Add(submission);
-            _sinkDispatcher?.PublishFrame(snapshot);
             ownershipTransferred = true;
         }
         catch (Exception ex)

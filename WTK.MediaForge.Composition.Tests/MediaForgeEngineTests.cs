@@ -624,6 +624,112 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Sink_is_not_notified_before_submission_completion()
+    {
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        await using var engine = CreateEngine(backendFactory: backendFactory);
+        engine.RenderFramesPerSecond = 1;
+        var project = CreateOffscreenProject();
+        var sink = new RecordingPublicRenderOutputSink();
+
+        await engine.LoadProjectAsync(project);
+        await engine.AttachSinkAsync(project.Outputs[0].Id, sink);
+        await engine.StartAsync();
+        await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        await Task.Delay(100);
+
+        Assert.Equal(0, sink.FrameCount);
+
+        backendFactory.Backend!.CompleteAllPending();
+        await WaitUntilAsync(() => sink.FrameCount >= 1, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Sink_receives_frame_after_submission_completes()
+    {
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        await using var engine = CreateEngine(backendFactory: backendFactory);
+        engine.RenderFramesPerSecond = 1;
+        var project = CreateOffscreenProject();
+        var frameReady = new TaskCompletionSource<RenderOutputFrameInfo>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var sink = new RecordingPublicRenderOutputSink(onFrame: (frame, _) =>
+        {
+            frameReady.TrySetResult(frame.Info);
+            return ValueTask.CompletedTask;
+        });
+
+        await engine.LoadProjectAsync(project);
+        await engine.AttachSinkAsync(project.Outputs[0].Id, sink);
+        await engine.StartAsync();
+        await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+
+        backendFactory.Backend!.CompleteAllPending();
+        var frame = await frameReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(project.Outputs[0].Id, frame.OutputId);
+        Assert.Equal(sink.Id, frame.SinkId);
+    }
+
+    [Fact]
+    public async Task Submission_resources_are_not_released_until_sink_frame_lease_is_released()
+    {
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        await using var engine = CreateEngine(providerFactory, backendFactory);
+        engine.RenderFramesPerSecond = 1;
+        var project = CreateOffscreenProject();
+        var sink = new BlockingPublicRenderOutputSink();
+
+        await engine.LoadProjectAsync(project);
+        await engine.AttachSinkAsync(project.Outputs[0].Id, sink);
+        await engine.StartAsync();
+        await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        var source = providerFactory.Sources.Values.First();
+        Assert.Equal(1, source.ActiveSlotRetainCount);
+
+        backendFactory.Backend!.CompleteAllPending();
+        await sink.WaitForFrameAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, source.ActiveSlotRetainCount);
+
+        sink.Release();
+        await WaitUntilAsync(() => source.ActiveSlotRetainCount == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Dropped_sink_frame_releases_output_frame_lease()
+    {
+        var dispatcher = new RenderOutputSinkDispatcher();
+        var project = CreateOffscreenProject();
+        var output = project.Outputs[0];
+        var sink = new BlockingPublicRenderOutputSink();
+        var firstBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
+        var droppedBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
+        var latestBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
+        var replacingBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+
+        try
+        {
+            dispatcher.PublishCompletedFrames(firstBatch);
+            await sink.WaitForFrameAsync(TimeSpan.FromSeconds(5));
+            dispatcher.PublishCompletedFrames(droppedBatch);
+            Assert.True(droppedBatch.HasOutstandingLeases);
+
+            dispatcher.PublishCompletedFrames(latestBatch);
+            dispatcher.PublishCompletedFrames(replacingBatch);
+
+            await WaitUntilAsync(() => !droppedBatch.HasOutstandingLeases, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            sink.Release();
+            await dispatcher.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task Slow_preview_sink_does_not_block_render_thread()
     {
         var backendFactory = new RecordingRenderBackendFactory();
@@ -1416,6 +1522,18 @@ public class MediaForgeEngineTests
         editor.ValidateOrThrow();
         return editor.Project;
     }
+
+    private static RenderedOutputFrameBatch CreateRenderedOutputFrameBatch(
+        RenderOutputId outputId,
+        FrameSize size) =>
+        new(
+            [
+                new RenderedOutputFrame(
+                    outputId,
+                    size,
+                    RenderPixelFormat.Rgba8Unorm,
+                    RenderBackendKind.Vulkan)
+            ]);
 
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {

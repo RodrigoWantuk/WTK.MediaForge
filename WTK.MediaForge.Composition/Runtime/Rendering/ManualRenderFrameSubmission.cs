@@ -4,18 +4,34 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 internal sealed class ManualRenderFrameSubmission : IRenderFrameSubmission
 {
+    private readonly RenderedOutputFrameBatch _outputFrames;
     private RenderFrameSnapshot? _snapshot;
     private volatile bool _completed;
     private int _resourcesDisposed;
+    private int _outputFramesAcquired;
 
     public ManualRenderFrameSubmission(RenderFrameSnapshot snapshot)
     {
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        _outputFrames = RenderedOutputFrameBatch.FromSnapshot(snapshot);
     }
 
     public bool IsCompleted => _completed;
 
+    public bool OutputFramesAcquired => Volatile.Read(ref _outputFramesAcquired) != 0;
+
+    public bool HasOutstandingOutputFrameLeases => _outputFrames.HasOutstandingLeases;
+
     public void Complete() => _completed = true;
+
+    public RenderedOutputFrameBatch AcquireOutputFrames()
+    {
+        Interlocked.Exchange(ref _outputFramesAcquired, 1);
+        return _outputFrames;
+    }
+
+    public ValueTask WaitForOutputFrameLeasesAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        _outputFrames.WaitForLeasesReleasedAsync(timeout, cancellationToken);
 
     public async ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
@@ -39,6 +55,9 @@ internal sealed class ManualRenderFrameSubmission : IRenderFrameSubmission
     {
         if (!_completed)
             throw new InvalidOperationException("Submission is not completed.");
+
+        if (HasOutstandingOutputFrameLeases)
+            throw new InvalidOperationException("Submission still has outstanding output frame leases.");
 
         if (Interlocked.Exchange(ref _resourcesDisposed, 1) != 0)
             return;
