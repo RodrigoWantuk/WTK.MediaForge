@@ -1,3 +1,4 @@
+using WTK.MediaForge.Composition;
 using WTK.MediaForge.Composition.Editor;
 using WTK.MediaForge.Composition.Engine;
 using WTK.MediaForge.Composition.Outputs.Settings;
@@ -8,6 +9,7 @@ using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Composition.Sources.Settings;
 using WTK.MediaForge.Composition.Tests.Engine;
+using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
@@ -57,8 +59,9 @@ public class MediaForgeEngineTests
             ]
         };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<MediaForgeProjectValidationException>(() =>
             engine.LoadProjectAsync(project));
+        Assert.Contains(ex.ValidationResult.Issues, issue => issue.Code == "canvas.size.invalid");
     }
 
     [Fact]
@@ -126,7 +129,7 @@ public class MediaForgeEngineTests
         var output = engine.CurrentProject.Outputs[0];
         var originalCanvasId = output.CanvasId;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<MediaForgeProjectValidationException>(() =>
             engine.ApplyProjectUpdateAsync(e => e.Project.Outputs[0].CanvasId = CanvasId.New()));
 
         Assert.Same(output, engine.CurrentProject.Outputs[0]);
@@ -141,7 +144,7 @@ public class MediaForgeEngineTests
         await engine.StartAsync();
         var projectState = engine.ProjectStateForTests;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<MediaForgeProjectValidationException>(() =>
             engine.ApplyProjectUpdateAsync(e => e.Project.Outputs[0].CanvasId = CanvasId.New()));
 
         Assert.Same(projectState, engine.ProjectStateForTests);
@@ -157,7 +160,7 @@ public class MediaForgeEngineTests
         await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
         var submitCount = backendFactory.Backend!.SubmitCount;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<MediaForgeProjectValidationException>(() =>
             engine.ApplyProjectUpdateAsync(e => e.Project.Outputs[0].CanvasId = CanvasId.New()));
 
         await Task.Delay(100);
@@ -194,8 +197,22 @@ public class MediaForgeEngineTests
         var output = project.Outputs[0];
         await engine.LoadProjectAsync(project);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
             engine.BindOutputAsync(output.Id, new OffscreenRenderOutputTarget()));
+    }
+
+    [Fact]
+    public async Task BindOutput_unsupported_output_factory_throws_feature_exception()
+    {
+        await using var engine = CreateEngine(outputSinkFactory: new RejectingRenderOutputSinkFactory());
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+
+        var ex = await Assert.ThrowsAsync<MediaForgeUnsupportedFeatureException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(1)));
+
+        Assert.Equal($"output.{project.Outputs[0].TypeId.Value}", ex.FeatureCode);
     }
 
     [Fact]
@@ -596,11 +613,12 @@ public class MediaForgeEngineTests
             await engine.StartAsync();
             Assert.True(backendFactory.Backend!.WaitForSubmitEntered(TimeSpan.FromSeconds(5)));
 
-            var ex = await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+            var ex = await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
+            var aggregate = Assert.IsType<AggregateException>(ex.InnerException);
 
             Assert.False(backendFactory.Backend.Disposed);
             Assert.Contains(
-                ex.InnerExceptions,
+                aggregate.InnerExceptions,
                 inner => inner.Message.Contains("render thread is still alive", StringComparison.Ordinal));
         }
         finally
@@ -627,11 +645,11 @@ public class MediaForgeEngineTests
             await engine.StartAsync();
             Assert.True(backendFactory.Backend!.WaitForSubmitEntered(TimeSpan.FromSeconds(5)));
 
-        await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+            await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
 
-        Assert.Contains(
-            diagnostics.Diagnostics,
-            d => d.Severity == MediaForgeDiagnosticSeverity.Fatal &&
+            Assert.Contains(
+                diagnostics.Diagnostics,
+                d => d.Severity == MediaForgeDiagnosticSeverity.Fatal &&
                     d.Code == "engine.backend_dispose_skipped_render_thread_alive");
         }
         finally
@@ -657,7 +675,7 @@ public class MediaForgeEngineTests
             await engine.StartAsync();
             Assert.True(backendFactory.Backend!.WaitForSubmitEntered(TimeSpan.FromSeconds(5)));
 
-            await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+            await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
 
             Assert.Equal(MediaForgeEngineState.Failed, engine.State);
             Assert.NotNull(engine.RenderThreadForTests);
@@ -680,7 +698,7 @@ public class MediaForgeEngineTests
         await engine.LoadProjectAsync(CreateValidProject());
         await engine.StartAsync();
 
-        await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
 
         Assert.Equal(MediaForgeEngineState.Failed, engine.State);
     }
@@ -692,7 +710,7 @@ public class MediaForgeEngineTests
         var engine = CreateEngine(providerFactory);
         await engine.LoadProjectAsync(CreateValidProject());
         await engine.StartAsync();
-        await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
 
         await engine.DisposeAsync();
 
@@ -706,10 +724,11 @@ public class MediaForgeEngineTests
         await using var engine = CreateEngine(providerFactory);
         await engine.LoadProjectAsync(CreateValidProject());
         await engine.StartAsync();
-        await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.StartAsync());
+        var ex = await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StartAsync());
 
+        Assert.Equal(MediaForgeEngineState.Failed, ex.EngineState);
         Assert.Contains("failed state", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -750,8 +769,9 @@ public class MediaForgeEngineTests
         await engine.LoadProjectAsync(CreateValidProject());
         await engine.StartAsync();
 
-        var ex = await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
-        Assert.NotEmpty(ex.InnerExceptions);
+        var ex = await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
+        var aggregate = Assert.IsType<AggregateException>(ex.InnerException);
+        Assert.NotEmpty(aggregate.InnerExceptions);
         Assert.True(backendFactory.Backend!.Disposed);
 
         await engine.DisposeAsync();
@@ -766,11 +786,12 @@ public class MediaForgeEngineTests
         await engine.LoadProjectAsync(CreateValidProject());
         await engine.StartAsync();
 
-        var ex = await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+        var ex = await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
+        var aggregate = Assert.IsType<AggregateException>(ex.InnerException);
 
-        Assert.True(ex.InnerExceptions.Count >= 2);
+        Assert.True(aggregate.InnerExceptions.Count >= 2);
         Assert.Contains(
-            ex.InnerExceptions,
+            aggregate.InnerExceptions,
             inner => inner.Message.Contains("Simulated provider stop failure", StringComparison.Ordinal));
         Assert.True(backendFactory.Backend!.DisposeAttempted);
     }

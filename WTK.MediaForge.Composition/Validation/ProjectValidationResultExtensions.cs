@@ -7,10 +7,6 @@ public static class ProjectValidationResultExtensions
         if (result.IsValid)
             return;
 
-        var message = string.Join(
-            Environment.NewLine,
-            result.Issues.Select(i => $"[{i.Code}] {i.Message}"));
-
-        throw new InvalidOperationException($"Project validation failed:{Environment.NewLine}{message}");
+        throw new MediaForgeProjectValidationException(result);
     }
 }

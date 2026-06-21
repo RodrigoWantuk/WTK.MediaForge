@@ -74,7 +74,7 @@ public class MediaForgeProjectBuilderTests
             ]
         };
 
-        Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<MediaForgeProjectValidationException>(() =>
             MediaForgeProjectBuilder.FromProject(invalidProject).BuildValidated());
     }
 }

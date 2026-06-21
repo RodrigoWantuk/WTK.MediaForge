@@ -565,6 +565,14 @@ internal sealed class FakeRenderOutputSinkFactory : IRenderOutputSinkFactory
     public IRenderOutputSink CreateSink(RenderOutputTarget target) => new FakeRenderOutputSink(target);
 }
 
+internal sealed class RejectingRenderOutputSinkFactory : IRenderOutputSinkFactory
+{
+    public bool CanCreate(RenderOutputTypeId typeId) => false;
+
+    public IRenderOutputSink CreateSink(RenderOutputTarget target) =>
+        throw new InvalidOperationException("Rejecting factory should not create sinks.");
+}
+
 internal sealed class FakeMediaSourceProviderFactory : IMediaSourceProviderFactory
 {
     private readonly Dictionary<SourceId, FakeVideoFrameSource> _sources = new();

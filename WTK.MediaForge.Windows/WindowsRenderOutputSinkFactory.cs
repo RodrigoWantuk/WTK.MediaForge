@@ -1,3 +1,4 @@
+using WTK.MediaForge.Composition;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
@@ -15,7 +16,9 @@ internal sealed class WindowsRenderOutputSinkFactory : IRenderOutputSinkFactory
         ArgumentNullException.ThrowIfNull(target);
 
         if (target.TypeId != RenderOutputTypes.Offscreen)
-            throw new NotSupportedException($"Output target '{target.TypeId.Value}' is not supported by the Windows facade yet.");
+            throw new MediaForgeUnsupportedFeatureException(
+                $"output.{target.TypeId.Value}",
+                $"Output target '{target.TypeId.Value}' is not supported by the Windows facade yet.");
 
         return new OffscreenRenderOutputSink();
     }

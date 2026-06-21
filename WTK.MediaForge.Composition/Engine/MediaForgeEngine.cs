@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Editor;
+using WTK.MediaForge.Composition;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Outputs;
@@ -123,7 +124,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         try
         {
             if (State == MediaForgeEngineState.Failed)
-                throw new InvalidOperationException("Engine cannot be started after entering a failed state.");
+                throw CreateEngineException("Engine cannot be started after entering a failed state.");
 
             if (State is MediaForgeEngineState.Running or MediaForgeEngineState.Starting)
                 return;
@@ -138,7 +139,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 _renderThreadGuard = new RenderThreadGuard();
 
                 if (!_backendFactory.TryCreate(_renderThreadGuard, _diagnostics, out var backend) || backend is null)
-                    throw new InvalidOperationException("Render backend could not be created.");
+                    throw CreateEngineException("Render backend could not be created.");
 
                 _backend = backend;
                 _renderThread = new MediaForgeRenderThread(
@@ -153,7 +154,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 {
                     if (!_sourceProviderFactory.CanCreate(sourceDefinition.TypeId))
                     {
-                        throw new NotSupportedException(
+                        throw new MediaForgeUnsupportedFeatureException(
+                            $"source.{sourceDefinition.TypeId.Value}",
                             $"No source provider factory registered for type '{sourceDefinition.TypeId.Value}'.");
                     }
 
@@ -317,9 +319,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
             if (cleanupErrors.Count > 0)
             {
-                throw new AggregateException(
+                throw new MediaForgeEngineException(
                     "Engine stop cleanup failed after attempting all cleanup steps.",
-                    cleanupErrors);
+                    State,
+                    new AggregateException(cleanupErrors));
             }
         }
         finally
@@ -373,20 +376,21 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         try
         {
             if (State == MediaForgeEngineState.Failed)
-                throw new InvalidOperationException("Output binding is not allowed after the engine entered a failed state.");
+                throw CreateEngineException("Output binding is not allowed after the engine entered a failed state.");
 
             var output = CurrentProject.Outputs.FirstOrDefault(o => o.Id == outputId)
-                ?? throw new InvalidOperationException($"Output {outputId} was not found in the current project.");
+                ?? throw CreateEngineException($"Output {outputId} was not found in the current project.");
 
             if (output.TypeId != target.TypeId)
             {
-                throw new InvalidOperationException(
+                throw CreateEngineException(
                     $"Output type '{output.TypeId.Value}' does not match target type '{target.TypeId.Value}'.");
             }
 
             if (!_outputSinkFactory.CanCreate(target.TypeId))
             {
-                throw new NotSupportedException(
+                throw new MediaForgeUnsupportedFeatureException(
+                    $"output.{target.TypeId.Value}",
                     $"No output sink factory registered for type '{target.TypeId.Value}'.");
             }
 
@@ -427,7 +431,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         try
         {
             if (State == MediaForgeEngineState.Failed)
-                throw new InvalidOperationException("Output unbinding is not allowed after the engine entered a failed state.");
+                throw CreateEngineException("Output unbinding is not allowed after the engine entered a failed state.");
 
             if (!_outputSinks.TryGetValue(outputId, out var entry))
                 return;
@@ -561,25 +565,28 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     {
         if (State is MediaForgeEngineState.Running or MediaForgeEngineState.Starting or MediaForgeEngineState.Stopping)
         {
-            throw new InvalidOperationException("Operation is not allowed while the engine is running or transitioning.");
+            throw CreateEngineException("Operation is not allowed while the engine is running or transitioning.");
         }
 
         if (State == MediaForgeEngineState.Failed)
-            throw new InvalidOperationException("Operation is not allowed after the engine entered a failed state.");
+            throw CreateEngineException("Operation is not allowed after the engine entered a failed state.");
     }
 
     private void EnsureCanMutateProject()
     {
         if (State is MediaForgeEngineState.Starting or MediaForgeEngineState.Stopping)
         {
-            throw new InvalidOperationException("Project updates are not allowed while the engine is starting or stopping.");
+            throw CreateEngineException("Project updates are not allowed while the engine is starting or stopping.");
         }
 
         if (State == MediaForgeEngineState.Failed)
-            throw new InvalidOperationException("Project updates are not allowed after the engine entered a failed state.");
+            throw CreateEngineException("Project updates are not allowed after the engine entered a failed state.");
     }
 
     private void SetState(MediaForgeEngineState newState) => _state = newState;
+
+    private MediaForgeEngineException CreateEngineException(string message) =>
+        new(message, State);
 
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
