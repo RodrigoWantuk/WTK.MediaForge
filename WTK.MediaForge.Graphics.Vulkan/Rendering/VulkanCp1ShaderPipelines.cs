@@ -112,7 +112,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                 var frame = sourceLayer.BoundFrame!.Value;
                 TransitionForShaderRead(commandBuffer, import);
 
-                var pushConstants = Cp1PushConstantsBuilder.BuildSourceLayer(sourceLayer, frame, output.CanvasLayoutMode);
+                var pushConstants = Cp1PushConstantsBuilder.BuildSourceLayer(sourceLayer, frame);
                 var descriptorSet = AllocateAndWriteDescriptorSet(import.ImageView);
                 submissionResources.RetainDescriptorSet(descriptorSet);
 

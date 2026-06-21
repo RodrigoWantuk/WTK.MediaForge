@@ -4,6 +4,8 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 internal sealed class MediaForgeRenderPump : IAsyncDisposable
 {
+    private static readonly TimeSpan BackpressureDiagnosticInterval = TimeSpan.FromSeconds(1);
+
     private readonly Func<bool> _canPublish;
     private readonly Action _publish;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
@@ -11,6 +13,8 @@ internal sealed class MediaForgeRenderPump : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly TimeSpan _interval;
     private readonly Task _loop;
+    private long _lastBackpressureDiagnosticTicks;
+    private int _backpressureDropCount;
     private int _disposed;
 
     public MediaForgeRenderPump(
@@ -93,12 +97,7 @@ internal sealed class MediaForgeRenderPump : IAsyncDisposable
 
             if (!_canPublish())
             {
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Warning,
-                    "engine.render_pump_frame_dropped_backpressure",
-                    "Render pump skipped a frame because the render thread is backpressured.",
-                    nameof(MediaForgeRenderPump));
+                ReportBackpressureDrop();
                 continue;
             }
 
@@ -129,6 +128,26 @@ internal sealed class MediaForgeRenderPump : IAsyncDisposable
         var wake = _wake.WaitAsync(_stop.Token);
         var completed = await Task.WhenAny(delay, wake).ConfigureAwait(false);
         await completed.ConfigureAwait(false);
+    }
+
+    private void ReportBackpressureDrop()
+    {
+        var dropped = Interlocked.Increment(ref _backpressureDropCount);
+        var now = Environment.TickCount64;
+        var last = Interlocked.Read(ref _lastBackpressureDiagnosticTicks);
+        if (last != 0 && now - last < BackpressureDiagnosticInterval.TotalMilliseconds)
+            return;
+
+        if (Interlocked.CompareExchange(ref _lastBackpressureDiagnosticTicks, now, last) != last)
+            return;
+
+        var reportedCount = Interlocked.Exchange(ref _backpressureDropCount, 0);
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "engine.render_pump_frame_dropped_backpressure",
+            $"Render pump skipped {reportedCount} frame(s) because the render thread is backpressured.",
+            nameof(MediaForgeRenderPump));
     }
 
     private void SafeReleaseWake()

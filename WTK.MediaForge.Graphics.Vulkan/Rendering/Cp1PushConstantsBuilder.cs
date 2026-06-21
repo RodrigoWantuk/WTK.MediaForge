@@ -11,13 +11,9 @@ internal static class Cp1PushConstantsBuilder
 {
     public static MediaForgeLayerPushConstants BuildSourceLayer(
         RenderSourceLayerDrawObjectSnapshot layer,
-        GpuFrameReference frame,
-        LayoutMode outputCanvasLayoutMode)
+        GpuFrameReference frame)
     {
         var crop = layer.EffectiveCrop;
-        var layoutMode = layer.LayoutMode == LayoutMode.Fit
-            ? outputCanvasLayoutMode
-            : layer.LayoutMode;
 
         return new MediaForgeLayerPushConstants
         {
@@ -26,7 +22,7 @@ internal static class Cp1PushConstantsBuilder
             BoxSize = new Vector2(layer.Transform.Size.Width, layer.Transform.Size.Height),
             Pivot = new Vector2(layer.Transform.Pivot.X, layer.Transform.Pivot.Y),
             Opacity = layer.Opacity,
-            LayoutMode = (int)layoutMode,
+            LayoutMode = (int)layer.LayoutMode,
             ContentRotation = CapturePreviewGeometry.ResolveShaderRotation(
                 frame.Rotation,
                 frame.LogicalSize,

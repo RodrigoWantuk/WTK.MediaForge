@@ -222,6 +222,52 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
+    public async Task SourceLayer_Fit_remains_Fit_when_Output_CanvasLayoutMode_is_Fill()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(128, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(128, 64) },
+                    layerLayoutMode: LayoutMode.Fit,
+                    outputCanvasLayoutMode: LayoutMode.Fill,
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 4, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 0, expectedB: 0, expectedA: 0);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Cp1_source_layer_fill_crops_without_transparent_bars()
     {
         if (!TryCreateCp1Context(out var context))

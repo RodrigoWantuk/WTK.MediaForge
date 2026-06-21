@@ -1338,6 +1338,24 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task RenderPump_rate_limits_backpressure_diagnostics()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        await using var pump = new MediaForgeRenderPump(
+            framesPerSecond: 120,
+            canPublish: () => false,
+            publish: () => { },
+            diagnostics);
+
+        await Task.Delay(250);
+        await pump.StopAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        var backpressureDiagnostics = diagnostics.Diagnostics
+            .Count(static diagnostic => diagnostic.Code == "engine.render_pump_frame_dropped_backpressure");
+        Assert.Equal(1, backpressureDiagnostics);
+    }
+
+    [Fact]
     public async Task Engine_stop_disposes_render_backend()
     {
         var backendFactory = new RecordingRenderBackendFactory();
