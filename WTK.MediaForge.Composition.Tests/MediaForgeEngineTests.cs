@@ -415,6 +415,67 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Engine_stop_does_not_dispose_backend_when_render_thread_is_still_alive()
+    {
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new BlockingSubmitRenderBackendFactory();
+        var engine = CreateEngine(providerFactory, backendFactory);
+        engine.RenderThreadJoinTimeoutForTests = TimeSpan.FromMilliseconds(50);
+
+        try
+        {
+            await engine.LoadProjectAsync(CreateValidProject());
+            await engine.StartAsync();
+            Assert.True(backendFactory.Backend!.WaitForSubmitEntered(TimeSpan.FromSeconds(5)));
+
+            var ex = await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+
+            Assert.False(backendFactory.Backend.Disposed);
+            Assert.Contains(
+                ex.InnerExceptions,
+                inner => inner.Message.Contains("render thread is still alive", StringComparison.Ordinal));
+        }
+        finally
+        {
+            backendFactory.Backend?.ReleaseSubmit();
+            _ = backendFactory.Backend?.WaitForSubmitExited(TimeSpan.FromSeconds(5));
+            backendFactory.Backend?.Dispose();
+            await engine.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Engine_stop_reports_fatal_when_backend_dispose_is_skipped_due_to_live_render_thread()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new BlockingSubmitRenderBackendFactory();
+        var engine = CreateEngine(providerFactory, backendFactory, diagnostics: diagnostics);
+        engine.RenderThreadJoinTimeoutForTests = TimeSpan.FromMilliseconds(50);
+
+        try
+        {
+            await engine.LoadProjectAsync(CreateValidProject());
+            await engine.StartAsync();
+            Assert.True(backendFactory.Backend!.WaitForSubmitEntered(TimeSpan.FromSeconds(5)));
+
+            await Assert.ThrowsAsync<AggregateException>(() => engine.StopAsync());
+
+            Assert.Contains(
+                diagnostics.Diagnostics,
+                d => d.Severity == MediaForgeDiagnosticSeverity.Fatal &&
+                    d.Code == "engine.backend_dispose_skipped_render_thread_alive");
+        }
+        finally
+        {
+            backendFactory.Backend?.ReleaseSubmit();
+            _ = backendFactory.Backend?.WaitForSubmitExited(TimeSpan.FromSeconds(5));
+            backendFactory.Backend?.Dispose();
+            await engine.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task Engine_start_failure_disposes_backend()
     {
         var backendFactory = new RecordingRenderBackendFactory();
@@ -436,7 +497,7 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
-    public async Task Engine_stop_attempts_backend_dispose_even_when_render_thread_dispose_fails()
+    public async Task Engine_stop_disposes_backend_when_render_thread_cleanup_fails_but_thread_stopped()
     {
         var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
         var backendFactory = new ManualRecordingRenderBackendFactory();

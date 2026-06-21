@@ -105,6 +105,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_lifecycleState == EngineLifecycleState.Failed)
+                throw new InvalidOperationException("Engine cannot be started after entering a failed state.");
+
             if (_lifecycleState is EngineLifecycleState.Running or EngineLifecycleState.Starting)
                 return;
 
@@ -175,7 +178,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_lifecycleState is EngineLifecycleState.Idle or EngineLifecycleState.Stopping)
+            if (_lifecycleState is EngineLifecycleState.Idle or EngineLifecycleState.Stopping or EngineLifecycleState.Failed)
                 return;
 
             _lifecycleState = EngineLifecycleState.Stopping;
@@ -203,6 +206,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
             var renderThread = _renderThread;
             var backend = _backend;
+            var renderThreadStopped = true;
             _renderThread = null;
             _backend = null;
             _renderThreadGuard = null;
@@ -212,10 +216,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 try
                 {
                     renderThread.Dispose();
+                    renderThreadStopped = !renderThread.IsRunning;
                 }
                 catch (Exception ex)
                 {
                     cleanupErrors.Add(ex);
+                    renderThreadStopped = !renderThread.IsRunning;
                     MediaForgeDiagnostics.Report(
                         _diagnostics,
                         MediaForgeDiagnosticSeverity.Error,
@@ -228,18 +234,34 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
             if (backend is not null)
             {
-                try
+                if (renderThreadStopped)
                 {
-                    backend.Dispose();
+                    try
+                    {
+                        backend.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        cleanupErrors.Add(ex);
+                        MediaForgeDiagnostics.Report(
+                            _diagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "engine.render_backend_dispose_failed",
+                            "Failed to dispose render backend during engine stop.",
+                            nameof(MediaForgeEngine),
+                            ex);
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
+                    var ex = new InvalidOperationException(
+                        "Render backend was not disposed because the render thread is still alive.");
                     cleanupErrors.Add(ex);
                     MediaForgeDiagnostics.Report(
                         _diagnostics,
-                        MediaForgeDiagnosticSeverity.Error,
-                        "engine.render_backend_dispose_failed",
-                        "Failed to dispose render backend during engine stop.",
+                        MediaForgeDiagnosticSeverity.Fatal,
+                        "engine.backend_dispose_skipped_render_thread_alive",
+                        ex.Message,
                         nameof(MediaForgeEngine),
                         ex);
                 }
@@ -268,7 +290,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             _providers.Clear();
             _runtime = null;
             _projectState = null;
-            _lifecycleState = EngineLifecycleState.Idle;
+            _lifecycleState = renderThreadStopped
+                ? EngineLifecycleState.Idle
+                : EngineLifecycleState.Failed;
 
             if (cleanupErrors.Count > 0)
             {
@@ -325,6 +349,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_lifecycleState == EngineLifecycleState.Failed)
+                throw new InvalidOperationException("Output binding is not allowed after the engine entered a failed state.");
+
             var output = CurrentProject.Outputs.FirstOrDefault(o => o.Id == outputId)
                 ?? throw new InvalidOperationException($"Output {outputId} was not found in the current project.");
 
@@ -375,6 +402,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_lifecycleState == EngineLifecycleState.Failed)
+                throw new InvalidOperationException("Output unbinding is not allowed after the engine entered a failed state.");
+
             if (!_outputSinks.TryGetValue(outputId, out var entry))
                 return;
 
@@ -496,6 +526,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         {
             throw new InvalidOperationException("Operation is not allowed while the engine is running or transitioning.");
         }
+
+        if (_lifecycleState == EngineLifecycleState.Failed)
+            throw new InvalidOperationException("Operation is not allowed after the engine entered a failed state.");
     }
 
     private void EnsureCanMutateProject()
@@ -504,6 +537,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         {
             throw new InvalidOperationException("Project updates are not allowed while the engine is starting or stopping.");
         }
+
+        if (_lifecycleState == EngineLifecycleState.Failed)
+            throw new InvalidOperationException("Project updates are not allowed after the engine entered a failed state.");
     }
 
     private sealed class OutputSinkEntry(IRenderOutputSink sink, RenderOutputTarget target)

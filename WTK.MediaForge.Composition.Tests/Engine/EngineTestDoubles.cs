@@ -137,6 +137,83 @@ internal sealed class UnbindTrackingRenderBackend : IRenderBackend
     }
 }
 
+internal sealed class BlockingSubmitRenderBackendFactory : IRenderBackendFactory
+{
+    public BlockingSubmitRenderBackend? Backend { get; private set; }
+
+    public bool TryCreate(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        out IRenderBackend? backend)
+    {
+        Backend = new BlockingSubmitRenderBackend(threadGuard);
+        backend = Backend;
+        return true;
+    }
+}
+
+internal sealed class BlockingSubmitRenderBackend : IRenderBackend
+{
+    private readonly RenderThreadGuard _threadGuard;
+    private readonly ManualResetEventSlim _submitEntered = new(false);
+    private readonly ManualResetEventSlim _releaseSubmit = new(false);
+    private readonly ManualResetEventSlim _submitExited = new(false);
+
+    public BlockingSubmitRenderBackend(RenderThreadGuard threadGuard) =>
+        _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
+
+    public bool Disposed { get; private set; }
+
+    public void BindOutput(RenderOutputBindingSnapshot binding)
+    {
+        _threadGuard.AssertOnRenderThread();
+    }
+
+    public void UnbindOutput(RenderOutputId outputId)
+    {
+        _threadGuard.AssertOnRenderThread();
+    }
+
+    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize)
+    {
+        _threadGuard.AssertOnRenderThread();
+    }
+
+    public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot)
+    {
+        _threadGuard.AssertOnRenderThread();
+        _submitEntered.Set();
+        try
+        {
+            if (!_releaseSubmit.Wait(TimeSpan.FromSeconds(30)))
+                throw new TimeoutException("Timed out waiting for test to release blocked submit.");
+
+            return new ImmediateRenderFrameSubmission(snapshot);
+        }
+        finally
+        {
+            _submitExited.Set();
+        }
+    }
+
+    public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    public bool WaitForSubmitEntered(TimeSpan timeout) => _submitEntered.Wait(timeout);
+
+    public bool WaitForSubmitExited(TimeSpan timeout) => _submitExited.Wait(timeout);
+
+    public void ReleaseSubmit() => _releaseSubmit.Set();
+
+    public void Dispose()
+    {
+        Disposed = true;
+        _submitEntered.Dispose();
+        _releaseSubmit.Dispose();
+        _submitExited.Dispose();
+    }
+}
+
 internal sealed class ThrowingDisposeRenderBackend : IRenderBackend
 {
     private readonly NullRenderBackend _inner;
