@@ -260,156 +260,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (State is MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded or MediaForgeEngineState.Stopping or MediaForgeEngineState.Failed or MediaForgeEngineState.Disposed)
                 return;
 
-            SetState(MediaForgeEngineState.Stopping);
-
-            var cleanupErrors = new List<Exception>();
-
-            var renderPump = _renderPump;
-            _renderPump = null;
-
-            if (renderPump is not null)
-            {
-                try
-                {
-                    await renderPump.StopAsync(StopTimeout, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    cleanupErrors.Add(ex);
-                    MediaForgeDiagnostics.Report(
-                        _diagnostics,
-                        MediaForgeDiagnosticSeverity.Error,
-                        "engine.render_pump_stop_failed",
-                        "Failed to stop render pump during engine stop.",
-                        nameof(MediaForgeEngine),
-                        ex);
-                }
-            }
-
-            foreach (var provider in _providers.AsEnumerable().Reverse())
-            {
-                try
-                {
-                    await AwaitWithTimeoutAsync(
-                        provider.StopAsync(cancellationToken),
-                        StopTimeout,
-                        $"Source provider '{provider.Name}' did not stop before StopTimeout.",
-                        cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    cleanupErrors.Add(ex);
-                    MediaForgeDiagnostics.Report(
-                        _diagnostics,
-                        MediaForgeDiagnosticSeverity.Error,
-                        "engine.provider_stop_failed",
-                        $"Failed to stop source provider '{provider.Name}'.",
-                        nameof(MediaForgeEngine),
-                        ex);
-                }
-            }
-
-            var renderThread = _renderThread;
-            var backend = _backend;
-            var renderThreadStopped = true;
-
-            if (renderThread is not null)
-            {
-                try
-                {
-                    renderThread.Dispose();
-                    renderThreadStopped = !renderThread.IsRunning;
-                }
-                catch (Exception ex)
-                {
-                    cleanupErrors.Add(ex);
-                    renderThreadStopped = !renderThread.IsRunning;
-                    MediaForgeDiagnostics.Report(
-                        _diagnostics,
-                        MediaForgeDiagnosticSeverity.Error,
-                        "engine.render_thread_dispose_failed",
-                        "Failed to dispose render thread during engine stop.",
-                        nameof(MediaForgeEngine),
-                        ex);
-                }
-            }
-
-            if (renderThreadStopped)
-            {
-                _renderThread = null;
-                _renderThreadGuard = null;
-            }
-
-            if (backend is not null)
-            {
-                if (renderThreadStopped)
-                {
-                    try
-                    {
-                        backend.Dispose();
-                        _backend = null;
-                    }
-                    catch (Exception ex)
-                    {
-                        cleanupErrors.Add(ex);
-                        MediaForgeDiagnostics.Report(
-                            _diagnostics,
-                            MediaForgeDiagnosticSeverity.Error,
-                            "engine.render_backend_dispose_failed",
-                            "Failed to dispose render backend during engine stop.",
-                            nameof(MediaForgeEngine),
-                            ex);
-                    }
-                }
-                else
-                {
-                    var ex = new InvalidOperationException(
-                        "Render backend was not disposed because the render thread is still alive.");
-                    cleanupErrors.Add(ex);
-                    MediaForgeDiagnostics.Report(
-                        _diagnostics,
-                        MediaForgeDiagnosticSeverity.Fatal,
-                        "engine.backend_dispose_skipped_render_thread_alive",
-                        ex.Message,
-                        nameof(MediaForgeEngine),
-                        ex);
-                }
-            }
-
-            foreach (var entry in _outputSinks.Values)
-            {
-                try
-                {
-                    await entry.Sink.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    cleanupErrors.Add(ex);
-                    MediaForgeDiagnostics.Report(
-                        _diagnostics,
-                        MediaForgeDiagnosticSeverity.Error,
-                        "engine.output_sink_dispose_failed",
-                        "Failed to dispose output sink during engine stop.",
-                        nameof(MediaForgeEngine),
-                        ex);
-                }
-            }
-
-            _outputSinks.Clear();
-            _providers.Clear();
-            _runtime = null;
-            _projectState = null;
-            SetState(renderThreadStopped && cleanupErrors.Count == 0
-                ? (_currentProject is null ? MediaForgeEngineState.Idle : MediaForgeEngineState.Loaded)
-                : MediaForgeEngineState.Failed);
-
-            if (cleanupErrors.Count > 0)
-            {
-                throw new MediaForgeEngineException(
-                    "Engine stop cleanup failed after attempting all cleanup steps.",
-                    State,
-                    new AggregateException(cleanupErrors));
-            }
+            await CleanupRuntimeAsync(allowFailedState: false, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -644,13 +495,53 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
         try
         {
-            if (State != MediaForgeEngineState.Failed)
-                await StopAsync().ConfigureAwait(false);
+            List<Exception>? cleanupErrors = null;
 
-            await _sinkDispatcher.DisposeAsync().ConfigureAwait(false);
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                try
+                {
+                    await CleanupRuntimeAsync(allowFailedState: true, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    (cleanupErrors ??= []).Add(ex);
+                }
 
-            if (State != MediaForgeEngineState.Failed)
-                SetState(MediaForgeEngineState.Disposed);
+                try
+                {
+                    await _sinkDispatcher.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    (cleanupErrors ??= []).Add(ex);
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.sink_dispatcher_dispose_failed",
+                        "Failed to dispose render output sink dispatcher during engine dispose.",
+                        nameof(MediaForgeEngine),
+                        ex);
+                }
+
+                if (cleanupErrors is null)
+                    SetState(MediaForgeEngineState.Disposed);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+
+            if (cleanupErrors is not null)
+            {
+                SetState(MediaForgeEngineState.Failed);
+                throw new MediaForgeEngineException(
+                    "Engine dispose cleanup failed after attempting all cleanup steps.",
+                    State,
+                    new AggregateException(cleanupErrors));
+            }
         }
         finally
         {
@@ -766,6 +657,51 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     private async Task RollbackStartAsync(CancellationToken cancellationToken)
     {
+        try
+        {
+            await CleanupRuntimeAsync(allowFailedState: true, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "engine.start_rollback_cleanup_failed",
+                "Failed to cleanup runtime during start rollback.",
+                nameof(MediaForgeEngine),
+                ex);
+        }
+    }
+
+    private async Task CleanupRuntimeAsync(
+        bool allowFailedState,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var originalState = State;
+        if (originalState == MediaForgeEngineState.Disposed)
+            return;
+
+        if (originalState == MediaForgeEngineState.Failed && !allowFailedState)
+            return;
+
+        if (originalState is MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded &&
+            _renderPump is null &&
+            _renderThread is null &&
+            _backend is null &&
+            _providers.Count == 0 &&
+            _runtime is null &&
+            _projectState is null)
+        {
+            return;
+        }
+
+        if (originalState != MediaForgeEngineState.Failed)
+            SetState(MediaForgeEngineState.Stopping);
+
+        var cleanupErrors = new List<Exception>();
+
         var renderPump = _renderPump;
         _renderPump = null;
 
@@ -777,11 +713,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             }
             catch (Exception ex)
             {
+                cleanupErrors.Add(ex);
                 MediaForgeDiagnostics.Report(
                     _diagnostics,
                     MediaForgeDiagnosticSeverity.Error,
-                    "engine.start_rollback_render_pump_stop_failed",
-                    "Failed to stop render pump during start rollback.",
+                    "engine.render_pump_stop_failed",
+                    "Failed to stop render pump during engine cleanup.",
                     nameof(MediaForgeEngine),
                     ex);
             }
@@ -794,68 +731,128 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 await AwaitWithTimeoutAsync(
                     provider.StopAsync(cancellationToken),
                     StopTimeout,
-                    $"Source provider '{provider.Name}' did not stop during start rollback.",
+                    $"Source provider '{provider.Name}' did not stop before StopTimeout.",
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                cleanupErrors.Add(ex);
                 MediaForgeDiagnostics.Report(
                     _diagnostics,
                     MediaForgeDiagnosticSeverity.Error,
-                    "engine.start_rollback_provider_stop_failed",
-                    "Failed to stop source provider during start rollback.",
+                    "engine.provider_stop_failed",
+                    $"Failed to stop source provider '{provider.Name}'.",
                     nameof(MediaForgeEngine),
                     ex);
             }
         }
 
-        _providers.Clear();
-
         var renderThread = _renderThread;
         var backend = _backend;
-        _renderThread = null;
-        _backend = null;
-        _renderThreadGuard = null;
+        var renderThreadStopped = true;
 
         if (renderThread is not null)
         {
             try
             {
                 renderThread.Dispose();
+                renderThreadStopped = !renderThread.IsRunning;
             }
             catch (Exception ex)
             {
+                cleanupErrors.Add(ex);
+                renderThreadStopped = !renderThread.IsRunning;
                 MediaForgeDiagnostics.Report(
                     _diagnostics,
                     MediaForgeDiagnosticSeverity.Error,
-                    "engine.start_rollback_render_thread_dispose_failed",
-                    "Failed to dispose render thread during start rollback.",
+                    "engine.render_thread_dispose_failed",
+                    "Failed to dispose render thread during engine cleanup.",
                     nameof(MediaForgeEngine),
                     ex);
             }
+        }
+
+        if (renderThreadStopped)
+        {
+            _renderThread = null;
+            _renderThreadGuard = null;
         }
 
         if (backend is not null)
         {
-            try
+            if (renderThreadStopped)
             {
-                backend.Dispose();
+                try
+                {
+                    backend.Dispose();
+                    _backend = null;
+                }
+                catch (Exception ex)
+                {
+                    cleanupErrors.Add(ex);
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.render_backend_dispose_failed",
+                        "Failed to dispose render backend during engine cleanup.",
+                        nameof(MediaForgeEngine),
+                        ex);
+                }
             }
-            catch (Exception ex)
+            else
             {
+                var ex = new InvalidOperationException(
+                    "Render backend was not disposed because the render thread is still alive.");
+                cleanupErrors.Add(ex);
                 MediaForgeDiagnostics.Report(
                     _diagnostics,
-                    MediaForgeDiagnosticSeverity.Error,
-                    "engine.start_rollback_render_backend_dispose_failed",
-                    "Failed to dispose render backend during start rollback.",
+                    MediaForgeDiagnosticSeverity.Fatal,
+                    "engine.backend_dispose_skipped_render_thread_alive",
+                    ex.Message,
                     nameof(MediaForgeEngine),
                     ex);
             }
         }
 
+        if (originalState != MediaForgeEngineState.Starting)
+        {
+            foreach (var entry in _outputSinks.Values)
+            {
+                try
+                {
+                    await entry.Sink.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    cleanupErrors.Add(ex);
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.output_sink_dispose_failed",
+                        "Failed to dispose output sink during engine cleanup.",
+                        nameof(MediaForgeEngine),
+                        ex);
+                }
+            }
+
+            _outputSinks.Clear();
+        }
+
+        _providers.Clear();
         _runtime = null;
         _projectState = null;
-        SetState(_currentProject is null ? MediaForgeEngineState.Idle : MediaForgeEngineState.Loaded);
+
+        SetState(renderThreadStopped && cleanupErrors.Count == 0
+            ? (_currentProject is null ? MediaForgeEngineState.Idle : MediaForgeEngineState.Loaded)
+            : MediaForgeEngineState.Failed);
+
+        if (cleanupErrors.Count > 0)
+        {
+            throw new MediaForgeEngineException(
+                "Engine runtime cleanup failed after attempting all cleanup steps.",
+                State,
+                new AggregateException(cleanupErrors));
+        }
     }
 
     private void EnsureNotRunning()

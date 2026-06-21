@@ -901,7 +901,7 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
-    public async Task BindOutput_command_hang_times_out_and_keeps_existing_sink()
+    public async Task BindOutput_command_timeout_sets_failed_and_requires_cleanup()
     {
         var backendFactory = new CommandTrackingRenderBackendFactory();
         var sinkFactory = new RecordingRenderOutputSinkFactory();
@@ -934,13 +934,15 @@ public class MediaForgeEngineTests
         finally
         {
             backendFactory.Backend.ReleaseBind();
-            engine.RenderThreadForTests?.Dispose();
-            backendFactory.Backend.Dispose();
+            await engine.DisposeAsync();
         }
+
+        Assert.Equal(MediaForgeEngineState.Disposed, engine.State);
+        Assert.True(backendFactory.Backend.Disposed);
     }
 
     [Fact]
-    public async Task UnbindOutput_command_hang_times_out_and_keeps_output_registered()
+    public async Task UnbindOutput_command_timeout_sets_failed_and_requires_cleanup()
     {
         var backendFactory = new CommandTrackingRenderBackendFactory();
         var sinkFactory = new RecordingRenderOutputSinkFactory();
@@ -970,9 +972,82 @@ public class MediaForgeEngineTests
         finally
         {
             backendFactory.Backend.ReleaseUnbind();
-            engine.RenderThreadForTests?.Dispose();
-            backendFactory.Backend.Dispose();
+            await engine.DisposeAsync();
         }
+
+        Assert.Equal(MediaForgeEngineState.Disposed, engine.State);
+        Assert.True(backendFactory.Backend.Disposed);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_after_command_timeout_cleans_render_thread_backend_and_providers()
+    {
+        var providerFactory = new FakeMediaSourceProviderFactory();
+        var backendFactory = new CommandTrackingRenderBackendFactory();
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        sinkFactory.Enqueue(new RecordingRenderOutputSink(CreatePreviewTarget(1), "old"));
+        sinkFactory.Enqueue(new RecordingRenderOutputSink(CreatePreviewTarget(2), "new"));
+        var engine = CreateEngine(
+            providerFactory,
+            backendFactory,
+            sinkFactory);
+        engine.CommandTimeout = TimeSpan.FromMilliseconds(50);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+        backendFactory.Backend!.ResetBindRelease();
+
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(2)));
+        backendFactory.Backend.ReleaseBind();
+
+        await engine.DisposeAsync();
+
+        Assert.Equal(MediaForgeEngineState.Disposed, engine.State);
+        Assert.False(engine.RenderThreadForTests?.IsRunning ?? false);
+        Assert.True(backendFactory.Backend.Disposed);
+        Assert.All(
+            providerFactory.Sources.Values,
+            source => Assert.Equal(MediaForge.Core.Sources.MediaSourceState.Stopped, source.State));
+    }
+
+    [Fact]
+    public async Task Failed_state_blocks_operations_but_allows_dispose_cleanup()
+    {
+        var backendFactory = new CommandTrackingRenderBackendFactory();
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        sinkFactory.Enqueue(new RecordingRenderOutputSink(CreatePreviewTarget(1), "old"));
+        sinkFactory.Enqueue(new RecordingRenderOutputSink(CreatePreviewTarget(2), "new"));
+        var engine = CreateEngine(
+            backendFactory: backendFactory,
+            outputSinkFactory: sinkFactory);
+        engine.CommandTimeout = TimeSpan.FromMilliseconds(50);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+        backendFactory.Backend!.ResetBindRelease();
+
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(2)));
+
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StartAsync());
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(3)));
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.AttachSinkAsync(outputId, new CpuReadbackSink()));
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.ApplyProjectUpdateAsync(editor =>
+                editor.Project.Canvases[0].Name = "Blocked"));
+
+        backendFactory.Backend.ReleaseBind();
+        await engine.DisposeAsync();
+
+        Assert.Equal(MediaForgeEngineState.Disposed, engine.State);
+        Assert.True(backendFactory.Backend.Disposed);
     }
 
     [Fact]
@@ -1076,9 +1151,8 @@ public class MediaForgeEngineTests
         }
         finally
         {
-            backendFactory.Backend?.ReleaseSubmit();
-            _ = backendFactory.Backend?.WaitForSubmitExited(TimeSpan.FromSeconds(5));
-            backendFactory.Backend?.Dispose();
+            if (backendFactory.Backend is not null)
+                await ReleaseBlockedSubmitAndWaitForRenderThreadAsync(engine, backendFactory.Backend);
             await engine.DisposeAsync();
         }
     }
@@ -1107,9 +1181,8 @@ public class MediaForgeEngineTests
         }
         finally
         {
-            backendFactory.Backend?.ReleaseSubmit();
-            _ = backendFactory.Backend?.WaitForSubmitExited(TimeSpan.FromSeconds(5));
-            backendFactory.Backend?.Dispose();
+            if (backendFactory.Backend is not null)
+                await ReleaseBlockedSubmitAndWaitForRenderThreadAsync(engine, backendFactory.Backend);
             await engine.DisposeAsync();
         }
     }
@@ -1136,11 +1209,37 @@ public class MediaForgeEngineTests
         }
         finally
         {
-            backendFactory.Backend?.ReleaseSubmit();
-            _ = backendFactory.Backend?.WaitForSubmitExited(TimeSpan.FromSeconds(5));
-            backendFactory.Backend?.Dispose();
+            if (backendFactory.Backend is not null)
+                await ReleaseBlockedSubmitAndWaitForRenderThreadAsync(engine, backendFactory.Backend);
             await engine.DisposeAsync();
         }
+    }
+
+    [Fact]
+    public async Task DisposeAsync_after_failed_stop_attempts_cleanup()
+    {
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new BlockingSubmitRenderBackendFactory();
+        var engine = CreateEngine(providerFactory, backendFactory);
+        engine.RenderThreadJoinTimeoutForTests = TimeSpan.FromMilliseconds(50);
+
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+        Assert.True(backendFactory.Backend!.WaitForSubmitEntered(TimeSpan.FromSeconds(5)));
+
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
+        Assert.Equal(MediaForgeEngineState.Failed, engine.State);
+        Assert.False(backendFactory.Backend.Disposed);
+
+        await ReleaseBlockedSubmitAndWaitForRenderThreadAsync(engine, backendFactory.Backend);
+        await engine.DisposeAsync();
+
+        Assert.Equal(MediaForgeEngineState.Disposed, engine.State);
+        Assert.False(engine.RenderThreadForTests?.IsRunning ?? false);
+        Assert.True(backendFactory.Backend.Disposed);
+        Assert.All(
+            providerFactory.Sources.Values,
+            source => Assert.Equal(MediaForge.Core.Sources.MediaSourceState.Stopped, source.State));
     }
 
     [Fact]
@@ -1157,7 +1256,7 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
-    public async Task Engine_dispose_after_failed_stop_preserves_failed_state()
+    public async Task Engine_dispose_after_failed_stop_reaches_disposed_after_cleanup()
     {
         var providerFactory = new ThrowingStopMediaSourceProviderFactory();
         var engine = CreateEngine(providerFactory);
@@ -1167,7 +1266,7 @@ public class MediaForgeEngineTests
 
         await engine.DisposeAsync();
 
-        Assert.Equal(MediaForgeEngineState.Failed, engine.State);
+        Assert.Equal(MediaForgeEngineState.Disposed, engine.State);
     }
 
     [Fact]
@@ -1221,6 +1320,7 @@ public class MediaForgeEngineTests
 
         await engine.LoadProjectAsync(CreateValidProject());
         await engine.StartAsync();
+        await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
 
         var ex = await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
         var aggregate = Assert.IsType<AggregateException>(ex.InnerException);
@@ -1235,7 +1335,7 @@ public class MediaForgeEngineTests
     {
         var providerFactory = new ThrowingStopMediaSourceProviderFactory();
         var backendFactory = new ThrowingDisposeRenderBackendFactory();
-        await using var engine = CreateEngine(providerFactory, backendFactory);
+        var engine = CreateEngine(providerFactory, backendFactory);
         await engine.LoadProjectAsync(CreateValidProject());
         await engine.StartAsync();
 
@@ -1247,6 +1347,29 @@ public class MediaForgeEngineTests
             aggregate.InnerExceptions,
             inner => inner.Message.Contains("Simulated provider stop failure", StringComparison.Ordinal));
         Assert.True(backendFactory.Backend!.DisposeAttempted);
+
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.DisposeAsync().AsTask());
+    }
+
+    [Fact]
+    public async Task Cleanup_after_failed_state_reports_errors_but_attempts_all_resources()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var providerFactory = new ThrowingStopMediaSourceProviderFactory();
+        var backendFactory = new ThrowingDisposeRenderBackendFactory();
+        var engine = CreateEngine(providerFactory, backendFactory, diagnostics: diagnostics);
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StopAsync());
+        var ex = await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.DisposeAsync().AsTask());
+        var aggregate = Assert.IsType<AggregateException>(ex.InnerException);
+
+        Assert.NotEmpty(aggregate.InnerExceptions);
+        Assert.True(backendFactory.Backend!.DisposeAttempted);
+        Assert.Contains(diagnostics.Diagnostics, d => d.Code == "engine.provider_stop_failed");
+        Assert.Contains(diagnostics.Diagnostics, d => d.Code == "engine.render_backend_dispose_failed");
+        Assert.Equal(MediaForgeEngineState.Failed, engine.State);
     }
 
     private static MediaForgeEngine CreateEngine(
@@ -1306,5 +1429,16 @@ public class MediaForgeEngineTests
         }
 
         throw new TimeoutException("Condition was not met within the expected timeout.");
+    }
+
+    private static async Task ReleaseBlockedSubmitAndWaitForRenderThreadAsync(
+        MediaForgeEngine engine,
+        BlockingSubmitRenderBackend backend)
+    {
+        backend.ReleaseSubmit();
+        Assert.True(backend.WaitForSubmitExited(TimeSpan.FromSeconds(5)));
+        await WaitUntilAsync(
+            () => !(engine.RenderThreadForTests?.IsRunning ?? false),
+            TimeSpan.FromSeconds(5));
     }
 }
