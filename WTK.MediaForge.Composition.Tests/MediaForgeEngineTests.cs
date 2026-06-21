@@ -36,6 +36,12 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public void MediaForgeEngine_does_not_expose_public_constructor()
+    {
+        Assert.Empty(typeof(MediaForgeEngine).GetConstructors());
+    }
+
+    [Fact]
     public async Task LoadProjectAsync_rejects_invalid_project()
     {
         await using var engine = CreateEngine();

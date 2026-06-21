@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="WTK.MediaForge.Graphics.Vulkan.Tests" />
+    <InternalsVisibleTo Include="WTK.MediaForge.Windows" />
+    <InternalsVisibleTo Include="WTK.MediaForge.Windows.Tests" />
   </ItemGroup>
 
   <ItemGroup>

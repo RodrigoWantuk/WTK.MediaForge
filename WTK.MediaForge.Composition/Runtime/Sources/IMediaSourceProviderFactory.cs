@@ -12,10 +12,3 @@ internal interface IMediaSourceProviderFactory
     IVideoFrameProvider CreateProvider(MediaForgeSourceDefinition sourceDefinition);
 }
 
-internal sealed class UnsupportedMediaSourceProviderFactory : IMediaSourceProviderFactory
-{
-    public bool CanCreate(MediaSourceTypeId typeId) => false;
-
-    public IVideoFrameProvider CreateProvider(MediaForgeSourceDefinition sourceDefinition) =>
-        throw new NotSupportedException($"No provider factory registered for source type '{sourceDefinition.TypeId.Value}'.");
-}

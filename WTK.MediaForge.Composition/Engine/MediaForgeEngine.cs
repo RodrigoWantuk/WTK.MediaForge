@@ -31,16 +31,20 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private long _bindingVersion;
     private int _disposed;
 
-    internal TimeSpan RenderThreadJoinTimeoutForTests { get; set; } = TimeSpan.FromSeconds(10);
+    internal TimeSpan RenderThreadJoinTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
-    internal TimeSpan RenderThreadSubmissionShutdownTimeoutForTests { get; set; } = TimeSpan.FromSeconds(10);
+    internal TimeSpan RenderThreadSubmissionShutdownTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
-    public MediaForgeEngine()
-        : this(
-            new UnsupportedMediaSourceProviderFactory(),
-            new UnsupportedRenderOutputSinkFactory(),
-            new UnsupportedRenderBackendFactory())
+    internal TimeSpan RenderThreadJoinTimeoutForTests
     {
+        get => RenderThreadJoinTimeout;
+        set => RenderThreadJoinTimeout = value;
+    }
+
+    internal TimeSpan RenderThreadSubmissionShutdownTimeoutForTests
+    {
+        get => RenderThreadSubmissionShutdownTimeout;
+        set => RenderThreadSubmissionShutdownTimeout = value;
     }
 
     internal MediaForgeEngine(
@@ -66,6 +70,14 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     internal MediaForgeRenderThread? RenderThreadForTests => _renderThread;
 
     internal IRenderBackend? BackendForTests => _backend;
+
+    internal IRenderBackendFactory BackendFactoryForTests => _backendFactory;
+
+    internal IMediaSourceProviderFactory SourceProviderFactoryForTests => _sourceProviderFactory;
+
+    internal IRenderOutputSinkFactory OutputSinkFactoryForTests => _outputSinkFactory;
+
+    internal IMediaForgeDiagnosticsSink? DiagnosticsForTests => _diagnostics;
 
     internal ProjectStateSnapshot? ProjectStateForTests => _projectState;
 
@@ -133,8 +145,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     _backend,
                     _renderThreadGuard,
                     diagnostics: _diagnostics,
-                    joinTimeout: RenderThreadJoinTimeoutForTests,
-                    submissionShutdownTimeout: RenderThreadSubmissionShutdownTimeoutForTests);
+                    joinTimeout: RenderThreadJoinTimeout,
+                    submissionShutdownTimeout: RenderThreadSubmissionShutdownTimeout);
 
                 var startedProviders = new List<IVideoFrameProvider>();
                 foreach (var sourceDefinition in CurrentProject.SourceDefinitions)
@@ -580,14 +592,3 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     }
 }
 
-internal sealed class UnsupportedRenderBackendFactory : IRenderBackendFactory
-{
-    public bool TryCreate(
-        RenderThreadGuard threadGuard,
-        IMediaForgeDiagnosticsSink? diagnostics,
-        out IRenderBackend? backend)
-    {
-        backend = null;
-        return false;
-    }
-}

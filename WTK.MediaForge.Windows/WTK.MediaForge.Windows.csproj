@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WTK.MediaForge.Capture\WTK.MediaForge.Capture.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Composition\WTK.MediaForge.Composition.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Diagnostics\WTK.MediaForge.Diagnostics.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Graphics.Vulkan\WTK.MediaForge.Graphics.Vulkan.csproj" />
+  </ItemGroup>
+
+</Project>
