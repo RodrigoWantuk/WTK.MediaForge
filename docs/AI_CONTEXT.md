@@ -47,18 +47,24 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Public product API boundaries are defined in `docs/PUBLIC_API.md` and enforced by `Public_api_matches_approved_allowlist`.
 - `MediaForgeWindows.CreateEngine` is the public Windows entrypoint. The public parameterless `MediaForgeEngine` constructor was removed.
 - `MediaForgeProjectBuilder` is the happy-path public authoring API for desktop-to-canvas-to-offscreen projects.
+- `MediaForgeEngine.CurrentProject` returns a deep clone. Engine-owned mutable project state is private and can only be changed through `LoadProjectAsync` or `ApplyProjectUpdateAsync`.
+- `StartAsync` requires a loaded project. `StopAsync` returns to `Loaded` when the project remains loaded.
+- `MediaForgeWindows.CreateEngine` applies start, command, stop, and render pump frame-rate options.
+- `MediaForgeRenderPump` publishes frames continuously while running and reports backpressure drops instead of flooding the render thread.
+- Public output consumption is `RenderOutput -> RenderOutputSink(s)`. The internal surface remains GPU/backend-owned; public sinks receive leases and metadata without exposing Vulkan/D3D11 handles.
+- `RenderOutputSinkDispatcher` fans out frames through bounded per-sink queues and keeps sink callbacks off the render thread.
 - Runtime, snapshot, render-thread, backend, source-provider, output-sink, GPU lease, D3D11 physical slot-ring, and Vulkan implementation types are internal details.
 - GPU wait APIs must use explicit timeouts.
 - `MediaForgeEngine.ApplyProjectUpdateAsync`, `BindOutputAsync`, and `UnbindOutputAsync` are transactional. Failed updates/binds must preserve the previous public engine state.
 - `MediaForgeEngine.StopAsync` must not dispose the backend if the render thread is still alive after dispose timeout. It reports `engine.backend_dispose_skipped_render_thread_alive` as fatal and leaves a controlled leak instead of risking use-after-free.
-- CP1 visual correctness is proven by Vulkan offscreen pixel readback tests for center pixel, Fit transparency, Fill, Stretch, opacity, and output letterbox color.
+- CP1 visual correctness is proven by Vulkan offscreen pixel readback tests for center pixel, Fit transparency, Fill, Stretch, opacity, output letterbox color, canvas background, transparent layer over background, and clipped/fully outside layer geometry.
 - CP1 descriptor capacity is explicitly sized for larger submits, and `VulkanExternalTextureRegistry` waiters use timeout diagnostics instead of indefinite blocking.
 
 ## Remaining Blockers
 
 The application shell must not re-enable capture preview until it is wired through the hardened runtime path. The old direct `DesktopDuplicationCaptureSource -> VulkanPreviewRenderer` path must not return.
 
-PAPI is complete. CP2 multi-layer, CP3 nested canvas, chroma/effects, productive preview, and real source/output integrations remain blocked until the roadmap explicitly starts the next renderer track.
+PAPI and the first runtime/sink foundation are complete. CP2 multi-layer, CP3 nested canvas, chroma/effects, productive preview, and real source/output integrations remain blocked until the roadmap explicitly starts the next renderer track.
 
 ## Review Style Expected
 

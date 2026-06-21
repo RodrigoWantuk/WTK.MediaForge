@@ -16,13 +16,20 @@ public class MediaForgeWindowsTests
         var options = new MediaForgeEngineOptions
         {
             Diagnostics = diagnostics,
-            StopTimeout = TimeSpan.FromSeconds(3)
+            StartTimeout = TimeSpan.FromSeconds(2),
+            CommandTimeout = TimeSpan.FromSeconds(4),
+            StopTimeout = TimeSpan.FromSeconds(3),
+            RenderFramesPerSecond = 30
         };
 
         await using var engine = MediaForgeWindows.CreateEngine(options);
 
         Assert.Equal(MediaForgeEngineState.Idle, engine.State);
         Assert.Same(diagnostics, engine.DiagnosticsForTests);
+        Assert.Equal(options.StartTimeout, engine.StartTimeout);
+        Assert.Equal(options.CommandTimeout, engine.CommandTimeout);
+        Assert.Equal(options.StopTimeout, engine.StopTimeout);
+        Assert.Equal(options.RenderFramesPerSecond, engine.RenderFramesPerSecond);
         Assert.Equal(options.StopTimeout, engine.RenderThreadJoinTimeout);
         Assert.Equal(options.StopTimeout, engine.RenderThreadSubmissionShutdownTimeout);
     }
@@ -45,7 +52,7 @@ public class MediaForgeWindowsTests
     }
 
     [Fact]
-    public void MediaForgeWindows_CreateEngine_rejects_invalid_timeouts()
+    public void MediaForgeWindows_CreateEngine_rejects_invalid_options()
     {
         var options = new MediaForgeEngineOptions
         {
@@ -53,5 +60,11 @@ public class MediaForgeWindowsTests
         };
 
         Assert.Throws<ArgumentOutOfRangeException>(() => MediaForgeWindows.CreateEngine(options));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MediaForgeWindows.CreateEngine(new MediaForgeEngineOptions { CommandTimeout = TimeSpan.Zero }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MediaForgeWindows.CreateEngine(new MediaForgeEngineOptions { StopTimeout = TimeSpan.Zero }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MediaForgeWindows.CreateEngine(new MediaForgeEngineOptions { RenderFramesPerSecond = 0 }));
     }
 }

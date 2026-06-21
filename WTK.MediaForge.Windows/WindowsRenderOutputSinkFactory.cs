@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
+using RuntimeRenderOutputSink = WTK.MediaForge.Composition.Runtime.Outputs.IRenderOutputSink;
 
 namespace WTK.MediaForge.Windows;
 
@@ -11,7 +12,7 @@ internal sealed class WindowsRenderOutputSinkFactory : IRenderOutputSinkFactory
 {
     public bool CanCreate(RenderOutputTypeId typeId) => typeId == RenderOutputTypes.Offscreen;
 
-    public IRenderOutputSink CreateSink(RenderOutputTarget target)
+    public RuntimeRenderOutputSink CreateSink(RenderOutputTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
 
@@ -23,7 +24,7 @@ internal sealed class WindowsRenderOutputSinkFactory : IRenderOutputSinkFactory
         return new OffscreenRenderOutputSink();
     }
 
-    private sealed class OffscreenRenderOutputSink : IRenderOutputSink
+    private sealed class OffscreenRenderOutputSink : RuntimeRenderOutputSink
     {
         public RenderOutputBindingSnapshot CreateBinding(
             RenderOutputId outputId,

@@ -82,9 +82,10 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         TransitionForColorAttachment(_vk, commandBuffer, canvasTarget, canvasTarget.CurrentLayout);
         canvasTarget.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
 
+        var background = canvas.BackgroundColor;
         var clearColor = new ClearValue
         {
-            Color = new ClearColorValue(0, 0, 0, 0)
+            Color = new ClearColorValue(background.R, background.G, background.B, background.A)
         };
 
         var framebuffer = BeginRenderPass(
@@ -188,6 +189,9 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         if (!transform.HasPositiveSize)
             return;
 
+        if (!TryCreateClippedScissor(transform, canvasSize, out var scissor))
+            return;
+
         var viewport = new Viewport
         {
             X = transform.Position.X,
@@ -196,12 +200,6 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             Height = transform.Size.Height,
             MinDepth = 0,
             MaxDepth = 1
-        };
-
-        var scissor = new Rect2D
-        {
-            Offset = new Offset2D((int)viewport.X, (int)viewport.Y),
-            Extent = new Extent2D((uint)viewport.Width, (uint)viewport.Height)
         };
 
         _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
@@ -222,6 +220,31 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         _vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
         _vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
         _vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
+    }
+
+    private static bool TryCreateClippedScissor(
+        Transform2D transform,
+        FrameSize canvasSize,
+        out Rect2D scissor)
+    {
+        var left = Math.Max(0, (int)Math.Floor(transform.Position.X));
+        var top = Math.Max(0, (int)Math.Floor(transform.Position.Y));
+        var right = Math.Min((int)canvasSize.Width, (int)Math.Ceiling(transform.Position.X + transform.Size.Width));
+        var bottom = Math.Min((int)canvasSize.Height, (int)Math.Ceiling(transform.Position.Y + transform.Size.Height));
+
+        if (right <= left || bottom <= top)
+        {
+            scissor = default;
+            return false;
+        }
+
+        scissor = new Rect2D
+        {
+            Offset = new Offset2D(left, top),
+            Extent = new Extent2D((uint)(right - left), (uint)(bottom - top))
+        };
+
+        return true;
     }
 
     private void DrawFullscreen(

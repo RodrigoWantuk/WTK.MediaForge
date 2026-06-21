@@ -16,6 +16,10 @@ public static class MediaForgeWindows
             new MediaForgeVulkanRenderBackendFactory(),
             options.Diagnostics)
         {
+            StartTimeout = options.StartTimeout,
+            CommandTimeout = options.CommandTimeout,
+            StopTimeout = options.StopTimeout,
+            RenderFramesPerSecond = options.RenderFramesPerSecond,
             RenderThreadJoinTimeout = options.StopTimeout,
             RenderThreadSubmissionShutdownTimeout = options.StopTimeout
         };
@@ -26,7 +30,13 @@ public static class MediaForgeWindows
         if (options.StartTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "StartTimeout must be positive.");
 
+        if (options.CommandTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options), "CommandTimeout must be positive.");
+
         if (options.StopTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "StopTimeout must be positive.");
+
+        if (!double.IsFinite(options.RenderFramesPerSecond) || options.RenderFramesPerSecond <= 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "RenderFramesPerSecond must be finite and positive.");
     }
 }

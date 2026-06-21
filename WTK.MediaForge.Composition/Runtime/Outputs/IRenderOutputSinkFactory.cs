@@ -1,3 +1,4 @@
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Outputs;

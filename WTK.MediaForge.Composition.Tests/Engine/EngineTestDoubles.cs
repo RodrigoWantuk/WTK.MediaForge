@@ -11,6 +11,7 @@ using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Core.Time;
 using WTK.MediaForge.Diagnostics;
+using RuntimeRenderOutputSink = WTK.MediaForge.Composition.Runtime.Outputs.IRenderOutputSink;
 
 namespace WTK.MediaForge.Composition.Tests.Engine;
 
@@ -123,6 +124,8 @@ internal sealed class CommandTrackingRenderBackend : IRenderBackend
     private readonly RenderThreadGuard _threadGuard;
     private readonly ManualResetEventSlim _bindEntered = new(false);
     private readonly ManualResetEventSlim _releaseBind = new(true);
+    private readonly ManualResetEventSlim _unbindEntered = new(false);
+    private readonly ManualResetEventSlim _releaseUnbind = new(true);
 
     public CommandTrackingRenderBackend(RenderThreadGuard threadGuard) =>
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
@@ -132,6 +135,8 @@ internal sealed class CommandTrackingRenderBackend : IRenderBackend
     public bool ThrowOnUnbind { get; set; }
 
     public bool BlockBindUntilReleased { get; set; }
+
+    public bool BlockUnbindUntilReleased { get; set; }
 
     public int BindCount => Volatile.Read(ref _bindCount);
 
@@ -159,6 +164,10 @@ internal sealed class CommandTrackingRenderBackend : IRenderBackend
     public void UnbindOutput(RenderOutputId outputId)
     {
         _threadGuard.AssertOnRenderThread();
+        _unbindEntered.Set();
+
+        if (BlockUnbindUntilReleased && !_releaseUnbind.Wait(TimeSpan.FromSeconds(5)))
+            throw new TimeoutException("Timed out waiting for test to release unbind command.");
 
         if (ThrowOnUnbind)
             throw new InvalidOperationException("Configured unbind command failure.");
@@ -191,11 +200,24 @@ internal sealed class CommandTrackingRenderBackend : IRenderBackend
 
     public void ReleaseBind() => _releaseBind.Set();
 
+    public bool WaitForUnbindEntered(TimeSpan timeout) => _unbindEntered.Wait(timeout);
+
+    public void ResetUnbindRelease()
+    {
+        _unbindEntered.Reset();
+        _releaseUnbind.Reset();
+        BlockUnbindUntilReleased = true;
+    }
+
+    public void ReleaseUnbind() => _releaseUnbind.Set();
+
     public void Dispose()
     {
         Disposed = true;
         _bindEntered.Dispose();
         _releaseBind.Dispose();
+        _unbindEntered.Dispose();
+        _releaseUnbind.Dispose();
     }
 }
 
@@ -431,7 +453,7 @@ internal sealed class ThrowingStopMediaSourceProviderFactory : IMediaSourceProvi
     }
 }
 
-internal sealed class FakeRenderOutputSink : IRenderOutputSink
+internal sealed class FakeRenderOutputSink : RuntimeRenderOutputSink
 {
     public RenderOutputTarget Target { get; }
 
@@ -457,7 +479,54 @@ internal sealed class FakeRenderOutputSink : IRenderOutputSink
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
-internal sealed class RecordingRenderOutputSink : IRenderOutputSink
+internal sealed class HangingStartMediaSourceProviderFactory : IMediaSourceProviderFactory
+{
+    public HangingStartProvider? Provider { get; private set; }
+
+    public bool CanCreate(MediaSourceTypeId typeId) => true;
+
+    public IVideoFrameProvider CreateProvider(MediaForgeSourceDefinition sourceDefinition)
+    {
+        Provider = new HangingStartProvider(sourceDefinition.Id, sourceDefinition.Name);
+        return Provider;
+    }
+
+    internal sealed class HangingStartProvider(SourceId id, string name) : IVideoFrameProvider
+    {
+        private readonly TaskCompletionSource _start = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public SourceId Id { get; } = id;
+
+        public string Name { get; } = name;
+
+        public MediaSourceState State { get; private set; } = MediaSourceState.Stopped;
+
+        public Exception? LastError { get; private set; }
+
+        public bool StopCalled { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            State = MediaSourceState.Running;
+            return _start.Task;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            StopCalled = true;
+            State = MediaSourceState.Stopped;
+            return Task.CompletedTask;
+        }
+
+        public bool TryAcquireLatestFrame(out GpuFrameLease lease)
+        {
+            lease = null!;
+            return false;
+        }
+    }
+}
+
+internal sealed class RecordingRenderOutputSink : RuntimeRenderOutputSink
 {
     private readonly Func<bool>? _waitBeforeDispose;
 
@@ -543,7 +612,7 @@ internal sealed class RecordingRenderOutputSinkFactory : IRenderOutputSinkFactor
     public bool CanCreate(RenderOutputTypeId typeId) =>
         typeId == RenderOutputTypes.PreviewWindow || typeId == RenderOutputTypes.Offscreen;
 
-    public IRenderOutputSink CreateSink(RenderOutputTarget target)
+    public RuntimeRenderOutputSink CreateSink(RenderOutputTarget target)
     {
         if (ThrowOnCreateSink)
             throw new InvalidOperationException("Configured sink factory failure.");
@@ -562,15 +631,137 @@ internal sealed class FakeRenderOutputSinkFactory : IRenderOutputSinkFactory
     public bool CanCreate(RenderOutputTypeId typeId) =>
         typeId == RenderOutputTypes.PreviewWindow || typeId == RenderOutputTypes.Offscreen;
 
-    public IRenderOutputSink CreateSink(RenderOutputTarget target) => new FakeRenderOutputSink(target);
+    public RuntimeRenderOutputSink CreateSink(RenderOutputTarget target) => new FakeRenderOutputSink(target);
 }
 
 internal sealed class RejectingRenderOutputSinkFactory : IRenderOutputSinkFactory
 {
     public bool CanCreate(RenderOutputTypeId typeId) => false;
 
-    public IRenderOutputSink CreateSink(RenderOutputTarget target) =>
+    public RuntimeRenderOutputSink CreateSink(RenderOutputTarget target) =>
         throw new InvalidOperationException("Rejecting factory should not create sinks.");
+}
+
+internal sealed class RecordingPublicRenderOutputSink : WTK.MediaForge.Composition.Outputs.IRenderOutputSink
+{
+    private readonly Func<RenderOutputFrameLease, CancellationToken, ValueTask>? _onFrame;
+
+    public RecordingPublicRenderOutputSink(
+        RenderOutputSinkBackpressureMode backpressureMode = RenderOutputSinkBackpressureMode.KeepLatest,
+        Func<RenderOutputFrameLease, CancellationToken, ValueTask>? onFrame = null)
+        : this(RenderOutputSinkId.New(), backpressureMode, onFrame)
+    {
+    }
+
+    public RecordingPublicRenderOutputSink(
+        RenderOutputSinkId id,
+        RenderOutputSinkBackpressureMode backpressureMode = RenderOutputSinkBackpressureMode.KeepLatest,
+        Func<RenderOutputFrameLease, CancellationToken, ValueTask>? onFrame = null)
+    {
+        Id = id;
+        BackpressureMode = backpressureMode;
+        _onFrame = onFrame;
+    }
+
+    public RenderOutputSinkId Id { get; }
+
+    public RenderOutputSinkKind Kind => RenderOutputSinkKind.Custom;
+
+    public RenderOutputSinkBackpressureMode BackpressureMode { get; }
+
+    public int StartCount => Volatile.Read(ref _startCount);
+
+    public int StopCount => Volatile.Read(ref _stopCount);
+
+    public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+    public int FrameCount => Volatile.Read(ref _frameCount);
+
+    public List<RenderOutputFrameInfo> Frames { get; } = [];
+
+    public bool ThrowOnStart { get; set; }
+
+    public bool ThrowOnFrame { get; set; }
+
+    private int _startCount;
+    private int _stopCount;
+    private int _disposeCount;
+    private int _frameCount;
+
+    public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _startCount);
+
+        if (ThrowOnStart)
+            throw new InvalidOperationException("Configured public sink start failure.");
+
+        return ValueTask.CompletedTask;
+    }
+
+    public async ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _frameCount);
+        lock (Frames)
+            Frames.Add(frame.Info);
+
+        if (ThrowOnFrame)
+            throw new InvalidOperationException("Configured public sink frame failure.");
+
+        if (_onFrame is not null)
+            await _onFrame(frame, cancellationToken).ConfigureAwait(false);
+    }
+
+    public ValueTask StopAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _stopCount);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Interlocked.Increment(ref _disposeCount);
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class BlockingPublicRenderOutputSink : WTK.MediaForge.Composition.Outputs.IRenderOutputSink
+{
+    private readonly TaskCompletionSource _frameEntered =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _releaseFrame =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
+
+    public RenderOutputSinkKind Kind => RenderOutputSinkKind.Preview;
+
+    public RenderOutputSinkBackpressureMode BackpressureMode => RenderOutputSinkBackpressureMode.KeepLatest;
+
+    public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    public async ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken)
+    {
+        _frameEntered.TrySetResult();
+        await _releaseFrame.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public ValueTask StopAsync(CancellationToken cancellationToken)
+    {
+        _releaseFrame.TrySetResult();
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _releaseFrame.TrySetResult();
+        return ValueTask.CompletedTask;
+    }
+
+    public Task WaitForFrameAsync(TimeSpan timeout) =>
+        _frameEntered.Task.WaitAsync(timeout);
+
+    public void Release() => _releaseFrame.TrySetResult();
 }
 
 internal sealed class FakeMediaSourceProviderFactory : IMediaSourceProviderFactory

@@ -57,8 +57,12 @@ Engine operations are observable:
 - project validation failures throw `MediaForgeProjectValidationException`
 - lifecycle/runtime failures throw `MediaForgeEngineException`
 - unsupported planned features throw `MediaForgeUnsupportedFeatureException`
+- `CurrentProject` returns a deep clone; public callers cannot mutate engine-owned project state directly
+- `StartAsync` requires a loaded project and `StopAsync` returns to `Loaded` when that project remains loaded
+- `StartTimeout`, `CommandTimeout`, `StopTimeout`, and `RenderFramesPerSecond` are applied by `MediaForgeWindows.CreateEngine`
 - project updates and output bind/unbind operations are transactional
 - render-thread command failures are reported to the caller
+- a continuous internal render pump publishes frames while the engine is running
 - shutdown skips backend disposal if the render thread is still alive
 - diagnostics, state changes, and frame drops are exposed as events
 
@@ -102,7 +106,29 @@ Current public output target contracts:
 - `OffscreenRenderOutputTarget`
 - `WinFormsPreviewRenderOutputTarget`
 
-Only offscreen output is expected to become functional first. Real preview, NDI, MP4, streaming, and audio outputs remain blocked until the public runtime API is stable.
+Current public sink contracts:
+
+- `IRenderOutputSink`
+- `RenderOutputSinkId`
+- `RenderOutputSinkKind`
+- `RenderOutputSinkBackpressureMode`
+- `RenderOutputSinkContext`
+- `RenderOutputFrameLease`
+- `RenderOutputFrameInfo`
+- `RenderPixelFormat`
+- `RenderBackendKind`
+- `CpuReadbackSink`
+- `CpuReadbackFrameEventArgs`
+
+The product architecture is:
+
+```text
+Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
+```
+
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `CpuReadbackSink` is intended for diagnostics, samples, and tests; it is not the main high-performance product path for preview, encoding, NDI, or streaming.
+
+Real preview, NDI, MP4, streaming, and audio outputs remain blocked until the renderer composition track is stable.
 
 ## 5. Public Effect Model
 
@@ -150,7 +176,7 @@ The following categories are internal implementation details:
 
 - Render thread and pending submission ownership
 - Runtime source/provider wiring
-- Runtime output sink wiring
+- Runtime output binding and sink dispatcher wiring
 - Render backend and submission interfaces
 - Project state snapshots
 - Render frame snapshots
@@ -177,7 +203,7 @@ The following types must not be public:
 - `IRenderBackend`
 - `IRenderBackendFactory`
 - `IRenderFrameSubmission`
-- `IRenderOutputSink`
+- `WTK.MediaForge.Composition.Runtime.Outputs.IRenderOutputSink`
 - `IRenderOutputSinkFactory`
 - `IMediaSourceProviderFactory`
 - `RenderFrameSnapshot`
@@ -207,5 +233,13 @@ PAPI status:
 | PAPI-6 | Public validation/runtime exceptions | Complete |
 | PAPI-7 | Public engine events | Complete |
 | PAPI-8 | Offscreen sample | Complete |
+
+Current post-PAPI status:
+
+- Public runtime ownership and engine state are hardened.
+- A continuous render pump exists.
+- Public render output sinks exist with bounded asynchronous dispatch.
+- CPU readback sink proves public frame delivery for samples/tests.
+- CP1 now honors canvas background and clips source layers to the canvas.
 
 NDI, encoder, streaming, MP4, webcam, RTSP, productive WinForms preview, UI designer, and plugin APIs remain blocked until the renderer composition track is explicitly resumed.

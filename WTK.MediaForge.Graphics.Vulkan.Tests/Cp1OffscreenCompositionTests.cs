@@ -403,6 +403,296 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
+    public async Task Cp1_canvas_background_color_is_rendered_when_no_layer_covers_pixel()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    outputLetterboxColor: ColorRgba.Transparent,
+                    canvasBackgroundColor: ColorRgba.From(0, 0, 1, 1),
+                    sourceLayerCount: 0);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 0, expectedB: 255, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_transparent_source_layer_preserves_canvas_background()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.Transparent);
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(64, 64) },
+                    outputLetterboxColor: ColorRgba.Transparent,
+                    canvasBackgroundColor: ColorRgba.From(0, 1, 0, 1));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 255, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_layer_partially_outside_left_is_clipped()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D
+                    {
+                        Position = new CanvasPoint(-32, 0),
+                        Size = new CanvasSize(64, 64)
+                    },
+                    outputLetterboxColor: ColorRgba.Transparent,
+                    canvasBackgroundColor: ColorRgba.From(0, 1, 0, 1));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 16, 32, out var inside));
+                AssertPixelNear(inside, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 48, 32, out var outside));
+                AssertPixelNear(outside, expectedR: 0, expectedG: 255, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_layer_partially_outside_right_is_clipped()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D
+                    {
+                        Position = new CanvasPoint(32, 0),
+                        Size = new CanvasSize(64, 64)
+                    },
+                    outputLetterboxColor: ColorRgba.Transparent,
+                    canvasBackgroundColor: ColorRgba.From(0, 1, 0, 1));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 48, 32, out var inside));
+                AssertPixelNear(inside, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 16, 32, out var outside));
+                AssertPixelNear(outside, expectedR: 0, expectedG: 255, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_layer_fully_outside_canvas_draws_nothing()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D
+                    {
+                        Position = new CanvasPoint(80, 0),
+                        Size = new CanvasSize(32, 32)
+                    },
+                    outputLetterboxColor: ColorRgba.Transparent,
+                    canvasBackgroundColor: ColorRgba.From(0, 1, 0, 1));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 255, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp1_negative_position_does_not_trigger_invalid_scissor()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D
+                    {
+                        Position = new CanvasPoint(-8, -8),
+                        Size = new CanvasSize(16, 16)
+                    },
+                    outputLetterboxColor: ColorRgba.Transparent,
+                    canvasBackgroundColor: ColorRgba.From(0, 1, 0, 1));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 4, 4, out var pixel));
+                AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Framebuffer_is_not_destroyed_before_submission_completes()
     {
         if (!TryCreateCp1Context(out var context))
@@ -817,10 +1107,11 @@ public class Cp1OffscreenCompositionTests
         LayoutMode layerLayoutMode = LayoutMode.Fit,
         LayoutMode outputCanvasLayoutMode = LayoutMode.Fit,
         ColorRgba? outputLetterboxColor = null,
+        ColorRgba? canvasBackgroundColor = null,
         float opacity = 1f,
         int sourceLayerCount = 1)
     {
-        if (sourceLayerCount <= 0)
+        if (sourceLayerCount < 0)
             throw new ArgumentOutOfRangeException(nameof(sourceLayerCount));
 
         var resolvedCanvasSize = canvasSize ?? new FrameSize(1920, 1080);
@@ -863,6 +1154,7 @@ public class Cp1OffscreenCompositionTests
                     Id = canvasId,
                     Name = "Program",
                     Size = resolvedCanvasSize,
+                    BackgroundColor = canvasBackgroundColor ?? ColorRgba.Transparent,
                     Objects = objects
                 }
             ],

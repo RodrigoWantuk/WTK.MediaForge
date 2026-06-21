@@ -8,5 +8,9 @@ public sealed class MediaForgeEngineOptions
 
     public TimeSpan StartTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
+    public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromSeconds(5);
+
     public TimeSpan StopTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    public double RenderFramesPerSecond { get; init; } = 60;
 }

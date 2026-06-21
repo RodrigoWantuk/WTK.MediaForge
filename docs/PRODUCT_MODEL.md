@@ -19,7 +19,7 @@ see [ARCHITECTURE.md](../ARCHITECTURE.md). For public API boundaries, see
 |---|---|---|
 | H1 product contract | Complete | Product/runtime separation is documented. |
 | H2 source catalog/settings | Complete foundation | Typed source settings and serializers exist. Real providers beyond desktop remain blocked. |
-| H3 output catalog/settings | Complete foundation | Typed output settings and serializers exist. Real sinks beyond offscreen scaffolding remain blocked. |
+| H3 output catalog/settings | Complete foundation | Typed output settings, serializers, public sink contracts, and CPU readback sample sink exist. Real product sinks remain blocked. |
 | H4 effect model | Complete foundation | Effect types, ordering, snapshots, and validation exist. Renderer support is not implied. |
 | H5 project editor | Complete foundation | `MediaForgeProjectEditor` is the supported mutation primitive. |
 | H6 canvas graph validation | Complete foundation | Cycles and max nested depth 8 are validated. |
@@ -32,7 +32,7 @@ see [ARCHITECTURE.md](../ARCHITECTURE.md). For public API boundaries, see
 | Editable state | `MediaForgeProject`, editor/builder APIs | Immutable snapshots only |
 | Source definitions | `MediaForgeSourceDefinition` + typed settings | `IVideoFrameProvider` and GPU frame leases |
 | Canvas graph | `MediaForgeCanvas`, draw objects, effects | `RenderCanvasSnapshot`, `RenderFrameSnapshot` |
-| Outputs | `MediaForgeRenderOutput` + typed settings | output sinks and `RenderOutputBindingSnapshot` |
+| Outputs | `MediaForgeRenderOutput` + typed settings + public sink contracts | internal output binding, sink dispatcher, and `RenderOutputBindingSnapshot` |
 | Rendering | layout, opacity, crop, effect intent | Vulkan pipelines, descriptor sets, framebuffers |
 | Diagnostics | validation/runtime diagnostics | backend and lifecycle diagnostics |
 
@@ -131,29 +131,43 @@ Current public output target contracts:
 - `OffscreenRenderOutputTarget`
 - `WinFormsPreviewRenderOutputTarget`
 
-Only the offscreen path has renderer scaffolding and CP1 coverage. Productive
-preview, NDI, MP4, streaming, virtual camera, and audio outputs remain blocked.
+Current public sink contracts:
+
+- `IRenderOutputSink`
+- `RenderOutputSinkId`
+- `RenderOutputSinkKind`
+- `RenderOutputSinkBackpressureMode`
+- `RenderOutputFrameLease`
+- `RenderOutputFrameInfo`
+- `CpuReadbackSink`
+
+The output architecture is:
+
+```text
+Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
+```
+
+The same `RenderOutput` can feed multiple sinks. `CpuReadbackSink` is the first
+functional public sink for diagnostics, tests, and samples; it is not the main
+GPU-first path for production preview or encoding. Productive preview, NDI, MP4,
+streaming, virtual camera, and audio outputs remain blocked.
 
 ## Engine
 
 `MediaForgeEngine` is the runtime facade skeleton. Current hardening:
 
 - `ApplyProjectUpdateAsync` edits a cloned project and swaps only after validation.
-- invalid project updates keep `CurrentProject`, project state snapshots, and frame publication intact.
+- `CurrentProject` returns a deep clone and cannot expose the engine-owned mutable project instance.
+- `StartAsync` requires a loaded project and `StopAsync` returns to `Loaded` when the project remains loaded.
+- `StartTimeout`, `CommandTimeout`, `StopTimeout`, and render pump frame rate are public Windows facade options.
+- invalid project updates keep the engine project, project state snapshots, and frame publication intact.
 - `BindOutputAsync` creates and validates the new sink/binding before swapping.
 - bind failures keep the previous sink registered and dispose the failed new sink.
 - `UnbindOutputAsync` enqueues unbind before disposing the sink and removes the engine registration even if disposal fails.
+- `AttachSinkAsync` and `DetachSinkAsync` connect public sinks to an offscreen `RenderOutput` surface.
+- a continuous internal render pump publishes frames while the engine is running.
 - `StopAsync` does not dispose the backend when the render thread is still alive; it reports a fatal diagnostic and enters a failed internal state.
 - if render-thread cleanup fails after the thread already stopped, the backend is still disposed.
-
-Remaining public API gaps:
-
-- no `MediaForgeWindows.CreateEngine`
-- no fluent `MediaForgeProjectBuilder`
-- no public `MediaForgeEngineState`
-- no public validation/runtime exceptions
-- no public engine events
-- no compiling offscreen sample
 
 These are PAPI-2 through PAPI-8.
 
@@ -172,7 +186,9 @@ Now covered:
 - registry waiters use timeout diagnostics instead of blocking forever
 - source-layer Fit outputs transparent pixels outside content
 - output letterbox pixels are verified by readback
-- center, fit, fill, stretch, opacity, and letterbox pixels have GPU tests
+- canvas background color is rendered
+- layers partially outside the canvas are clipped and fully outside layers draw nothing
+- center, fit, fill, stretch, opacity, letterbox, background, and clipping pixels have GPU tests
 
 Still not implemented:
 
@@ -189,10 +205,11 @@ Still not implemented:
 | Project, canvas, draw objects | Yes | Yes |
 | Source/output typed settings | Yes | Foundation complete |
 | Editor API | Yes | Foundation complete |
-| Engine facade | Yes | Foundation complete, public PAPI incomplete |
+| Engine facade | Yes | Public runtime foundation complete |
 | CP1 offscreen Vulkan path | Yes | Hardened for first-source visual proof |
 | CP2/CP3 compositor | Yes | Blocked |
-| Public SDK experience | Yes | PAPI-2 through PAPI-8 pending |
+| Public SDK experience | Yes | Initial authoring/runtime/sink path exists |
 
-Verdict: the product model foundation is in good shape. The next work should be
-PAPI implementation, not CP2 or product integrations.
+Verdict: the product model foundation and initial public runtime/sink path are
+in good shape. The next renderer work should be CP2 multi-layer, not media
+integrations.

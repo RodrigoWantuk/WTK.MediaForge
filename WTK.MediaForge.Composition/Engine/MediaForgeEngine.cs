@@ -1,5 +1,7 @@
-using WTK.MediaForge.Composition.Editor;
+using System.Diagnostics;
 using WTK.MediaForge.Composition;
+using WTK.MediaForge.Composition.Editor;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Outputs;
@@ -10,6 +12,8 @@ using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Diagnostics;
+using PublicRenderOutputSink = WTK.MediaForge.Composition.Outputs.IRenderOutputSink;
+using RuntimeRenderOutputSink = WTK.MediaForge.Composition.Runtime.Outputs.IRenderOutputSink;
 
 namespace WTK.MediaForge.Composition.Engine;
 
@@ -23,12 +27,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly List<IVideoFrameProvider> _providers = [];
     private readonly Dictionary<RenderOutputId, OutputSinkEntry> _outputSinks = [];
+    private readonly RenderOutputSinkDispatcher _sinkDispatcher;
 
     private CompositionRuntime? _runtime;
     private RenderThreadGuard? _renderThreadGuard;
     private IRenderBackend? _backend;
     private MediaForgeRenderThread? _renderThread;
+    private MediaForgeRenderPump? _renderPump;
     private ProjectStateSnapshot? _projectState;
+    private MediaForgeProject? _currentProject;
     private MediaForgeEngineState _state = MediaForgeEngineState.Idle;
     private long _bindingVersion;
     private int _disposed;
@@ -36,6 +43,14 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     internal TimeSpan RenderThreadJoinTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
     internal TimeSpan RenderThreadSubmissionShutdownTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    internal TimeSpan StartTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    internal TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    internal TimeSpan StopTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    internal double RenderFramesPerSecond { get; set; } = 60;
 
     internal TimeSpan RenderThreadJoinTimeoutForTests
     {
@@ -60,9 +75,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _backendFactory = backendFactory ?? throw new ArgumentNullException(nameof(backendFactory));
         _externalDiagnostics = diagnostics;
         _diagnostics = new EngineDiagnosticsSink(diagnostics, RaiseDiagnosticReported);
+        _sinkDispatcher = new RenderOutputSinkDispatcher(_diagnostics);
     }
 
-    public MediaForgeProject CurrentProject { get; private set; } = new();
+    public bool HasProject => _currentProject is not null;
+
+    public MediaForgeProject? CurrentProject =>
+        _currentProject is null
+            ? null
+            : MediaForgeProjectCloner.DeepClone(_currentProject);
 
     public MediaForgeEngineState State => _state;
 
@@ -78,6 +99,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     internal MediaForgeRenderThread? RenderThreadForTests => _renderThread;
 
+    internal MediaForgeRenderPump? RenderPumpForTests => _renderPump;
+
     internal IRenderBackend? BackendForTests => _backend;
 
     internal IRenderBackendFactory BackendFactoryForTests => _backendFactory;
@@ -92,8 +115,13 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     internal int OutputSinkCountForTests => _outputSinks.Count;
 
-    internal IRenderOutputSink? GetOutputSinkForTests(RenderOutputId outputId) =>
+    internal int AttachedSinkCountForTests => _sinkDispatcher.SinkCount;
+
+    internal RuntimeRenderOutputSink? GetOutputSinkForTests(RenderOutputId outputId) =>
         _outputSinks.TryGetValue(outputId, out var entry) ? entry.Sink : null;
+
+    internal bool IsSinkAttachedForTests(RenderOutputId outputId, RenderOutputSinkId sinkId) =>
+        _sinkDispatcher.IsSinkAttached(outputId, sinkId);
 
     public async Task LoadProjectAsync(MediaForgeProject project, CancellationToken cancellationToken = default)
     {
@@ -114,7 +142,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             var validation = MediaForgeProjectValidator.Validate(migrateResult.Project!);
             validation.ThrowIfInvalid();
 
-            CurrentProject = migrateResult.Project!;
+            await ClearOutputBindingsAsync(cancellationToken).ConfigureAwait(false);
+            await _sinkDispatcher.DetachAllAsync(cancellationToken).ConfigureAwait(false);
+
+            _currentProject = migrateResult.Project!;
             SetState(MediaForgeEngineState.Loaded);
         }
         finally
@@ -137,11 +168,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (State is MediaForgeEngineState.Running or MediaForgeEngineState.Starting)
                 return;
 
+            if (_currentProject is null)
+                throw CreateEngineException("A project must be loaded before the engine can be started.");
+
             SetState(MediaForgeEngineState.Starting);
 
             try
             {
-                MediaForgeProjectValidator.Validate(CurrentProject).ThrowIfInvalid();
+                var deadline = CreateDeadline(StartTimeout);
+                MediaForgeProjectValidator.Validate(_currentProject).ThrowIfInvalid();
 
                 _runtime = new CompositionRuntime();
                 _renderThreadGuard = new RenderThreadGuard();
@@ -154,11 +189,11 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     _backend,
                     _renderThreadGuard,
                     diagnostics: _diagnostics,
+                    sinkDispatcher: _sinkDispatcher,
                     joinTimeout: RenderThreadJoinTimeout,
                     submissionShutdownTimeout: RenderThreadSubmissionShutdownTimeout);
 
-                var startedProviders = new List<IVideoFrameProvider>();
-                foreach (var sourceDefinition in CurrentProject.SourceDefinitions)
+                foreach (var sourceDefinition in _currentProject.SourceDefinitions)
                 {
                     if (!_sourceProviderFactory.CanCreate(sourceDefinition.TypeId))
                     {
@@ -170,25 +205,42 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     var provider = _sourceProviderFactory.CreateProvider(sourceDefinition);
                     _runtime.RegisterFrameProvider(provider);
                     _providers.Add(provider);
-                    await provider.StartAsync(cancellationToken).ConfigureAwait(false);
-                    startedProviders.Add(provider);
+                    await AwaitWithTimeoutAsync(
+                        provider.StartAsync(cancellationToken),
+                        GetRemainingTime(deadline),
+                        $"Source provider '{provider.Name}' did not start before StartTimeout.",
+                        cancellationToken).ConfigureAwait(false);
                 }
 
-                _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(CurrentProject);
+                _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(_currentProject);
                 _renderThread.Start();
+
+                await EnsureSurfaceBindingsForAttachedSinksAsync(_currentProject, cancellationToken)
+                    .ConfigureAwait(false);
 
                 foreach (var (outputId, entry) in _outputSinks)
                 {
-                    var output = CurrentProject.Outputs.First(o => o.Id == outputId);
-                    await EnqueueBindOutputAsync(output, entry.Sink, entry.Target).ConfigureAwait(false);
+                    var output = _currentProject.Outputs.First(o => o.Id == outputId);
+                    await EnqueueBindOutputAsync(output, entry.Sink, entry.Target, cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
-                PublishCurrentRenderFrame();
+                _renderPump = new MediaForgeRenderPump(
+                    RenderFramesPerSecond,
+                    CanPublishRenderFrame,
+                    PublishCurrentRenderFrame,
+                    _diagnostics);
+
                 SetState(MediaForgeEngineState.Running);
+                _renderPump.RequestFrame();
             }
-            catch
+            catch (Exception ex)
             {
                 await RollbackStartAsync(cancellationToken).ConfigureAwait(false);
+
+                if (IsTimeoutFailure(ex))
+                    SetState(MediaForgeEngineState.Failed);
+
                 throw;
             }
         }
@@ -205,18 +257,44 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (State is MediaForgeEngineState.Idle or MediaForgeEngineState.Stopping or MediaForgeEngineState.Failed or MediaForgeEngineState.Disposed)
+            if (State is MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded or MediaForgeEngineState.Stopping or MediaForgeEngineState.Failed or MediaForgeEngineState.Disposed)
                 return;
 
             SetState(MediaForgeEngineState.Stopping);
 
             var cleanupErrors = new List<Exception>();
 
+            var renderPump = _renderPump;
+            _renderPump = null;
+
+            if (renderPump is not null)
+            {
+                try
+                {
+                    await renderPump.StopAsync(StopTimeout, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    cleanupErrors.Add(ex);
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.render_pump_stop_failed",
+                        "Failed to stop render pump during engine stop.",
+                        nameof(MediaForgeEngine),
+                        ex);
+                }
+            }
+
             foreach (var provider in _providers.AsEnumerable().Reverse())
             {
                 try
                 {
-                    await provider.StopAsync(cancellationToken).ConfigureAwait(false);
+                    await AwaitWithTimeoutAsync(
+                        provider.StopAsync(cancellationToken),
+                        StopTimeout,
+                        $"Source provider '{provider.Name}' did not stop before StopTimeout.",
+                        cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -322,7 +400,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             _runtime = null;
             _projectState = null;
             SetState(renderThreadStopped && cleanupErrors.Count == 0
-                ? MediaForgeEngineState.Idle
+                ? (_currentProject is null ? MediaForgeEngineState.Idle : MediaForgeEngineState.Loaded)
                 : MediaForgeEngineState.Failed);
 
             if (cleanupErrors.Count > 0)
@@ -347,22 +425,22 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             EnsureCanMutateProject();
 
-            var workingCopy = MediaForgeProjectCloner.DeepClone(CurrentProject);
+            var workingCopy = MediaForgeProjectCloner.DeepClone(_currentProject!);
             var editor = new MediaForgeProjectEditor(workingCopy);
             edit(editor);
             editor.ValidateOrThrow();
 
-            CurrentProject = workingCopy;
+            _currentProject = workingCopy;
 
             if (State == MediaForgeEngineState.Running)
             {
-                _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(CurrentProject);
-                PublishCurrentRenderFrame();
+                _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(_currentProject);
+                _renderPump?.RequestFrame();
             }
         }
         finally
@@ -386,7 +464,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (State == MediaForgeEngineState.Failed)
                 throw CreateEngineException("Output binding is not allowed after the engine entered a failed state.");
 
-            var output = CurrentProject.Outputs.FirstOrDefault(o => o.Id == outputId)
+            if (_currentProject is null)
+                throw CreateEngineException("A project must be loaded before outputs can be bound.");
+
+            var output = _currentProject.Outputs.FirstOrDefault(o => o.Id == outputId)
                 ?? throw CreateEngineException($"Output {outputId} was not found in the current project.");
 
             if (output.TypeId != target.TypeId)
@@ -409,10 +490,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             try
             {
                 if (State == MediaForgeEngineState.Running)
-                    await EnqueueBindOutputAsync(output, newSink, target).ConfigureAwait(false);
+                    await EnqueueBindOutputAsync(output, newSink, target, cancellationToken).ConfigureAwait(false);
 
                 _outputSinks.TryGetValue(outputId, out oldEntry);
-                _outputSinks[outputId] = new OutputSinkEntry(newSink, target);
+                _outputSinks[outputId] = new OutputSinkEntry(newSink, target, IsAutomaticForSinks: false);
                 sinkAccepted = true;
             }
             finally
@@ -445,11 +526,110 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 return;
 
             if (State == MediaForgeEngineState.Running && _renderThread is not null)
-                await _renderThread.EnqueueCommandAsync(new UnbindOutputCommand { OutputId = outputId }).ConfigureAwait(false);
+            {
+                await AwaitCommandAsync(
+                    _renderThread.EnqueueCommandAsync(new UnbindOutputCommand { OutputId = outputId }),
+                    "Render output unbind command timed out.",
+                    cancellationToken).ConfigureAwait(false);
+            }
 
             _outputSinks.Remove(outputId);
 
             await entry.Sink.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task AttachSinkAsync(
+        RenderOutputId outputId,
+        PublicRenderOutputSink sink,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sink);
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (State == MediaForgeEngineState.Failed)
+                throw CreateEngineException("Sink attachment is not allowed after the engine entered a failed state.");
+
+            if (_currentProject is null)
+                throw CreateEngineException("A project must be loaded before sinks can be attached.");
+
+            var output = _currentProject.Outputs.FirstOrDefault(o => o.Id == outputId)
+                ?? throw CreateEngineException($"Output {outputId} was not found in the current project.");
+
+            if (output.TypeId != RenderOutputTypes.Offscreen)
+            {
+                throw new MediaForgeUnsupportedFeatureException(
+                    $"output.{output.TypeId.Value}",
+                    "Render output sinks currently require an offscreen render output surface.");
+            }
+
+            var createdSurfaceBinding = false;
+
+            try
+            {
+                createdSurfaceBinding = await EnsureAutomaticSurfaceBindingAsync(output, cancellationToken)
+                    .ConfigureAwait(false);
+
+                await AwaitWithTimeoutAsync(
+                    _sinkDispatcher.AttachAsync(output, sink, cancellationToken),
+                    CommandTimeout,
+                    "Render output sink attach timed out.",
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                if (createdSurfaceBinding && !_sinkDispatcher.HasSinks(outputId))
+                {
+                    await RemoveSurfaceBindingAsync(outputId, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                throw;
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task DetachSinkAsync(
+        RenderOutputId outputId,
+        RenderOutputSinkId sinkId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (State == MediaForgeEngineState.Failed)
+                throw CreateEngineException("Sink detach is not allowed after the engine entered a failed state.");
+
+            var detached = await AwaitWithTimeoutAsync(
+                _sinkDispatcher.DetachAsync(outputId, sinkId, cancellationToken),
+                CommandTimeout,
+                "Render output sink detach timed out.",
+                cancellationToken).ConfigureAwait(false);
+
+            if (!detached)
+                return;
+
+            if (!_sinkDispatcher.HasSinks(outputId) &&
+                _outputSinks.TryGetValue(outputId, out var entry) &&
+                entry.IsAutomaticForSinks)
+            {
+                await RemoveSurfaceBindingAsync(outputId, cancellationToken).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -467,6 +647,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (State != MediaForgeEngineState.Failed)
                 await StopAsync().ConfigureAwait(false);
 
+            await _sinkDispatcher.DisposeAsync().ConfigureAwait(false);
+
             if (State != MediaForgeEngineState.Failed)
                 SetState(MediaForgeEngineState.Disposed);
         }
@@ -478,12 +660,24 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     private Task EnqueueBindOutputAsync(
         MediaForgeRenderOutput output,
-        IRenderOutputSink sink,
-        RenderOutputTarget target)
+        RuntimeRenderOutputSink sink,
+        RenderOutputTarget target,
+        CancellationToken cancellationToken)
     {
         var bindingVersion = Interlocked.Increment(ref _bindingVersion);
         var binding = sink.CreateBinding(output.Id, output.OutputSize, bindingVersion);
-        return _renderThread!.EnqueueCommandAsync(new BindOutputCommand { Binding = binding });
+        return AwaitCommandAsync(
+            _renderThread!.EnqueueCommandAsync(new BindOutputCommand { Binding = binding }),
+            "Render output bind command timed out.",
+            cancellationToken);
+    }
+
+    private bool CanPublishRenderFrame()
+    {
+        var renderThread = _renderThread;
+        return State == MediaForgeEngineState.Running &&
+               renderThread is not null &&
+               renderThread.CanAcceptPublishedFrame;
     }
 
     private void PublishCurrentRenderFrame()
@@ -500,13 +694,108 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _renderThread.PublishFrame(snapshot);
     }
 
+    private async Task EnsureSurfaceBindingsForAttachedSinksAsync(
+        MediaForgeProject project,
+        CancellationToken cancellationToken)
+    {
+        foreach (var output in project.Outputs)
+        {
+            if (_sinkDispatcher.HasSinks(output.Id))
+                await EnsureAutomaticSurfaceBindingAsync(output, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<bool> EnsureAutomaticSurfaceBindingAsync(
+        MediaForgeRenderOutput output,
+        CancellationToken cancellationToken)
+    {
+        if (_outputSinks.ContainsKey(output.Id))
+            return false;
+
+        var target = new OffscreenRenderOutputTarget();
+        if (!_outputSinkFactory.CanCreate(target.TypeId))
+        {
+            throw new MediaForgeUnsupportedFeatureException(
+                $"output.{target.TypeId.Value}",
+                $"No output sink factory registered for type '{target.TypeId.Value}'.");
+        }
+
+        var sink = _outputSinkFactory.CreateSink(target);
+        var accepted = false;
+
+        try
+        {
+            if (State == MediaForgeEngineState.Running)
+                await EnqueueBindOutputAsync(output, sink, target, cancellationToken).ConfigureAwait(false);
+
+            _outputSinks[output.Id] = new OutputSinkEntry(sink, target, IsAutomaticForSinks: true);
+            accepted = true;
+            return true;
+        }
+        finally
+        {
+            if (!accepted)
+                await sink.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task RemoveSurfaceBindingAsync(
+        RenderOutputId outputId,
+        CancellationToken cancellationToken)
+    {
+        if (!_outputSinks.TryGetValue(outputId, out var entry))
+            return;
+
+        if (State == MediaForgeEngineState.Running && _renderThread is not null)
+        {
+            await AwaitCommandAsync(
+                _renderThread.EnqueueCommandAsync(new UnbindOutputCommand { OutputId = outputId }),
+                "Render output unbind command timed out.",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        _outputSinks.Remove(outputId);
+        await entry.Sink.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private async Task ClearOutputBindingsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var outputId in _outputSinks.Keys.ToArray())
+            await RemoveSurfaceBindingAsync(outputId, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task RollbackStartAsync(CancellationToken cancellationToken)
     {
+        var renderPump = _renderPump;
+        _renderPump = null;
+
+        if (renderPump is not null)
+        {
+            try
+            {
+                await renderPump.StopAsync(StopTimeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "engine.start_rollback_render_pump_stop_failed",
+                    "Failed to stop render pump during start rollback.",
+                    nameof(MediaForgeEngine),
+                    ex);
+            }
+        }
+
         foreach (var provider in _providers.AsEnumerable().Reverse())
         {
             try
             {
-                await provider.StopAsync(cancellationToken).ConfigureAwait(false);
+                await AwaitWithTimeoutAsync(
+                    provider.StopAsync(cancellationToken),
+                    StopTimeout,
+                    $"Source provider '{provider.Name}' did not stop during start rollback.",
+                    cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -566,7 +855,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
         _runtime = null;
         _projectState = null;
-        SetState(MediaForgeEngineState.Idle);
+        SetState(_currentProject is null ? MediaForgeEngineState.Idle : MediaForgeEngineState.Loaded);
     }
 
     private void EnsureNotRunning()
@@ -582,6 +871,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     private void EnsureCanMutateProject()
     {
+        if (_currentProject is null)
+            throw CreateEngineException("A project must be loaded before it can be updated.");
+
         if (State is MediaForgeEngineState.Starting or MediaForgeEngineState.Stopping)
         {
             throw CreateEngineException("Project updates are not allowed while the engine is starting or stopping.");
@@ -604,6 +896,73 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private MediaForgeEngineException CreateEngineException(string message) =>
         new(message, State);
 
+    private async Task AwaitCommandAsync(
+        Task commandTask,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await AwaitWithTimeoutAsync(
+                commandTask,
+                CommandTimeout,
+                timeoutMessage,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (MediaForgeEngineException ex) when (IsTimeoutFailure(ex))
+        {
+            SetState(MediaForgeEngineState.Failed);
+            throw;
+        }
+    }
+
+    private async Task<T> AwaitWithTimeoutAsync<T>(
+        Task<T> operation,
+        TimeSpan timeout,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await operation.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new MediaForgeEngineException(timeoutMessage, State, ex);
+        }
+    }
+
+    private async Task AwaitWithTimeoutAsync(
+        Task operation,
+        TimeSpan timeout,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await operation.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new MediaForgeEngineException(timeoutMessage, State, ex);
+        }
+    }
+
+    private static long CreateDeadline(TimeSpan timeout) =>
+        Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
+
+    private static TimeSpan GetRemainingTime(long deadline)
+    {
+        var remainingTicks = deadline - Stopwatch.GetTimestamp();
+        if (remainingTicks <= 0)
+            return TimeSpan.Zero;
+
+        return TimeSpan.FromSeconds((double)remainingTicks / Stopwatch.Frequency);
+    }
+
+    private static bool IsTimeoutFailure(Exception exception) =>
+        exception is MediaForgeEngineException { InnerException: TimeoutException };
+
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
@@ -613,7 +972,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             nameof(DiagnosticReported),
             () => DiagnosticReported?.Invoke(this, new MediaForgeDiagnosticEventArgs(diagnostic)));
 
-        if (diagnostic.Code == "render.frame_dropped_tracker_full")
+        if (diagnostic.Code is "render.frame_dropped_tracker_full" or
+            "engine.render_pump_frame_dropped_backpressure" or
+            "sink.frame_dropped_backpressure")
         {
             SafeRaiseEvent(
                 nameof(FrameDropped),
@@ -657,11 +1018,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         }
     }
 
-    private sealed class OutputSinkEntry(IRenderOutputSink sink, RenderOutputTarget target)
+    private sealed class OutputSinkEntry(
+        RuntimeRenderOutputSink sink,
+        RenderOutputTarget target,
+        bool IsAutomaticForSinks)
     {
-        public IRenderOutputSink Sink { get; } = sink;
+        public RuntimeRenderOutputSink Sink { get; } = sink;
 
         public RenderOutputTarget Target { get; } = target;
+
+        public bool IsAutomaticForSinks { get; } = IsAutomaticForSinks;
     }
 }
-

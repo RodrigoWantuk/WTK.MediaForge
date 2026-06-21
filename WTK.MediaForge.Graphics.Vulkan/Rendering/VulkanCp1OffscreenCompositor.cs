@@ -1,7 +1,6 @@
 using Silk.NET.Vulkan;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Identifiers;
-using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
@@ -34,15 +33,6 @@ internal static class VulkanCp1OffscreenCompositor
 
             var canvas = snapshot.Canvases.FirstOrDefault(c => c.Id == output.CanvasId);
             if (canvas is null)
-                continue;
-
-            var hasDrawableLayer = canvas.Objects
-                .OfType<RenderSourceLayerDrawObjectSnapshot>()
-                .Any(layer => layer.Enabled &&
-                              layer.BoundFrame?.Handle is D3D11SharedTextureFrameHandle sharedHandle &&
-                              importsByHandle.ContainsKey(VulkanExternalTextureKey.From(sharedHandle)));
-
-            if (!hasDrawableLayer)
                 continue;
 
             submissionResources.RetainOffscreenTarget(targetHandle);

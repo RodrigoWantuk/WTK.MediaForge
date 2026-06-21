@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Diagnostics;
 
@@ -11,6 +12,7 @@ internal sealed class MediaForgeRenderThread : IDisposable
     private readonly IRenderBackend _backend;
     private readonly RenderThreadGuard _threadGuard;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
+    private readonly RenderOutputSinkDispatcher? _sinkDispatcher;
     private readonly PendingRenderSubmissionTracker _pendingTracker;
     private readonly LatestSnapshotBuffer _snapshotBuffer = new();
     private readonly ConcurrentQueue<RenderCommand> _commands = new();
@@ -29,12 +31,14 @@ internal sealed class MediaForgeRenderThread : IDisposable
         PendingRenderSubmissionTracker? pendingTracker = null,
         int maxFramesInFlight = 2,
         IMediaForgeDiagnosticsSink? diagnostics = null,
+        RenderOutputSinkDispatcher? sinkDispatcher = null,
         TimeSpan? joinTimeout = null,
         TimeSpan? submissionShutdownTimeout = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _diagnostics = diagnostics;
+        _sinkDispatcher = sinkDispatcher;
         _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(maxFramesInFlight, diagnostics);
         _joinTimeout = joinTimeout ?? TimeSpan.FromSeconds(10);
         _submissionShutdownTimeout = submissionShutdownTimeout ?? TimeSpan.FromSeconds(10);
@@ -46,6 +50,9 @@ internal sealed class MediaForgeRenderThread : IDisposable
     }
 
     internal PendingRenderSubmissionTracker PendingTracker => _pendingTracker;
+
+    internal bool CanAcceptPublishedFrame =>
+        _pendingTracker.CanAcceptFrame && !_snapshotBuffer.HasPending;
 
     internal bool WorkSignalDisposedForTests => Volatile.Read(ref _workSignalDisposed) != 0;
 
@@ -296,6 +303,7 @@ internal sealed class MediaForgeRenderThread : IDisposable
             _threadGuard.AssertOnRenderThread();
             submission = _backend.Submit(snapshot);
             _pendingTracker.Add(submission);
+            _sinkDispatcher?.PublishFrame(snapshot);
             ownershipTransferred = true;
         }
         catch (Exception ex)

@@ -1,8 +1,9 @@
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
-using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Windows;
 
 await using var engine = MediaForgeWindows.CreateEngine();
+var firstFrame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
 var project = MediaForgeProjectBuilder.Create()
     .Canvas("Main", 1920, 1080, out var main)
@@ -15,9 +16,17 @@ var project = MediaForgeProjectBuilder.Create()
     .BuildValidated();
 
 await engine.LoadProjectAsync(project);
-await engine.BindOutputAsync(output.Id, new OffscreenRenderOutputTarget());
+
+var sink = new CpuReadbackSink(onFrame: (frame, _) =>
+{
+    Console.WriteLine($"Output {frame.OutputId} frame {frame.FrameNumber} {frame.Size}");
+    firstFrame.TrySetResult();
+    return ValueTask.CompletedTask;
+});
+
+await engine.AttachSinkAsync(output.Id, sink);
 await engine.StartAsync();
 
-await Task.Delay(TimeSpan.FromSeconds(5));
+await firstFrame.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
 await engine.StopAsync();

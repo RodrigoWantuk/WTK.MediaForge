@@ -1,7 +1,6 @@
-using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Core.Identifiers;
 
-namespace WTK.MediaForge.Composition.Runtime.Outputs;
+namespace WTK.MediaForge.Composition.Outputs;
 
 public abstract class RenderOutputTarget
 {
@@ -15,7 +14,15 @@ public sealed class OffscreenRenderOutputTarget : RenderOutputTarget
 
 public sealed class WinFormsPreviewRenderOutputTarget : RenderOutputTarget
 {
+    public WinFormsPreviewRenderOutputTarget(nint windowHandle)
+    {
+        if (windowHandle == 0)
+            throw new ArgumentException("Window handle cannot be zero.", nameof(windowHandle));
+
+        WindowHandle = windowHandle;
+    }
+
     public override RenderOutputTypeId TypeId => RenderOutputTypes.PreviewWindow;
 
-    public nint WindowHandle { get; init; }
+    public nint WindowHandle { get; }
 }
