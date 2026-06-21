@@ -91,7 +91,9 @@ public class RenderThreadTests
 
         renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
 
-        WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        WaitUntil(
+            () => backend.SubmitCount >= 1 && backend.PendingBackendSubmissionCount >= 1,
+            TimeSpan.FromSeconds(5));
         Assert.Equal(1, source.RetainCount);
 
         backend.CompleteAllPending();
@@ -113,7 +115,9 @@ public class RenderThreadTests
 
         renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
 
-        WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        WaitUntil(
+            () => backend.SubmitCount >= 1 && backend.PendingBackendSubmissionCount >= 1,
+            TimeSpan.FromSeconds(5));
         Assert.Equal(1, source.RetainCount);
         Assert.Equal(1, renderThread.PendingTracker.PendingCount);
 

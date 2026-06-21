@@ -4,6 +4,5 @@ public enum RenderOutputSinkBackpressureMode
 {
     DropNewest,
     DropOldest,
-    KeepLatest,
-    BlockProducer
+    KeepLatest
 }

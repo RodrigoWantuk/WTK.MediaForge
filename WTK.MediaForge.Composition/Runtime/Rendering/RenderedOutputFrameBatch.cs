@@ -7,11 +7,15 @@ internal sealed class RenderedOutputFrameBatch
 {
     private readonly TaskCompletionSource _allLeasesReleased =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Func<ValueTask>? _leaseReleased;
     private int _leaseCount;
 
-    public RenderedOutputFrameBatch(IReadOnlyList<RenderedOutputFrame> frames)
+    public RenderedOutputFrameBatch(
+        IReadOnlyList<RenderedOutputFrame> frames,
+        Func<ValueTask>? leaseReleased = null)
     {
         Frames = frames ?? throw new ArgumentNullException(nameof(frames));
+        _leaseReleased = leaseReleased;
         if (frames.Count == 0)
             _allLeasesReleased.TrySetResult();
     }
@@ -61,15 +65,29 @@ internal sealed class RenderedOutputFrameBatch
             .ConfigureAwait(false);
     }
 
-    private ValueTask ReleaseLeaseAsync()
+    private async ValueTask ReleaseLeaseAsync()
     {
         var remaining = Interlocked.Decrement(ref _leaseCount);
         if (remaining < 0)
             throw new InvalidOperationException("Rendered output frame lease was released more times than it was acquired.");
 
+        Exception? releaseError = null;
+        if (_leaseReleased is not null)
+        {
+            try
+            {
+                await _leaseReleased().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                releaseError = ex;
+            }
+        }
+
         if (remaining == 0)
             _allLeasesReleased.TrySetResult();
 
-        return ValueTask.CompletedTask;
+        if (releaseError is not null)
+            throw releaseError;
     }
 }

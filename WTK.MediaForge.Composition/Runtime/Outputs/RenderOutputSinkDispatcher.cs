@@ -68,12 +68,12 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             RenderBackendKind.Vulkan);
 
         SinkRegistration? registration = null;
+        var reserved = false;
+        var startAttempted = false;
         var accepted = false;
 
         try
         {
-            await sink.StartAsync(context, cancellationToken).ConfigureAwait(false);
-
             registration = new SinkRegistration(
                 output.Id,
                 sink,
@@ -83,27 +83,29 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             lock (_gate)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
+                EnsureCanAttachSinkLocked(sink);
 
                 var registrations = GetOrCreateRegistrationsLocked(output.Id);
-                if (registrations.Any(existing => existing.Sink.Id == sink.Id))
-                {
-                    throw new InvalidOperationException(
-                        $"Render output sink {sink.Id} is already attached to output {output.Id}.");
-                }
-
                 registrations.Add(registration);
-                accepted = true;
+                reserved = true;
             }
 
+            startAttempted = true;
+            await sink.StartAsync(context, cancellationToken).ConfigureAwait(false);
             registration.Start();
+            accepted = true;
         }
         finally
         {
             if (!accepted)
             {
-                await StopAndDisposeSinkAsync(sink, cancellationToken).ConfigureAwait(false);
-                if (registration is not null)
-                    await registration.DisposeAsync().ConfigureAwait(false);
+                if (reserved && registration is not null)
+                    RemoveRegistration(registration);
+
+                if (startAttempted)
+                    await StopAndDisposeSinkAsync(sink, cancellationToken).ConfigureAwait(false);
+
+                registration?.DisposeUnstarted();
             }
         }
     }
@@ -208,7 +210,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                 var frameNumber = NextFrameNumberLocked(frame.OutputId);
                 var timestamp = _clock.Elapsed;
 
-                foreach (var registration in registrations)
+                foreach (var registration in registrations.Where(static registration => registration.IsActive))
                 {
                     var info = new RenderOutputFrameInfo(
                         frame.OutputId,
@@ -280,6 +282,37 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         return next;
     }
 
+    private void EnsureCanAttachSinkLocked(PublicRenderOutputSink sink)
+    {
+        foreach (var registration in _registrations.Values.SelectMany(static item => item))
+        {
+            if (ReferenceEquals(registration.Sink, sink))
+            {
+                throw new InvalidOperationException(
+                    $"Render output sink instance {sink.Id} is already attached to output {registration.OutputId}.");
+            }
+
+            if (registration.Sink.Id == sink.Id)
+            {
+                throw new InvalidOperationException(
+                    $"Render output sink id {sink.Id} is already attached to output {registration.OutputId}.");
+            }
+        }
+    }
+
+    private void RemoveRegistration(SinkRegistration registration)
+    {
+        lock (_gate)
+        {
+            if (!_registrations.TryGetValue(registration.OutputId, out var registrations))
+                return;
+
+            registrations.Remove(registration);
+            if (registrations.Count == 0)
+                _registrations.Remove(registration.OutputId);
+        }
+    }
+
     private static async ValueTask StopAndDisposeSinkAsync(
         PublicRenderOutputSink sink,
         CancellationToken cancellationToken)
@@ -304,6 +337,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         private readonly IMediaForgeDiagnosticsSink? _diagnostics;
         private Task? _worker;
         private bool _accepting = true;
+        private int _active;
         private int _disposed;
 
         public SinkRegistration(
@@ -322,8 +356,13 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
         public PublicRenderOutputSink Sink { get; }
 
-        public void Start() =>
+        public bool IsActive => Volatile.Read(ref _active) != 0;
+
+        public void Start()
+        {
+            Volatile.Write(ref _active, 1);
             _worker = Task.Run(ProcessAsync);
+        }
 
         public void TryEnqueue(RenderOutputFrameLease lease)
         {
@@ -347,7 +386,6 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                     switch (Sink.BackpressureMode)
                     {
                         case RenderOutputSinkBackpressureMode.DropNewest:
-                        case RenderOutputSinkBackpressureMode.BlockProducer:
                             dropped = lease;
                             break;
                         case RenderOutputSinkBackpressureMode.DropOldest:
@@ -365,7 +403,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
             if (dropped is not null)
             {
-                _ = DisposeDroppedFrameAsync(dropped);
+                DisposeDroppedFrame(dropped);
                 MediaForgeDiagnostics.Report(
                     _diagnostics,
                     MediaForgeDiagnosticSeverity.Warning,
@@ -382,6 +420,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
                 return;
+
+            Volatile.Write(ref _active, 0);
 
             lock (_gate)
                 _accepting = false;
@@ -415,6 +455,16 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         }
 
         public ValueTask DisposeAsync() => StopAsync(CancellationToken.None);
+
+        public void DisposeUnstarted()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            Volatile.Write(ref _active, 0);
+            _available.Dispose();
+            _stop.Dispose();
+        }
 
         private async Task ProcessAsync()
         {
@@ -482,6 +532,27 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
             foreach (var lease in leases)
                 await DisposeDroppedFrameAsync(lease).ConfigureAwait(false);
+        }
+
+        private void DisposeDroppedFrame(RenderOutputFrameLease lease)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await DisposeDroppedFrameAsync(lease).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "sink.dropped_frame_dispose_failed",
+                        $"Failed to release dropped frame for output {OutputId} from sink {Sink.Id}.",
+                        nameof(RenderOutputSinkDispatcher),
+                        ex);
+                }
+            });
         }
 
         private static async ValueTask DisposeDroppedFrameAsync(RenderOutputFrameLease lease) =>

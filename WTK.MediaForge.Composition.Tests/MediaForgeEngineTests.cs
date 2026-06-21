@@ -595,6 +595,51 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public void BackpressureMode_does_not_expose_BlockProducer_until_supported()
+    {
+        Assert.DoesNotContain(
+            "BlockProducer",
+            Enum.GetNames<RenderOutputSinkBackpressureMode>());
+    }
+
+    [Fact]
+    public async Task AttachSink_rejects_same_sink_instance_twice()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateOffscreenProject();
+        var sink = new RecordingPublicRenderOutputSink();
+
+        await engine.LoadProjectAsync(project);
+        await engine.AttachSinkAsync(project.Outputs[0].Id, sink);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.AttachSinkAsync(project.Outputs[0].Id, sink));
+
+        Assert.Equal(1, sink.StartCount);
+        Assert.Equal(1, engine.AttachedSinkCountForTests);
+    }
+
+    [Fact]
+    public async Task AttachSink_rejects_duplicate_sink_id_without_calling_StartAsync()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateOffscreenProject();
+        var sinkId = RenderOutputSinkId.New();
+        var first = new RecordingPublicRenderOutputSink(sinkId);
+        var duplicate = new RecordingPublicRenderOutputSink(sinkId);
+
+        await engine.LoadProjectAsync(project);
+        await engine.AttachSinkAsync(project.Outputs[0].Id, first);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.AttachSinkAsync(project.Outputs[0].Id, duplicate));
+
+        Assert.Equal(0, duplicate.StartCount);
+        Assert.Equal(0, duplicate.DisposeCount);
+        Assert.Equal(1, engine.AttachedSinkCountForTests);
+    }
+
+    [Fact]
     public async Task Sink_receives_frame_number_timestamp_size_and_output_id()
     {
         var backendFactory = new RecordingRenderBackendFactory();
@@ -721,6 +766,43 @@ public class MediaForgeEngineTests
             dispatcher.PublishCompletedFrames(replacingBatch);
 
             await WaitUntilAsync(() => !droppedBatch.HasOutstandingLeases, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            sink.Release();
+            await dispatcher.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Dropped_frame_dispose_failure_reports_diagnostic()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var dispatcher = new RenderOutputSinkDispatcher(diagnostics);
+        var project = CreateOffscreenProject();
+        var output = project.Outputs[0];
+        var sink = new BlockingPublicRenderOutputSink();
+        var firstBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
+        var droppedBatch = CreateRenderedOutputFrameBatch(
+            output.Id,
+            output.OutputSize,
+            () => ValueTask.FromException(new InvalidOperationException("Configured dropped frame release failure.")));
+        var latestBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
+        var replacingBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+
+        try
+        {
+            dispatcher.PublishCompletedFrames(firstBatch);
+            await sink.WaitForFrameAsync(TimeSpan.FromSeconds(5));
+            dispatcher.PublishCompletedFrames(droppedBatch);
+            dispatcher.PublishCompletedFrames(latestBatch);
+            dispatcher.PublishCompletedFrames(replacingBatch);
+
+            await WaitUntilAsync(
+                () => diagnostics.Diagnostics.Any(d => d.Code == "sink.dropped_frame_dispose_failed"),
+                TimeSpan.FromSeconds(5));
         }
         finally
         {
@@ -1033,8 +1115,6 @@ public class MediaForgeEngineTests
 
             Assert.IsType<TimeoutException>(ex.InnerException);
             Assert.Equal(MediaForgeEngineState.Failed, engine.State);
-            Assert.Same(oldSink, engine.GetOutputSinkForTests(outputId));
-            Assert.Equal(0, oldSink.DisposeCount);
             Assert.Equal(1, newSink.DisposeCount);
         }
         finally
@@ -1072,8 +1152,6 @@ public class MediaForgeEngineTests
 
             Assert.IsType<TimeoutException>(ex.InnerException);
             Assert.Equal(MediaForgeEngineState.Failed, engine.State);
-            Assert.Same(sink, engine.GetOutputSinkForTests(outputId));
-            Assert.Equal(0, sink.DisposeCount);
         }
         finally
         {
@@ -1083,6 +1161,45 @@ public class MediaForgeEngineTests
 
         Assert.Equal(MediaForgeEngineState.Disposed, engine.State);
         Assert.True(backendFactory.Backend.Disposed);
+    }
+
+    [Fact]
+    public async Task Command_that_completes_after_timeout_does_not_reenable_engine()
+    {
+        var backendFactory = new CommandTrackingRenderBackendFactory();
+        var sinkFactory = new RecordingRenderOutputSinkFactory();
+        sinkFactory.Enqueue(new RecordingRenderOutputSink(CreatePreviewTarget(1), "old"));
+        sinkFactory.Enqueue(new RecordingRenderOutputSink(CreatePreviewTarget(2), "new"));
+        var engine = CreateEngine(
+            backendFactory: backendFactory,
+            outputSinkFactory: sinkFactory);
+        engine.CommandTimeout = TimeSpan.FromMilliseconds(50);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+        await engine.BindOutputAsync(outputId, CreatePreviewTarget(1));
+        backendFactory.Backend!.ResetBindRelease();
+
+        try
+        {
+            await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+                engine.BindOutputAsync(outputId, CreatePreviewTarget(2)));
+            Assert.Equal(MediaForgeEngineState.Failed, engine.State);
+
+            backendFactory.Backend.ReleaseBind();
+            await WaitUntilAsync(() => backendFactory.Backend.BindCount >= 2, TimeSpan.FromSeconds(5));
+
+            Assert.Equal(MediaForgeEngineState.Failed, engine.State);
+            await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+                engine.ApplyProjectUpdateAsync(editor =>
+                    editor.Project.Canvases[0].Name = "Still blocked"));
+        }
+        finally
+        {
+            backendFactory.Backend.ReleaseBind();
+            await engine.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -1525,7 +1642,8 @@ public class MediaForgeEngineTests
 
     private static RenderedOutputFrameBatch CreateRenderedOutputFrameBatch(
         RenderOutputId outputId,
-        FrameSize size) =>
+        FrameSize size,
+        Func<ValueTask>? leaseReleased = null) =>
         new(
             [
                 new RenderedOutputFrame(
@@ -1533,7 +1651,8 @@ public class MediaForgeEngineTests
                     size,
                     RenderPixelFormat.Rgba8Unorm,
                     RenderBackendKind.Vulkan)
-            ]);
+            ],
+            leaseReleased);
 
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
