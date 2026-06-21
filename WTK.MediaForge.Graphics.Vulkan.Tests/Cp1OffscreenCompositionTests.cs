@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Vortice.DXGI;
 using Vortice.Mathematics;
 using Silk.NET.Vulkan;
@@ -525,6 +526,50 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
+    public async Task Cp1_many_layers_does_not_exhaust_descriptor_pool()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanSubmissionResourceLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, 128, 128));
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: new FrameSize(128, 128),
+                    outputSize: new FrameSize(128, 128),
+                    transform: new Transform2D { Size = new CanvasSize(128, 128) },
+                    outputLetterboxColor: ColorRgba.Transparent,
+                    sourceLayerCount: 40);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+                Assert.Equal(41, VulkanSubmissionResourceLifetime.FreedDescriptorSets);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Cp1_submission_dispose_releases_framebuffers_and_descriptors()
     {
         if (!TryCreateCp1Context(out var context))
@@ -772,8 +817,12 @@ public class Cp1OffscreenCompositionTests
         LayoutMode layerLayoutMode = LayoutMode.Fit,
         LayoutMode outputCanvasLayoutMode = LayoutMode.Fit,
         ColorRgba? outputLetterboxColor = null,
-        float opacity = 1f)
+        float opacity = 1f,
+        int sourceLayerCount = 1)
     {
+        if (sourceLayerCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sourceLayerCount));
+
         var resolvedCanvasSize = canvasSize ?? new FrameSize(1920, 1080);
         var resolvedOutputSize = outputSize ?? new FrameSize(1280, 720);
         var resolvedTransform = transform ?? new Transform2D
@@ -789,6 +838,20 @@ public class Cp1OffscreenCompositionTests
             SourceId = SourceId.New(),
             FrameNumber = 1
         };
+        var objects = Enumerable
+            .Range(0, sourceLayerCount)
+            .Select(_ => new RenderSourceLayerDrawObjectSnapshot
+            {
+                Id = DrawObjectId.New(),
+                Name = "Desktop",
+                SourceId = frame.SourceId,
+                Transform = resolvedTransform,
+                LayoutMode = layerLayoutMode,
+                Opacity = opacity,
+                BoundFrame = frame
+            })
+            .Cast<RenderDrawObjectSnapshot>()
+            .ToImmutableArray();
 
         return new RenderFrameSnapshot
         {
@@ -800,19 +863,7 @@ public class Cp1OffscreenCompositionTests
                     Id = canvasId,
                     Name = "Program",
                     Size = resolvedCanvasSize,
-                    Objects =
-                    [
-                        new RenderSourceLayerDrawObjectSnapshot
-                        {
-                            Id = DrawObjectId.New(),
-                            Name = "Desktop",
-                            SourceId = frame.SourceId,
-                            Transform = resolvedTransform,
-                            LayoutMode = layerLayoutMode,
-                            Opacity = opacity,
-                            BoundFrame = frame
-                        }
-                    ]
+                    Objects = objects
                 }
             ],
             Outputs =

@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Vortice.DXGI;
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
 using Xunit;
@@ -404,6 +405,54 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
+    public async Task Registry_waiter_timeout_reports_diagnostic_and_does_not_hang_render_thread()
+    {
+        using var importEntered = new ManualResetEventSlim();
+        using var releaseImport = new ManualResetEventSlim();
+        var diagnostics = new InMemoryDiagnosticsSink();
+
+        var factory = new DelegatingImportFactory((deviceContext, handle) =>
+        {
+            importEntered.Set();
+
+            if (!releaseImport.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("Timed out waiting to release controlled import.");
+
+            return VulkanD3D11TextureImport.Import(deviceContext, handle);
+        });
+
+        if (!TryCreateContext(
+                out var context,
+                factory,
+                diagnostics,
+                creationWaitTimeout: TimeSpan.FromMilliseconds(50)))
+        {
+            return;
+        }
+
+        using (context)
+        {
+            var creatorTask = Task.Run(() => context.Registry.Acquire(context.Handle));
+            Assert.True(importEntered.Wait(TimeSpan.FromSeconds(5)));
+
+            var waiterTask = Task.Run(() => context.Registry.Acquire(context.Handle));
+            var waiterError = await Assert.ThrowsAsync<TimeoutException>(async () => await waiterTask);
+
+            Assert.Contains("Timed out waiting for Vulkan texture import creation", waiterError.Message);
+            Assert.Contains(
+                diagnostics.Diagnostics,
+                d => d.Code == "vulkan.texture_import_wait_timeout" &&
+                    d.Severity == MediaForgeDiagnosticSeverity.Error);
+
+            releaseImport.Set();
+
+            using var creatorLease = await creatorTask;
+            Assert.Equal(1, context.Registry.EntryCount);
+            Assert.Equal(1, factory.ImportCallCount);
+        }
+    }
+
+    [Fact]
     public async Task DisposeAsync_during_import_creation_disposes_created_import()
     {
         VulkanD3D11TextureImport? createdImport = null;
@@ -480,7 +529,9 @@ public class VulkanExternalTextureRegistryTests
 
     private static bool TryCreateContext(
         [NotNullWhen(true)] out RegistryTestContext? context,
-        IVulkanExternalTextureImportFactory? importFactory = null)
+        IVulkanExternalTextureImportFactory? importFactory = null,
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        TimeSpan? creationWaitTimeout = null)
     {
         context = null;
 
@@ -492,7 +543,11 @@ public class VulkanExternalTextureRegistryTests
             var deviceContext = VulkanHeadlessDevice.Create();
             context = new RegistryTestContext(
                 deviceContext,
-                new VulkanExternalTextureRegistry(deviceContext, importFactory: importFactory),
+                new VulkanExternalTextureRegistry(
+                    deviceContext,
+                    diagnostics,
+                    importFactory,
+                    creationWaitTimeout),
                 handle);
             device.Dispose();
             return true;

@@ -12,6 +12,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 {
     private const uint PushConstantMaxSize = 64;
+    private const uint MaxDescriptorSetsPerSubmit = 256;
 
     private readonly VulkanHeadlessDevice _device;
     private readonly Vk _vk;
@@ -488,14 +489,14 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         var poolSize = new DescriptorPoolSize
         {
             Type = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 16
+            DescriptorCount = MaxDescriptorSetsPerSubmit
         };
 
         var poolInfo = new DescriptorPoolCreateInfo
         {
             SType = StructureType.DescriptorPoolCreateInfo,
             Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
-            MaxSets = 16,
+            MaxSets = MaxDescriptorSetsPerSubmit,
             PoolSizeCount = 1,
             PPoolSizes = &poolSize
         };

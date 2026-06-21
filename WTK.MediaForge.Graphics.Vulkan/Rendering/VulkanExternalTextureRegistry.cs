@@ -9,17 +9,23 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
     private readonly VulkanHeadlessDevice _deviceContext;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly IVulkanExternalTextureImportFactory _importFactory;
+    private readonly TimeSpan _creationWaitTimeout;
     private readonly Dictionary<VulkanExternalTextureKey, RegistryEntry> _entries = new();
     private bool _disposed;
 
     internal VulkanExternalTextureRegistry(
         VulkanHeadlessDevice deviceContext,
         IMediaForgeDiagnosticsSink? diagnostics = null,
-        IVulkanExternalTextureImportFactory? importFactory = null)
+        IVulkanExternalTextureImportFactory? importFactory = null,
+        TimeSpan? creationWaitTimeout = null)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
         _importFactory = importFactory ?? VulkanExternalTextureImportFactory.Instance;
+        _creationWaitTimeout = creationWaitTimeout ?? TimeSpan.FromSeconds(5);
+
+        if (_creationWaitTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(creationWaitTimeout), "Creation wait timeout must be positive.");
     }
 
     internal int EntryCount
@@ -152,20 +158,7 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
                 }
             }
 
-            try
-            {
-                entry!.Creation.Task.GetAwaiter().GetResult();
-            }
-            catch
-            {
-                lock (_gate)
-                {
-                    if (_entries.TryGetValue(key, out var current) && ReferenceEquals(current, entry))
-                        _entries.Remove(key);
-                }
-
-                throw;
-            }
+            WaitForImportCreation(entry!, key);
 
             lock (_gate)
             {
@@ -175,6 +168,52 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
                     return new VulkanExternalTextureLease(entry, this);
                 }
             }
+        }
+    }
+
+    private void WaitForImportCreation(RegistryEntry entry, VulkanExternalTextureKey key)
+    {
+        var task = entry.Creation.Task;
+        var completed = false;
+
+        try
+        {
+            completed = task.Wait(_creationWaitTimeout);
+        }
+        catch
+        {
+            completed = true;
+        }
+
+        if (!completed)
+        {
+            var timeout = new TimeoutException(
+                $"Timed out waiting for Vulkan texture import creation after {_creationWaitTimeout}.");
+
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "vulkan.texture_import_wait_timeout",
+                timeout.Message,
+                nameof(VulkanExternalTextureRegistry),
+                timeout);
+
+            throw timeout;
+        }
+
+        try
+        {
+            task.GetAwaiter().GetResult();
+        }
+        catch
+        {
+            lock (_gate)
+            {
+                if (_entries.TryGetValue(key, out var current) && ReferenceEquals(current, entry))
+                    _entries.Remove(key);
+            }
+
+            throw;
         }
     }
 
