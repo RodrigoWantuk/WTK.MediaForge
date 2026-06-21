@@ -42,7 +42,15 @@ Current public runtime type:
 
 - `MediaForgeEngine`
 
-The current engine remains an early facade. The product-level creation facade is not complete yet.
+The current engine remains an early facade. Its internal consistency has been
+hardened:
+
+- project updates are transactional
+- output bind/unbind operations are transactional
+- shutdown skips backend disposal if the render thread is still alive
+
+This does not make the public SDK complete. The product-level Windows creation
+facade is still PAPI-2.
 
 Planned public runtime types:
 
@@ -178,14 +186,17 @@ The following types must not be public:
 - `VulkanExternalTextureRegistry`
 - `VulkanD3D11TextureImport`
 
-Future work must proceed in this order:
+PAPI status:
 
-1. `PAPI-2`: create `MediaForgeWindows.CreateEngine`.
-2. `PAPI-3`: create `MediaForgeProjectBuilder`.
-3. `PAPI-4`: complete public engine state/runtime API.
-4. `PAPI-5`: finish typed render output targets.
-5. `PAPI-6`: add public validation/runtime exceptions.
-6. `PAPI-7`: add public engine events.
-7. `PAPI-8`: add and build the offscreen sample.
+| # | Work | Status |
+|---|---|---|
+| PAPI-1 | Public API audit | Complete |
+| PAPI-2 | `MediaForgeWindows.CreateEngine` | Next |
+| PAPI-3 | `MediaForgeProjectBuilder` | Pending |
+| PAPI-4 | Public engine state/runtime API | Pending |
+| PAPI-5 | Typed render output targets | Pending |
+| PAPI-6 | Public validation/runtime exceptions | Pending |
+| PAPI-7 | Public engine events | Pending |
+| PAPI-8 | Offscreen sample | Pending |
 
 NDI, encoder, streaming, MP4, webcam, RTSP, productive WinForms preview, UI designer, and plugin APIs remain blocked until the PAPI track is complete.

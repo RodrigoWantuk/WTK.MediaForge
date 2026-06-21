@@ -46,12 +46,16 @@ The legacy WinForms preview path has been removed as a product path because it u
 - CP1 Vulkan command-buffer resources are retained by `VulkanSubmissionResourceScope` and released only from `VulkanRenderFrameSubmission.DisposeCompleted()` after the fence completes. This includes framebuffers, descriptor sets, and offscreen target references.
 - Public product API boundaries are defined in `docs/PUBLIC_API.md`. Runtime, snapshot, render-thread, backend, source-provider, output-sink, GPU lease, D3D11 slot-ring, and Vulkan implementation types are internal details.
 - GPU wait APIs must use explicit timeouts.
+- `MediaForgeEngine.ApplyProjectUpdateAsync`, `BindOutputAsync`, and `UnbindOutputAsync` are transactional. Failed updates/binds must preserve the previous public engine state.
+- `MediaForgeEngine.StopAsync` must not dispose the backend if the render thread is still alive after dispose timeout. It reports `engine.backend_dispose_skipped_render_thread_alive` as fatal and leaves a controlled leak instead of risking use-after-free.
+- CP1 visual correctness is proven by Vulkan offscreen pixel readback tests for center pixel, Fit transparency, Fill, Stretch, opacity, and output letterbox color.
+- CP1 descriptor capacity is explicitly sized for larger submits, and `VulkanExternalTextureRegistry` waiters use timeout diagnostics instead of indefinite blocking.
 
 ## Remaining Blockers
 
 The application shell must not re-enable capture preview until it is wired through the hardened runtime path. The old direct `DesktopDuplicationCaptureSource -> VulkanPreviewRenderer` path must not return.
 
-Offscreen render target scaffolding exists, but real visual/offscreen composition must wait until the hardened preview binding is in place and tested.
+CP1 offscreen visual proof exists, but CP2 multi-layer, CP3 nested canvas, chroma/effects, productive preview, and real source/output integrations remain blocked until the PAPI track is complete or the roadmap explicitly changes.
 
 ## Review Style Expected
 

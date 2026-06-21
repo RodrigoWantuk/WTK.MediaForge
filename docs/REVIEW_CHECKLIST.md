@@ -9,6 +9,7 @@ Before considering a change complete, verify:
 - [ ] No swallowed exceptions in physical resource cleanup.
 - [ ] Tests added for every lifetime change.
 - [ ] Runtime/GPU/snapshot internals are not exposed as public product API.
+- [ ] PAPI is advanced before CP2, nested canvas, preview, NDI, encoder, webcam, RTSP, MP4, streaming, or audio work.
 - [ ] `dotnet test` passes.
 - [ ] `scripts/test.ps1 -Tier Fast` passes.
 - [ ] `scripts/test.ps1 -Tier Gpu` passes when touching GPU code.
@@ -35,6 +36,9 @@ Before considering a change complete, verify:
 - [ ] CP1 framebuffers are not destroyed until the submitted command buffer fence completes and `DisposeCompleted()` runs.
 - [ ] CP1 descriptor sets allocated per command buffer are freed after the fence, not immediately and not only at renderer dispose.
 - [ ] CP1 offscreen target references are retained by submission resources and released after the fence.
+- [ ] CP1 Fit produces transparent pixels outside fitted content, not clamped edge pixels.
+- [ ] CP1 output letterbox and opacity have pixel-readback coverage.
+- [ ] CP1 descriptor pool capacity is explicit and covered by many-layer submit tests.
 
 ## Registry
 
@@ -45,6 +49,17 @@ Before considering a change complete, verify:
 - [ ] Acquire can retry cleanly after import creation failure.
 - [ ] Concurrent acquire of the same texture creates one import.
 - [ ] Concurrent acquire of different textures can create independently.
+- [ ] Waiters on in-flight import creation use timeout diagnostics and do not block indefinitely.
+
+## Engine
+
+- [ ] `ApplyProjectUpdateAsync` edits a clone and swaps only after validation.
+- [ ] Invalid project updates preserve `CurrentProject`, project snapshots, and frame publication.
+- [ ] `BindOutputAsync` creates the new sink/binding before replacing the old sink.
+- [ ] Bind failures dispose the failed new sink and keep the old sink registered.
+- [ ] `UnbindOutputAsync` enqueues unbind before sink disposal.
+- [ ] `StopAsync` skips backend dispose when render thread is still alive and reports a fatal diagnostic.
+- [ ] Backend dispose still runs when render thread cleanup failed after the thread stopped.
 
 ## Texture Identity
 
