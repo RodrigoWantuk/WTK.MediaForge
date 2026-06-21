@@ -18,6 +18,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private readonly IMediaSourceProviderFactory _sourceProviderFactory;
     private readonly IRenderOutputSinkFactory _outputSinkFactory;
     private readonly IRenderBackendFactory _backendFactory;
+    private readonly IMediaForgeDiagnosticsSink? _externalDiagnostics;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly List<IVideoFrameProvider> _providers = [];
@@ -57,7 +58,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _sourceProviderFactory = sourceProviderFactory ?? throw new ArgumentNullException(nameof(sourceProviderFactory));
         _outputSinkFactory = outputSinkFactory ?? throw new ArgumentNullException(nameof(outputSinkFactory));
         _backendFactory = backendFactory ?? throw new ArgumentNullException(nameof(backendFactory));
-        _diagnostics = diagnostics;
+        _externalDiagnostics = diagnostics;
+        _diagnostics = new EngineDiagnosticsSink(diagnostics, RaiseDiagnosticReported);
     }
 
     public MediaForgeProject CurrentProject { get; private set; } = new();
@@ -65,6 +67,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     public MediaForgeEngineState State => _state;
 
     public bool IsRunning => State == MediaForgeEngineState.Running;
+
+    public event EventHandler<MediaForgeDiagnosticEventArgs>? DiagnosticReported;
+
+    public event EventHandler<MediaForgeEngineStateChangedEventArgs>? StateChanged;
+
+    public event EventHandler<MediaForgeFrameDroppedEventArgs>? FrameDropped;
 
     internal CompositionRuntime? RuntimeForTests => _runtime;
 
@@ -78,7 +86,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     internal IRenderOutputSinkFactory OutputSinkFactoryForTests => _outputSinkFactory;
 
-    internal IMediaForgeDiagnosticsSink? DiagnosticsForTests => _diagnostics;
+    internal IMediaForgeDiagnosticsSink? DiagnosticsForTests => _externalDiagnostics;
 
     internal ProjectStateSnapshot? ProjectStateForTests => _projectState;
 
@@ -583,13 +591,71 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             throw CreateEngineException("Project updates are not allowed after the engine entered a failed state.");
     }
 
-    private void SetState(MediaForgeEngineState newState) => _state = newState;
+    private void SetState(MediaForgeEngineState newState)
+    {
+        var oldState = State;
+        if (oldState == newState)
+            return;
+
+        _state = newState;
+        RaiseStateChanged(oldState, newState);
+    }
 
     private MediaForgeEngineException CreateEngineException(string message) =>
         new(message, State);
 
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+    private void RaiseDiagnosticReported(MediaForgeDiagnostic diagnostic)
+    {
+        SafeRaiseEvent(
+            nameof(DiagnosticReported),
+            () => DiagnosticReported?.Invoke(this, new MediaForgeDiagnosticEventArgs(diagnostic)));
+
+        if (diagnostic.Code == "render.frame_dropped_tracker_full")
+        {
+            SafeRaiseEvent(
+                nameof(FrameDropped),
+                () => FrameDropped?.Invoke(this, new MediaForgeFrameDroppedEventArgs(diagnostic)));
+        }
+    }
+
+    private void RaiseStateChanged(MediaForgeEngineState oldState, MediaForgeEngineState newState) =>
+        SafeRaiseEvent(
+            nameof(StateChanged),
+            () => StateChanged?.Invoke(this, new MediaForgeEngineStateChangedEventArgs(oldState, newState)));
+
+    private void SafeRaiseEvent(string eventName, Action raise)
+    {
+        try
+        {
+            raise();
+        }
+        catch (Exception ex)
+        {
+            MediaForgeDiagnostics.Report(
+                _externalDiagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "engine.event_handler_failed",
+                $"Engine event handler '{eventName}' failed.",
+                nameof(MediaForgeEngine),
+                ex);
+        }
+    }
+
+    private sealed class EngineDiagnosticsSink(
+        IMediaForgeDiagnosticsSink? inner,
+        Action<MediaForgeDiagnostic> onDiagnostic)
+        : IMediaForgeDiagnosticsSink
+    {
+        public void Report(MediaForgeDiagnostic diagnostic)
+        {
+            ArgumentNullException.ThrowIfNull(diagnostic);
+            inner?.Report(diagnostic);
+            onDiagnostic(diagnostic);
+        }
+    }
 
     private sealed class OutputSinkEntry(IRenderOutputSink sink, RenderOutputTarget target)
     {

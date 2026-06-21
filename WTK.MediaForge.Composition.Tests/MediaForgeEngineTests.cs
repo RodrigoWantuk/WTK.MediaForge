@@ -38,6 +38,24 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Engine_raises_StateChanged_on_load_start_stop()
+    {
+        var states = new List<MediaForgeEngineState>();
+        await using var engine = CreateEngine();
+        engine.StateChanged += (_, args) => states.Add(args.NewState);
+
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+        await engine.StopAsync();
+
+        Assert.Contains(MediaForgeEngineState.Loaded, states);
+        Assert.Contains(MediaForgeEngineState.Starting, states);
+        Assert.Contains(MediaForgeEngineState.Running, states);
+        Assert.Contains(MediaForgeEngineState.Stopping, states);
+        Assert.Contains(MediaForgeEngineState.Idle, states);
+    }
+
+    [Fact]
     public void MediaForgeEngine_does_not_expose_public_constructor()
     {
         Assert.Empty(typeof(MediaForgeEngine).GetConstructors());
@@ -300,6 +318,8 @@ public class MediaForgeEngineTests
             backendFactory: backendFactory,
             outputSinkFactory: sinkFactory,
             diagnostics: diagnostics);
+        var reportedDiagnostics = new List<MediaForgeDiagnostic>();
+        engine.DiagnosticReported += (_, args) => reportedDiagnostics.Add(args.Diagnostic);
         var project = CreateValidProject();
         var outputId = project.Outputs[0].Id;
         await engine.LoadProjectAsync(project);
@@ -315,6 +335,26 @@ public class MediaForgeEngineTests
         Assert.Equal(0, oldSink.DisposeCount);
         Assert.Equal(1, newSink.DisposeCount);
         Assert.Contains(diagnostics.Diagnostics, d => d.Code == "render.command_failed");
+        Assert.Contains(reportedDiagnostics, d => d.Code == "render.command_failed");
+    }
+
+    [Fact]
+    public async Task Engine_raises_DiagnosticReported_for_render_command_failure()
+    {
+        var backendFactory = new CommandTrackingRenderBackendFactory();
+        var diagnostics = new List<MediaForgeDiagnostic>();
+        await using var engine = CreateEngine(backendFactory: backendFactory);
+        engine.DiagnosticReported += (_, args) => diagnostics.Add(args.Diagnostic);
+        var project = CreateValidProject();
+        var outputId = project.Outputs[0].Id;
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+
+        backendFactory.Backend!.ThrowOnBind = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.BindOutputAsync(outputId, CreatePreviewTarget(1)));
+
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "render.command_failed");
     }
 
     [Fact]
@@ -584,6 +624,38 @@ public class MediaForgeEngineTests
 
         backendFactory.Backend!.CompleteAllPending();
         await WaitUntilAsync(() => source.ActiveSlotRetainCount == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Engine_raises_FrameDropped_when_pending_tracker_is_full()
+    {
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        await using var engine = CreateEngine(providerFactory, backendFactory);
+        var frameDropped = new List<MediaForgeFrameDroppedEventArgs>();
+        await engine.LoadProjectAsync(CreateValidProject());
+        var canvasId = engine.CurrentProject.Canvases[0].Id;
+        engine.FrameDropped += (_, args) => frameDropped.Add(args);
+
+        try
+        {
+            await engine.StartAsync();
+            await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+
+            await engine.ApplyProjectUpdateAsync(editor =>
+                editor.AddText(canvasId, "A", new Transform2D { Size = new CanvasSize(200, 64) }));
+            await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 2, TimeSpan.FromSeconds(5));
+
+            await engine.ApplyProjectUpdateAsync(editor =>
+                editor.AddText(canvasId, "B", new Transform2D { Size = new CanvasSize(200, 64) }));
+
+            await WaitUntilAsync(() => frameDropped.Count > 0, TimeSpan.FromSeconds(5));
+            Assert.Contains(frameDropped, args => args.ReasonCode == "render.frame_dropped_tracker_full");
+        }
+        finally
+        {
+            backendFactory.Backend?.CompleteAllPending();
+        }
     }
 
     [Fact]
