@@ -14,6 +14,8 @@ internal sealed class VulkanOffscreenTargetHandle : IDisposable
 
     public bool IsAlive => _target is not null;
 
+    public bool HasSubmissionReferences => Volatile.Read(ref _submissionRefs) > 0;
+
     public void RetainForSubmission()
     {
         ObjectDisposedException.ThrowIf(_target is null, this);

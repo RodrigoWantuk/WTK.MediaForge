@@ -177,6 +177,201 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
+    public async Task CpuReadbackSink_center_pixel_matches_expected_color()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+                CpuReadbackFrame? readback = null;
+                var sink = new CpuReadbackSink(onFrame: (frame, _) =>
+                {
+                    readback = frame;
+                    return ValueTask.CompletedTask;
+                });
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+                await sink.StartAsync(CreateSinkContext(outputId, size), CancellationToken.None);
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(64, 64) },
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+                var outputFrames = submission.AcquireOutputFrames();
+                var frame = Assert.Single(outputFrames.Frames);
+                await sink.OnFrameAsync(
+                    outputFrames.CreateLease(frame, CreateOutputFrameInfo(frame, sink.Id)),
+                    CancellationToken.None);
+
+                submission.DisposeCompleted();
+
+                Assert.NotNull(readback);
+                Assert.Equal(64 * 4, readback.StrideBytes);
+                Assert.Equal(RenderPixelFormat.Rgba8Unorm, readback.Format);
+                AssertPixelNear(ReadPixel(readback, 32, 32), 255, 0, 0, 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Sample_offscreen_reads_actual_pixels()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(0, 1, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(32, 32);
+                CpuReadbackFrame? readback = null;
+                var sink = new CpuReadbackSink(onFrame: (frame, _) =>
+                {
+                    readback = frame;
+                    return ValueTask.CompletedTask;
+                });
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+                await sink.StartAsync(CreateSinkContext(outputId, size), CancellationToken.None);
+
+                using var snapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(32, 32) },
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+                var outputFrames = submission.AcquireOutputFrames();
+                var frame = Assert.Single(outputFrames.Frames);
+                await sink.OnFrameAsync(
+                    outputFrames.CreateLease(frame, CreateOutputFrameInfo(frame, sink.Id, frameNumber: 12)),
+                    CancellationToken.None);
+
+                submission.DisposeCompleted();
+
+                Assert.NotNull(readback);
+                Assert.Equal(12, readback.FrameNumber);
+                Assert.Equal(size, readback.Size);
+                Assert.Equal(32 * 32 * 4, readback.Pixels.Length);
+                AssertPixelNear(ReadPixel(readback, 16, 16), 0, 255, 0, 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CpuReadbackSink_frame_pixels_are_not_overwritten_by_next_submit()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(32, 32);
+                CpuReadbackFrame? firstReadback = null;
+                var sink = new CpuReadbackSink(onFrame: (frame, _) =>
+                {
+                    firstReadback = frame;
+                    return ValueTask.CompletedTask;
+                });
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+                await sink.StartAsync(CreateSinkContext(outputId, size), CancellationToken.None);
+
+                FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+                using var firstSnapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(32, 32) },
+                    outputLetterboxColor: ColorRgba.Transparent);
+                var firstSubmission = backend.Submit(firstSnapshot);
+                await firstSubmission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+                var firstOutputFrames = firstSubmission.AcquireOutputFrames();
+                var firstFrame = Assert.Single(firstOutputFrames.Frames);
+                var firstLease = firstOutputFrames.CreateLease(
+                    firstFrame,
+                    CreateOutputFrameInfo(firstFrame, sink.Id, frameNumber: 1));
+
+                FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(0, 0, 1, 1));
+                using var secondSnapshot = CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(32, 32) },
+                    outputLetterboxColor: ColorRgba.Transparent);
+                var secondSubmission = backend.Submit(secondSnapshot);
+                await ReleaseSubmissionAsync(secondSubmission);
+
+                await sink.OnFrameAsync(firstLease, CancellationToken.None);
+                firstSubmission.DisposeCompleted();
+
+                Assert.NotNull(firstReadback);
+                AssertPixelNear(ReadPixel(firstReadback, 16, 16), 255, 0, 0, 255);
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 16, 16, out var latestPixel));
+                AssertPixelNear(latestPixel, 0, 0, 255, 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Cp2_same_source_two_layers_render_at_different_positions()
     {
         if (!TryCreateCp1Context(out var context))
@@ -2141,6 +2336,45 @@ public class Cp1OffscreenCompositionTests
         Assert.InRange((int)pixel.B, expectedB - tolerance, expectedB + tolerance);
         Assert.InRange((int)pixel.A, expectedA - tolerance, expectedA + tolerance);
     }
+
+    private static VulkanReadbackPixel ReadPixel(CpuReadbackFrame frame, uint x, uint y)
+    {
+        if (x >= frame.Size.Width)
+            throw new ArgumentOutOfRangeException(nameof(x));
+
+        if (y >= frame.Size.Height)
+            throw new ArgumentOutOfRangeException(nameof(y));
+
+        var offset = checked((int)y * frame.StrideBytes + (int)x * 4);
+        var pixels = frame.Pixels.Span;
+        return new VulkanReadbackPixel(
+            pixels[offset],
+            pixels[offset + 1],
+            pixels[offset + 2],
+            pixels[offset + 3]);
+    }
+
+    private static RenderOutputSinkContext CreateSinkContext(
+        RenderOutputId outputId,
+        FrameSize size) =>
+        new(
+            outputId,
+            size,
+            RenderPixelFormat.Rgba8Unorm,
+            RenderBackendKind.Vulkan);
+
+    private static RenderOutputFrameInfo CreateOutputFrameInfo(
+        RenderedOutputFrame frame,
+        RenderOutputSinkId sinkId,
+        long frameNumber = 1) =>
+        new(
+            frame.OutputId,
+            sinkId,
+            frameNumber,
+            timestamp: TimeSpan.Zero,
+            frame.Size,
+            frame.Format,
+            frame.BackendKind);
 
     private static RenderOutputBindingSnapshot CreateOffscreenBinding(
         RenderOutputId outputId,

@@ -133,6 +133,9 @@ Current public output target contracts:
 
 Current public sink contracts:
 
+- `CpuReadbackSink`
+- `CpuReadbackFrame`
+- `CpuReadbackFrameEventArgs`
 - `IRenderOutputSink`
 - `RenderOutputSinkId`
 - `RenderOutputSinkKind`
@@ -150,8 +153,10 @@ Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s
 The same `RenderOutput` can feed multiple sinks. `FrameNotificationSink` is the
 first functional public sink for completed-frame metadata in diagnostics, tests,
 and samples. It is not CPU readback and not the main GPU-first path for
-production preview or encoding. Productive preview, NDI, MP4, streaming,
-virtual camera, and audio outputs remain blocked.
+production preview or encoding. `CpuReadbackSink` is the first public visual
+sink and delivers owned CPU pixel buffers after a backend surface has completed.
+Productive preview, NDI, MP4, streaming, virtual camera, and audio outputs
+remain blocked.
 
 ## Engine
 

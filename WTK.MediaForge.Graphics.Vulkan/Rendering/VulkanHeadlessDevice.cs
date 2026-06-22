@@ -7,6 +7,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal sealed unsafe class VulkanHeadlessDevice : IDisposable
 {
+    private readonly object _commandQueueGate = new();
     private readonly Vk _vk;
     private bool _disposed;
 
@@ -44,6 +45,8 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
     public Queue GraphicsQueue => _graphicsQueue;
 
     public CommandPool CommandPool => _commandPool;
+
+    public object CommandQueueGate => _commandQueueGate;
 
     public static VulkanHeadlessDevice Create()
     {

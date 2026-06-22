@@ -4,7 +4,10 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal static unsafe class VulkanOffscreenReadback
 {
-    private const ulong ReadbackTimeoutNanoseconds = 5_000_000_000;
+    private static readonly TimeSpan ReadbackTimeout = TimeSpan.FromSeconds(5);
+    private const ulong ReadbackPollNanoseconds = 50_000_000;
+
+    private unsafe delegate T MappedRead<T>(byte* pixels, ulong bufferSize);
 
     public static VulkanReadbackPixel ReadPixel(VulkanOffscreenRenderTarget target, uint x, uint y)
     {
@@ -16,100 +19,145 @@ internal static unsafe class VulkanOffscreenReadback
         if (y >= target.Size.Height)
             throw new ArgumentOutOfRangeException(nameof(y));
 
+        return ReadMapped(
+            target,
+            CancellationToken.None,
+            (pixels, _) =>
+            {
+                var pixelOffset = checked(((ulong)y * target.Size.Width + x) * 4);
+                var bytes = pixels + pixelOffset;
+                return new VulkanReadbackPixel(bytes[0], bytes[1], bytes[2], bytes[3]);
+            });
+    }
+
+    public static VulkanReadbackFrame ReadFrame(
+        VulkanOffscreenRenderTarget target,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+
+        var strideBytes = checked((int)target.Size.Width * 4);
+        var length = checked(strideBytes * (int)target.Size.Height);
+        var pixels = ReadMapped(
+            target,
+            cancellationToken,
+            (mapped, bufferSize) =>
+            {
+                if ((ulong)length > bufferSize)
+                    throw new InvalidOperationException("Mapped Vulkan readback buffer is smaller than expected.");
+
+                var copy = new byte[length];
+                new ReadOnlySpan<byte>(mapped, length).CopyTo(copy);
+                return copy;
+            });
+
+        return new VulkanReadbackFrame(pixels, strideBytes);
+    }
+
+    private static T ReadMapped<T>(
+        VulkanOffscreenRenderTarget target,
+        CancellationToken cancellationToken,
+        MappedRead<T> read)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var deviceContext = target.DeviceContext;
         var vk = deviceContext.Vk;
         var device = deviceContext.Device;
         var bufferSize = checked((ulong)target.Size.Width * target.Size.Height * 4);
 
-        Silk.NET.Vulkan.Buffer stagingBuffer = default;
-        DeviceMemory stagingMemory = default;
-        CommandBuffer commandBuffer = default;
-        Fence fence = default;
-        void* mapped = null;
-
-        try
+        lock (deviceContext.CommandQueueGate)
         {
-            CreateStagingBuffer(deviceContext, bufferSize, out stagingBuffer, out stagingMemory);
-            commandBuffer = BeginCommandBuffer(deviceContext);
+            Silk.NET.Vulkan.Buffer stagingBuffer = default;
+            DeviceMemory stagingMemory = default;
+            CommandBuffer commandBuffer = default;
+            Fence fence = default;
+            void* mapped = null;
 
-            var originalLayout = target.CurrentLayout;
-            if (originalLayout != ImageLayout.TransferSrcOptimal)
+            try
             {
-                VulkanImageLayoutTransition.Transition(
-                    vk,
-                    commandBuffer,
-                    target.Image,
-                    originalLayout,
-                    ImageLayout.TransferSrcOptimal);
-            }
+                CreateStagingBuffer(deviceContext, bufferSize, out stagingBuffer, out stagingMemory);
+                commandBuffer = BeginCommandBuffer(deviceContext);
 
-            var region = new BufferImageCopy
-            {
-                BufferOffset = 0,
-                BufferRowLength = 0,
-                BufferImageHeight = 0,
-                ImageSubresource = new ImageSubresourceLayers
+                var originalLayout = target.CurrentLayout;
+                if (originalLayout != ImageLayout.TransferSrcOptimal)
                 {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    MipLevel = 0,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                },
-                ImageOffset = default,
-                ImageExtent = new Extent3D(target.Size.Width, target.Size.Height, 1)
-            };
+                    VulkanImageLayoutTransition.Transition(
+                        vk,
+                        commandBuffer,
+                        target.Image,
+                        originalLayout,
+                        ImageLayout.TransferSrcOptimal);
+                }
 
-            vk.CmdCopyImageToBuffer(
-                commandBuffer,
-                target.Image,
-                ImageLayout.TransferSrcOptimal,
-                stagingBuffer,
-                1,
-                &region);
+                var region = new BufferImageCopy
+                {
+                    BufferOffset = 0,
+                    BufferRowLength = 0,
+                    BufferImageHeight = 0,
+                    ImageSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        MipLevel = 0,
+                        BaseArrayLayer = 0,
+                        LayerCount = 1
+                    },
+                    ImageOffset = default,
+                    ImageExtent = new Extent3D(target.Size.Width, target.Size.Height, 1)
+                };
 
-            if (originalLayout != ImageLayout.TransferSrcOptimal)
-            {
-                VulkanImageLayoutTransition.Transition(
-                    vk,
+                vk.CmdCopyImageToBuffer(
                     commandBuffer,
                     target.Image,
                     ImageLayout.TransferSrcOptimal,
-                    originalLayout);
+                    stagingBuffer,
+                    1,
+                    &region);
+
+                if (originalLayout != ImageLayout.TransferSrcOptimal)
+                {
+                    VulkanImageLayoutTransition.Transition(
+                        vk,
+                        commandBuffer,
+                        target.Image,
+                        ImageLayout.TransferSrcOptimal,
+                        originalLayout);
+                }
+
+                if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
+                    throw new InvalidOperationException("vkEndCommandBuffer failed for offscreen readback.");
+
+                fence = CreateFence(deviceContext);
+                SubmitAndWait(deviceContext, commandBuffer, fence, cancellationToken);
+                target.CurrentLayout = originalLayout;
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (vk.MapMemory(device, stagingMemory, 0, bufferSize, 0, &mapped) != Result.Success)
+                    throw new InvalidOperationException("vkMapMemory failed for offscreen readback.");
+
+                return read((byte*)mapped, bufferSize);
             }
-
-            if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
-                throw new InvalidOperationException("vkEndCommandBuffer failed for offscreen readback.");
-
-            fence = CreateFence(deviceContext);
-            SubmitAndWait(deviceContext, commandBuffer, fence);
-            target.CurrentLayout = originalLayout;
-
-            if (vk.MapMemory(device, stagingMemory, 0, bufferSize, 0, &mapped) != Result.Success)
-                throw new InvalidOperationException("vkMapMemory failed for offscreen readback.");
-
-            var pixelOffset = checked(((ulong)y * target.Size.Width + x) * 4);
-            var bytes = (byte*)mapped + pixelOffset;
-            return new VulkanReadbackPixel(bytes[0], bytes[1], bytes[2], bytes[3]);
-        }
-        finally
-        {
-            if (mapped is not null)
-                vk.UnmapMemory(device, stagingMemory);
-
-            if (fence.Handle != 0)
-                vk.DestroyFence(device, fence, null);
-
-            if (commandBuffer.Handle != 0)
+            finally
             {
-                var localCommandBuffer = commandBuffer;
-                vk.FreeCommandBuffers(device, deviceContext.CommandPool, 1, &localCommandBuffer);
+                if (mapped is not null)
+                    vk.UnmapMemory(device, stagingMemory);
+
+                if (fence.Handle != 0)
+                    vk.DestroyFence(device, fence, null);
+
+                if (commandBuffer.Handle != 0)
+                {
+                    var localCommandBuffer = commandBuffer;
+                    vk.FreeCommandBuffers(device, deviceContext.CommandPool, 1, &localCommandBuffer);
+                }
+
+                if (stagingBuffer.Handle != 0)
+                    vk.DestroyBuffer(device, stagingBuffer, null);
+
+                if (stagingMemory.Handle != 0)
+                    vk.FreeMemory(device, stagingMemory, null);
             }
-
-            if (stagingBuffer.Handle != 0)
-                vk.DestroyBuffer(device, stagingBuffer, null);
-
-            if (stagingMemory.Handle != 0)
-                vk.FreeMemory(device, stagingMemory, null);
         }
     }
 
@@ -198,7 +246,8 @@ internal static unsafe class VulkanOffscreenReadback
     private static void SubmitAndWait(
         VulkanHeadlessDevice deviceContext,
         CommandBuffer commandBuffer,
-        Fence fence)
+        Fence fence,
+        CancellationToken cancellationToken)
     {
         var commandBuffers = stackalloc CommandBuffer[1];
         commandBuffers[0] = commandBuffer;
@@ -213,14 +262,31 @@ internal static unsafe class VulkanOffscreenReadback
         if (deviceContext.Vk.QueueSubmit(deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
             throw new InvalidOperationException("vkQueueSubmit failed for offscreen readback.");
 
-        if (deviceContext.Vk.WaitForFences(
+        var deadline = Environment.TickCount64 + (long)ReadbackTimeout.TotalMilliseconds;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var remainingMs = deadline - Environment.TickCount64;
+            if (remainingMs <= 0)
+                throw new TimeoutException("Timed out waiting for offscreen readback.");
+
+            var waitNanoseconds = (ulong)Math.Min(
+                checked(remainingMs * 1_000_000L),
+                (long)ReadbackPollNanoseconds);
+            var result = deviceContext.Vk.WaitForFences(
                 deviceContext.Device,
                 1,
                 &fence,
                 true,
-                ReadbackTimeoutNanoseconds) != Result.Success)
-        {
-            throw new TimeoutException("Timed out waiting for offscreen readback.");
+                waitNanoseconds);
+
+            if (result == Result.Success)
+                return;
+
+            if (result != Result.Timeout)
+                throw new InvalidOperationException($"vkWaitForFences failed for offscreen readback: {result}.");
         }
     }
 }

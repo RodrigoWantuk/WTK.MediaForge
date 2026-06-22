@@ -244,25 +244,30 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             textureLeases = AcquireTextureLeases(handles);
             var imports = textureLeases.Select(lease => lease.Import).ToList();
             var previousLayouts = imports.Select(import => import.CurrentLayout).ToArray();
+            PrepareOffscreenTargetsForSubmit(snapshot);
             var previousTargetLayouts = CaptureOffscreenTargetLayouts();
-            commandBuffer = BeginCommandBuffer();
             submissionResources = _cp1Pipelines.CreateSubmissionResourceScope();
 
             try
             {
-                renderedOutputSurfaces = VulkanCp1OffscreenCompositor.Compose(
-                    _cp1Pipelines,
-                    commandBuffer,
-                    snapshot,
-                    _offscreenTargets,
-                    textureLeases,
-                    submissionResources);
+                lock (_deviceContext.CommandQueueGate)
+                {
+                    commandBuffer = BeginCommandBuffer();
 
-                if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
-                    throw new InvalidOperationException("vkEndCommandBuffer failed.");
+                    renderedOutputSurfaces = VulkanCp1OffscreenCompositor.Compose(
+                        _cp1Pipelines,
+                        commandBuffer,
+                        snapshot,
+                        _offscreenTargets,
+                        textureLeases,
+                        submissionResources);
 
-                fence = CreateFence();
-                SubmitCommandBuffer(commandBuffer, imports, fence);
+                    if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
+                        throw new InvalidOperationException("vkEndCommandBuffer failed.");
+
+                    fence = CreateFence();
+                    SubmitCommandBuffer(commandBuffer, imports, fence);
+                }
             }
             catch (Exception submitEx)
             {
@@ -410,7 +415,11 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         if (commandBuffer.Handle != 0)
         {
             var localCommandBuffer = commandBuffer;
-            vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &localCommandBuffer);
+            lock (_deviceContext.CommandQueueGate)
+            {
+                vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &localCommandBuffer);
+            }
+
             commandBufferFreed = true;
         }
 
@@ -560,6 +569,31 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         }
     }
 
+    private void PrepareOffscreenTargetsForSubmit(RenderFrameSnapshot snapshot)
+    {
+        foreach (var output in snapshot.Outputs)
+        {
+            if (!_bindings.TryGetValue(output.Id, out var binding) ||
+                binding.TargetKind != RenderTargetKind.Offscreen)
+            {
+                continue;
+            }
+
+            if (!_offscreenTargets.TryGetValue(output.Id, out var handle) ||
+                !handle.IsAlive ||
+                !handle.HasSubmissionReferences)
+            {
+                continue;
+            }
+
+            var replacement = new VulkanOffscreenTargetHandle(
+                _offscreenTargetFactory(_deviceContext, handle.Target.Size));
+
+            _offscreenTargets[output.Id] = replacement;
+            handle.Retire();
+        }
+    }
+
     private CommandBuffer BeginCommandBuffer()
     {
         var allocInfo = new CommandBufferAllocateInfo
@@ -570,20 +604,25 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             CommandBufferCount = 1
         };
 
-        if (_deviceContext.Vk.AllocateCommandBuffers(_deviceContext.Device, &allocInfo, out CommandBuffer commandBuffer) !=
-            Result.Success)
+        CommandBuffer commandBuffer;
+
+        lock (_deviceContext.CommandQueueGate)
         {
-            throw new InvalidOperationException("vkAllocateCommandBuffers failed.");
+            if (_deviceContext.Vk.AllocateCommandBuffers(_deviceContext.Device, &allocInfo, out commandBuffer) !=
+                Result.Success)
+            {
+                throw new InvalidOperationException("vkAllocateCommandBuffers failed.");
+            }
+
+            var beginInfo = new CommandBufferBeginInfo
+            {
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+            };
+
+            if (_deviceContext.Vk.BeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success)
+                throw new InvalidOperationException("vkBeginCommandBuffer failed.");
         }
-
-        var beginInfo = new CommandBufferBeginInfo
-        {
-            SType = StructureType.CommandBufferBeginInfo,
-            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-        };
-
-        if (_deviceContext.Vk.BeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success)
-            throw new InvalidOperationException("vkBeginCommandBuffer failed.");
 
         return commandBuffer;
     }
@@ -669,10 +708,13 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                         PCommandBuffers = commandBuffers
                     };
 
-                    _faultInjector.BeforeQueueSubmit();
+                    lock (_deviceContext.CommandQueueGate)
+                    {
+                        _faultInjector.BeforeQueueSubmit();
 
-                    if (vk.QueueSubmit(_deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
-                        throw new InvalidOperationException("vkQueueSubmit failed.");
+                        if (vk.QueueSubmit(_deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
+                            throw new InvalidOperationException("vkQueueSubmit failed.");
+                    }
                 }
             }
             else
@@ -688,10 +730,13 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                     PCommandBuffers = commandBuffers
                 };
 
-                _faultInjector.BeforeQueueSubmit();
+                lock (_deviceContext.CommandQueueGate)
+                {
+                    _faultInjector.BeforeQueueSubmit();
 
-                if (vk.QueueSubmit(_deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
-                    throw new InvalidOperationException("vkQueueSubmit failed.");
+                    if (vk.QueueSubmit(_deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
+                        throw new InvalidOperationException("vkQueueSubmit failed.");
+                }
             }
 
             foreach (var import in imports)

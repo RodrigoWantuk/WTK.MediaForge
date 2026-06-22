@@ -109,6 +109,9 @@ Current public output target contracts:
 
 Current public sink contracts:
 
+- `CpuReadbackFrame`
+- `CpuReadbackFrameEventArgs`
+- `CpuReadbackSink`
 - `IRenderOutputSink`
 - `RenderOutputSinkId`
 - `RenderOutputSinkKind`
@@ -127,7 +130,7 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback.
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is the first public visual sink: it consumes a completed rendered output frame, copies pixels into an owned CPU buffer, releases the render output frame lease, and then raises the completed readback frame.
 
 Real preview, NDI, MP4, streaming, and audio outputs remain blocked until the renderer composition track is stable.
 

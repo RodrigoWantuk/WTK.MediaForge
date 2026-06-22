@@ -16,8 +16,8 @@ track.
 - **Sink queue foundation:** complete for extracted bounded per-sink queue policy and fanout lease coverage
 - **Sprint 0 hardening:** complete
 - **CP2/multi-layer renderer track:** complete
-- **First public visual output sink:** active
-- **CP3 composition expansion:** starts after CpuReadbackSink validation is green
+- **First public visual output sink:** complete
+- **CP3 composition expansion:** active
 
 ## Blocking Rule
 
@@ -35,20 +35,14 @@ allowed.
 
 ## Active Commit Order
 
-1. **Sprint 2.1 - CpuReadbackSink**
-   - Add the first public visual output sink.
-   - Read pixels from completed backend surfaces through an internal backend
-     capability without exposing Vulkan or D3D11 handles.
-   - Deliver owned, stable CPU buffers with stride, format, size, frame number,
-     and timestamp.
-2. **Sprint 3.1 - Solid layer rendering**
+1. **Sprint 3.1 - Solid layer rendering**
    - Render `SolidDrawObject` on the GPU with transform, clipping, opacity, and
      normal alpha blending.
-3. **Sprint 3.2 - Nested canvas rendering**
+2. **Sprint 3.2 - Nested canvas rendering**
    - Render child canvases into submission-retained intermediate targets and
      sample them in parent canvases.
    - Preserve the existing maximum canvas recursion depth contract.
-4. **Sprint 3.3 - ChromaKeyEffect**
+3. **Sprint 3.3 - ChromaKeyEffect**
    - Implement the first real source-layer effect while preserving explicit
      diagnostics for unsupported effects and invalid effect configuration.
 
@@ -100,6 +94,16 @@ allowed.
 3. Unsupported draw objects, effects, and blend modes emit explicit diagnostics.
 4. Repeated CP2 submissions cover descriptor, framebuffer, offscreen surface,
    and source lease lifetime.
+
+## Completed - First Public Visual Output Sink
+
+1. `CpuReadbackSink` delivers owned CPU pixel buffers with stride, format, size,
+   frame number, and timestamp.
+2. CPU readback is routed through an internal backend surface capability and
+   does not expose Vulkan or D3D11 handles publicly.
+3. Vulkan output targets are replaced before submit when an earlier rendered
+   surface still has live submission or sink references, preserving frame
+   content for slow sinks.
 
 ## Validation Gates
 
