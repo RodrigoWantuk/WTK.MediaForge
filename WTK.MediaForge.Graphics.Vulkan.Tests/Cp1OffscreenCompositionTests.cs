@@ -1496,6 +1496,111 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
+    public async Task Cp2_repeated_multi_layer_submits_do_not_exhaust_descriptor_pool()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanSubmissionResourceLifetime.Reset();
+
+        using (context)
+        using (var blueHandle = CreateFilledSharedTexture(context!.Device, ColorRgba.From(0, 0, 1, 1)))
+        {
+            FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                for (var i = 0; i < 50; i++)
+                {
+                    using var snapshot = CreateCp2Snapshot(
+                        canvasId,
+                        outputId,
+                        size,
+                        size,
+                        CreateFullFrameLayers(context.SharedHandle, blueHandle));
+
+                    var submission = backend.Submit(snapshot);
+                    await ReleaseSubmissionAsync(submission);
+                }
+
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+                Assert.Equal(100, VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
+                Assert.Equal(150, VulkanSubmissionResourceLifetime.FreedDescriptorSets);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp2_multi_layer_submission_dispose_releases_framebuffers_descriptors_and_surfaces()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanSubmissionResourceLifetime.Reset();
+        VulkanOffscreenRenderTargetLifetime.Reset();
+
+        using (context)
+        using (var blueHandle = CreateFilledSharedTexture(context!.Device, ColorRgba.From(0, 0, 1, 1)))
+        {
+            FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.LiveCount);
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    CreateFullFrameLayers(context.SharedHandle, blueHandle));
+
+                var submission = backend.Submit(snapshot);
+
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(3, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+                Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.LiveCount);
+
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveFramebuffers);
+                Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
+                Assert.Equal(2, VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
+                Assert.Equal(3, VulkanSubmissionResourceLifetime.FreedDescriptorSets);
+                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.LiveCount);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Cp1_submission_dispose_releases_framebuffers_and_descriptors()
     {
         if (!TryCreateCp1Context(out var context))
