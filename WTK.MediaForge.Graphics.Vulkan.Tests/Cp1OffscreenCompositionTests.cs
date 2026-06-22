@@ -240,6 +240,375 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
+    public async Task Cp2_two_sources_render_expected_pixels()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        using (var blueHandle = CreateFilledSharedTexture(context!.Device, ColorRgba.From(0, 0, 1, 1)))
+        {
+            FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D
+                            {
+                                Position = new CanvasPoint(0, 0),
+                                Size = new CanvasSize(32, 64)
+                            }),
+                        new Cp2LayerSpec(
+                            blueHandle,
+                            SourceId.New(),
+                            new Transform2D
+                            {
+                                Position = new CanvasPoint(32, 0),
+                                Size = new CanvasSize(32, 64)
+                            })
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 16, 32, out var left));
+                AssertPixelNear(left, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 48, 32, out var right));
+                AssertPixelNear(right, expectedR: 0, expectedG: 0, expectedB: 255, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp2_top_layer_overwrites_bottom_when_alpha_1()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        using (var blueHandle = CreateFilledSharedTexture(context!.Device, ColorRgba.From(0, 0, 1, 1)))
+        {
+            FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    CreateFullFrameLayers(context.SharedHandle, blueHandle));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 0, expectedB: 255, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp2_top_layer_alpha_blends_over_bottom()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        using (var blueHandle = CreateFilledSharedTexture(context!.Device, ColorRgba.From(0, 0, 1, 1)))
+        {
+            FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) }),
+                        new Cp2LayerSpec(
+                            blueHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            opacity: 0.5f)
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 128, expectedG: 0, expectedB: 128, expectedA: 255, tolerance: 3);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp2_layer_order_matches_canvas_object_order()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        using (var blueHandle = CreateFilledSharedTexture(context!.Device, ColorRgba.From(0, 0, 1, 1)))
+        {
+            FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            blueHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) }),
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) })
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp2_layer_transform_positions_pixels_correctly()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D
+                            {
+                                Position = new CanvasPoint(24, 8),
+                                Size = new CanvasSize(16, 16)
+                            })
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 28, 12, out var inside));
+                AssertPixelNear(inside, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 8, 8, out var outside));
+                AssertPixelNear(outside, expectedR: 0, expectedG: 0, expectedB: 0, expectedA: 0);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp2_disabled_layer_is_not_rendered()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        using (var blueHandle = CreateFilledSharedTexture(context!.Device, ColorRgba.From(0, 0, 1, 1)))
+        {
+            FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) }),
+                        new Cp2LayerSpec(
+                            blueHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            enabled: false)
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cp2_opacity_zero_layer_is_transparent()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        using (var blueHandle = CreateFilledSharedTexture(context!.Device, ColorRgba.From(0, 0, 1, 1)))
+        {
+            FillSharedTexture(context.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) }),
+                        new Cp2LayerSpec(
+                            blueHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            opacity: 0f)
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Cp1_source_layer_fit_outputs_transparent_outside_content_area()
     {
         if (!TryCreateCp1Context(out var context))
@@ -1385,6 +1754,29 @@ public class Cp1OffscreenCompositionTests
         public LayoutMode LayoutMode { get; }
 
         public BlendMode BlendMode { get; }
+    }
+
+    private static Cp2LayerSpec[] CreateFullFrameLayers(
+        D3D11SharedTextureFrameHandle bottom,
+        D3D11SharedTextureFrameHandle top) =>
+        [
+            new Cp2LayerSpec(
+                bottom,
+                SourceId.New(),
+                new Transform2D { Size = new CanvasSize(64, 64) }),
+            new Cp2LayerSpec(
+                top,
+                SourceId.New(),
+                new Transform2D { Size = new CanvasSize(64, 64) })
+        ];
+
+    private static D3D11SharedTextureFrameHandle CreateFilledSharedTexture(
+        D3D11GpuDevice device,
+        ColorRgba color)
+    {
+        var handle = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, width: 64, height: 64);
+        FillSharedTexture(device, handle, color);
+        return handle;
     }
 
     private static void FillSharedTexture(
