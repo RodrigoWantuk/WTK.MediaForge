@@ -8,7 +8,7 @@ using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-internal static class Cp1PushConstantsBuilder
+internal static class CompositionPushConstantsBuilder
 {
     public static MediaForgeLayerPushConstants BuildSourceLayer(
         RenderSourceLayerDrawObjectSnapshot layer,

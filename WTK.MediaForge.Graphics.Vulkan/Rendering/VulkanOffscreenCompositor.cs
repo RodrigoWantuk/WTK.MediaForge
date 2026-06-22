@@ -6,10 +6,10 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-internal static class VulkanCp1OffscreenCompositor
+internal static class VulkanOffscreenCompositor
 {
     public static IReadOnlyList<IRenderedOutputSurfaceLease> Compose(
-        VulkanCp1ShaderPipelines pipelines,
+        VulkanCompositionShaderPipelines pipelines,
         CommandBuffer commandBuffer,
         RenderFrameSnapshot snapshot,
         IReadOnlyDictionary<RenderOutputId, VulkanOffscreenTargetHandle> offscreenTargets,

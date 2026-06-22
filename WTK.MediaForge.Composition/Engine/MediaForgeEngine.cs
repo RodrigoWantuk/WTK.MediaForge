@@ -442,6 +442,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             }
 
             var createdSurfaceBinding = false;
+            var attachSucceeded = false;
 
             try
             {
@@ -449,20 +450,30 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     .ConfigureAwait(false);
 
                 await AwaitWithTimeoutAsync(
-                    ct => _sinkDispatcher.AttachAsync(output, sink, ct),
+                    ct => _sinkDispatcher.AttachAsync(output, sink, CommandTimeout, ct),
                     CommandTimeout,
                     "Render output sink attach timed out.",
                     cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                if (createdSurfaceBinding && !_sinkDispatcher.HasSinks(outputId))
-                {
-                    await RemoveSurfaceBindingAsync(outputId, cancellationToken)
-                        .ConfigureAwait(false);
-                }
 
-                throw;
+                attachSucceeded = true;
+            }
+            catch (Exception ex) when (IsTimeoutFailure(ex))
+            {
+                SetState(MediaForgeEngineState.Failed);
+                if (ex is MediaForgeEngineException)
+                    throw;
+
+                throw new MediaForgeEngineException(
+                    "Render output sink attach timed out.",
+                    State,
+                    ex);
+            }
+            finally
+            {
+                if (!attachSucceeded && createdSurfaceBinding)
+                {
+                    await RemoveSurfaceBindingAsync(outputId, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         finally
@@ -1004,14 +1015,22 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             cancellationToken,
             timeoutCts.Token);
 
+        var task = operation(linked.Token);
+
         try
         {
-            return await operation(linked.Token).ConfigureAwait(false);
+            return await task.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            timeoutCts.Cancel();
+            throw new MediaForgeEngineException(timeoutMessage, State, ex);
         }
         catch (OperationCanceledException ex) when (
             timeoutCts.IsCancellationRequested &&
             !cancellationToken.IsCancellationRequested)
         {
+            timeoutCts.Cancel();
             throw new MediaForgeEngineException(timeoutMessage, State, new TimeoutException(timeoutMessage, ex));
         }
     }
@@ -1028,14 +1047,22 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             cancellationToken,
             timeoutCts.Token);
 
+        var task = operation(linked.Token);
+
         try
         {
-            await operation(linked.Token).ConfigureAwait(false);
+            await task.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            timeoutCts.Cancel();
+            throw new MediaForgeEngineException(timeoutMessage, State, ex);
         }
         catch (OperationCanceledException ex) when (
             timeoutCts.IsCancellationRequested &&
             !cancellationToken.IsCancellationRequested)
         {
+            timeoutCts.Cancel();
             throw new MediaForgeEngineException(timeoutMessage, State, new TimeoutException(timeoutMessage, ex));
         }
     }

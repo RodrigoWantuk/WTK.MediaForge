@@ -79,10 +79,14 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
     public async Task AttachAsync(
         MediaForgeRenderOutput output,
         PublicRenderOutputSink sink,
+        TimeSpan startTimeout,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(sink);
+        if (startTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(startTimeout), "Sink start timeout must be positive.");
+
         cancellationToken.ThrowIfCancellationRequested();
 
         if (sink.Id.IsEmpty)
@@ -118,7 +122,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             }
 
             startAttempted = true;
-            await sink.StartAsync(context, cancellationToken).ConfigureAwait(false);
+            await AwaitSinkStartAsync(sink, context, startTimeout, cancellationToken).ConfigureAwait(false);
             registration.Start();
         }
         catch (Exception ex)
@@ -393,6 +397,35 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                 $"Render output sink {sink.Id} failed to attach and cleanup did not complete successfully.",
                 attachException,
                 cleanupException);
+        }
+    }
+
+    private static async ValueTask AwaitSinkStartAsync(
+        PublicRenderOutputSink sink,
+        RenderOutputSinkContext context,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+
+        var startTask = sink.StartAsync(context, timeoutCts.Token).AsTask();
+
+        try
+        {
+            await startTask.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            timeoutCts.Cancel();
+            throw new TimeoutException($"Render output sink {sink.Id} did not start within {timeout}.", ex);
+        }
+        catch (OperationCanceledException ex) when (
+            timeoutCts.IsCancellationRequested &&
+            !cancellationToken.IsCancellationRequested)
+        {
+            timeoutCts.Cancel();
+            throw new TimeoutException($"Render output sink {sink.Id} did not start within {timeout}.", ex);
         }
     }
 

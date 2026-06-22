@@ -11,7 +11,7 @@ using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
+internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 {
     private const uint PushConstantMaxSize = 128;
     private const uint MaxDescriptorSetsPerSubmit = 256;
@@ -37,7 +37,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
     private readonly ShaderModule _outputLetterboxFragmentModule;
     private bool _disposed;
 
-    public VulkanCp1ShaderPipelines(
+    public VulkanCompositionShaderPipelines(
         VulkanHeadlessDevice deviceContext,
         IMediaForgeDiagnosticsSink? diagnostics = null)
     {
@@ -128,6 +128,12 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                     continue;
                 }
 
+                if (!TryValidateTransformAndCrop(drawObject, out var skipDraw))
+                    continue;
+
+                if (skipDraw)
+                    continue;
+
                 var effectsSupported = TryResolveEffects(
                     drawObject,
                     allowSourceLayerEffects: drawObject is RenderSourceLayerDrawObjectSnapshot,
@@ -141,7 +147,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
                 if (drawObject is RenderSolidDrawObjectSnapshot solid)
                 {
-                    var solidPushConstants = Cp1PushConstantsBuilder.BuildSolid(solid);
+                    var solidPushConstants = CompositionPushConstantsBuilder.BuildSolid(solid);
                     DrawSolidLayer(
                         commandBuffer,
                         _solidPipeline,
@@ -159,7 +165,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                         continue;
                     }
 
-                    var canvasPushConstants = Cp1PushConstantsBuilder.BuildCanvasComposite(nestedCanvas);
+                    var canvasPushConstants = CompositionPushConstantsBuilder.BuildCanvasComposite(nestedCanvas);
                     var canvasDescriptorSet = AllocateAndWriteDescriptorSet(nestedTarget.ImageView);
                     submissionResources.RetainDescriptorSet(canvasDescriptorSet);
 
@@ -190,7 +196,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                 var frame = sourceLayer.BoundFrame!.Value;
                 TransitionForShaderRead(commandBuffer, import);
 
-                var pushConstants = Cp1PushConstantsBuilder.BuildSourceLayer(
+                var pushConstants = CompositionPushConstantsBuilder.BuildSourceLayer(
                     sourceLayer,
                     frame,
                     sourceLayerEffects.ChromaKey);
@@ -263,6 +269,64 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         return targets;
     }
 
+    private bool TryValidateTransformAndCrop(RenderDrawObjectSnapshot drawObject, out bool skipDraw)
+    {
+        skipDraw = false;
+        var transform = drawObject.Transform;
+
+        if (MathF.Abs(transform.RotationDegrees) > 0.001f)
+        {
+            ReportTransformRotationUnsupported(drawObject);
+
+            if (transform.Pivot != NormalizedPoint.TopLeft)
+                ReportTransformPivotUnsupported(drawObject);
+
+            skipDraw = true;
+        }
+
+        if (!IsFullCrop(drawObject.EffectiveCrop) &&
+            drawObject is RenderSolidDrawObjectSnapshot or RenderCanvasDrawObjectSnapshot)
+        {
+            ReportCropUnsupported(drawObject);
+            skipDraw = true;
+        }
+
+        return true;
+    }
+
+    private static bool IsFullCrop(NormalizedRect crop) =>
+        crop.Left == 0f &&
+        crop.Top == 0f &&
+        crop.Right == 1f &&
+        crop.Bottom == 1f;
+
+    private void ReportTransformRotationUnsupported(RenderDrawObjectSnapshot drawObject) =>
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.transform_rotation_unsupported",
+            $"Draw object '{drawObject.Name}' uses RotationDegrees={transformSummary(drawObject.Transform.RotationDegrees)}, which is not supported by the renderer yet.",
+            nameof(VulkanCompositionShaderPipelines));
+
+    private void ReportTransformPivotUnsupported(RenderDrawObjectSnapshot drawObject) =>
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.transform_pivot_unsupported",
+            $"Draw object '{drawObject.Name}' uses pivot {drawObject.Transform.Pivot}, which is not supported while rotation is active.",
+            nameof(VulkanCompositionShaderPipelines));
+
+    private void ReportCropUnsupported(RenderDrawObjectSnapshot drawObject) =>
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.crop_unsupported",
+            $"Draw object '{drawObject.Name}' of type '{drawObject.GetType().Name}' uses crop {drawObject.EffectiveCrop}, which is not supported yet.",
+            nameof(VulkanCompositionShaderPipelines));
+
+    private static string transformSummary(float rotationDegrees) =>
+        rotationDegrees.ToString("0.###");
+
     private bool IsSupportedBlendMode(RenderDrawObjectSnapshot drawObject)
     {
         if (drawObject.BlendMode == BlendMode.Normal)
@@ -273,7 +337,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             MediaForgeDiagnosticSeverity.Warning,
             "render.blend_mode_unsupported",
             $"Draw object '{drawObject.Name}' uses unsupported blend mode '{drawObject.BlendMode}'.",
-            nameof(VulkanCp1ShaderPipelines));
+            nameof(VulkanCompositionShaderPipelines));
         return false;
     }
 
@@ -383,7 +447,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             MediaForgeDiagnosticSeverity.Warning,
             "render.effect_not_supported",
             message,
-            nameof(VulkanCp1ShaderPipelines));
+            nameof(VulkanCompositionShaderPipelines));
     }
 
     private void ReportInvalidEffect(
@@ -396,7 +460,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             MediaForgeDiagnosticSeverity.Warning,
             "render.effect_invalid",
             $"Draw object '{drawObject.Name}' has invalid effect '{effect.GetType().Name}'. {reason}",
-            nameof(VulkanCp1ShaderPipelines));
+            nameof(VulkanCompositionShaderPipelines));
     }
 
     private void ReportUnsupportedDrawObject(RenderDrawObjectSnapshot drawObject)
@@ -406,7 +470,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             MediaForgeDiagnosticSeverity.Warning,
             "render.drawobject_not_supported",
             $"Draw object '{drawObject.Name}' of type '{drawObject.GetType().Name}' is not supported by the Vulkan compositor yet.",
-            nameof(VulkanCp1ShaderPipelines));
+            nameof(VulkanCompositionShaderPipelines));
     }
 
     private void ReportNestedCanvasUnavailable(RenderCanvasDrawObjectSnapshot drawObject)
@@ -416,7 +480,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             MediaForgeDiagnosticSeverity.Warning,
             "render.canvas_not_available",
             $"Nested canvas draw object '{drawObject.Name}' does not have a renderable nested canvas.",
-            nameof(VulkanCp1ShaderPipelines));
+            nameof(VulkanCompositionShaderPipelines));
     }
 
     private void ReportNestedCanvasDepthExceeded(RenderCanvasDrawObjectSnapshot drawObject)
@@ -426,7 +490,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             MediaForgeDiagnosticSeverity.Warning,
             "render.canvas_depth_exceeded",
             $"Nested canvas draw object '{drawObject.Name}' exceeded the renderer nesting depth limit.",
-            nameof(VulkanCp1ShaderPipelines));
+            nameof(VulkanCompositionShaderPipelines));
     }
 
     private void RenderOutputPass(
@@ -455,7 +519,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
         try
         {
-            var pushConstants = Cp1PushConstantsBuilder.BuildOutputLetterbox(output, canvasSize);
+            var pushConstants = CompositionPushConstantsBuilder.BuildOutputLetterbox(output, canvasSize);
             var descriptorSet = AllocateAndWriteDescriptorSet(canvasTarget.ImageView);
             submissionResources.RetainDescriptorSet(descriptorSet);
 

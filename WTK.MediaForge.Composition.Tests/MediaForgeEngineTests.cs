@@ -756,7 +756,7 @@ public class MediaForgeEngineTests
         var latestBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
         var replacingBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         try
         {
@@ -793,7 +793,7 @@ public class MediaForgeEngineTests
         var latestBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
         var replacingBatch = CreateRenderedOutputFrameBatch(output.Id, output.OutputSize);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         try
         {
@@ -882,6 +882,7 @@ public class MediaForgeEngineTests
             engine.AttachSinkAsync(project.Outputs[0].Id, sink));
 
         Assert.IsType<TimeoutException>(ex.InnerException);
+        Assert.Equal(MediaForgeEngineState.Failed, engine.State);
         Assert.True(sink.StartCancellationObserved);
         Assert.False(engine.IsSinkAttachedForTests(project.Outputs[0].Id, sink.Id));
         Assert.Equal(0, engine.AttachedSinkCountForTests);

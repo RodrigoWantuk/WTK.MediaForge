@@ -100,6 +100,47 @@ internal sealed class SourceRuntimeManager : IDisposable
             ? runtime.TryAcquireFrameForRender(renderTimestamp)
             : SourceFrameAcquireResult.SourceNotRegistered();
 
+    public async Task StartAllAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Source start timeout must be positive.");
+
+        List<MediaSourceRuntime> started = [];
+
+        try
+        {
+            foreach (var runtime in SnapshotRuntimes())
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(timeout);
+
+                var startTask = runtime.StartAsync(timeoutCts.Token);
+                await startTask.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+                started.Add(runtime);
+            }
+        }
+        catch (Exception ex)
+        {
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "source.start_failed",
+                "Failed to start one or more source runtimes.",
+                nameof(SourceRuntimeManager),
+                ex);
+
+            await StopStartedAfterStartFailureAsync(started, cancellationToken).ConfigureAwait(false);
+
+            if (ex is TimeoutException ||
+                (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+            {
+                throw new TimeoutException("One or more source runtimes did not start before the timeout.", ex);
+            }
+
+            throw;
+        }
+    }
+
     public async Task StartAllAsync(CancellationToken cancellationToken)
     {
         List<MediaSourceRuntime> started = [];

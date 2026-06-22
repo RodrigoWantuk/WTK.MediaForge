@@ -19,7 +19,7 @@ track.
 - **First public visual output sink:** complete
 - **CP3 solid layer:** complete
 - **CP3 nested canvas:** complete
-- **CP3 first effect:** active
+- **CP3 first effect (ChromaKeyEffect):** complete
 
 ## Blocking Rule
 
@@ -37,9 +37,15 @@ allowed.
 
 ## Active Commit Order
 
-1. **Sprint 3.3 - ChromaKeyEffect**
-   - Implement the first real source-layer effect while preserving explicit
-     diagnostics for unsupported effects and invalid effect configuration.
+No active renderer composition commit is open. Next roadmap work must be chosen
+explicitly before starting preview, real sources, encoders, or additional effects.
+
+## Completed - CP3 ChromaKeyEffect
+
+1. `ChromaKeyEffect` is the only supported source-layer effect in Vulkan.
+2. Invalid configuration reports `render.effect_invalid`.
+3. Multiple active chroma keys and unsupported effects report explicit diagnostics.
+4. Pixel and diagnostic coverage lives in `Cp3ChromaKeyEffectTests.cs`.
 
 ## Completed - GPU Lifecycle
 

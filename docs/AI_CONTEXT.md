@@ -72,12 +72,15 @@ The legacy WinForms preview path has been removed as a product path because it u
 - CP1 descriptor capacity is explicitly sized for larger submits, and `VulkanExternalTextureRegistry` waiters use timeout diagnostics instead of indefinite blocking.
 - CP3 solid layer rendering is implemented in Vulkan with transform, clipping, opacity, normal alpha blending, and pixel tests.
 - CP3 nested canvas rendering is implemented in Vulkan by rendering child canvases into submission-retained intermediate targets and compositing them into parent canvases with transform, opacity, and depth-8 coverage.
+- CP3 `ChromaKeyEffect` is the only supported source-layer effect. Unsupported/invalid/multiple chroma configurations emit explicit diagnostics and are covered by `Cp3ChromaKeyEffectTests`.
+- Vulkan offscreen composition is implemented through `VulkanCompositionShaderPipelines` and `VulkanOffscreenCompositor`.
+- Engine/source/sink long-running public operations use linked cancellation plus hard `WaitAsync` timeouts.
 
 ## Remaining Blockers
 
 The application shell must not re-enable capture preview until it is wired through the hardened runtime path. The old direct `DesktopDuplicationCaptureSource -> VulkanPreviewRenderer` path must not return.
 
-PAPI and the first runtime/sink foundation are complete. CP2 multi-layer, CP3 nested canvas, chroma/effects, productive preview, and real source/output integrations remain blocked until the roadmap explicitly starts the next renderer track.
+PAPI, CP2 multi-layer, CP3 solid/nested/chroma, and the first public visual sink are complete. Productive preview, additional effects, and real source/output integrations remain blocked until the roadmap explicitly starts the next track.
 
 ## Review Style Expected
 

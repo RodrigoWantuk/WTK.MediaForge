@@ -46,8 +46,8 @@ public class RenderOutputSinkDispatcherTests
                 return ValueTask.CompletedTask;
             });
 
-        await dispatcher.AttachAsync(output, first, CancellationToken.None);
-        await dispatcher.AttachAsync(output, second, CancellationToken.None);
+        await dispatcher.AttachAsync(output, first, TimeSpan.FromSeconds(5), CancellationToken.None);
+        await dispatcher.AttachAsync(output, second, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         try
         {
@@ -129,7 +129,7 @@ public class RenderOutputSinkDispatcherTests
                     backendSurface: new object())
             ]);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
         dispatcher.PublishCompletedFrames(batch);
         await sink.WaitForFrameAsync(TimeSpan.FromSeconds(5));
 
@@ -153,7 +153,7 @@ public class RenderOutputSinkDispatcherTests
         var sink = new FailingStartSink();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            dispatcher.AttachAsync(output, sink, CancellationToken.None));
+            dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None));
 
         Assert.Equal(1, sink.StopCount);
         Assert.Equal(1, sink.DisposeCount);
@@ -174,7 +174,7 @@ public class RenderOutputSinkDispatcherTests
         {
             var started = Environment.TickCount64;
             var ex = await Assert.ThrowsAsync<AggregateException>(() =>
-                dispatcher.AttachAsync(output, sink, CancellationToken.None));
+                dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None));
             var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
 
             Assert.True(elapsed < TimeSpan.FromSeconds(2));
@@ -195,11 +195,11 @@ public class RenderOutputSinkDispatcherTests
             sinkStopTimeout: TimeSpan.FromSeconds(1));
         var output = CreateOutput();
         var sink = new HangingStartSink();
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            dispatcher.AttachAsync(output, sink, cts.Token));
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
+            dispatcher.AttachAsync(output, sink, TimeSpan.FromMilliseconds(50), CancellationToken.None));
 
+        Assert.NotNull(ex);
         Assert.True(sink.StartCancellationObserved);
         Assert.Equal(1, sink.StopCount);
         Assert.Equal(1, sink.DisposeCount);
@@ -222,7 +222,7 @@ public class RenderOutputSinkDispatcherTests
         };
 
         var ex = await Assert.ThrowsAsync<AggregateException>(() =>
-            dispatcher.AttachAsync(output, sink, CancellationToken.None));
+            dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None));
 
         var flattened = ex.Flatten().InnerExceptions;
         Assert.Contains(flattened, inner => inner.Message == "Configured start failure.");
@@ -252,7 +252,7 @@ public class RenderOutputSinkDispatcherTests
             });
         var batch = CreateTrackedBatch(output, out var surface, out var releaseCount);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         dispatcher.PublishCompletedFrames(batch);
         await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
@@ -275,7 +275,7 @@ public class RenderOutputSinkDispatcherTests
             beforeDeliveryEnqueue: () => throw new InvalidOperationException("Configured enqueue failure."));
         var batch = CreateTrackedBatch(output, out var surface, out var releaseCount);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         dispatcher.PublishCompletedFrames(batch);
         await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
@@ -298,7 +298,7 @@ public class RenderOutputSinkDispatcherTests
             beforeAvailabilitySignal: () => throw new ObjectDisposedException("availability"));
         var batch = CreateTrackedBatch(output, out _, out _);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         dispatcher.PublishCompletedFrames(batch);
         await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
@@ -319,7 +319,7 @@ public class RenderOutputSinkDispatcherTests
             beforeAvailabilitySignal: () => throw new ObjectDisposedException("availability"));
         var batch = CreateTrackedBatch(output, out var surface, out var releaseCount);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         dispatcher.PublishCompletedFrames(batch);
         await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
@@ -341,7 +341,7 @@ public class RenderOutputSinkDispatcherTests
             beforeAvailabilitySignal: () => throw new ObjectDisposedException("availability"));
         var batch = CreateTrackedBatch(output, out var surface, out _);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         dispatcher.PublishCompletedFrames(batch);
         await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
@@ -372,7 +372,7 @@ public class RenderOutputSinkDispatcherTests
             });
         var batch = CreateTrackedBatch(output, out var surface, out _);
 
-        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         dispatcher.PublishCompletedFrames(batch);
         await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);

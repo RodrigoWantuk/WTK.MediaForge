@@ -22,7 +22,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
     private readonly IVulkanRendererFaultInjector _faultInjector;
     private readonly Func<VulkanHeadlessDevice, FrameSize, IVulkanOffscreenRenderTarget> _offscreenTargetFactory;
     private readonly Action _disposeDevice;
-    private readonly VulkanCp1ShaderPipelines _cp1Pipelines;
+    private readonly VulkanCompositionShaderPipelines _compositionPipelines;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
     private readonly ConcurrentDictionary<RenderOutputId, VulkanOffscreenTargetHandle> _offscreenTargets = new();
     private int _disposed;
@@ -50,7 +50,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         _offscreenTargetFactory = offscreenTargetFactory ?? CreateOffscreenRenderTarget;
         _disposeDevice = disposeDevice ?? _deviceContext.Dispose;
         _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
-        _cp1Pipelines = new VulkanCp1ShaderPipelines(_deviceContext, diagnostics);
+        _compositionPipelines = new VulkanCompositionShaderPipelines(_deviceContext, diagnostics);
     }
 
     internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;
@@ -246,7 +246,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             var previousLayouts = imports.Select(import => import.CurrentLayout).ToArray();
             PrepareOffscreenTargetsForSubmit(snapshot);
             var previousTargetLayouts = CaptureOffscreenTargetLayouts();
-            submissionResources = _cp1Pipelines.CreateSubmissionResourceScope();
+            submissionResources = _compositionPipelines.CreateSubmissionResourceScope();
 
             try
             {
@@ -254,8 +254,8 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                 {
                     commandBuffer = BeginCommandBuffer();
 
-                    renderedOutputSurfaces = VulkanCp1OffscreenCompositor.Compose(
-                        _cp1Pipelines,
+                    renderedOutputSurfaces = VulkanOffscreenCompositor.Compose(
+                        _compositionPipelines,
                         commandBuffer,
                         snapshot,
                         _offscreenTargets,
@@ -500,7 +500,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
         try
         {
-            _cp1Pipelines.Dispose();
+            _compositionPipelines.Dispose();
         }
         catch (Exception ex)
         {

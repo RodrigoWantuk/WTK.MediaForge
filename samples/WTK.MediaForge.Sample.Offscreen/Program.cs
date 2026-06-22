@@ -3,7 +3,7 @@ using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Windows;
 
 await using var engine = MediaForgeWindows.CreateEngine();
-var firstFrame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var firstFrame = new TaskCompletionSource<CpuReadbackFrame>(TaskCreationOptions.RunContinuationsAsynchronously);
 
 var project = MediaForgeProjectBuilder.Create()
     .Canvas("Main", 1920, 1080, out var main)
@@ -17,16 +17,31 @@ var project = MediaForgeProjectBuilder.Create()
 
 await engine.LoadProjectAsync(project);
 
-var sink = new FrameNotificationSink(onFrame: (frame, _) =>
+var sink = new CpuReadbackSink(onFrame: (frame, _) =>
 {
-    Console.WriteLine($"Output {frame.OutputId} completed frame {frame.FrameNumber} {frame.Size}");
-    firstFrame.TrySetResult();
+    firstFrame.TrySetResult(frame);
     return ValueTask.CompletedTask;
 });
 
 await engine.AttachSinkAsync(output.Id, sink);
 await engine.StartAsync();
 
-await firstFrame.Task.WaitAsync(TimeSpan.FromSeconds(5));
+var readback = await firstFrame.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+var centerX = readback.Size.Width / 2;
+var centerY = readback.Size.Height / 2;
+var centerOffset = checked(centerY * readback.StrideBytes + centerX * 4);
+var pixels = readback.Pixels.ToArray();
+var checksum =
+    (long)pixels[centerOffset] +
+    pixels[centerOffset + 1] +
+    pixels[centerOffset + 2] +
+    pixels[centerOffset + 3];
+
+Console.WriteLine(
+    $"Output {output.Id} frame {readback.FrameNumber} {readback.Size} center-rgba=({pixels[centerOffset + 2]},{pixels[centerOffset + 1]},{pixels[centerOffset + 3]},{pixels[centerOffset]}) checksum={checksum}");
+
+if (checksum == 0)
+    throw new InvalidOperationException("Sample did not receive non-zero CPU pixel data from the rendered output.");
 
 await engine.StopAsync();
