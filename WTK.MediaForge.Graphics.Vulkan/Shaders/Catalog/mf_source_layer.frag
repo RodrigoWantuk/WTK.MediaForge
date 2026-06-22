@@ -5,6 +5,8 @@ layout(set = 0, binding = 0) uniform sampler2D uSourceTexture;
 layout(push_constant) uniform LayerParams
 {
     vec4 cropRect;
+    vec4 chromaKeyColor;
+    vec4 chromaKeyParameters;
     vec2 logicalSize;
     vec2 boxSize;
     vec2 pivot;
@@ -63,6 +65,27 @@ vec2 rotateUv(vec2 uv, int rotation)
     return centered + vec2(0.5);
 }
 
+vec4 applyChromaKey(vec4 color)
+{
+    if (params.chromaKeyParameters.w < 0.5)
+        return color;
+
+    vec3 key = params.chromaKeyColor.rgb;
+    float similarity = params.chromaKeyParameters.x;
+    float smoothness = max(params.chromaKeyParameters.y, 0.0001);
+    float spillReduction = params.chromaKeyParameters.z;
+
+    float distanceToKey = distance(color.rgb, key);
+    float matte = smoothstep(similarity, similarity + smoothness, distanceToKey);
+    float alpha = color.a * matte;
+
+    vec3 spillAxis = normalize(max(key, vec3(0.0001)));
+    float spillAmount = max(dot(color.rgb - key, spillAxis), 0.0);
+    vec3 despilled = max(color.rgb - spillAxis * spillAmount * spillReduction * (1.0 - matte), vec3(0.0));
+
+    return vec4(despilled, alpha);
+}
+
 void main()
 {
     vec2 croppedSize = params.logicalSize * vec2(
@@ -81,5 +104,6 @@ void main()
     vec2 uvRaw = rotateUv(uvLogical, params.contentRotation);
 
     vec4 color = texture(uSourceTexture, uvRaw);
+    color = applyChromaKey(color);
     outColor = vec4(color.rgb, color.a * params.opacity);
 }

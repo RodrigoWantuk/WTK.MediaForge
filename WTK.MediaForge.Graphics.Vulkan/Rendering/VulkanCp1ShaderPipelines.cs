@@ -13,7 +13,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 {
-    private const uint PushConstantMaxSize = 64;
+    private const uint PushConstantMaxSize = 128;
     private const uint MaxDescriptorSetsPerSubmit = 256;
     private const int MaxNestedCanvasDepth = 8;
 
@@ -128,12 +128,15 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                     continue;
                 }
 
-                ReportUnsupportedEffects(drawObject);
+                var effectsSupported = TryResolveEffects(
+                    drawObject,
+                    allowSourceLayerEffects: drawObject is RenderSourceLayerDrawObjectSnapshot,
+                    out var sourceLayerEffects);
 
                 if (!IsSupportedBlendMode(drawObject))
                     continue;
 
-                if (!IsSupportedEffects(drawObject))
+                if (!effectsSupported)
                     continue;
 
                 if (drawObject is RenderSolidDrawObjectSnapshot solid)
@@ -187,7 +190,10 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                 var frame = sourceLayer.BoundFrame!.Value;
                 TransitionForShaderRead(commandBuffer, import);
 
-                var pushConstants = Cp1PushConstantsBuilder.BuildSourceLayer(sourceLayer, frame);
+                var pushConstants = Cp1PushConstantsBuilder.BuildSourceLayer(
+                    sourceLayer,
+                    frame,
+                    sourceLayerEffects.ChromaKey);
                 var descriptorSet = AllocateAndWriteDescriptorSet(import.ImageView);
                 submissionResources.RetainDescriptorSet(descriptorSet);
 
@@ -224,7 +230,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                 !nested.Enabled ||
                 nested.NestedCanvas is null ||
                 nested.BlendMode != BlendMode.Normal ||
-                !IsSupportedEffects(nested) ||
+                HasEnabledEffects(nested) ||
                 !nested.Transform.HasPositiveSize ||
                 !TryCreateClippedScissor(nested.Transform, canvas.Size, out _))
             {
@@ -271,23 +277,126 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         return false;
     }
 
-    private bool IsSupportedEffects(RenderDrawObjectSnapshot drawObject) =>
-        drawObject.Effects.IsDefaultOrEmpty;
-
-    private void ReportUnsupportedEffects(RenderDrawObjectSnapshot drawObject)
+    private bool TryResolveEffects(
+        RenderDrawObjectSnapshot drawObject,
+        bool allowSourceLayerEffects,
+        out SourceLayerEffectSelection sourceLayerEffects)
     {
-        if (IsSupportedEffects(drawObject))
-            return;
+        sourceLayerEffects = default;
 
-        foreach (var effect in drawObject.Effects)
+        if (drawObject.Effects.IsDefaultOrEmpty)
+            return true;
+
+        var supported = true;
+        ChromaKeyEffectSnapshot? chromaKey = null;
+
+        foreach (var effect in drawObject.Effects
+            .Select((Effect, Index) => (Effect, Index))
+            .Where(item => item.Effect.Enabled)
+            .OrderBy(item => item.Effect.Order)
+            .ThenBy(item => item.Index)
+            .Select(item => item.Effect))
         {
-            MediaForgeDiagnostics.Report(
-                _diagnostics,
-                MediaForgeDiagnosticSeverity.Warning,
-                "render.effect_not_supported",
-                $"Draw object '{drawObject.Name}' uses unsupported effect '{effect.GetType().Name}'.",
-                nameof(VulkanCp1ShaderPipelines));
+            if (allowSourceLayerEffects && effect is ChromaKeyEffectSnapshot chroma)
+            {
+                if (chromaKey is not null)
+                {
+                    ReportUnsupportedEffect(
+                        drawObject,
+                        effect,
+                        "Only one active ChromaKeyEffect is supported per source layer.");
+                    supported = false;
+                    continue;
+                }
+
+                if (!TryValidateChromaKey(drawObject, chroma))
+                {
+                    supported = false;
+                    continue;
+                }
+
+                chromaKey = chroma;
+                continue;
+            }
+
+            ReportUnsupportedEffect(drawObject, effect);
+            supported = false;
         }
+
+        sourceLayerEffects = new SourceLayerEffectSelection(chromaKey);
+        return supported;
+    }
+
+    private static bool HasEnabledEffects(RenderDrawObjectSnapshot drawObject) =>
+        !drawObject.Effects.IsDefaultOrEmpty &&
+        drawObject.Effects.Any(effect => effect.Enabled);
+
+    private bool TryValidateChromaKey(
+        RenderDrawObjectSnapshot drawObject,
+        ChromaKeyEffectSnapshot effect)
+    {
+        var valid = true;
+
+        valid &= ValidateUnitRange(drawObject, effect, effect.Similarity, "Similarity");
+        valid &= ValidateUnitRange(drawObject, effect, effect.Smoothness, "Smoothness");
+        valid &= ValidateUnitRange(drawObject, effect, effect.SpillReduction, "SpillReduction");
+
+        if (!effect.KeyColor.IsInRange())
+        {
+            ReportInvalidEffect(
+                drawObject,
+                effect,
+                "KeyColor must contain finite color components in the [0,1] range.");
+            valid = false;
+        }
+
+        return valid;
+    }
+
+    private bool ValidateUnitRange(
+        RenderDrawObjectSnapshot drawObject,
+        EffectStateSnapshot effect,
+        float value,
+        string fieldName)
+    {
+        if (float.IsFinite(value) && value >= 0f && value <= 1f)
+            return true;
+
+        ReportInvalidEffect(
+            drawObject,
+            effect,
+            $"{fieldName} must be finite and in the [0,1] range.");
+        return false;
+    }
+
+    private void ReportUnsupportedEffect(
+        RenderDrawObjectSnapshot drawObject,
+        EffectStateSnapshot effect,
+        string? reason = null)
+    {
+        var message = $"Draw object '{drawObject.Name}' uses unsupported effect '{effect.GetType().Name}'.";
+        if (!string.IsNullOrWhiteSpace(reason))
+            message += $" {reason}";
+
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.effect_not_supported",
+            message,
+            nameof(VulkanCp1ShaderPipelines));
+    }
+
+    private void ReportInvalidEffect(
+        RenderDrawObjectSnapshot drawObject,
+        EffectStateSnapshot effect,
+        string reason)
+    {
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.effect_invalid",
+            $"Draw object '{drawObject.Name}' has invalid effect '{effect.GetType().Name}'. {reason}",
+            nameof(VulkanCp1ShaderPipelines));
     }
 
     private void ReportUnsupportedDrawObject(RenderDrawObjectSnapshot drawObject)
@@ -1032,5 +1141,10 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
             return module;
         }
+    }
+
+    private readonly struct SourceLayerEffectSelection(ChromaKeyEffectSnapshot? chromaKey)
+    {
+        public ChromaKeyEffectSnapshot? ChromaKey { get; } = chromaKey;
     }
 }

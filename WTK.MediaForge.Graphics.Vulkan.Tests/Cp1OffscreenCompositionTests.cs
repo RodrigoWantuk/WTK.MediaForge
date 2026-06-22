@@ -1243,7 +1243,7 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
-    public async Task Source_layer_effect_reports_render_effect_not_supported()
+    public async Task Source_layer_unsupported_effect_reports_render_effect_not_supported()
     {
         var diagnostics = new InMemoryDiagnosticsSink();
         if (!TryCreateCp1Context(out var context, diagnostics: diagnostics))
@@ -1275,13 +1275,343 @@ public class Cp1OffscreenCompositionTests
                             context.SharedHandle,
                             SourceId.New(),
                             new Transform2D { Size = new CanvasSize(64, 64) },
-                            effects: [new ChromaKeyEffectSnapshot { Id = EffectId.New(), Name = "Key" }])
+                            effects: [new BlurEffectSnapshot { Id = EffectId.New(), Name = "Blur" }])
                     ]);
 
                 var submission = backend.Submit(snapshot);
                 await ReleaseSubmissionAsync(submission);
 
                 Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "render.effect_not_supported");
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Chroma_key_removes_key_color()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexturePattern(
+                context!.Device,
+                context.SharedHandle,
+                static (x, _) => x < 32
+                    ? ColorRgba.From(0, 1, 0, 1)
+                    : ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            effects:
+                            [
+                                new ChromaKeyEffectSnapshot
+                                {
+                                    Id = EffectId.New(),
+                                    Name = "Key green",
+                                    KeyColor = ColorRgba.From(0, 1, 0, 1),
+                                    Similarity = 0.05f,
+                                    Smoothness = 0.02f,
+                                    SpillReduction = 0f
+                                }
+                            ])
+                    ],
+                    canvasBackgroundColor: ColorRgba.From(0, 0, 1, 1));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 16, 32, out var keyed));
+                AssertPixelNear(keyed, expectedR: 0, expectedG: 0, expectedB: 255, expectedA: 255);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 48, 32, out var retained));
+                AssertPixelNear(retained, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Chroma_key_respects_similarity_smoothness()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(0, 0.8f, 0.2f, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using (var lowSimilarity = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            effects:
+                            [
+                                CreateChromaKeyEffect(similarity: 0.01f, smoothness: 0.01f)
+                            ])
+                    ],
+                    canvasBackgroundColor: ColorRgba.From(0, 0, 1, 1)))
+                {
+                    var submission = backend.Submit(lowSimilarity);
+                    await ReleaseSubmissionAsync(submission);
+
+                    Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var retained));
+                    AssertPixelNear(retained, expectedR: 0, expectedG: 204, expectedB: 51, expectedA: 255, tolerance: 2);
+                }
+
+                using (var highSimilarity = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            effects:
+                            [
+                                CreateChromaKeyEffect(similarity: 0.35f, smoothness: 0.02f)
+                            ])
+                    ],
+                    canvasBackgroundColor: ColorRgba.From(0, 0, 1, 1)))
+                {
+                    var submission = backend.Submit(highSimilarity);
+                    await ReleaseSubmissionAsync(submission);
+
+                    Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var keyed));
+                    AssertPixelNear(keyed, expectedR: 0, expectedG: 0, expectedB: 255, expectedA: 255);
+                }
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Disabled_effect_is_not_applied()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(0, 1, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            effects:
+                            [
+                                new ChromaKeyEffectSnapshot
+                                {
+                                    Id = EffectId.New(),
+                                    Name = "Disabled key",
+                                    Enabled = false,
+                                    KeyColor = ColorRgba.From(0, 1, 0, 1),
+                                    Similarity = 1f,
+                                    Smoothness = 0.01f
+                                }
+                            ])
+                    ],
+                    canvasBackgroundColor: ColorRgba.From(0, 0, 1, 1));
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 255, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Chroma_key_invalid_configuration_reports_diagnostic()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        if (!TryCreateCp1Context(out var context, diagnostics: diagnostics))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(0, 1, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            effects:
+                            [
+                                new ChromaKeyEffectSnapshot
+                                {
+                                    Id = EffectId.New(),
+                                    Name = "Invalid key",
+                                    Similarity = float.NaN
+                                }
+                            ])
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "render.effect_invalid");
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Effect_order_is_preserved()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        if (!TryCreateCp1Context(out var context, diagnostics: diagnostics))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            effects:
+                            [
+                                new BlurEffectSnapshot
+                                {
+                                    Id = EffectId.New(),
+                                    Name = "Second",
+                                    Order = 2
+                                },
+                                new ColorCorrectionEffectSnapshot
+                                {
+                                    Id = EffectId.New(),
+                                    Name = "First",
+                                    Order = 1
+                                }
+                            ])
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                var unsupported = diagnostics.Diagnostics
+                    .Where(diagnostic => diagnostic.Code == "render.effect_not_supported")
+                    .ToArray();
+
+                Assert.Collection(
+                    unsupported,
+                    first => Assert.Contains(nameof(ColorCorrectionEffectSnapshot), first.Message, StringComparison.Ordinal),
+                    second => Assert.Contains(nameof(BlurEffectSnapshot), second.Message, StringComparison.Ordinal));
             }
             finally
             {
@@ -2800,6 +3130,19 @@ public class Cp1OffscreenCompositionTests
                 new Transform2D { Size = new CanvasSize(64, 64) })
         ];
 
+    private static ChromaKeyEffectSnapshot CreateChromaKeyEffect(
+        float similarity,
+        float smoothness) =>
+        new()
+        {
+            Id = EffectId.New(),
+            Name = "Key green",
+            KeyColor = ColorRgba.From(0, 1, 0, 1),
+            Similarity = similarity,
+            Smoothness = smoothness,
+            SpillReduction = 0f
+        };
+
     private static D3D11SharedTextureFrameHandle CreateFilledSharedTexture(
         D3D11GpuDevice device,
         ColorRgba color)
@@ -2829,6 +3172,52 @@ public class Cp1OffscreenCompositionTests
             handle.NotifyCaptureReleasedToConsumer();
         }
     }
+
+    private static void FillSharedTexturePattern(
+        D3D11GpuDevice device,
+        D3D11SharedTextureFrameHandle handle,
+        Func<uint, uint, ColorRgba> colorAt)
+    {
+        handle.KeyedMutex.AcquireSync(handle.ProducerAcquireKey, 1000);
+
+        try
+        {
+            var width = checked((int)handle.TextureSize.Width);
+            var height = checked((int)handle.TextureSize.Height);
+            var rowPitch = checked(width * 4);
+            var pixels = new byte[checked(rowPitch * height)];
+
+            for (var y = 0; y < height; y++)
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    var color = colorAt((uint)x, (uint)y);
+                    var offset = checked(y * rowPitch + x * 4);
+
+                    pixels[offset] = ToByte(color.B);
+                    pixels[offset + 1] = ToByte(color.G);
+                    pixels[offset + 2] = ToByte(color.R);
+                    pixels[offset + 3] = ToByte(color.A);
+                }
+            }
+
+            device.Context.UpdateSubresource(
+                pixels,
+                handle.Texture,
+                0,
+                (uint)rowPitch,
+                (uint)pixels.Length,
+                null);
+        }
+        finally
+        {
+            handle.KeyedMutex.ReleaseSync(D3D11SharedTextureSyncKeys.Consumer);
+            handle.NotifyCaptureReleasedToConsumer();
+        }
+    }
+
+    private static byte ToByte(float value) =>
+        (byte)Math.Clamp((int)MathF.Round(value * 255f), 0, 255);
 
     private static void AssertPixelNear(
         VulkanReadbackPixel pixel,

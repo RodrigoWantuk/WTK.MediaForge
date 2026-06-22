@@ -12,13 +12,23 @@ internal static class Cp1PushConstantsBuilder
 {
     public static MediaForgeLayerPushConstants BuildSourceLayer(
         RenderSourceLayerDrawObjectSnapshot layer,
-        GpuFrameReference frame)
+        GpuFrameReference frame,
+        ChromaKeyEffectSnapshot? chromaKey)
     {
         var crop = layer.EffectiveCrop;
+        var keyColor = chromaKey?.KeyColor ?? ColorRgba.Transparent;
 
         return new MediaForgeLayerPushConstants
         {
             CropRect = new Vector4(crop.Left, crop.Top, crop.Right, crop.Bottom),
+            ChromaKeyColor = ToVector4(keyColor),
+            ChromaKeyParameters = chromaKey is null
+                ? Vector4.Zero
+                : new Vector4(
+                    chromaKey.Similarity,
+                    chromaKey.Smoothness,
+                    chromaKey.SpillReduction,
+                    1f),
             LogicalSize = new Vector2(frame.LogicalSize.Width, frame.LogicalSize.Height),
             BoxSize = new Vector2(layer.Transform.Size.Width, layer.Transform.Size.Height),
             Pivot = new Vector2(layer.Transform.Pivot.X, layer.Transform.Pivot.Y),
