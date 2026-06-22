@@ -329,14 +329,11 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
     private sealed class SinkRegistration : IAsyncDisposable
     {
-        private readonly object _gate = new();
-        private readonly Queue<RenderOutputFrameLease> _queue = [];
+        private readonly RenderOutputSinkQueue _queue;
         private readonly SemaphoreSlim _available = new(0);
         private readonly CancellationTokenSource _stop = new();
-        private readonly int _capacity;
         private readonly IMediaForgeDiagnosticsSink? _diagnostics;
         private Task? _worker;
-        private bool _accepting = true;
         private int _active;
         private int _disposed;
 
@@ -348,8 +345,11 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         {
             OutputId = outputId;
             Sink = sink;
-            _capacity = Math.Max(1, capacity);
             _diagnostics = diagnostics;
+            _queue = new RenderOutputSinkQueue(
+                capacity,
+                sink.BackpressureMode,
+                DropFrame);
         }
 
         public RenderOutputId OutputId { get; }
@@ -367,52 +367,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         public void TryEnqueue(RenderOutputFrameLease lease)
         {
             ArgumentNullException.ThrowIfNull(lease);
-            RenderOutputFrameLease? dropped = null;
-            var enqueued = false;
 
-            lock (_gate)
-            {
-                if (!_accepting)
-                {
-                    dropped = lease;
-                }
-                else if (_queue.Count < _capacity)
-                {
-                    _queue.Enqueue(lease);
-                    enqueued = true;
-                }
-                else
-                {
-                    switch (Sink.BackpressureMode)
-                    {
-                        case RenderOutputSinkBackpressureMode.DropNewest:
-                            dropped = lease;
-                            break;
-                        case RenderOutputSinkBackpressureMode.DropOldest:
-                        case RenderOutputSinkBackpressureMode.KeepLatest:
-                            dropped = _queue.Dequeue();
-                            _queue.Enqueue(lease);
-                            enqueued = true;
-                            break;
-                        default:
-                            dropped = lease;
-                            break;
-                    }
-                }
-            }
-
-            if (dropped is not null)
-            {
-                DisposeDroppedFrame(dropped);
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Warning,
-                    "sink.frame_dropped_backpressure",
-                    $"Frame for output {OutputId} was dropped because sink {Sink.Id} is backpressured.",
-                    nameof(RenderOutputSinkDispatcher));
-            }
-
-            if (enqueued)
+            if (_queue.TryEnqueue(lease))
                 _available.Release();
         }
 
@@ -423,8 +379,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
             Volatile.Write(ref _active, 0);
 
-            lock (_gate)
-                _accepting = false;
+            _queue.StopAccepting();
 
             _stop.Cancel();
             _available.Release();
@@ -481,13 +436,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
                 RenderOutputFrameLease? lease = null;
 
-                lock (_gate)
-                {
-                    if (_queue.Count > 0)
-                        lease = _queue.Dequeue();
-                    else if (!_accepting)
-                        return;
-                }
+                if (!_queue.TryDequeue(out lease) && !_queue.IsAccepting)
+                    return;
 
                 if (lease is null)
                     continue;
@@ -522,16 +472,19 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
         private async ValueTask DisposeQueuedFramesAsync()
         {
-            List<RenderOutputFrameLease> leases = [];
-
-            lock (_gate)
-            {
-                while (_queue.Count > 0)
-                    leases.Add(_queue.Dequeue());
-            }
-
-            foreach (var lease in leases)
+            foreach (var lease in _queue.Drain())
                 await DisposeDroppedFrameAsync(lease).ConfigureAwait(false);
+        }
+
+        private void DropFrame(RenderOutputFrameLease lease)
+        {
+            DisposeDroppedFrame(lease);
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Warning,
+                "sink.frame_dropped_backpressure",
+                $"Frame for output {OutputId} was dropped because sink {Sink.Id} is backpressured.",
+                nameof(RenderOutputSinkDispatcher));
         }
 
         private void DisposeDroppedFrame(RenderOutputFrameLease lease)

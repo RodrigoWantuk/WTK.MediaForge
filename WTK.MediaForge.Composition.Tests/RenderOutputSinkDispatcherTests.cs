@@ -1,0 +1,127 @@
+using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Runtime.Outputs;
+using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Identifiers;
+using Xunit;
+using PublicRenderOutputSink = WTK.MediaForge.Composition.Outputs.IRenderOutputSink;
+
+namespace WTK.MediaForge.Composition.Tests;
+
+public class RenderOutputSinkDispatcherTests
+{
+    [Fact]
+    public async Task One_output_frame_can_be_consumed_by_two_sinks_and_released_after_both_complete()
+    {
+        var dispatcher = new RenderOutputSinkDispatcher();
+        var output = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(),
+            Name = "Program",
+            TypeId = RenderOutputTypes.Offscreen,
+            CanvasId = CanvasId.New(),
+            OutputSize = new FrameSize(1920, 1080)
+        };
+        var first = new ControlledSink();
+        var second = new ControlledSink();
+        var releaseCount = 0;
+        var batch = new RenderedOutputFrameBatch(
+            [
+                new RenderedOutputFrame(
+                    output.Id,
+                    output.OutputSize,
+                    RenderPixelFormat.Rgba8Unorm,
+                    RenderBackendKind.Vulkan)
+            ],
+            () =>
+            {
+                Interlocked.Increment(ref releaseCount);
+                return ValueTask.CompletedTask;
+            });
+
+        await dispatcher.AttachAsync(output, first, CancellationToken.None);
+        await dispatcher.AttachAsync(output, second, CancellationToken.None);
+
+        try
+        {
+            dispatcher.PublishCompletedFrames(batch);
+
+            await Task.WhenAll(
+                first.WaitForFrameAsync(TimeSpan.FromSeconds(5)),
+                second.WaitForFrameAsync(TimeSpan.FromSeconds(5)));
+
+            Assert.True(batch.HasOutstandingLeases);
+
+            first.Release();
+            await WaitUntilAsync(() => Volatile.Read(ref releaseCount) == 1, TimeSpan.FromSeconds(5));
+            Assert.True(batch.HasOutstandingLeases);
+
+            second.Release();
+            await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+            Assert.False(batch.HasOutstandingLeases);
+            Assert.Equal(2, releaseCount);
+        }
+        finally
+        {
+            first.Release();
+            second.Release();
+            await dispatcher.DisposeAsync();
+        }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        while (Environment.TickCount64 < deadline)
+        {
+            if (condition())
+                return;
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException("Condition was not met within the expected timeout.");
+    }
+
+    private sealed class ControlledSink : PublicRenderOutputSink
+    {
+        private readonly TaskCompletionSource _frameEntered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
+
+        public RenderOutputSinkKind Kind => RenderOutputSinkKind.Custom;
+
+        public RenderOutputSinkBackpressureMode BackpressureMode => RenderOutputSinkBackpressureMode.KeepLatest;
+
+        public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public async ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken)
+        {
+            _frameEntered.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public ValueTask StopAsync(CancellationToken cancellationToken)
+        {
+            Release();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Release();
+            return ValueTask.CompletedTask;
+        }
+
+        public Task WaitForFrameAsync(TimeSpan timeout) =>
+            _frameEntered.Task.WaitAsync(timeout);
+
+        public void Release() => _release.TrySetResult();
+    }
+}
