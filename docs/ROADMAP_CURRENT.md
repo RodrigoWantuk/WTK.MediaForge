@@ -86,6 +86,7 @@ Documentation, tests, and API contract work remain allowed.
 7. Public output targets moved out of `Runtime.Outputs`; `WinFormsPreviewRenderOutputTarget` rejects a zero window handle.
 8. `RenderOutputSinkQueue` owns bounded `KeepLatest`, `DropOldest`, and `DropNewest` queue behavior.
 9. Fanout leases keep one output frame alive until every consuming sink releases its lease.
+10. `RenderedOutputFrame` carries an internal rendered surface lease; sinks receive leases for backend-produced output frames, not snapshot metadata only.
 
 ## Completed - Source Runtime Foundation
 

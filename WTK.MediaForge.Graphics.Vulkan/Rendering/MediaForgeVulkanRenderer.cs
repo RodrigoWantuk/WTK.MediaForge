@@ -235,6 +235,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
         List<VulkanExternalTextureLease>? textureLeases = null;
         VulkanSubmissionResourceScope? submissionResources = null;
+        IReadOnlyList<IRenderedOutputSurfaceLease>? renderedOutputSurfaces = null;
         CommandBuffer commandBuffer = default;
         Fence fence = default;
 
@@ -249,7 +250,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
             try
             {
-                VulkanCp1OffscreenCompositor.Compose(
+                renderedOutputSurfaces = VulkanCp1OffscreenCompositor.Compose(
                     _cp1Pipelines,
                     commandBuffer,
                     snapshot,
@@ -299,14 +300,72 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                 fence,
                 textureLeases,
                 submissionResources,
+                renderedOutputSurfaces,
                 _diagnostics);
         }
-        catch
+        catch (Exception submitFailure)
         {
-            submissionResources?.Dispose();
-            CleanupFailedSubmit(textureLeases, commandBuffer, fence);
+            List<Exception>? cleanupErrors = null;
+
+            try
+            {
+                DisposeRenderedOutputSurfaces(renderedOutputSurfaces);
+            }
+            catch (Exception ex)
+            {
+                (cleanupErrors ??= []).Add(ex);
+            }
+
+            try
+            {
+                submissionResources?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                (cleanupErrors ??= []).Add(ex);
+            }
+
+            try
+            {
+                CleanupFailedSubmit(textureLeases, commandBuffer, fence);
+            }
+            catch (Exception ex)
+            {
+                (cleanupErrors ??= []).Add(ex);
+            }
+
+            if (cleanupErrors is not null)
+            {
+                cleanupErrors.Insert(0, submitFailure);
+                throw new AggregateException("Failed to clean up rendered output surfaces after Vulkan submit failure.", cleanupErrors);
+            }
+
             throw;
         }
+    }
+
+    private static void DisposeRenderedOutputSurfaces(
+        IReadOnlyList<IRenderedOutputSurfaceLease>? surfaces)
+    {
+        if (surfaces is null)
+            return;
+
+        List<Exception>? errors = null;
+
+        foreach (var surface in surfaces)
+        {
+            try
+            {
+                surface.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+        }
+
+        if (errors is not null)
+            throw new AggregateException("Failed to dispose rendered output surfaces after submit failure.", errors);
     }
 
     private Dictionary<VulkanOffscreenRenderTarget, ImageLayout> CaptureOffscreenTargetLayouts()

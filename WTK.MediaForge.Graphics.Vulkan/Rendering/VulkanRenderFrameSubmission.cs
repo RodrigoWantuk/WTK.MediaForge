@@ -23,12 +23,13 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         Fence fence,
         IReadOnlyList<VulkanExternalTextureLease> textureLeases,
         VulkanSubmissionResourceScope submissionResources,
+        IReadOnlyList<IRenderedOutputSurfaceLease> renderedOutputSurfaces,
         IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
-        _outputFrames = RenderedOutputFrameBatch.FromSnapshot(snapshot);
+        _outputFrames = RenderedOutputFrameBatch.FromRenderedSurfaces(renderedOutputSurfaces);
         CommandBuffer = commandBuffer;
         Fence = fence;
         _textureLeases = textureLeases.ToList();
@@ -87,6 +88,15 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
         List<Exception>? errors = null;
+
+        try
+        {
+            _outputFrames.DisposeSurfaces();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
 
         if (Fence.Handle != 0)
         {

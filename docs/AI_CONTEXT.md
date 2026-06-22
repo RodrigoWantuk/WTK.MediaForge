@@ -52,6 +52,7 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `MediaForgeWindows.CreateEngine` applies start, command, stop, and render pump frame-rate options.
 - `MediaForgeRenderPump` publishes frames continuously while running and reports backpressure drops instead of flooding the render thread.
 - Public output consumption is `RenderOutput -> RenderOutputSink(s)`. The internal surface remains GPU/backend-owned; public sinks receive leases and metadata without exposing Vulkan/D3D11 handles.
+- `RenderedOutputFrame` carries an internal `IRenderedOutputSurfaceLease`; public `RenderOutputFrameLease` hides backend details while preserving lifetime for real rendered surfaces.
 - `RenderOutputSinkDispatcher` fans out frames through bounded per-sink queues and keeps sink callbacks off the render thread.
 - Source acquisition is routed through `SourceRuntimeManager` and `MediaSourceRuntime`; the engine must not manage a raw provider list as its runtime source model.
 - Source buffers and sink queues are lease/reference infrastructure only. They must not copy pixels to CPU memory by default or become visual composition objects.

@@ -1,4 +1,6 @@
 using Silk.NET.Vulkan;
+using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Identifiers;
 
@@ -6,7 +8,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal static class VulkanCp1OffscreenCompositor
 {
-    public static void Compose(
+    public static IReadOnlyList<IRenderedOutputSurfaceLease> Compose(
         VulkanCp1ShaderPipelines pipelines,
         CommandBuffer commandBuffer,
         RenderFrameSnapshot snapshot,
@@ -22,6 +24,7 @@ internal static class VulkanCp1OffscreenCompositor
         var importsByHandle = textureLeases.ToDictionary(
             lease => VulkanExternalTextureKey.From(lease.Import.SourceHandle),
             lease => lease.Import);
+        var renderedSurfaces = new List<IRenderedOutputSurfaceLease>();
 
         foreach (var output in snapshot.Outputs)
         {
@@ -44,6 +47,14 @@ internal static class VulkanCp1OffscreenCompositor
                 importsByHandle,
                 outputTarget,
                 submissionResources);
+
+            renderedSurfaces.Add(new VulkanRenderedOutputSurfaceLease(
+                targetHandle,
+                output.Id,
+                outputTarget.Size,
+                RenderPixelFormat.Rgba8Unorm));
         }
+
+        return renderedSurfaces;
     }
 }

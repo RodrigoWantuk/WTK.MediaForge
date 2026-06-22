@@ -9,8 +9,17 @@ public sealed class RenderOutputFrameLease : IAsyncDisposable
     private int _disposed;
 
     internal RenderOutputFrameLease(RenderOutputFrameInfo info, Func<ValueTask>? release = null)
+        : this(info, surfaceLease: null, release)
+    {
+    }
+
+    internal RenderOutputFrameLease(
+        RenderOutputFrameInfo info,
+        WTK.MediaForge.Composition.Runtime.Rendering.IRenderedOutputSurfaceLease? surfaceLease,
+        Func<ValueTask>? release = null)
     {
         Info = info ?? throw new ArgumentNullException(nameof(info));
+        SurfaceLease = surfaceLease;
         _release = release;
     }
 
@@ -29,6 +38,8 @@ public sealed class RenderOutputFrameLease : IAsyncDisposable
     public RenderPixelFormat Format => Info.Format;
 
     public RenderBackendKind BackendKind => Info.BackendKind;
+
+    internal WTK.MediaForge.Composition.Runtime.Rendering.IRenderedOutputSurfaceLease? SurfaceLease { get; }
 
     public async ValueTask DisposeAsync()
     {

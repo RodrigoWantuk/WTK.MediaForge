@@ -44,6 +44,7 @@ internal sealed class ImmediateRenderFrameSubmission : IRenderFrameSubmission
         if (Interlocked.Exchange(ref _resourcesDisposed, 1) != 0)
             return;
 
+        _outputFrames.DisposeSurfaces();
         Interlocked.Exchange(ref _snapshot, null)?.Dispose();
     }
 }

@@ -42,6 +42,23 @@ internal sealed class RenderedOutputFrameBatch
         return new RenderedOutputFrameBatch(frames);
     }
 
+    public static RenderedOutputFrameBatch FromRenderedSurfaces(
+        IReadOnlyList<IRenderedOutputSurfaceLease> surfaces)
+    {
+        ArgumentNullException.ThrowIfNull(surfaces);
+
+        var frames = surfaces
+            .Select(surface => new RenderedOutputFrame(
+                surface.OutputId,
+                surface.Size,
+                surface.Format,
+                surface.BackendKind,
+                surface))
+            .ToArray();
+
+        return new RenderedOutputFrameBatch(frames);
+    }
+
     public RenderOutputFrameLease CreateLease(
         RenderedOutputFrame frame,
         RenderOutputFrameInfo info)
@@ -50,7 +67,7 @@ internal sealed class RenderedOutputFrameBatch
         ArgumentNullException.ThrowIfNull(info);
 
         Interlocked.Increment(ref _leaseCount);
-        return new RenderOutputFrameLease(info, ReleaseLeaseAsync);
+        return frame.CreateLease(info, ReleaseLeaseAsync);
     }
 
     public async ValueTask WaitForLeasesReleasedAsync(
@@ -63,6 +80,26 @@ internal sealed class RenderedOutputFrameBatch
         await _allLeasesReleased.Task
             .WaitAsync(timeout, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public void DisposeSurfaces()
+    {
+        List<Exception>? errors = null;
+
+        foreach (var frame in Frames)
+        {
+            try
+            {
+                frame.DisposeSurfaceAsync().AsTask().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+        }
+
+        if (errors is not null)
+            throw new AggregateException("Failed to dispose rendered output surfaces.", errors);
     }
 
     private async ValueTask ReleaseLeaseAsync()
