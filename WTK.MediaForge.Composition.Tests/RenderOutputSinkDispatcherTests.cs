@@ -145,6 +145,94 @@ public class RenderOutputSinkDispatcherTests
     }
 
     [Fact]
+    public async Task AttachSink_start_failure_calls_stop_and_dispose_with_timeout()
+    {
+        var dispatcher = new RenderOutputSinkDispatcher(
+            sinkStopTimeout: TimeSpan.FromSeconds(1));
+        var output = CreateOutput();
+        var sink = new FailingStartSink();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.AttachAsync(output, sink, CancellationToken.None));
+
+        Assert.Equal(1, sink.StopCount);
+        Assert.Equal(1, sink.DisposeCount);
+        Assert.False(dispatcher.IsSinkAttached(output.Id, sink.Id));
+    }
+
+    [Fact]
+    public async Task AttachSink_start_failure_cleanup_timeout_does_not_hang_engine()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            sinkStopTimeout: TimeSpan.FromMilliseconds(50));
+        var output = CreateOutput();
+        var sink = new FailingStartSink { HangOnStop = true };
+
+        try
+        {
+            var started = Environment.TickCount64;
+            var ex = await Assert.ThrowsAsync<AggregateException>(() =>
+                dispatcher.AttachAsync(output, sink, CancellationToken.None));
+            var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
+            Assert.True(elapsed < TimeSpan.FromSeconds(2));
+            Assert.Contains(ex.Flatten().InnerExceptions, inner => inner is TimeoutException);
+            Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.attach_cleanup_timeout");
+            Assert.False(dispatcher.IsSinkAttached(output.Id, sink.Id));
+        }
+        finally
+        {
+            sink.ReleaseStop();
+        }
+    }
+
+    [Fact]
+    public async Task AttachSink_timeout_removes_reserved_registration()
+    {
+        var dispatcher = new RenderOutputSinkDispatcher(
+            sinkStopTimeout: TimeSpan.FromSeconds(1));
+        var output = CreateOutput();
+        var sink = new HangingStartSink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            dispatcher.AttachAsync(output, sink, cts.Token));
+
+        Assert.True(sink.StartCancellationObserved);
+        Assert.Equal(1, sink.StopCount);
+        Assert.Equal(1, sink.DisposeCount);
+        Assert.False(dispatcher.IsSinkAttached(output.Id, sink.Id));
+        Assert.Equal(0, dispatcher.SinkCount);
+    }
+
+    [Fact]
+    public async Task AttachSink_partial_start_failure_reports_cleanup_diagnostic()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            sinkStopTimeout: TimeSpan.FromSeconds(1));
+        var output = CreateOutput();
+        var sink = new FailingStartSink
+        {
+            ThrowOnStop = true,
+            ThrowOnDispose = true
+        };
+
+        var ex = await Assert.ThrowsAsync<AggregateException>(() =>
+            dispatcher.AttachAsync(output, sink, CancellationToken.None));
+
+        var flattened = ex.Flatten().InnerExceptions;
+        Assert.Contains(flattened, inner => inner.Message == "Configured start failure.");
+        Assert.Contains(flattened, inner => inner.Message == "Configured stop failure.");
+        Assert.Contains(flattened, inner => inner.Message == "Configured dispose failure.");
+        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.attach_cleanup_failed");
+        Assert.False(dispatcher.IsSinkAttached(output.Id, sink.Id));
+    }
+
+    [Fact]
     public async Task PublishCompletedFrames_releases_lease_when_sink_registration_is_stopped()
     {
         RenderOutputSinkDispatcher? dispatcher = null;
@@ -384,5 +472,105 @@ public class RenderOutputSinkDispatcherTests
             _frameEntered.Task.WaitAsync(timeout);
 
         public void Release() => _release.TrySetResult();
+    }
+
+    private sealed class FailingStartSink : PublicRenderOutputSink
+    {
+        private readonly TaskCompletionSource _stopRelease =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private int _stopCount;
+        private int _disposeCount;
+
+        public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
+
+        public RenderOutputSinkKind Kind => RenderOutputSinkKind.Custom;
+
+        public RenderOutputSinkBackpressureMode BackpressureMode => RenderOutputSinkBackpressureMode.KeepLatest;
+
+        public bool HangOnStop { get; init; }
+
+        public bool ThrowOnStop { get; init; }
+
+        public bool ThrowOnDispose { get; init; }
+
+        public int StopCount => Volatile.Read(ref _stopCount);
+
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Configured start failure.");
+
+        public ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public async ValueTask StopAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _stopCount);
+
+            if (HangOnStop)
+                await _stopRelease.Task.ConfigureAwait(false);
+
+            if (ThrowOnStop)
+                throw new InvalidOperationException("Configured stop failure.");
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+
+            if (ThrowOnDispose)
+                throw new InvalidOperationException("Configured dispose failure.");
+
+            return ValueTask.CompletedTask;
+        }
+
+        public void ReleaseStop() => _stopRelease.TrySetResult();
+    }
+
+    private sealed class HangingStartSink : PublicRenderOutputSink
+    {
+        private int _stopCount;
+        private int _disposeCount;
+
+        public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
+
+        public RenderOutputSinkKind Kind => RenderOutputSinkKind.Custom;
+
+        public RenderOutputSinkBackpressureMode BackpressureMode => RenderOutputSinkBackpressureMode.KeepLatest;
+
+        public bool StartCancellationObserved { get; private set; }
+
+        public int StopCount => Volatile.Read(ref _stopCount);
+
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        public async ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                StartCancellationObserved = true;
+                throw;
+            }
+        }
+
+        public ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask StopAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _stopCount);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            return ValueTask.CompletedTask;
+        }
     }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Rendering;
@@ -93,7 +94,6 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         SinkRegistration? registration = null;
         var reserved = false;
         var startAttempted = false;
-        var accepted = false;
 
         try
         {
@@ -116,20 +116,24 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             startAttempted = true;
             await sink.StartAsync(context, cancellationToken).ConfigureAwait(false);
             registration.Start();
-            accepted = true;
         }
-        finally
+        catch (Exception ex)
         {
-            if (!accepted)
+            if (reserved && registration is not null)
+                RemoveRegistration(registration);
+
+            try
             {
-                if (reserved && registration is not null)
-                    RemoveRegistration(registration);
-
                 if (startAttempted)
-                    await StopAndDisposeSinkAsync(sink, CancellationToken.None).ConfigureAwait(false);
-
+                    await CleanupFailedAttachAsync(sink, ex).ConfigureAwait(false);
+            }
+            finally
+            {
                 registration?.DisposeUnstarted();
             }
+
+            ExceptionDispatchInfo.Capture(ex).Throw();
+            throw;
         }
     }
 
@@ -360,18 +364,89 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         }
     }
 
-    private static async ValueTask StopAndDisposeSinkAsync(
+    private async ValueTask CleanupFailedAttachAsync(
         PublicRenderOutputSink sink,
-        CancellationToken cancellationToken)
+        Exception attachException)
     {
         try
         {
-            await sink.StopAsync(cancellationToken).ConfigureAwait(false);
+            await StopAndDisposeSinkAsync(sink, SinkStopTimeout, CancellationToken.None).ConfigureAwait(false);
         }
-        finally
+        catch (Exception cleanupException)
         {
-            await sink.DisposeAsync().ConfigureAwait(false);
+            var timeout = IsTimeoutFailure(cleanupException);
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                timeout ? "sink.attach_cleanup_timeout" : "sink.attach_cleanup_failed",
+                timeout
+                    ? $"Render output sink {sink.Id} did not clean up within {SinkStopTimeout} after attach failed."
+                    : $"Render output sink {sink.Id} failed while cleaning up after attach failed.",
+                nameof(RenderOutputSinkDispatcher),
+                cleanupException);
+
+            throw new AggregateException(
+                $"Render output sink {sink.Id} failed to attach and cleanup did not complete successfully.",
+                attachException,
+                cleanupException);
         }
+    }
+
+    private static async ValueTask StopAndDisposeSinkAsync(
+        PublicRenderOutputSink sink,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Sink cleanup timeout must be positive.");
+
+        var deadline = CreateDeadline(timeout);
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            timeoutCts.Token);
+
+        List<Exception>? errors = null;
+        try
+        {
+            var stopTask = sink.StopAsync(linked.Token).AsTask();
+            await stopTask
+                .WaitAsync(GetRemainingTime(deadline), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (
+            timeoutCts.IsCancellationRequested &&
+            !cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Render output sink {sink.Id} cleanup stop timed out.", ex);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException($"Render output sink {sink.Id} cleanup stop timed out.", ex);
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+
+        try
+        {
+            var disposeTask = sink.DisposeAsync().AsTask();
+            await disposeTask
+                .WaitAsync(GetRemainingTime(deadline), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException($"Render output sink {sink.Id} cleanup dispose timed out.", ex);
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+
+        if (errors is not null)
+            throw new AggregateException($"Render output sink {sink.Id} cleanup failed.", errors);
     }
 
     private async ValueTask StopRegistrationAsync(
@@ -417,6 +492,23 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             }
         });
     }
+
+    private static long CreateDeadline(TimeSpan timeout) =>
+        Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
+
+    private static TimeSpan GetRemainingTime(long deadline)
+    {
+        var remainingTicks = deadline - Stopwatch.GetTimestamp();
+        if (remainingTicks <= 0)
+            return TimeSpan.Zero;
+
+        return TimeSpan.FromSeconds((double)remainingTicks / Stopwatch.Frequency);
+    }
+
+    private static bool IsTimeoutFailure(Exception exception) =>
+        exception is TimeoutException ||
+        exception is AggregateException aggregate &&
+        aggregate.InnerExceptions.Any(IsTimeoutFailure);
 
     private sealed class SinkRegistration : IAsyncDisposable
     {
