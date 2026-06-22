@@ -144,6 +144,92 @@ public class RenderOutputSinkDispatcherTests
         sink.Release();
     }
 
+    [Fact]
+    public async Task PublishCompletedFrames_releases_lease_when_sink_registration_is_stopped()
+    {
+        RenderOutputSinkDispatcher? dispatcher = null;
+        var output = CreateOutput();
+        var sink = new ControlledSink();
+        var detachOnce = 0;
+        dispatcher = new RenderOutputSinkDispatcher(
+            beforeDeliveryEnqueue: () =>
+            {
+                if (Interlocked.Exchange(ref detachOnce, 1) == 0)
+                {
+                    dispatcher!
+                        .DetachAsync(output.Id, sink.Id, CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+                }
+            });
+        var batch = CreateTrackedBatch(output, out var surface, out var releaseCount);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+
+        dispatcher.PublishCompletedFrames(batch);
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.Equal(1, releaseCount());
+        Assert.Equal(1, surface.DisposeCount);
+        Assert.False(dispatcher.IsSinkAttached(output.Id, sink.Id));
+
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PublishCompletedFrames_releases_lease_when_enqueue_fails()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var output = CreateOutput();
+        var sink = new ControlledSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            beforeDeliveryEnqueue: () => throw new InvalidOperationException("Configured enqueue failure."));
+        var batch = CreateTrackedBatch(output, out var surface, out var releaseCount);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+
+        dispatcher.PublishCompletedFrames(batch);
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.Equal(1, releaseCount());
+        Assert.Equal(1, surface.DisposeCount);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.enqueue_failed");
+
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Detach_race_with_publish_does_not_leak_output_surface_lease()
+    {
+        RenderOutputSinkDispatcher? dispatcher = null;
+        var output = CreateOutput();
+        var sink = new ControlledSink();
+        var detachOnce = 0;
+        dispatcher = new RenderOutputSinkDispatcher(
+            beforeDeliveryEnqueue: () =>
+            {
+                if (Interlocked.Exchange(ref detachOnce, 1) == 0)
+                {
+                    dispatcher!
+                        .DetachAsync(output.Id, sink.Id, CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+                }
+            });
+        var batch = CreateTrackedBatch(output, out var surface, out _);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+
+        dispatcher.PublishCompletedFrames(batch);
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+
+        await dispatcher.DisposeAsync();
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
@@ -167,6 +253,34 @@ public class RenderOutputSinkDispatcherTests
             CanvasId = CanvasId.New(),
             OutputSize = new FrameSize(1920, 1080)
         };
+
+    private static RenderedOutputFrameBatch CreateTrackedBatch(
+        MediaForgeRenderOutput output,
+        out TrackingRenderedOutputSurfaceLease surface,
+        out Func<int> releaseCount)
+    {
+        var releases = 0;
+        surface = new TrackingRenderedOutputSurfaceLease(
+            output.Id,
+            output.OutputSize,
+            backendSurface: new object());
+        releaseCount = () => Volatile.Read(ref releases);
+
+        return new RenderedOutputFrameBatch(
+            [
+                new RenderedOutputFrame(
+                    output.Id,
+                    output.OutputSize,
+                    RenderPixelFormat.Rgba8Unorm,
+                    RenderBackendKind.Vulkan,
+                    surface)
+            ],
+            () =>
+            {
+                Interlocked.Increment(ref releases);
+                return ValueTask.CompletedTask;
+            });
+    }
 
     private sealed class ControlledSink : PublicRenderOutputSink
     {

@@ -18,15 +18,18 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
     private readonly Dictionary<RenderOutputId, long> _frameNumbers = [];
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
+    private readonly Action? _beforeDeliveryEnqueue;
     private bool _disposed;
 
     private TimeSpan _sinkStopTimeout;
 
     public RenderOutputSinkDispatcher(
         IMediaForgeDiagnosticsSink? diagnostics = null,
-        TimeSpan? sinkStopTimeout = null)
+        TimeSpan? sinkStopTimeout = null,
+        Action? beforeDeliveryEnqueue = null)
     {
         _diagnostics = diagnostics;
+        _beforeDeliveryEnqueue = beforeDeliveryEnqueue;
         SinkStopTimeout = sinkStopTimeout ?? DefaultSinkStopTimeout;
     }
 
@@ -244,7 +247,27 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         }
 
         foreach (var (registration, lease) in deliveries)
-            registration.TryEnqueue(lease);
+        {
+            var delivered = false;
+            try
+            {
+                _beforeDeliveryEnqueue?.Invoke();
+                delivered = registration.TryEnqueue(lease);
+            }
+            catch (Exception ex)
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "sink.enqueue_failed",
+                    $"Failed to enqueue frame for output {registration.OutputId} and sink {registration.Sink.Id}.",
+                    nameof(RenderOutputSinkDispatcher),
+                    ex);
+            }
+
+            if (!delivered)
+                DisposeUndeliveredFrame(registration, lease);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -372,6 +395,29 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         }
     }
 
+    private void DisposeUndeliveredFrame(
+        SinkRegistration registration,
+        RenderOutputFrameLease lease)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await lease.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "sink.undelivered_frame_dispose_failed",
+                    $"Failed to release undelivered frame for output {registration.OutputId} from sink {registration.Sink.Id}.",
+                    nameof(RenderOutputSinkDispatcher),
+                    ex);
+            }
+        });
+    }
+
     private sealed class SinkRegistration : IAsyncDisposable
     {
         private readonly RenderOutputSinkQueue _queue;
@@ -412,12 +458,48 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             _worker = Task.Run(ProcessAsync);
         }
 
-        public void TryEnqueue(RenderOutputFrameLease lease)
+        public bool TryEnqueue(RenderOutputFrameLease lease)
         {
             ArgumentNullException.ThrowIfNull(lease);
 
-            if (_queue.TryEnqueue(lease) == RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem)
-                _available.Release();
+            if (!IsActive)
+                return false;
+
+            try
+            {
+                var result = _queue.TryEnqueue(lease);
+
+                if (result == RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem)
+                {
+                    try
+                    {
+                        _available.Release();
+                    }
+                    catch (Exception ex)
+                    {
+                        MediaForgeDiagnostics.Report(
+                            _diagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "sink.enqueue_signal_failed",
+                            $"Failed to signal frame availability for output {OutputId} and sink {Sink.Id}.",
+                            nameof(RenderOutputSinkDispatcher),
+                            ex);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "sink.enqueue_failed",
+                    $"Failed to enqueue frame for output {OutputId} and sink {Sink.Id}.",
+                    nameof(RenderOutputSinkDispatcher),
+                    ex);
+                return false;
+            }
         }
 
         public async ValueTask StopAsync(TimeSpan timeout, CancellationToken cancellationToken)
