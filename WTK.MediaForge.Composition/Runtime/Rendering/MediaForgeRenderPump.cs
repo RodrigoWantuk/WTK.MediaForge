@@ -124,10 +124,11 @@ internal sealed class MediaForgeRenderPump : IAsyncDisposable
 
     private async Task WaitForNextTickAsync()
     {
-        var delay = Task.Delay(_interval, _stop.Token);
-        var wake = _wake.WaitAsync(_stop.Token);
-        var completed = await Task.WhenAny(delay, wake).ConfigureAwait(false);
-        await completed.ConfigureAwait(false);
+        _ = await _wake.WaitAsync(_interval, _stop.Token).ConfigureAwait(false);
+
+        while (_wake.Wait(0))
+        {
+        }
     }
 
     private void ReportBackpressureDrop()
