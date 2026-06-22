@@ -12,5 +12,7 @@ public sealed class MediaForgeEngineOptions
 
     public TimeSpan StopTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
+    public TimeSpan SinkStopTimeout { get; init; } = TimeSpan.FromSeconds(5);
+
     public double RenderFramesPerSecond { get; init; } = 60;
 }

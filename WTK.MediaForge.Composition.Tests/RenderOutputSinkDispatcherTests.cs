@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Diagnostics;
 using Xunit;
 using PublicRenderOutputSink = WTK.MediaForge.Composition.Outputs.IRenderOutputSink;
 
@@ -111,6 +112,38 @@ public class RenderOutputSinkDispatcherTests
         Assert.Equal(1, surface.DisposeCount);
     }
 
+    [Fact]
+    public async Task Dispatcher_dispose_times_out_hung_sink()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            sinkStopTimeout: TimeSpan.FromMilliseconds(50));
+        var output = CreateOutput();
+        var sink = new HungSink();
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces(
+            [
+                new TrackingRenderedOutputSurfaceLease(
+                    output.Id,
+                    output.OutputSize,
+                    backendSurface: new object())
+            ]);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+        dispatcher.PublishCompletedFrames(batch);
+        await sink.WaitForFrameAsync(TimeSpan.FromSeconds(5));
+
+        var started = Environment.TickCount64;
+        var ex = await Assert.ThrowsAsync<AggregateException>(() => dispatcher.DisposeAsync().AsTask());
+        var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
+        Assert.Contains(ex.InnerExceptions, inner => inner is TimeoutException);
+        Assert.True(elapsed < TimeSpan.FromSeconds(2));
+        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.stop_timeout");
+
+        sink.Release();
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
@@ -124,6 +157,16 @@ public class RenderOutputSinkDispatcherTests
 
         throw new TimeoutException("Condition was not met within the expected timeout.");
     }
+
+    private static MediaForgeRenderOutput CreateOutput() =>
+        new()
+        {
+            Id = RenderOutputId.New(),
+            Name = "Program",
+            TypeId = RenderOutputTypes.Offscreen,
+            CanvasId = CanvasId.New(),
+            OutputSize = new FrameSize(1920, 1080)
+        };
 
     private sealed class ControlledSink : PublicRenderOutputSink
     {
@@ -193,5 +236,39 @@ public class RenderOutputSinkDispatcherTests
             Interlocked.Increment(ref _disposeCount);
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class HungSink : PublicRenderOutputSink
+    {
+        private readonly TaskCompletionSource _frameEntered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
+
+        public RenderOutputSinkKind Kind => RenderOutputSinkKind.Custom;
+
+        public RenderOutputSinkBackpressureMode BackpressureMode => RenderOutputSinkBackpressureMode.KeepLatest;
+
+        public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public async ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken)
+        {
+            _frameEntered.TrySetResult();
+            await _release.Task.ConfigureAwait(false);
+        }
+
+        public ValueTask StopAsync(CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() =>
+            ValueTask.CompletedTask;
+
+        public Task WaitForFrameAsync(TimeSpan timeout) =>
+            _frameEntered.Task.WaitAsync(timeout);
+
+        public void Release() => _release.TrySetResult();
     }
 }

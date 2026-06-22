@@ -87,6 +87,8 @@ Documentation, tests, and API contract work remain allowed.
 8. `RenderOutputSinkQueue` owns bounded `KeepLatest`, `DropOldest`, and `DropNewest` queue behavior.
 9. Fanout leases keep one output frame alive until every consuming sink releases its lease.
 10. `RenderedOutputFrame` carries an internal rendered surface lease; sinks receive leases for backend-produced output frames, not snapshot metadata only.
+11. Sink detach/dispose uses explicit stop timeouts and reports hung sinks without blocking engine shutdown indefinitely.
+12. Sink queue enqueue results distinguish new queued frames, replacements, and dropped incoming frames so backpressure does not over-release worker semaphores.
 
 ## Completed - Source Runtime Foundation
 
@@ -97,6 +99,7 @@ Documentation, tests, and API contract work remain allowed.
 5. Existing render snapshots acquire source frames through the runtime manager instead of directly from raw providers.
 6. Source acquire failures report diagnostics and produce a missing-frame layer instead of crashing snapshot build/render pump.
 7. Source manager start rollback and stop aggregation are covered by tests.
+8. `StopAsync` attempts cleanup from `Failed` state instead of silently returning while runtime resources may still exist.
 
 ## Completed - Public API Stabilization
 

@@ -11,6 +11,7 @@ namespace WTK.MediaForge.Composition.Runtime.Outputs;
 internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 {
     private const int DefaultQueueCapacity = 2;
+    private static readonly TimeSpan DefaultSinkStopTimeout = TimeSpan.FromSeconds(5);
 
     private readonly object _gate = new();
     private readonly Dictionary<RenderOutputId, List<SinkRegistration>> _registrations = [];
@@ -19,8 +20,27 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private bool _disposed;
 
-    public RenderOutputSinkDispatcher(IMediaForgeDiagnosticsSink? diagnostics = null) =>
+    private TimeSpan _sinkStopTimeout;
+
+    public RenderOutputSinkDispatcher(
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        TimeSpan? sinkStopTimeout = null)
+    {
         _diagnostics = diagnostics;
+        SinkStopTimeout = sinkStopTimeout ?? DefaultSinkStopTimeout;
+    }
+
+    public TimeSpan SinkStopTimeout
+    {
+        get => _sinkStopTimeout;
+        set
+        {
+            if (value <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(value), "Sink stop timeout must be positive.");
+
+            _sinkStopTimeout = value;
+        }
+    }
 
     public int SinkCount
     {
@@ -126,15 +146,12 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             registration = registrations.FirstOrDefault(item => item.Sink.Id == sinkId);
             if (registration is null)
                 return false;
-
-            registrations.Remove(registration);
-            if (registrations.Count == 0)
-                _registrations.Remove(outputId);
         }
 
         try
         {
-            await registration.StopAsync(cancellationToken).ConfigureAwait(false);
+            await StopRegistrationAsync(registration, cancellationToken).ConfigureAwait(false);
+            RemoveRegistration(registration);
         }
         catch (Exception ex)
         {
@@ -169,7 +186,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         {
             try
             {
-                await registration.StopAsync(cancellationToken).ConfigureAwait(false);
+                await StopRegistrationAsync(registration, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -251,11 +268,18 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         {
             try
             {
-                await registration.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                await StopRegistrationAsync(registration, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 (errors ??= []).Add(ex);
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "sink.dispose_failed",
+                    $"Failed to dispose render output sink {registration.Sink.Id}.",
+                    nameof(RenderOutputSinkDispatcher),
+                    ex);
             }
         }
 
@@ -327,6 +351,27 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         }
     }
 
+    private async ValueTask StopRegistrationAsync(
+        SinkRegistration registration,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await registration.StopAsync(SinkStopTimeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "sink.stop_timeout",
+                $"Render output sink {registration.Sink.Id} did not stop within {SinkStopTimeout}.",
+                nameof(RenderOutputSinkDispatcher),
+                ex);
+            throw;
+        }
+    }
+
     private sealed class SinkRegistration : IAsyncDisposable
     {
         private readonly RenderOutputSinkQueue _queue;
@@ -334,6 +379,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         private readonly CancellationTokenSource _stop = new();
         private readonly IMediaForgeDiagnosticsSink? _diagnostics;
         private Task? _worker;
+        private Task? _stopTask;
         private int _active;
         private int _disposed;
 
@@ -368,48 +414,30 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         {
             ArgumentNullException.ThrowIfNull(lease);
 
-            if (_queue.TryEnqueue(lease))
+            if (_queue.TryEnqueue(lease) == RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem)
                 _available.Release();
         }
 
-        public async ValueTask StopAsync(CancellationToken cancellationToken)
+        public async ValueTask StopAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0)
-                return;
+            if (timeout <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(timeout), "Sink stop timeout must be positive.");
 
-            Volatile.Write(ref _active, 0);
-
-            _queue.StopAccepting();
-
-            _stop.Cancel();
-            _available.Release();
-
-            if (_worker is not null)
-            {
-                try
-                {
-                    await _worker.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (_stop.IsCancellationRequested)
-                {
-                }
-            }
-
-            await DisposeQueuedFramesAsync().ConfigureAwait(false);
+            var stopTask = EnsureStopStarted();
 
             try
             {
-                await Sink.StopAsync(cancellationToken).ConfigureAwait(false);
+                await stopTask.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
             }
-            finally
+            catch (TimeoutException ex)
             {
-                await Sink.DisposeAsync().ConfigureAwait(false);
-                _available.Dispose();
-                _stop.Dispose();
+                throw new TimeoutException(
+                    $"Render output sink {Sink.Id} did not stop within {timeout}.",
+                    ex);
             }
         }
 
-        public ValueTask DisposeAsync() => StopAsync(CancellationToken.None);
+        public ValueTask DisposeAsync() => StopAsync(DefaultSinkStopTimeout, CancellationToken.None);
 
         public void DisposeUnstarted()
         {
@@ -419,6 +447,74 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             Volatile.Write(ref _active, 0);
             _available.Dispose();
             _stop.Dispose();
+        }
+
+        private Task EnsureStopStarted()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            {
+                Volatile.Write(ref _active, 0);
+                _queue.StopAccepting();
+                _stop.Cancel();
+                _available.Release();
+                _stopTask = StopCoreAsync();
+            }
+
+            return _stopTask ?? Task.CompletedTask;
+        }
+
+        private async Task StopCoreAsync()
+        {
+            List<Exception>? errors = null;
+            try
+            {
+                await Sink.StopAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+
+            if (_worker is not null)
+            {
+                try
+                {
+                    await _worker.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (_stop.IsCancellationRequested)
+                {
+                }
+                catch (Exception ex)
+                {
+                    (errors ??= []).Add(ex);
+                }
+            }
+
+            try
+            {
+                await DisposeQueuedFramesAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+
+            try
+            {
+                await Sink.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+            finally
+            {
+                _available.Dispose();
+                _stop.Dispose();
+            }
+
+            if (errors is not null)
+                throw new AggregateException($"Failed to stop render output sink {Sink.Id}.", errors);
         }
 
         private async Task ProcessAsync()

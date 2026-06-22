@@ -54,15 +54,18 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Public output consumption is `RenderOutput -> RenderOutputSink(s)`. The internal surface remains GPU/backend-owned; public sinks receive leases and metadata without exposing Vulkan/D3D11 handles.
 - `RenderedOutputFrame` carries an internal `IRenderedOutputSurfaceLease`; public `RenderOutputFrameLease` hides backend details while preserving lifetime for real rendered surfaces.
 - `RenderOutputSinkDispatcher` fans out frames through bounded per-sink queues and keeps sink callbacks off the render thread.
+- `RenderOutputSinkDispatcher` uses explicit sink stop timeouts for detach/dispose and reports hung sinks instead of blocking engine shutdown indefinitely.
 - Source acquisition is routed through `SourceRuntimeManager` and `MediaSourceRuntime`; the engine must not manage a raw provider list as its runtime source model.
 - Source buffers and sink queues are lease/reference infrastructure only. They must not copy pixels to CPU memory by default or become visual composition objects.
 - `SourceFrameBuffer` render acquisition preserves the latest frame for `KeepLatest`, `Static`, and current `TimelineDriven` modes; only `Queue` consumes frames in order. Runtime cleanup must release the cached latest frame.
 - Source frame acquisition failures are observable diagnostics and snapshot diagnostics. A failed or empty source must not crash the renderer or render pump.
 - `RenderOutputSinkQueue` owns per-sink bounded backpressure policy. Slow sinks must release dropped leases and must not block the render thread.
+- `RenderOutputSinkQueue` returns explicit enqueue results so workers are signaled only when a queue gains a pending frame; replacing a pending frame does not over-release the semaphore.
 - Runtime, snapshot, render-thread, backend, source-provider, output-sink, GPU lease, D3D11 physical slot-ring, and Vulkan implementation types are internal details.
 - GPU wait APIs must use explicit timeouts.
 - `MediaForgeEngine.ApplyProjectUpdateAsync`, `BindOutputAsync`, and `UnbindOutputAsync` are transactional. Failed updates/binds must preserve the previous public engine state.
 - `MediaForgeEngine.StopAsync` must not dispose the backend if the render thread is still alive after dispose timeout. It reports `engine.backend_dispose_skipped_render_thread_alive` as fatal and leaves a controlled leak instead of risking use-after-free.
+- `MediaForgeEngine.StopAsync` attempts runtime cleanup even when the engine is already `Failed`; it no longer returns silently while runtime resources remain alive.
 - CP1 visual correctness is proven by Vulkan offscreen pixel readback tests for center pixel, Fit transparency, Fill, Stretch, opacity, output letterbox color, canvas background, transparent layer over background, and clipped/fully outside layer geometry.
 - CP1 descriptor capacity is explicitly sized for larger submits, and `VulkanExternalTextureRegistry` waiters use timeout diagnostics instead of indefinite blocking.
 

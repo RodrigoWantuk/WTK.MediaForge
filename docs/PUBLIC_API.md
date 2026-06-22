@@ -59,11 +59,12 @@ Engine operations are observable:
 - unsupported planned features throw `MediaForgeUnsupportedFeatureException`
 - `CurrentProject` returns a deep clone; public callers cannot mutate engine-owned project state directly
 - `StartAsync` requires a loaded project and `StopAsync` returns to `Loaded` when that project remains loaded
-- `StartTimeout`, `CommandTimeout`, `StopTimeout`, and `RenderFramesPerSecond` are applied by `MediaForgeWindows.CreateEngine`
+- `StartTimeout`, `CommandTimeout`, `StopTimeout`, `SinkStopTimeout`, and `RenderFramesPerSecond` are applied by `MediaForgeWindows.CreateEngine`
 - project updates and output bind/unbind operations are transactional
 - render-thread command failures are reported to the caller
 - a continuous internal render pump publishes frames while the engine is running
 - shutdown skips backend disposal if the render thread is still alive
+- sink detach/dispose uses an explicit timeout; a hung sink is reported instead of blocking engine shutdown indefinitely
 - diagnostics, state changes, and frame drops are exposed as events
 
 Applications must not manually wire `CompositionRuntime`, `MediaForgeRenderThread`, `RenderThreadGuard`, `IRenderBackendFactory`, `IRenderOutputSinkFactory`, or `IMediaSourceProviderFactory`.

@@ -19,6 +19,7 @@ public class MediaForgeWindowsTests
             StartTimeout = TimeSpan.FromSeconds(2),
             CommandTimeout = TimeSpan.FromSeconds(4),
             StopTimeout = TimeSpan.FromSeconds(3),
+            SinkStopTimeout = TimeSpan.FromSeconds(6),
             RenderFramesPerSecond = 30
         };
 
@@ -29,6 +30,7 @@ public class MediaForgeWindowsTests
         Assert.Equal(options.StartTimeout, engine.StartTimeout);
         Assert.Equal(options.CommandTimeout, engine.CommandTimeout);
         Assert.Equal(options.StopTimeout, engine.StopTimeout);
+        Assert.Equal(options.SinkStopTimeout, engine.SinkStopTimeout);
         Assert.Equal(options.RenderFramesPerSecond, engine.RenderFramesPerSecond);
         Assert.Equal(options.StopTimeout, engine.RenderThreadJoinTimeout);
         Assert.Equal(options.StopTimeout, engine.RenderThreadSubmissionShutdownTimeout);
@@ -64,6 +66,8 @@ public class MediaForgeWindowsTests
             MediaForgeWindows.CreateEngine(new MediaForgeEngineOptions { CommandTimeout = TimeSpan.Zero }));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             MediaForgeWindows.CreateEngine(new MediaForgeEngineOptions { StopTimeout = TimeSpan.Zero }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MediaForgeWindows.CreateEngine(new MediaForgeEngineOptions { SinkStopTimeout = TimeSpan.Zero }));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             MediaForgeWindows.CreateEngine(new MediaForgeEngineOptions { RenderFramesPerSecond = 0 }));
     }

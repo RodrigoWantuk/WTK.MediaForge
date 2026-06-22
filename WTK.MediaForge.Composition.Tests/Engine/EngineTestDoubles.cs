@@ -764,6 +764,53 @@ internal sealed class BlockingPublicRenderOutputSink : WTK.MediaForge.Compositio
     public void Release() => _releaseFrame.TrySetResult();
 }
 
+internal sealed class HungPublicRenderOutputSink : WTK.MediaForge.Composition.Outputs.IRenderOutputSink
+{
+    private readonly TaskCompletionSource _frameEntered =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _releaseFrame =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
+
+    public RenderOutputSinkKind Kind => RenderOutputSinkKind.Custom;
+
+    public RenderOutputSinkBackpressureMode BackpressureMode => RenderOutputSinkBackpressureMode.KeepLatest;
+
+    public int StopCount => Volatile.Read(ref _stopCount);
+
+    public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+    private int _stopCount;
+    private int _disposeCount;
+
+    public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    public async ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken)
+    {
+        _frameEntered.TrySetResult();
+        await _releaseFrame.Task.ConfigureAwait(false);
+    }
+
+    public ValueTask StopAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _stopCount);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Interlocked.Increment(ref _disposeCount);
+        return ValueTask.CompletedTask;
+    }
+
+    public Task WaitForFrameAsync(TimeSpan timeout) =>
+        _frameEntered.Task.WaitAsync(timeout);
+
+    public void Release() => _releaseFrame.TrySetResult();
+}
+
 internal sealed class FakeMediaSourceProviderFactory : IMediaSourceProviderFactory
 {
     private readonly Dictionary<SourceId, FakeVideoFrameSource> _sources = new();

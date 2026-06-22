@@ -39,11 +39,11 @@ internal sealed class RenderOutputSinkQueue
         }
     }
 
-    public bool TryEnqueue(RenderOutputFrameLease lease)
+    public RenderOutputSinkQueueEnqueueResult TryEnqueue(RenderOutputFrameLease lease)
     {
         ArgumentNullException.ThrowIfNull(lease);
         RenderOutputFrameLease? dropped = null;
-        var enqueued = false;
+        var result = RenderOutputSinkQueueEnqueueResult.DroppedIncoming;
 
         lock (_gate)
         {
@@ -54,7 +54,7 @@ internal sealed class RenderOutputSinkQueue
             else if (_queue.Count < _capacity)
             {
                 _queue.Enqueue(lease);
-                enqueued = true;
+                result = RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem;
             }
             else
             {
@@ -67,7 +67,7 @@ internal sealed class RenderOutputSinkQueue
                     case RenderOutputSinkBackpressureMode.KeepLatest:
                         dropped = _queue.Dequeue();
                         _queue.Enqueue(lease);
-                        enqueued = true;
+                        result = RenderOutputSinkQueueEnqueueResult.ReplacedPendingItem;
                         break;
                     default:
                         dropped = lease;
@@ -79,7 +79,7 @@ internal sealed class RenderOutputSinkQueue
         if (dropped is not null)
             _dropFrame(dropped);
 
-        return enqueued;
+        return result;
     }
 
     public bool TryDequeue(out RenderOutputFrameLease lease)
@@ -115,4 +115,11 @@ internal sealed class RenderOutputSinkQueue
 
         return leases;
     }
+}
+
+internal enum RenderOutputSinkQueueEnqueueResult
+{
+    DroppedIncoming = 0,
+    EnqueuedNewItem = 1,
+    ReplacedPendingItem = 2
 }

@@ -36,6 +36,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private ProjectStateSnapshot? _projectState;
     private MediaForgeProject? _currentProject;
     private MediaForgeEngineState _state = MediaForgeEngineState.Idle;
+    private TimeSpan _sinkStopTimeout = TimeSpan.FromSeconds(5);
     private long _bindingVersion;
     private int _disposed;
 
@@ -48,6 +49,19 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     internal TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
     internal TimeSpan StopTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    internal TimeSpan SinkStopTimeout
+    {
+        get => _sinkStopTimeout;
+        set
+        {
+            if (value <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(value), "SinkStopTimeout must be positive.");
+
+            _sinkStopTimeout = value;
+            _sinkDispatcher.SinkStopTimeout = value;
+        }
+    }
 
     internal double RenderFramesPerSecond { get; set; } = 60;
 
@@ -74,7 +88,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _backendFactory = backendFactory ?? throw new ArgumentNullException(nameof(backendFactory));
         _externalDiagnostics = diagnostics;
         _diagnostics = new EngineDiagnosticsSink(diagnostics, RaiseDiagnosticReported);
-        _sinkDispatcher = new RenderOutputSinkDispatcher(_diagnostics);
+        _sinkDispatcher = new RenderOutputSinkDispatcher(_diagnostics, _sinkStopTimeout);
     }
 
     public bool HasProject => _currentProject is not null;
@@ -256,7 +270,13 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (State is MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded or MediaForgeEngineState.Stopping or MediaForgeEngineState.Failed or MediaForgeEngineState.Disposed)
+            if (State == MediaForgeEngineState.Failed)
+            {
+                await CleanupRuntimeAsync(allowFailedState: true, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (State is MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded or MediaForgeEngineState.Stopping or MediaForgeEngineState.Disposed)
                 return;
 
             await CleanupRuntimeAsync(allowFailedState: false, cancellationToken).ConfigureAwait(false);
@@ -465,11 +485,26 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (State == MediaForgeEngineState.Failed)
                 throw CreateEngineException("Sink detach is not allowed after the engine entered a failed state.");
 
-            var detached = await AwaitWithTimeoutAsync(
-                _sinkDispatcher.DetachAsync(outputId, sinkId, cancellationToken),
-                CommandTimeout,
-                "Render output sink detach timed out.",
-                cancellationToken).ConfigureAwait(false);
+            bool detached;
+            try
+            {
+                detached = await AwaitWithTimeoutAsync(
+                    _sinkDispatcher.DetachAsync(outputId, sinkId, cancellationToken),
+                    CommandTimeout,
+                    "Render output sink detach timed out.",
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsTimeoutFailure(ex))
+            {
+                SetState(MediaForgeEngineState.Failed);
+                if (ex is MediaForgeEngineException)
+                    throw;
+
+                throw new MediaForgeEngineException(
+                    "Render output sink detach timed out.",
+                    State,
+                    ex);
+            }
 
             if (!detached)
                 return;
@@ -970,7 +1005,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     }
 
     private static bool IsTimeoutFailure(Exception exception) =>
-        exception is MediaForgeEngineException { InnerException: TimeoutException };
+        exception is TimeoutException ||
+        exception is MediaForgeEngineException { InnerException: TimeoutException } ||
+        exception is AggregateException aggregate &&
+        aggregate.InnerExceptions.Any(IsTimeoutFailure);
 
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);

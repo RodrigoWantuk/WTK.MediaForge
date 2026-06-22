@@ -18,8 +18,8 @@ public class RenderOutputSinkQueueTests
         var first = CreateLease(1);
         var second = CreateLease(2);
 
-        Assert.True(queue.TryEnqueue(first));
-        Assert.True(queue.TryEnqueue(second));
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem, queue.TryEnqueue(first));
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.ReplacedPendingItem, queue.TryEnqueue(second));
 
         Assert.Equal([1], released);
         Assert.True(queue.TryDequeue(out var dequeued));
@@ -34,8 +34,8 @@ public class RenderOutputSinkQueueTests
             RenderOutputSinkBackpressureMode.DropOldest,
             lease => released.Add(lease.FrameNumber));
 
-        Assert.True(queue.TryEnqueue(CreateLease(1)));
-        Assert.True(queue.TryEnqueue(CreateLease(2)));
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem, queue.TryEnqueue(CreateLease(1)));
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.ReplacedPendingItem, queue.TryEnqueue(CreateLease(2)));
 
         Assert.Equal([1], released);
         Assert.True(queue.TryDequeue(out var dequeued));
@@ -50,8 +50,8 @@ public class RenderOutputSinkQueueTests
             RenderOutputSinkBackpressureMode.DropNewest,
             lease => released.Add(lease.FrameNumber));
 
-        Assert.True(queue.TryEnqueue(CreateLease(1)));
-        Assert.False(queue.TryEnqueue(CreateLease(2)));
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem, queue.TryEnqueue(CreateLease(1)));
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.DroppedIncoming, queue.TryEnqueue(CreateLease(2)));
 
         Assert.Equal([2], released);
         Assert.True(queue.TryDequeue(out var dequeued));
@@ -68,8 +68,25 @@ public class RenderOutputSinkQueueTests
 
         queue.StopAccepting();
 
-        Assert.False(queue.TryEnqueue(CreateLease(5)));
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.DroppedIncoming, queue.TryEnqueue(CreateLease(5)));
         Assert.Equal([5], released);
+    }
+
+    [Fact]
+    public void Enqueue_result_distinguishes_new_items_from_replacements()
+    {
+        var released = new List<long>();
+        var queue = CreateQueue(
+            RenderOutputSinkBackpressureMode.KeepLatest,
+            lease => released.Add(lease.FrameNumber));
+
+        var first = queue.TryEnqueue(CreateLease(1));
+        var replacement = queue.TryEnqueue(CreateLease(2));
+
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem, first);
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.ReplacedPendingItem, replacement);
+        Assert.Equal([1], released);
+        Assert.Equal(1, queue.Count);
     }
 
     private static RenderOutputSinkQueue CreateQueue(
