@@ -20,6 +20,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly Action? _beforeDeliveryEnqueue;
+    private readonly Action? _beforeAvailabilitySignal;
     private bool _disposed;
 
     private TimeSpan _sinkStopTimeout;
@@ -27,10 +28,12 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
     public RenderOutputSinkDispatcher(
         IMediaForgeDiagnosticsSink? diagnostics = null,
         TimeSpan? sinkStopTimeout = null,
-        Action? beforeDeliveryEnqueue = null)
+        Action? beforeDeliveryEnqueue = null,
+        Action? beforeAvailabilitySignal = null)
     {
         _diagnostics = diagnostics;
         _beforeDeliveryEnqueue = beforeDeliveryEnqueue;
+        _beforeAvailabilitySignal = beforeAvailabilitySignal;
         SinkStopTimeout = sinkStopTimeout ?? DefaultSinkStopTimeout;
     }
 
@@ -101,7 +104,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                 output.Id,
                 sink,
                 DefaultQueueCapacity,
-                _diagnostics);
+                _diagnostics,
+                _beforeAvailabilitySignal);
 
             lock (_gate)
             {
@@ -516,6 +520,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         private readonly SemaphoreSlim _available = new(0);
         private readonly CancellationTokenSource _stop = new();
         private readonly IMediaForgeDiagnosticsSink? _diagnostics;
+        private readonly Action? _beforeAvailabilitySignal;
         private Task? _worker;
         private Task? _stopTask;
         private CancellationTokenSource? _stopTimeout;
@@ -527,11 +532,13 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             RenderOutputId outputId,
             PublicRenderOutputSink sink,
             int capacity,
-            IMediaForgeDiagnosticsSink? diagnostics)
+            IMediaForgeDiagnosticsSink? diagnostics,
+            Action? beforeAvailabilitySignal)
         {
             OutputId = outputId;
             Sink = sink;
             _diagnostics = diagnostics;
+            _beforeAvailabilitySignal = beforeAvailabilitySignal;
             _queue = new RenderOutputSinkQueue(
                 capacity,
                 sink.BackpressureMode,
@@ -565,6 +572,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                 {
                     try
                     {
+                        _beforeAvailabilitySignal?.Invoke();
                         _available.Release();
                     }
                     catch (Exception ex)
@@ -576,6 +584,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                             $"Failed to signal frame availability for output {OutputId} and sink {Sink.Id}.",
                             nameof(RenderOutputSinkDispatcher),
                             ex);
+                        StopAfterSignalFailure();
+                        return false;
                     }
                 }
 
@@ -592,6 +602,15 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                     ex);
                 return false;
             }
+        }
+
+        private void StopAfterSignalFailure()
+        {
+            Volatile.Write(ref _active, 0);
+            _queue.StopAccepting();
+
+            foreach (var queued in _queue.Drain())
+                DisposeDroppedFrame(queued);
         }
 
         public async ValueTask StopAsync(TimeSpan timeout, CancellationToken cancellationToken)

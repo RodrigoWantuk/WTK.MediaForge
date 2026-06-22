@@ -288,6 +288,71 @@ public class RenderOutputSinkDispatcherTests
     }
 
     [Fact]
+    public async Task TryEnqueue_signal_failure_returns_false()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var output = CreateOutput();
+        var sink = new ControlledSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            beforeAvailabilitySignal: () => throw new ObjectDisposedException("availability"));
+        var batch = CreateTrackedBatch(output, out _, out _);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+
+        dispatcher.PublishCompletedFrames(batch);
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.enqueue_signal_failed");
+
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TryEnqueue_signal_failure_releases_frame_lease()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var output = CreateOutput();
+        var sink = new ControlledSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            beforeAvailabilitySignal: () => throw new ObjectDisposedException("availability"));
+        var batch = CreateTrackedBatch(output, out var surface, out var releaseCount);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+
+        dispatcher.PublishCompletedFrames(batch);
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.Equal(1, releaseCount());
+        Assert.Equal(1, surface.DisposeCount);
+
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PublishCompletedFrames_releases_lease_when_enqueue_signal_fails()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var output = CreateOutput();
+        var sink = new ControlledSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            beforeAvailabilitySignal: () => throw new ObjectDisposedException("availability"));
+        var batch = CreateTrackedBatch(output, out var surface, out _);
+
+        await dispatcher.AttachAsync(output, sink, CancellationToken.None);
+
+        dispatcher.PublishCompletedFrames(batch);
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
     public async Task Detach_race_with_publish_does_not_leak_output_surface_lease()
     {
         RenderOutputSinkDispatcher? dispatcher = null;
