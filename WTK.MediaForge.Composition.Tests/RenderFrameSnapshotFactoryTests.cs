@@ -299,6 +299,55 @@ public class RenderFrameSnapshotFactoryTests
     }
 
     [Fact]
+    public void Cp2_same_source_two_layers_share_one_source_acquire_per_snapshot()
+    {
+        var sourceId = SourceId.New();
+        var source = CreateRunningSource(sourceId);
+        source.PublishFrame(11, MediaTime.Zero);
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        using var result = RenderFrameSnapshotFactory.Build(
+            CreateTwoLayerSameSourceProjectState(sourceId),
+            runtime);
+        var snapshot = result.TakeSnapshot();
+
+        Assert.NotNull(snapshot);
+        Assert.Single(snapshot!.FrameLeases);
+        Assert.Equal(1, source.RetainCount);
+
+        var first = Assert.IsType<RenderSourceLayerDrawObjectSnapshot>(snapshot.Canvases[0].Objects[0]);
+        var second = Assert.IsType<RenderSourceLayerDrawObjectSnapshot>(snapshot.Canvases[0].Objects[1]);
+        Assert.Equal(11, first.BoundFrame!.Value.FrameNumber);
+        Assert.Equal(11, second.BoundFrame!.Value.FrameNumber);
+
+        snapshot.Dispose();
+        runtime.Dispose();
+    }
+
+    [Fact]
+    public void Cp2_same_source_two_layers_do_not_double_release_source_frame()
+    {
+        var sourceId = SourceId.New();
+        var source = CreateRunningSource(sourceId);
+        source.PublishFrame(12, MediaTime.Zero);
+        var runtime = new CompositionRuntime();
+        runtime.RegisterFrameProvider(source);
+
+        using var result = RenderFrameSnapshotFactory.Build(
+            CreateTwoLayerSameSourceProjectState(sourceId),
+            runtime);
+        var snapshot = result.TakeSnapshot();
+
+        Assert.NotNull(snapshot);
+        snapshot!.Dispose();
+        snapshot.Dispose();
+        runtime.Dispose();
+
+        Assert.Equal(0, source.RetainCount);
+    }
+
+    [Fact]
     public void Build_emits_diagnostic_when_no_frame_available()
     {
         var sourceId = SourceId.New();
@@ -464,4 +513,40 @@ public class RenderFrameSnapshotFactoryTests
             Canvases = canvases.ToImmutableArray()
         };
     }
+
+    private static ProjectStateSnapshot CreateTwoLayerSameSourceProjectState(SourceId sourceId) =>
+        new()
+        {
+            Version = 1,
+            Canvases =
+            [
+                new CanvasStateSnapshot
+                {
+                    Id = CanvasId.New(),
+                    Name = "Main",
+                    Size = new FrameSize(1920, 1080),
+                    Objects =
+                    [
+                        new SourceLayerDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Layer A",
+                            SourceId = sourceId,
+                            Transform = new Transform2D { Size = new CanvasSize(640, 480) }
+                        },
+                        new SourceLayerDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Layer B",
+                            SourceId = sourceId,
+                            Transform = new Transform2D
+                            {
+                                Position = new CanvasPoint(320, 240),
+                                Size = new CanvasSize(320, 240)
+                            }
+                        }
+                    ]
+                }
+            ]
+        };
 }

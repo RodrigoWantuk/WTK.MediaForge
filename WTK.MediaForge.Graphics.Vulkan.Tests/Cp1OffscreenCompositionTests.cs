@@ -176,6 +176,70 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
+    public async Task Cp2_same_source_two_layers_render_at_different_positions()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var sourceId = SourceId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            sourceId,
+                            new Transform2D
+                            {
+                                Position = new CanvasPoint(0, 0),
+                                Size = new CanvasSize(16, 16)
+                            }),
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            sourceId,
+                            new Transform2D
+                            {
+                                Position = new CanvasPoint(32, 32),
+                                Size = new CanvasSize(16, 16)
+                            })
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 8, 8, out var first));
+                AssertPixelNear(first, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 40, 40, out var second));
+                AssertPixelNear(second, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 24, 24, out var gap));
+                AssertPixelNear(gap, expectedR: 0, expectedG: 0, expectedB: 0, expectedA: 0);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Cp1_source_layer_fit_outputs_transparent_outside_content_area()
     {
         if (!TryCreateCp1Context(out var context))
@@ -1218,6 +1282,109 @@ public class Cp1OffscreenCompositionTests
                 }
             ]
         };
+    }
+
+    private static RenderFrameSnapshot CreateCp2Snapshot(
+        CanvasId canvasId,
+        RenderOutputId outputId,
+        FrameSize canvasSize,
+        FrameSize outputSize,
+        IReadOnlyList<Cp2LayerSpec> layers,
+        ColorRgba? canvasBackgroundColor = null,
+        ColorRgba? outputLetterboxColor = null,
+        LayoutMode outputCanvasLayoutMode = LayoutMode.Fit)
+    {
+        var objects = layers
+            .Select((layer, index) =>
+            {
+                var frame = new GpuFrameReference
+                {
+                    Backend = GpuFrameBackend.D3D11SharedTexture,
+                    Handle = layer.Handle,
+                    TextureSize = layer.Handle.TextureSize,
+                    LogicalSize = layer.Handle.TextureSize,
+                    SourceId = layer.SourceId,
+                    FrameNumber = index + 1
+                };
+
+                return (RenderDrawObjectSnapshot)new RenderSourceLayerDrawObjectSnapshot
+                {
+                    Id = DrawObjectId.New(),
+                    Name = $"Layer {index + 1}",
+                    Enabled = layer.Enabled,
+                    SourceId = layer.SourceId,
+                    Transform = layer.Transform,
+                    LayoutMode = layer.LayoutMode,
+                    Opacity = layer.Opacity,
+                    BlendMode = layer.BlendMode,
+                    BoundFrame = frame
+                };
+            })
+            .ToImmutableArray();
+
+        return new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 2,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Program",
+                    Size = canvasSize,
+                    BackgroundColor = canvasBackgroundColor ?? ColorRgba.Transparent,
+                    Objects = objects
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Offscreen",
+                    TypeId = RenderOutputTypes.Offscreen,
+                    CanvasId = canvasId,
+                    OutputSize = outputSize,
+                    CanvasLayoutMode = outputCanvasLayoutMode,
+                    LetterboxColor = outputLetterboxColor ?? ColorRgba.Transparent
+                }
+            ]
+        };
+    }
+
+    private readonly struct Cp2LayerSpec
+    {
+        public Cp2LayerSpec(
+            D3D11SharedTextureFrameHandle handle,
+            SourceId sourceId,
+            Transform2D transform,
+            float opacity = 1f,
+            bool enabled = true,
+            LayoutMode layoutMode = LayoutMode.Stretch,
+            BlendMode blendMode = BlendMode.Normal)
+        {
+            Handle = handle ?? throw new ArgumentNullException(nameof(handle));
+            SourceId = sourceId;
+            Transform = transform;
+            Opacity = opacity;
+            Enabled = enabled;
+            LayoutMode = layoutMode;
+            BlendMode = blendMode;
+        }
+
+        public D3D11SharedTextureFrameHandle Handle { get; }
+
+        public SourceId SourceId { get; }
+
+        public Transform2D Transform { get; }
+
+        public float Opacity { get; }
+
+        public bool Enabled { get; }
+
+        public LayoutMode LayoutMode { get; }
+
+        public BlendMode BlendMode { get; }
     }
 
     private static void FillSharedTexture(
