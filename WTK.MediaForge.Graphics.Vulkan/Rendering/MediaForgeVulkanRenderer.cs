@@ -50,7 +50,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         _offscreenTargetFactory = offscreenTargetFactory ?? CreateOffscreenRenderTarget;
         _disposeDevice = disposeDevice ?? _deviceContext.Dispose;
         _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
-        _cp1Pipelines = new VulkanCp1ShaderPipelines(_deviceContext);
+        _cp1Pipelines = new VulkanCp1ShaderPipelines(_deviceContext, diagnostics);
     }
 
     internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;

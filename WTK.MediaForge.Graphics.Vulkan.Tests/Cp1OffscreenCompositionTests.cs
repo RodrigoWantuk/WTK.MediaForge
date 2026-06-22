@@ -11,6 +11,7 @@ using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
 using Xunit;
@@ -600,6 +601,162 @@ public class Cp1OffscreenCompositionTests
 
                 Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
                 AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Text_draw_object_reports_render_drawobject_not_supported()
+    {
+        var diagnostics = await SubmitDrawObjectForDiagnosticsAsync(new RenderTextDrawObjectSnapshot
+        {
+            Id = DrawObjectId.New(),
+            Name = "Title",
+            Enabled = true,
+            Transform = new Transform2D { Size = new CanvasSize(32, 16) },
+            Text = "MediaForge"
+        });
+
+        if (diagnostics is null)
+            return;
+
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
+    }
+
+    [Fact]
+    public async Task Solid_draw_object_reports_render_drawobject_not_supported()
+    {
+        var diagnostics = await SubmitDrawObjectForDiagnosticsAsync(new RenderSolidDrawObjectSnapshot
+        {
+            Id = DrawObjectId.New(),
+            Name = "Solid",
+            Enabled = true,
+            Transform = new Transform2D { Size = new CanvasSize(32, 32) },
+            FillColor = ColorRgba.White
+        });
+
+        if (diagnostics is null)
+            return;
+
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
+    }
+
+    [Fact]
+    public async Task Canvas_draw_object_reports_render_drawobject_not_supported()
+    {
+        var diagnostics = await SubmitDrawObjectForDiagnosticsAsync(new RenderCanvasDrawObjectSnapshot
+        {
+            Id = DrawObjectId.New(),
+            Name = "Nested",
+            Enabled = true,
+            Transform = new Transform2D { Size = new CanvasSize(32, 32) },
+            NestedCanvas = new RenderCanvasSnapshot
+            {
+                Id = CanvasId.New(),
+                Name = "Child",
+                Size = new FrameSize(32, 32),
+                Objects = []
+            }
+        });
+
+        if (diagnostics is null)
+            return;
+
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
+    }
+
+    [Fact]
+    public async Task Source_layer_effect_reports_render_effect_not_supported()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        if (!TryCreateCp1Context(out var context, diagnostics: diagnostics))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            effects: [new ChromaKeyEffectSnapshot { Id = EffectId.New(), Name = "Key" }])
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "render.effect_not_supported");
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Add_blend_mode_reports_render_blend_mode_unsupported()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        if (!TryCreateCp1Context(out var context, diagnostics: diagnostics))
+            return;
+
+        using (context)
+        {
+            FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateCp2Snapshot(
+                    canvasId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new Cp2LayerSpec(
+                            context.SharedHandle,
+                            SourceId.New(),
+                            new Transform2D { Size = new CanvasSize(64, 64) },
+                            blendMode: BlendMode.Add)
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "render.blend_mode_unsupported");
             }
             finally
             {
@@ -1686,6 +1843,7 @@ public class Cp1OffscreenCompositionTests
                     LayoutMode = layer.LayoutMode,
                     Opacity = layer.Opacity,
                     BlendMode = layer.BlendMode,
+                    Effects = layer.Effects,
                     BoundFrame = frame
                 };
             })
@@ -1721,6 +1879,67 @@ public class Cp1OffscreenCompositionTests
         };
     }
 
+    private static async Task<IReadOnlyList<MediaForgeDiagnostic>?> SubmitDrawObjectForDiagnosticsAsync(
+        RenderDrawObjectSnapshot drawObject)
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        if (!TryCreateRenderer(out var context, diagnostics: diagnostics))
+            return null;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = new RenderFrameSnapshot
+                {
+                    ProjectStateVersion = 2,
+                    Canvases =
+                    [
+                        new RenderCanvasSnapshot
+                        {
+                            Id = canvasId,
+                            Name = "Program",
+                            Size = size,
+                            BackgroundColor = ColorRgba.Transparent,
+                            Objects = [drawObject]
+                        }
+                    ],
+                    Outputs =
+                    [
+                        new RenderOutputStateSnapshot
+                        {
+                            Id = outputId,
+                            Name = "Offscreen",
+                            TypeId = RenderOutputTypes.Offscreen,
+                            CanvasId = canvasId,
+                            OutputSize = size,
+                            LetterboxColor = ColorRgba.Transparent
+                        }
+                    ]
+                };
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+
+        return diagnostics.Diagnostics;
+    }
+
     private readonly struct Cp2LayerSpec
     {
         public Cp2LayerSpec(
@@ -1730,7 +1949,8 @@ public class Cp1OffscreenCompositionTests
             float opacity = 1f,
             bool enabled = true,
             LayoutMode layoutMode = LayoutMode.Stretch,
-            BlendMode blendMode = BlendMode.Normal)
+            BlendMode blendMode = BlendMode.Normal,
+            ImmutableArray<EffectStateSnapshot> effects = default)
         {
             Handle = handle ?? throw new ArgumentNullException(nameof(handle));
             SourceId = sourceId;
@@ -1739,6 +1959,7 @@ public class Cp1OffscreenCompositionTests
             Enabled = enabled;
             LayoutMode = layoutMode;
             BlendMode = blendMode;
+            Effects = effects.IsDefault ? [] : effects;
         }
 
         public D3D11SharedTextureFrameHandle Handle { get; }
@@ -1754,6 +1975,8 @@ public class Cp1OffscreenCompositionTests
         public LayoutMode LayoutMode { get; }
 
         public BlendMode BlendMode { get; }
+
+        public ImmutableArray<EffectStateSnapshot> Effects { get; }
     }
 
     private static Cp2LayerSpec[] CreateFullFrameLayers(
@@ -1857,14 +2080,15 @@ public class Cp1OffscreenCompositionTests
 
     private static bool TryCreateCp1Context(
         out Cp1TestContext? context,
-        IVulkanRendererFaultInjector? faultInjector = null)
+        IVulkanRendererFaultInjector? faultInjector = null,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         context = null;
 
         if (!TryCreateSharedTexture(out var device, out var sharedHandle))
             return false;
 
-        if (!TryCreateRenderer(out var renderer, faultInjector))
+        if (!TryCreateRenderer(out var renderer, faultInjector, diagnostics))
         {
             sharedHandle.Dispose();
             device.Dispose();
@@ -1883,7 +2107,8 @@ public class Cp1OffscreenCompositionTests
 
     private static bool TryCreateRenderer(
         out TestRendererContext? context,
-        IVulkanRendererFaultInjector? faultInjector = null)
+        IVulkanRendererFaultInjector? faultInjector = null,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         context = null;
 
@@ -1892,7 +2117,7 @@ public class Cp1OffscreenCompositionTests
             var guard = new RenderThreadGuard();
             if (!MediaForgeVulkanRenderer.TryCreate(
                 guard,
-                diagnostics: null,
+                diagnostics,
                 faultInjector ?? NullVulkanRendererFaultInjector.Instance,
                 out var backend) ||
                 backend is null)

@@ -5,6 +5,8 @@ using Silk.NET.Vulkan;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
+using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
@@ -15,6 +17,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
     private const uint MaxDescriptorSetsPerSubmit = 256;
 
     private readonly VulkanHeadlessDevice _device;
+    private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly Vk _vk;
     private readonly Device _deviceHandle;
     private readonly Sampler _sampler;
@@ -29,9 +32,12 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
     private readonly ShaderModule _outputLetterboxFragmentModule;
     private bool _disposed;
 
-    public VulkanCp1ShaderPipelines(VulkanHeadlessDevice deviceContext)
+    public VulkanCp1ShaderPipelines(
+        VulkanHeadlessDevice deviceContext,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _device = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
+        _diagnostics = diagnostics;
         _vk = deviceContext.Vk;
         _deviceHandle = deviceContext.Device;
 
@@ -99,8 +105,23 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         {
             foreach (var drawObject in canvas.Objects)
             {
-                if (drawObject is not RenderSourceLayerDrawObjectSnapshot sourceLayer ||
-                    !sourceLayer.Enabled ||
+                if (!drawObject.Enabled)
+                {
+                    continue;
+                }
+
+                ReportUnsupportedEffects(drawObject);
+
+                if (!IsSupportedBlendMode(drawObject))
+                    continue;
+
+                if (drawObject is not RenderSourceLayerDrawObjectSnapshot sourceLayer)
+                {
+                    ReportUnsupportedDrawObject(drawObject);
+                    continue;
+                }
+
+                if (!IsSupportedEffects(drawObject) ||
                     sourceLayer.BoundFrame?.Handle is not D3D11SharedTextureFrameHandle sharedHandle)
                 {
                     continue;
@@ -131,6 +152,49 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         }
 
         TransitionToShaderRead(_vk, commandBuffer, canvasTarget);
+    }
+
+    private bool IsSupportedBlendMode(RenderDrawObjectSnapshot drawObject)
+    {
+        if (drawObject.BlendMode == BlendMode.Normal)
+            return true;
+
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.blend_mode_unsupported",
+            $"Draw object '{drawObject.Name}' uses unsupported blend mode '{drawObject.BlendMode}'.",
+            nameof(VulkanCp1ShaderPipelines));
+        return false;
+    }
+
+    private bool IsSupportedEffects(RenderDrawObjectSnapshot drawObject) =>
+        drawObject.Effects.IsDefaultOrEmpty;
+
+    private void ReportUnsupportedEffects(RenderDrawObjectSnapshot drawObject)
+    {
+        if (IsSupportedEffects(drawObject))
+            return;
+
+        foreach (var effect in drawObject.Effects)
+        {
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Warning,
+                "render.effect_not_supported",
+                $"Draw object '{drawObject.Name}' uses unsupported effect '{effect.GetType().Name}'.",
+                nameof(VulkanCp1ShaderPipelines));
+        }
+    }
+
+    private void ReportUnsupportedDrawObject(RenderDrawObjectSnapshot drawObject)
+    {
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.drawobject_not_supported",
+            $"Draw object '{drawObject.Name}' of type '{drawObject.GetType().Name}' is not supported by the Vulkan compositor yet.",
+            nameof(VulkanCp1ShaderPipelines));
     }
 
     private void RenderOutputPass(
