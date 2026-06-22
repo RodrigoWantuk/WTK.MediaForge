@@ -184,6 +184,22 @@ public class VulkanOffscreenRenderTargetTests
         }
     }
 
+    [Fact]
+    public void OffscreenTargetHandle_double_release_throws()
+    {
+        using var target = new TrackingOffscreenRenderTarget(new FrameSize(64, 64));
+        using var handle = new VulkanOffscreenTargetHandle(target);
+
+        handle.RetainForSubmission();
+        handle.ReleaseSubmissionReference();
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            handle.ReleaseSubmissionReference());
+
+        Assert.Contains("released more times than retained", ex.Message);
+        Assert.Equal(0, target.DisposeCount);
+    }
+
     private static RenderOutputBindingSnapshot CreateOffscreenBinding(
         RenderOutputId outputId,
         uint width,
@@ -236,5 +252,18 @@ public class VulkanOffscreenRenderTargetTests
         public MediaForgeVulkanRenderer Backend { get; }
 
         public void Dispose() => Backend.Dispose();
+    }
+
+    private sealed class TrackingOffscreenRenderTarget(FrameSize size) : IVulkanOffscreenRenderTarget
+    {
+        public FrameSize Size { get; private set; } = size;
+
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        private int _disposeCount;
+
+        public void Resize(FrameSize newSize) => Size = newSize;
+
+        public void Dispose() => Interlocked.Increment(ref _disposeCount);
     }
 }

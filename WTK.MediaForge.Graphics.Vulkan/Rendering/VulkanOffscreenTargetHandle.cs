@@ -22,7 +22,15 @@ internal sealed class VulkanOffscreenTargetHandle : IDisposable
 
     public void ReleaseSubmissionReference()
     {
-        if (Interlocked.Decrement(ref _submissionRefs) == 0 && Volatile.Read(ref _retired) != 0)
+        var remaining = Interlocked.Decrement(ref _submissionRefs);
+        if (remaining < 0)
+        {
+            Interlocked.Increment(ref _submissionRefs);
+            throw new InvalidOperationException(
+                "Offscreen target submission reference released more times than retained.");
+        }
+
+        if (remaining == 0 && Volatile.Read(ref _retired) != 0)
             DisposeTarget();
     }
 
