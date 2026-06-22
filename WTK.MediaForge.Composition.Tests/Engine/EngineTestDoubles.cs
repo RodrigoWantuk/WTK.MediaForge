@@ -505,9 +505,16 @@ internal sealed class HangingStartMediaSourceProviderFactory : IMediaSourceProvi
 
         public bool StopCalled { get; private set; }
 
+        public bool StartCancellationObserved { get; private set; }
+
         public Task StartAsync(CancellationToken cancellationToken)
         {
             State = MediaSourceState.Running;
+            cancellationToken.Register(() =>
+            {
+                StartCancellationObserved = true;
+                _start.TrySetCanceled(cancellationToken);
+            });
             return _start.Task;
         }
 
@@ -710,6 +717,53 @@ internal sealed class RecordingPublicRenderOutputSink : WTK.MediaForge.Compositi
         if (_onFrame is not null)
             await _onFrame(frame, cancellationToken).ConfigureAwait(false);
     }
+
+    public ValueTask StopAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _stopCount);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Interlocked.Increment(ref _disposeCount);
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class HangingStartPublicRenderOutputSink : WTK.MediaForge.Composition.Outputs.IRenderOutputSink
+{
+    private readonly TaskCompletionSource _start =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
+
+    public RenderOutputSinkKind Kind => RenderOutputSinkKind.Custom;
+
+    public RenderOutputSinkBackpressureMode BackpressureMode => RenderOutputSinkBackpressureMode.KeepLatest;
+
+    public bool StartCancellationObserved { get; private set; }
+
+    public int StopCount => Volatile.Read(ref _stopCount);
+
+    public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+    private int _stopCount;
+    private int _disposeCount;
+
+    public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken)
+    {
+        cancellationToken.Register(() =>
+        {
+            StartCancellationObserved = true;
+            _start.TrySetCanceled(cancellationToken);
+        });
+
+        return new ValueTask(_start.Task);
+    }
+
+    public ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 
     public ValueTask StopAsync(CancellationToken cancellationToken)
     {

@@ -869,6 +869,43 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task AttachSink_timeout_cancels_attach_and_does_not_leave_sink_registered()
+    {
+        await using var engine = CreateEngine();
+        engine.CommandTimeout = TimeSpan.FromMilliseconds(50);
+        var project = CreateOffscreenProject();
+        var sink = new HangingStartPublicRenderOutputSink();
+
+        await engine.LoadProjectAsync(project);
+
+        var ex = await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.AttachSinkAsync(project.Outputs[0].Id, sink));
+
+        Assert.IsType<TimeoutException>(ex.InnerException);
+        Assert.True(sink.StartCancellationObserved);
+        Assert.False(engine.IsSinkAttachedForTests(project.Outputs[0].Id, sink.Id));
+        Assert.Equal(0, engine.AttachedSinkCountForTests);
+        Assert.Equal(1, sink.StopCount);
+        Assert.Equal(1, sink.DisposeCount);
+    }
+
+    [Fact]
+    public async Task AttachSink_timeout_does_not_leave_automatic_surface_binding()
+    {
+        await using var engine = CreateEngine();
+        engine.CommandTimeout = TimeSpan.FromMilliseconds(50);
+        var project = CreateOffscreenProject();
+        var sink = new HangingStartPublicRenderOutputSink();
+
+        await engine.LoadProjectAsync(project);
+
+        await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.AttachSinkAsync(project.Outputs[0].Id, sink));
+
+        Assert.Equal(0, engine.OutputSinkCountForTests);
+    }
+
+    [Fact]
     public async Task DetachSink_stops_delivery_and_disposes_sink()
     {
         await using var engine = CreateEngine();
@@ -886,7 +923,7 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
-    public async Task DetachSink_timeout_sets_engine_failed()
+    public async Task DetachSink_timeout_sets_failed_and_does_not_return_success()
     {
         var diagnostics = new InMemoryDiagnosticsSink();
         var backendFactory = new RecordingRenderBackendFactory();
@@ -1072,6 +1109,24 @@ public class MediaForgeEngineTests
         Assert.Null(engine.RenderThreadForTests);
         Assert.True(backendFactory.Backend!.Disposed);
         Assert.True(providerFactory.Provider!.StopCalled);
+    }
+
+    [Fact]
+    public async Task StartAsync_source_start_timeout_cancels_provider_start()
+    {
+        var providerFactory = new HangingStartMediaSourceProviderFactory();
+        var backendFactory = new RecordingRenderBackendFactory();
+        await using var engine = CreateEngine(providerFactory, backendFactory);
+        engine.StartTimeout = TimeSpan.FromMilliseconds(50);
+        engine.StopTimeout = TimeSpan.FromSeconds(1);
+        await engine.LoadProjectAsync(CreateValidProject());
+
+        var ex = await Assert.ThrowsAsync<MediaForgeEngineException>(() => engine.StartAsync());
+
+        Assert.IsType<TimeoutException>(ex.InnerException);
+        Assert.True(providerFactory.Provider!.StartCancellationObserved);
+        Assert.True(providerFactory.Provider.StopCalled);
+        Assert.Equal(MediaForgeEngineState.Failed, engine.State);
     }
 
     [Fact]

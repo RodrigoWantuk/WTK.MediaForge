@@ -219,7 +219,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     var provider = _sourceProviderFactory.CreateProvider(sourceDefinition);
                     var sourceRuntime = _sourceRuntimeManager.RegisterProvider(provider, sourceDefinition);
                     await AwaitWithTimeoutAsync(
-                        sourceRuntime.StartAsync(cancellationToken),
+                        ct => sourceRuntime.StartAsync(ct),
                         GetRemainingTime(deadline),
                         $"Source provider '{sourceRuntime.Name}' did not start before StartTimeout.",
                         cancellationToken).ConfigureAwait(false);
@@ -449,7 +449,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     .ConfigureAwait(false);
 
                 await AwaitWithTimeoutAsync(
-                    _sinkDispatcher.AttachAsync(output, sink, cancellationToken),
+                    ct => _sinkDispatcher.AttachAsync(output, sink, ct),
                     CommandTimeout,
                     "Render output sink attach timed out.",
                     cancellationToken).ConfigureAwait(false);
@@ -489,7 +489,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             try
             {
                 detached = await AwaitWithTimeoutAsync(
-                    _sinkDispatcher.DetachAsync(outputId, sinkId, cancellationToken),
+                    ct => _sinkDispatcher.DetachAsync(outputId, sinkId, ct),
                     CommandTimeout,
                     "Render output sink detach timed out.",
                     cancellationToken).ConfigureAwait(false);
@@ -767,7 +767,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     async (sourceRuntime, ct) =>
                     {
                         await AwaitWithTimeoutAsync(
-                            sourceRuntime.StopAsync(ct),
+                            innerCt => sourceRuntime.StopAsync(innerCt),
                             StopTimeout,
                             $"Source provider '{sourceRuntime.Name}' did not stop before StopTimeout.",
                             ct).ConfigureAwait(false);
@@ -947,7 +947,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     {
         try
         {
-            await AwaitWithTimeoutAsync(
+            await AwaitStartedTaskWithTimeoutAsync(
                 commandTask,
                 CommandTimeout,
                 timeoutMessage,
@@ -960,7 +960,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         }
     }
 
-    private async Task<T> AwaitWithTimeoutAsync<T>(
+    private async Task<T> AwaitStartedTaskWithTimeoutAsync<T>(
         Task<T> operation,
         TimeSpan timeout,
         string timeoutMessage,
@@ -976,7 +976,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         }
     }
 
-    private async Task AwaitWithTimeoutAsync(
+    private async Task AwaitStartedTaskWithTimeoutAsync(
         Task operation,
         TimeSpan timeout,
         string timeoutMessage,
@@ -990,6 +990,66 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         {
             throw new MediaForgeEngineException(timeoutMessage, State, ex);
         }
+    }
+
+    private async Task<T> AwaitWithTimeoutAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        TimeSpan timeout,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        using var timeoutCts = CreateTimeoutCancellationTokenSource(timeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            timeoutCts.Token);
+
+        try
+        {
+            return await operation(linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (
+            timeoutCts.IsCancellationRequested &&
+            !cancellationToken.IsCancellationRequested)
+        {
+            throw new MediaForgeEngineException(timeoutMessage, State, new TimeoutException(timeoutMessage, ex));
+        }
+    }
+
+    private async Task AwaitWithTimeoutAsync(
+        Func<CancellationToken, Task> operation,
+        TimeSpan timeout,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        using var timeoutCts = CreateTimeoutCancellationTokenSource(timeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            timeoutCts.Token);
+
+        try
+        {
+            await operation(linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (
+            timeoutCts.IsCancellationRequested &&
+            !cancellationToken.IsCancellationRequested)
+        {
+            throw new MediaForgeEngineException(timeoutMessage, State, new TimeoutException(timeoutMessage, ex));
+        }
+    }
+
+    private static CancellationTokenSource CreateTimeoutCancellationTokenSource(TimeSpan timeout)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            var cts = new CancellationTokenSource();
+            cts.Cancel();
+            return cts;
+        }
+
+        return new CancellationTokenSource(timeout);
     }
 
     private static long CreateDeadline(TimeSpan timeout) =>

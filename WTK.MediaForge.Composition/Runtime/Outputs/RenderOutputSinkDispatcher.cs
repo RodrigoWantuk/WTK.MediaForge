@@ -123,7 +123,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                     RemoveRegistration(registration);
 
                 if (startAttempted)
-                    await StopAndDisposeSinkAsync(sink, cancellationToken).ConfigureAwait(false);
+                    await StopAndDisposeSinkAsync(sink, CancellationToken.None).ConfigureAwait(false);
 
                 registration?.DisposeUnstarted();
             }
@@ -380,6 +380,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         private readonly IMediaForgeDiagnosticsSink? _diagnostics;
         private Task? _worker;
         private Task? _stopTask;
+        private CancellationTokenSource? _stopTimeout;
+        private int _stopTimedOut;
         private int _active;
         private int _disposed;
 
@@ -423,11 +425,28 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             if (timeout <= TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(timeout), "Sink stop timeout must be positive.");
 
-            var stopTask = EnsureStopStarted();
+            var stopTask = EnsureStopStarted(timeout, cancellationToken);
 
             try
             {
                 await stopTask.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch (AggregateException ex) when (
+                Volatile.Read(ref _stopTimedOut) != 0 &&
+                !cancellationToken.IsCancellationRequested &&
+                ex.InnerExceptions.Any(static inner => inner is OperationCanceledException))
+            {
+                throw new TimeoutException(
+                    $"Render output sink {Sink.Id} did not stop within {timeout}.",
+                    ex);
+            }
+            catch (OperationCanceledException ex) when (
+                _stopTimeout?.IsCancellationRequested == true &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Render output sink {Sink.Id} did not stop within {timeout}.",
+                    ex);
             }
             catch (TimeoutException ex)
             {
@@ -449,7 +468,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             _stop.Dispose();
         }
 
-        private Task EnsureStopStarted()
+        private Task EnsureStopStarted(TimeSpan timeout, CancellationToken cancellationToken)
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
@@ -457,18 +476,25 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                 _queue.StopAccepting();
                 _stop.Cancel();
                 _available.Release();
-                _stopTask = StopCoreAsync();
+
+                _stopTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                _stopTimeout.CancelAfter(timeout);
+                _stopTask = StopCoreAsync(_stopTimeout.Token);
             }
 
             return _stopTask ?? Task.CompletedTask;
         }
 
-        private async Task StopCoreAsync()
+        private async Task StopCoreAsync(CancellationToken cancellationToken)
         {
             List<Exception>? errors = null;
             try
             {
-                await Sink.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                await Sink.StopAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                (errors ??= []).Add(ex);
             }
             catch (Exception ex)
             {
@@ -509,8 +535,13 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             }
             finally
             {
+                if (cancellationToken.IsCancellationRequested)
+                    Volatile.Write(ref _stopTimedOut, 1);
+
                 _available.Dispose();
                 _stop.Dispose();
+                _stopTimeout?.Dispose();
+                _stopTimeout = null;
             }
 
             if (errors is not null)
