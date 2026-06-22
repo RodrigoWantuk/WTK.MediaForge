@@ -921,6 +921,45 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
+    public void Vulkan_submission_uses_rendered_surfaces_not_snapshot_frames()
+    {
+        if (!TryCreateRenderer(out var renderer))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                renderer.Backend.BindOutput(CreateOffscreenBinding(outputId, 64, 64));
+
+                var submission = renderer.Backend.Submit(CreateCp1SnapshotWithD3D11Frame(handle, outputId));
+                var outputFrames = submission.AcquireOutputFrames();
+                var frame = Assert.Single(outputFrames.Frames);
+
+                Assert.IsType<VulkanRenderedOutputSurfaceLease>(frame.SurfaceLease);
+                Assert.NotNull(frame.SurfaceLease.BackendSurface);
+
+                ReleaseSubmission(submission);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public void Empty_submit_does_not_change_import_layout()
     {
         if (!TryCreateRenderer(out var renderer))
