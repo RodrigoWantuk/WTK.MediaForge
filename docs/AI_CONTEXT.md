@@ -71,6 +71,7 @@ The legacy WinForms preview path has been removed as a product path because it u
 - CP1 visual correctness is proven by Vulkan offscreen pixel readback tests for center pixel, Fit transparency, Fill, Stretch, opacity, output letterbox color, canvas background, transparent layer over background, and clipped/fully outside layer geometry.
 - CP1 descriptor capacity is explicitly sized for larger submits, and `VulkanExternalTextureRegistry` waiters use timeout diagnostics instead of indefinite blocking.
 - CP3 solid layer rendering is implemented in Vulkan with transform, clipping, opacity, normal alpha blending, and pixel tests.
+- CP3 nested canvas rendering is implemented in Vulkan by rendering child canvases into submission-retained intermediate targets and compositing them into parent canvases with transform, opacity, and depth-8 coverage.
 
 ## Remaining Blockers
 

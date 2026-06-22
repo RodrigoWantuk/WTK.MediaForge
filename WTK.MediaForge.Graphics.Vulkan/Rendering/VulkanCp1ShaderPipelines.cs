@@ -15,6 +15,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 {
     private const uint PushConstantMaxSize = 64;
     private const uint MaxDescriptorSetsPerSubmit = 256;
+    private const int MaxNestedCanvasDepth = 8;
 
     private readonly VulkanHeadlessDevice _device;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
@@ -27,10 +28,12 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
     private readonly RenderPass _renderPass;
     private readonly Pipeline _sourceLayerPipeline;
     private readonly Pipeline _solidPipeline;
+    private readonly Pipeline _canvasCompositePipeline;
     private readonly Pipeline _outputLetterboxPipeline;
     private readonly ShaderModule _vertexModule;
     private readonly ShaderModule _sourceLayerFragmentModule;
     private readonly ShaderModule _solidFragmentModule;
+    private readonly ShaderModule _canvasCompositeFragmentModule;
     private readonly ShaderModule _outputLetterboxFragmentModule;
     private bool _disposed;
 
@@ -52,10 +55,12 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         _vertexModule = CreateShaderModule(VulkanShaderBytecode.CommonVertex);
         _sourceLayerFragmentModule = CreateShaderModule(VulkanShaderBytecode.SourceLayerFragment);
         _solidFragmentModule = CreateShaderModule(VulkanShaderBytecode.SolidFragment);
+        _canvasCompositeFragmentModule = CreateShaderModule(VulkanShaderBytecode.CanvasCompositeFragment);
         _outputLetterboxFragmentModule = CreateShaderModule(VulkanShaderBytecode.OutputLetterboxFragment);
 
         _sourceLayerPipeline = CreateGraphicsPipeline(_vertexModule, _sourceLayerFragmentModule, enableAlphaBlend: true);
         _solidPipeline = CreateGraphicsPipeline(_vertexModule, _solidFragmentModule, enableAlphaBlend: true);
+        _canvasCompositePipeline = CreateGraphicsPipeline(_vertexModule, _canvasCompositeFragmentModule, enableAlphaBlend: true);
         _outputLetterboxPipeline = CreateGraphicsPipeline(_vertexModule, _outputLetterboxFragmentModule, enableAlphaBlend: false);
     }
 
@@ -77,7 +82,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         submissionResources.RetainOffscreenTarget(canvasHandle);
         canvasHandle.Retire();
 
-        RenderCanvasPass(commandBuffer, canvas, output, importsByHandle, canvasTarget, submissionResources);
+        RenderCanvasPass(commandBuffer, canvas, output, importsByHandle, canvasTarget, submissionResources, depth: 0);
         RenderOutputPass(commandBuffer, output, canvas.Size, canvasTarget, outputTarget, submissionResources);
     }
 
@@ -87,8 +92,17 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         RenderOutputStateSnapshot output,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
         VulkanOffscreenRenderTarget canvasTarget,
-        VulkanSubmissionResourceScope submissionResources)
+        VulkanSubmissionResourceScope submissionResources,
+        int depth)
     {
+        var nestedTargets = RenderNestedCanvasTargets(
+            commandBuffer,
+            canvas,
+            output,
+            importsByHandle,
+            submissionResources,
+            depth);
+
         TransitionForColorAttachment(_vk, commandBuffer, canvasTarget, canvasTarget.CurrentLayout);
         canvasTarget.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
 
@@ -134,6 +148,28 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                     continue;
                 }
 
+                if (drawObject is RenderCanvasDrawObjectSnapshot nestedCanvas)
+                {
+                    if (!nestedTargets.TryGetValue(nestedCanvas, out var nestedTarget))
+                    {
+                        ReportNestedCanvasUnavailable(nestedCanvas);
+                        continue;
+                    }
+
+                    var canvasPushConstants = Cp1PushConstantsBuilder.BuildCanvasComposite(nestedCanvas);
+                    var canvasDescriptorSet = AllocateAndWriteDescriptorSet(nestedTarget.ImageView);
+                    submissionResources.RetainDescriptorSet(canvasDescriptorSet);
+
+                    DrawCanvasLayer(
+                        commandBuffer,
+                        _canvasCompositePipeline,
+                        canvasDescriptorSet,
+                        canvasPushConstants,
+                        canvas.Size,
+                        nestedCanvas.Transform);
+                    continue;
+                }
+
                 if (drawObject is not RenderSourceLayerDrawObjectSnapshot sourceLayer)
                 {
                     ReportUnsupportedDrawObject(drawObject);
@@ -170,6 +206,55 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         }
 
         TransitionToShaderRead(_vk, commandBuffer, canvasTarget);
+    }
+
+    private Dictionary<RenderCanvasDrawObjectSnapshot, VulkanOffscreenRenderTarget> RenderNestedCanvasTargets(
+        CommandBuffer commandBuffer,
+        RenderCanvasSnapshot canvas,
+        RenderOutputStateSnapshot output,
+        IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
+        VulkanSubmissionResourceScope submissionResources,
+        int depth)
+    {
+        var targets = new Dictionary<RenderCanvasDrawObjectSnapshot, VulkanOffscreenRenderTarget>();
+
+        foreach (var drawObject in canvas.Objects)
+        {
+            if (drawObject is not RenderCanvasDrawObjectSnapshot nested ||
+                !nested.Enabled ||
+                nested.NestedCanvas is null ||
+                nested.BlendMode != BlendMode.Normal ||
+                !IsSupportedEffects(nested) ||
+                !nested.Transform.HasPositiveSize ||
+                !TryCreateClippedScissor(nested.Transform, canvas.Size, out _))
+            {
+                continue;
+            }
+
+            if (depth >= MaxNestedCanvasDepth)
+            {
+                ReportNestedCanvasDepthExceeded(nested);
+                continue;
+            }
+
+            var nestedTarget = new VulkanOffscreenRenderTarget(_device, nested.NestedCanvas.Size);
+            var nestedHandle = new VulkanOffscreenTargetHandle(nestedTarget);
+            submissionResources.RetainOffscreenTarget(nestedHandle);
+            nestedHandle.Retire();
+
+            RenderCanvasPass(
+                commandBuffer,
+                nested.NestedCanvas,
+                output,
+                importsByHandle,
+                nestedTarget,
+                submissionResources,
+                depth + 1);
+
+            targets[nested] = nestedTarget;
+        }
+
+        return targets;
     }
 
     private bool IsSupportedBlendMode(RenderDrawObjectSnapshot drawObject)
@@ -212,6 +297,26 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             MediaForgeDiagnosticSeverity.Warning,
             "render.drawobject_not_supported",
             $"Draw object '{drawObject.Name}' of type '{drawObject.GetType().Name}' is not supported by the Vulkan compositor yet.",
+            nameof(VulkanCp1ShaderPipelines));
+    }
+
+    private void ReportNestedCanvasUnavailable(RenderCanvasDrawObjectSnapshot drawObject)
+    {
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.canvas_not_available",
+            $"Nested canvas draw object '{drawObject.Name}' does not have a renderable nested canvas.",
+            nameof(VulkanCp1ShaderPipelines));
+    }
+
+    private void ReportNestedCanvasDepthExceeded(RenderCanvasDrawObjectSnapshot drawObject)
+    {
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "render.canvas_depth_exceeded",
+            $"Nested canvas draw object '{drawObject.Name}' exceeded the renderer nesting depth limit.",
             nameof(VulkanCp1ShaderPipelines));
     }
 
@@ -328,6 +433,50 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         };
 
         _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
+
+        var pushBytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref pushConstants, 1));
+        fixed (byte* pushData = pushBytes)
+        {
+            _vk.CmdPushConstants(
+                commandBuffer,
+                _pipelineLayout,
+                ShaderStageFlags.FragmentBit,
+                0,
+                (uint)pushBytes.Length,
+                pushData);
+        }
+
+        _vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
+        _vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+        _vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
+    }
+
+    private void DrawCanvasLayer(
+        CommandBuffer commandBuffer,
+        Pipeline pipeline,
+        DescriptorSet descriptorSet,
+        MediaForgeCanvasCompositePushConstants pushConstants,
+        FrameSize canvasSize,
+        Transform2D transform)
+    {
+        if (!transform.HasPositiveSize)
+            return;
+
+        if (!TryCreateClippedScissor(transform, canvasSize, out var scissor))
+            return;
+
+        var viewport = new Viewport
+        {
+            X = transform.Position.X,
+            Y = transform.Position.Y,
+            Width = transform.Size.Width,
+            Height = transform.Size.Height,
+            MinDepth = 0,
+            MaxDepth = 1
+        };
+
+        _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
+        _vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, &descriptorSet, 0, null);
 
         var pushBytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref pushConstants, 1));
         fixed (byte* pushData = pushBytes)
@@ -555,6 +704,9 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         if (_solidPipeline.Handle != 0)
             _vk.DestroyPipeline(_deviceHandle, _solidPipeline, null);
 
+        if (_canvasCompositePipeline.Handle != 0)
+            _vk.DestroyPipeline(_deviceHandle, _canvasCompositePipeline, null);
+
         if (_outputLetterboxPipeline.Handle != 0)
             _vk.DestroyPipeline(_deviceHandle, _outputLetterboxPipeline, null);
 
@@ -575,6 +727,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
         DestroyShaderModule(_sourceLayerFragmentModule);
         DestroyShaderModule(_solidFragmentModule);
+        DestroyShaderModule(_canvasCompositeFragmentModule);
         DestroyShaderModule(_outputLetterboxFragmentModule);
         DestroyShaderModule(_vertexModule);
     }

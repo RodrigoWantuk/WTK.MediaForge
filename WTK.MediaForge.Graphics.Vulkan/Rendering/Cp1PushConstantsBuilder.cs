@@ -57,4 +57,11 @@ internal static class Cp1PushConstantsBuilder
 
     private static Vector4 ToVector4(ColorRgba color) =>
         new(color.R, color.G, color.B, color.A);
+
+    public static MediaForgeCanvasCompositePushConstants BuildCanvasComposite(
+        RenderCanvasDrawObjectSnapshot canvas) =>
+        new()
+        {
+            Opacity = canvas.Opacity
+        };
 }

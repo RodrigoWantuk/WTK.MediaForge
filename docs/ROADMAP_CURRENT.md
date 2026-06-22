@@ -18,7 +18,8 @@ track.
 - **CP2/multi-layer renderer track:** complete
 - **First public visual output sink:** complete
 - **CP3 solid layer:** complete
-- **CP3 nested canvas:** active
+- **CP3 nested canvas:** complete
+- **CP3 first effect:** active
 
 ## Blocking Rule
 
@@ -36,11 +37,7 @@ allowed.
 
 ## Active Commit Order
 
-1. **Sprint 3.2 - Nested canvas rendering**
-   - Render child canvases into submission-retained intermediate targets and
-     sample them in parent canvases.
-   - Preserve the existing maximum canvas recursion depth contract.
-2. **Sprint 3.3 - ChromaKeyEffect**
+1. **Sprint 3.3 - ChromaKeyEffect**
    - Implement the first real source-layer effect while preserving explicit
      diagnostics for unsupported effects and invalid effect configuration.
 
@@ -110,6 +107,15 @@ allowed.
 3. Solid no longer emits `render.drawobject_not_supported`; unsupported
    diagnostics remain for text, nested canvas, unsupported effects, and
    unsupported blend modes.
+
+## Completed - CP3 Nested Canvas
+
+1. `CanvasDrawObject` renders child canvases into submission-retained
+   intermediate Vulkan targets and composites them into the parent canvas.
+2. Nested canvas rendering supports transform, opacity, normal alpha blending,
+   and the established depth-8 contract.
+3. Intermediate targets are retained by `VulkanSubmissionResourceScope` until
+   the submitted command buffer fence completes.
 
 ## Validation Gates
 

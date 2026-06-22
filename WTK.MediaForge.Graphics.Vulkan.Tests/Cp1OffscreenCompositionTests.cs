@@ -964,6 +964,225 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
+    public async Task Nested_canvas_renders_into_parent()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var parentId = CanvasId.New();
+                var child = CreateSolidCanvas(
+                    CanvasId.New(),
+                    new FrameSize(32, 32),
+                    ColorRgba.From(1, 0, 0, 1));
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateObjectSnapshot(
+                    parentId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new RenderCanvasDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Child canvas",
+                            Transform = new Transform2D { Size = new CanvasSize(64, 64) },
+                            NestedCanvas = child
+                        }
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 32, 32, out var pixel));
+                AssertPixelNear(pixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Nested_canvas_respects_transform()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var parentId = CanvasId.New();
+                var child = CreateSolidCanvas(
+                    CanvasId.New(),
+                    new FrameSize(16, 16),
+                    ColorRgba.From(0, 0, 1, 1));
+                var size = new FrameSize(64, 64);
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateObjectSnapshot(
+                    parentId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new RenderCanvasDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Positioned child",
+                            Transform = new Transform2D
+                            {
+                                Position = new CanvasPoint(16, 16),
+                                Size = new CanvasSize(16, 16)
+                            },
+                            NestedCanvas = child
+                        }
+                    ],
+                    canvasBackgroundColor: ColorRgba.Transparent,
+                    outputLetterboxColor: ColorRgba.Transparent);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 24, 24, out var inside));
+                AssertPixelNear(inside, expectedR: 0, expectedG: 0, expectedB: 255, expectedA: 255);
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 8, 8, out var outside));
+                AssertPixelNear(outside, expectedR: 0, expectedG: 0, expectedB: 0, expectedA: 0);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Nested_canvas_depth_8_works()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var parentId = CanvasId.New();
+                var size = new FrameSize(32, 32);
+                var nested = CreateNestedCanvasChain(depth: 8, size, ColorRgba.From(0, 1, 0, 1));
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = CreateObjectSnapshot(
+                    parentId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new RenderCanvasDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Depth 1",
+                            Transform = new Transform2D { Size = new CanvasSize(32, 32) },
+                            NestedCanvas = nested
+                        }
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 16, 16, out var pixel));
+                AssertPixelNear(pixel, expectedR: 0, expectedG: 255, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Nested_canvas_target_lifetime_survives_submission()
+    {
+        if (!TryCreateCp1Context(out var context))
+            return;
+
+        VulkanOffscreenRenderTargetLifetime.Reset();
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var parentId = CanvasId.New();
+                var size = new FrameSize(32, 32);
+                var child = CreateSolidCanvas(
+                    CanvasId.New(),
+                    size,
+                    ColorRgba.From(1, 0, 0, 1));
+
+                backend.BindOutput(CreateOffscreenBinding(outputId, size.Width, size.Height));
+                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.LiveCount);
+
+                using var snapshot = CreateObjectSnapshot(
+                    parentId,
+                    outputId,
+                    size,
+                    size,
+                    [
+                        new RenderCanvasDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Child canvas",
+                            Transform = new Transform2D { Size = new CanvasSize(32, 32) },
+                            NestedCanvas = child
+                        }
+                    ]);
+
+                var submission = backend.Submit(snapshot);
+                await submission.WaitForCompletionAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+                Assert.True(VulkanOffscreenRenderTargetLifetime.LiveCount >= 3);
+
+                submission.DisposeCompleted();
+
+                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.LiveCount);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Text_draw_object_reports_render_drawobject_not_supported()
     {
         var diagnostics = await SubmitDrawObjectForDiagnosticsAsync(new RenderTextDrawObjectSnapshot
@@ -1000,7 +1219,7 @@ public class Cp1OffscreenCompositionTests
     }
 
     [Fact]
-    public async Task Canvas_draw_object_reports_render_drawobject_not_supported()
+    public async Task Canvas_draw_object_does_not_report_render_drawobject_not_supported()
     {
         var diagnostics = await SubmitDrawObjectForDiagnosticsAsync(new RenderCanvasDrawObjectSnapshot
         {
@@ -1020,7 +1239,7 @@ public class Cp1OffscreenCompositionTests
         if (diagnostics is null)
             return;
 
-        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
     }
 
     [Fact]
@@ -2403,6 +2622,68 @@ public class Cp1OffscreenCompositionTests
             Opacity = opacity,
             BoundFrame = frame
         };
+    }
+
+    private static RenderCanvasSnapshot CreateSolidCanvas(
+        CanvasId canvasId,
+        FrameSize size,
+        ColorRgba color) =>
+        new()
+        {
+            Id = canvasId,
+            Name = "Solid canvas",
+            Size = size,
+            BackgroundColor = ColorRgba.Transparent,
+            Objects =
+            [
+                new RenderSolidDrawObjectSnapshot
+                {
+                    Id = DrawObjectId.New(),
+                    Name = "Solid",
+                    Transform = new Transform2D
+                    {
+                        Size = new CanvasSize(size.Width, size.Height)
+                    },
+                    FillColor = color
+                }
+            ]
+        };
+
+    private static RenderCanvasSnapshot CreateNestedCanvasChain(
+        int depth,
+        FrameSize size,
+        ColorRgba color)
+    {
+        if (depth < 1)
+            throw new ArgumentOutOfRangeException(nameof(depth));
+
+        var current = CreateSolidCanvas(CanvasId.New(), size, color);
+
+        for (var i = 1; i < depth; i++)
+        {
+            current = new RenderCanvasSnapshot
+            {
+                Id = CanvasId.New(),
+                Name = $"Nested {i}",
+                Size = size,
+                BackgroundColor = ColorRgba.Transparent,
+                Objects =
+                [
+                    new RenderCanvasDrawObjectSnapshot
+                    {
+                        Id = DrawObjectId.New(),
+                        Name = $"Nested layer {i}",
+                        Transform = new Transform2D
+                        {
+                            Size = new CanvasSize(size.Width, size.Height)
+                        },
+                        NestedCanvas = current
+                    }
+                ]
+            };
+        }
+
+        return current;
     }
 
     private static async Task<IReadOnlyList<MediaForgeDiagnostic>?> SubmitDrawObjectForDiagnosticsAsync(

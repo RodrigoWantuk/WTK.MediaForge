@@ -146,7 +146,9 @@ public class RenderThreadTests
             renderThread.PublishFrame(BuildSnapshot(runtime, source, frame));
         }
 
-        WaitUntil(() => backend.SubmitCount >= 1, TimeSpan.FromSeconds(5));
+        WaitUntil(
+            () => backend.SubmitCount >= 1 && backend.PendingBackendSubmissionCount >= 1,
+            TimeSpan.FromSeconds(5));
 
         Assert.True(renderThread.PendingTracker.PendingCount <= 1);
 

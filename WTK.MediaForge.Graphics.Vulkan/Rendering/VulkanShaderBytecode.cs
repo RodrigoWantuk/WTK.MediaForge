@@ -8,5 +8,7 @@ internal static class VulkanShaderBytecode
 
     public static ReadOnlySpan<byte> SolidFragment => CompiledShaders.Shaders.Catalog.mf_solid_frag;
 
+    public static ReadOnlySpan<byte> CanvasCompositeFragment => CompiledShaders.Shaders.Catalog.mf_canvas_composite_frag;
+
     public static ReadOnlySpan<byte> OutputLetterboxFragment => CompiledShaders.Shaders.Catalog.mf_output_letterbox_frag;
 }
