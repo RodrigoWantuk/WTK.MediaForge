@@ -17,7 +17,8 @@ track.
 - **Sprint 0 hardening:** complete
 - **CP2/multi-layer renderer track:** complete
 - **First public visual output sink:** complete
-- **CP3 composition expansion:** active
+- **CP3 solid layer:** complete
+- **CP3 nested canvas:** active
 
 ## Blocking Rule
 
@@ -35,14 +36,11 @@ allowed.
 
 ## Active Commit Order
 
-1. **Sprint 3.1 - Solid layer rendering**
-   - Render `SolidDrawObject` on the GPU with transform, clipping, opacity, and
-     normal alpha blending.
-2. **Sprint 3.2 - Nested canvas rendering**
+1. **Sprint 3.2 - Nested canvas rendering**
    - Render child canvases into submission-retained intermediate targets and
      sample them in parent canvases.
    - Preserve the existing maximum canvas recursion depth contract.
-3. **Sprint 3.3 - ChromaKeyEffect**
+2. **Sprint 3.3 - ChromaKeyEffect**
    - Implement the first real source-layer effect while preserving explicit
      diagnostics for unsupported effects and invalid effect configuration.
 
@@ -104,6 +102,14 @@ allowed.
 3. Vulkan output targets are replaced before submit when an earlier rendered
    surface still has live submission or sink references, preserving frame
    content for slow sinks.
+
+## Completed - CP3 Solid Layer
+
+1. `SolidDrawObject` renders in Vulkan using the solid fragment shader.
+2. Solid layers support transform, clipping, opacity, and normal alpha blending.
+3. Solid no longer emits `render.drawobject_not_supported`; unsupported
+   diagnostics remain for text, nested canvas, unsupported effects, and
+   unsupported blend modes.
 
 ## Validation Gates
 

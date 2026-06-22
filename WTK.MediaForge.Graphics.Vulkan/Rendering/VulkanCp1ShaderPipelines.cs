@@ -26,9 +26,11 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
     private readonly PipelineLayout _pipelineLayout;
     private readonly RenderPass _renderPass;
     private readonly Pipeline _sourceLayerPipeline;
+    private readonly Pipeline _solidPipeline;
     private readonly Pipeline _outputLetterboxPipeline;
     private readonly ShaderModule _vertexModule;
     private readonly ShaderModule _sourceLayerFragmentModule;
+    private readonly ShaderModule _solidFragmentModule;
     private readonly ShaderModule _outputLetterboxFragmentModule;
     private bool _disposed;
 
@@ -49,9 +51,11 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
         _vertexModule = CreateShaderModule(VulkanShaderBytecode.CommonVertex);
         _sourceLayerFragmentModule = CreateShaderModule(VulkanShaderBytecode.SourceLayerFragment);
+        _solidFragmentModule = CreateShaderModule(VulkanShaderBytecode.SolidFragment);
         _outputLetterboxFragmentModule = CreateShaderModule(VulkanShaderBytecode.OutputLetterboxFragment);
 
         _sourceLayerPipeline = CreateGraphicsPipeline(_vertexModule, _sourceLayerFragmentModule, enableAlphaBlend: true);
+        _solidPipeline = CreateGraphicsPipeline(_vertexModule, _solidFragmentModule, enableAlphaBlend: true);
         _outputLetterboxPipeline = CreateGraphicsPipeline(_vertexModule, _outputLetterboxFragmentModule, enableAlphaBlend: false);
     }
 
@@ -115,14 +119,28 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
                 if (!IsSupportedBlendMode(drawObject))
                     continue;
 
+                if (!IsSupportedEffects(drawObject))
+                    continue;
+
+                if (drawObject is RenderSolidDrawObjectSnapshot solid)
+                {
+                    var solidPushConstants = Cp1PushConstantsBuilder.BuildSolid(solid);
+                    DrawSolidLayer(
+                        commandBuffer,
+                        _solidPipeline,
+                        solidPushConstants,
+                        canvas.Size,
+                        solid.Transform);
+                    continue;
+                }
+
                 if (drawObject is not RenderSourceLayerDrawObjectSnapshot sourceLayer)
                 {
                     ReportUnsupportedDrawObject(drawObject);
                     continue;
                 }
 
-                if (!IsSupportedEffects(drawObject) ||
-                    sourceLayer.BoundFrame?.Handle is not D3D11SharedTextureFrameHandle sharedHandle)
+                if (sourceLayer.BoundFrame?.Handle is not D3D11SharedTextureFrameHandle sharedHandle)
                 {
                     continue;
                 }
@@ -268,6 +286,48 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
 
         _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
         _vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, &descriptorSet, 0, null);
+
+        var pushBytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref pushConstants, 1));
+        fixed (byte* pushData = pushBytes)
+        {
+            _vk.CmdPushConstants(
+                commandBuffer,
+                _pipelineLayout,
+                ShaderStageFlags.FragmentBit,
+                0,
+                (uint)pushBytes.Length,
+                pushData);
+        }
+
+        _vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
+        _vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+        _vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
+    }
+
+    private void DrawSolidLayer(
+        CommandBuffer commandBuffer,
+        Pipeline pipeline,
+        MediaForgeSolidPushConstants pushConstants,
+        FrameSize canvasSize,
+        Transform2D transform)
+    {
+        if (!transform.HasPositiveSize)
+            return;
+
+        if (!TryCreateClippedScissor(transform, canvasSize, out var scissor))
+            return;
+
+        var viewport = new Viewport
+        {
+            X = transform.Position.X,
+            Y = transform.Position.Y,
+            Width = transform.Size.Width,
+            Height = transform.Size.Height,
+            MinDepth = 0,
+            MaxDepth = 1
+        };
+
+        _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
 
         var pushBytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref pushConstants, 1));
         fixed (byte* pushData = pushBytes)
@@ -492,6 +552,9 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
         if (_sourceLayerPipeline.Handle != 0)
             _vk.DestroyPipeline(_deviceHandle, _sourceLayerPipeline, null);
 
+        if (_solidPipeline.Handle != 0)
+            _vk.DestroyPipeline(_deviceHandle, _solidPipeline, null);
+
         if (_outputLetterboxPipeline.Handle != 0)
             _vk.DestroyPipeline(_deviceHandle, _outputLetterboxPipeline, null);
 
@@ -511,6 +574,7 @@ internal sealed unsafe class VulkanCp1ShaderPipelines : IDisposable
             _vk.DestroySampler(_deviceHandle, _sampler, null);
 
         DestroyShaderModule(_sourceLayerFragmentModule);
+        DestroyShaderModule(_solidFragmentModule);
         DestroyShaderModule(_outputLetterboxFragmentModule);
         DestroyShaderModule(_vertexModule);
     }

@@ -1,6 +1,7 @@
 using System.Numerics;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Capture;
+using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Media;
@@ -43,4 +44,17 @@ internal static class Cp1PushConstantsBuilder
             LayoutMode = (int)output.CanvasLayoutMode
         };
     }
+
+    public static MediaForgeSolidPushConstants BuildSolid(RenderSolidDrawObjectSnapshot solid)
+    {
+        var color = solid.FillColor;
+        return new MediaForgeSolidPushConstants
+        {
+            FillColor = ToVector4(color),
+            Opacity = solid.Opacity
+        };
+    }
+
+    private static Vector4 ToVector4(ColorRgba color) =>
+        new(color.R, color.G, color.B, color.A);
 }
