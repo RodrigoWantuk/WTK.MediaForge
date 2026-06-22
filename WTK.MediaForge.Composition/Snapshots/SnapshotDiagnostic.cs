@@ -15,7 +15,8 @@ internal enum SnapshotDiagnosticKind
     SourceNotRegistered = 0,
     SourceNoFrame = 1,
     NestedCanvasMissing = 2,
-    NestedCanvasDepthExceeded = 3
+    NestedCanvasDepthExceeded = 3,
+    SourceFailed = 4
 }
 
 internal sealed class SnapshotDiagnostic
@@ -37,6 +38,7 @@ internal sealed class SnapshotDiagnostic
         {
             SnapshotDiagnosticKind.SourceNoFrame => SnapshotDiagnosticSeverity.Warning,
             SnapshotDiagnosticKind.SourceNotRegistered => SnapshotDiagnosticSeverity.Error,
+            SnapshotDiagnosticKind.SourceFailed => SnapshotDiagnosticSeverity.Error,
             SnapshotDiagnosticKind.NestedCanvasMissing => SnapshotDiagnosticSeverity.Error,
             SnapshotDiagnosticKind.NestedCanvasDepthExceeded => SnapshotDiagnosticSeverity.Error,
             _ => SnapshotDiagnosticSeverity.Error

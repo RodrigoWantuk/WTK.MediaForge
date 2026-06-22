@@ -1,10 +1,10 @@
 using System.Collections.Immutable;
 using WTK.MediaForge.Composition.Runtime;
+using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
-using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Snapshots;
@@ -261,30 +261,45 @@ internal static class RenderFrameSnapshotFactory
         if (leasesBySource.TryGetValue(sourceId, out var existingLease))
             return existingLease.Frame;
 
-        if (!runtime.TryGetFrameProvider(sourceId, out var provider))
+        var acquireResult = runtime.TryAcquireFrame(sourceId, TimeSpan.Zero);
+        switch (acquireResult.Status)
         {
-            AddDiagnostic(
-                diagnostics,
-                SnapshotDiagnosticKind.SourceNotRegistered,
-                $"Source {sourceId} is not registered in the runtime.",
-                sourceId: sourceId,
-                drawObjectId: drawObjectId);
-            return null;
-        }
+            case SourceFrameAcquireStatus.Acquired:
+                var lease = acquireResult.Lease
+                    ?? throw new InvalidOperationException("Acquired source frame result did not include a lease.");
+                leasesBySource[sourceId] = lease;
+                return lease.Frame;
 
-        if (!provider.TryAcquireLatestFrame(out var lease))
-        {
-            AddDiagnostic(
-                diagnostics,
-                SnapshotDiagnosticKind.SourceNoFrame,
-                $"No frame available for source {sourceId}.",
-                sourceId: sourceId,
-                drawObjectId: drawObjectId);
-            return null;
-        }
+            case SourceFrameAcquireStatus.SourceNotRegistered:
+                AddDiagnostic(
+                    diagnostics,
+                    SnapshotDiagnosticKind.SourceNotRegistered,
+                    $"Source {sourceId} is not registered in the runtime.",
+                    sourceId: sourceId,
+                    drawObjectId: drawObjectId);
+                return null;
 
-        leasesBySource[sourceId] = lease;
-        return lease.Frame;
+            case SourceFrameAcquireStatus.SourceFailed:
+                AddDiagnostic(
+                    diagnostics,
+                    SnapshotDiagnosticKind.SourceFailed,
+                    $"Source {sourceId} failed while acquiring a frame.",
+                    sourceId: sourceId,
+                    drawObjectId: drawObjectId);
+                return null;
+
+            case SourceFrameAcquireStatus.NoFrameAvailable:
+                AddDiagnostic(
+                    diagnostics,
+                    SnapshotDiagnosticKind.SourceNoFrame,
+                    $"No frame available for source {sourceId}.",
+                    sourceId: sourceId,
+                    drawObjectId: drawObjectId);
+                return null;
+
+            default:
+                throw new InvalidOperationException($"Unsupported source frame acquire status '{acquireResult.Status}'.");
+        }
     }
 
     private static void AddDiagnostic(

@@ -319,7 +319,7 @@ public class RenderFrameSnapshotFactorySafetyTests
     }
 
     [Fact]
-    public async Task Build_releases_leases_when_build_fails_after_acquire()
+    public async Task Build_reports_source_failure_and_releases_prior_leases()
     {
         var goodSourceId = SourceId.New();
         var goodSource = new FakeVideoFrameSource(goodSourceId, "Good", new FrameSize(640, 480));
@@ -365,8 +365,10 @@ public class RenderFrameSnapshotFactorySafetyTests
             ]
         };
 
-        Assert.Throws<InvalidOperationException>(() =>
-            RenderFrameSnapshotFactory.Build(projectState, runtime));
+        using (var result = RenderFrameSnapshotFactory.Build(projectState, runtime))
+        {
+            Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Kind == SnapshotDiagnosticKind.SourceFailed);
+        }
 
         Assert.Equal(0, goodSource.RetainCount);
     }

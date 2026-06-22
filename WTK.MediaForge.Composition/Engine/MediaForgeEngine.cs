@@ -10,7 +10,6 @@ using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Identifiers;
-using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Diagnostics;
 using PublicRenderOutputSink = WTK.MediaForge.Composition.Outputs.IRenderOutputSink;
 using RuntimeRenderOutputSink = WTK.MediaForge.Composition.Runtime.Outputs.IRenderOutputSink;
@@ -25,10 +24,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private readonly IMediaForgeDiagnosticsSink? _externalDiagnostics;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly List<IVideoFrameProvider> _providers = [];
     private readonly Dictionary<RenderOutputId, OutputSinkEntry> _outputSinks = [];
     private readonly RenderOutputSinkDispatcher _sinkDispatcher;
 
+    private SourceRuntimeManager? _sourceRuntimeManager;
     private CompositionRuntime? _runtime;
     private RenderThreadGuard? _renderThreadGuard;
     private IRenderBackend? _backend;
@@ -178,7 +177,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 var deadline = CreateDeadline(StartTimeout);
                 MediaForgeProjectValidator.Validate(_currentProject).ThrowIfInvalid();
 
-                _runtime = new CompositionRuntime();
+                _sourceRuntimeManager = new SourceRuntimeManager(_diagnostics);
+                _runtime = new CompositionRuntime(_sourceRuntimeManager);
                 _renderThreadGuard = new RenderThreadGuard();
 
                 if (!_backendFactory.TryCreate(_renderThreadGuard, _diagnostics, out var backend) || backend is null)
@@ -203,12 +203,11 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     }
 
                     var provider = _sourceProviderFactory.CreateProvider(sourceDefinition);
-                    _runtime.RegisterFrameProvider(provider);
-                    _providers.Add(provider);
+                    var sourceRuntime = _sourceRuntimeManager.RegisterProvider(provider, sourceDefinition);
                     await AwaitWithTimeoutAsync(
-                        provider.StartAsync(cancellationToken),
+                        sourceRuntime.StartAsync(cancellationToken),
                         GetRemainingTime(deadline),
-                        $"Source provider '{provider.Name}' did not start before StartTimeout.",
+                        $"Source provider '{sourceRuntime.Name}' did not start before StartTimeout.",
                         cancellationToken).ConfigureAwait(false);
                 }
 
@@ -690,7 +689,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             _renderPump is null &&
             _renderThread is null &&
             _backend is null &&
-            _providers.Count == 0 &&
+            (_sourceRuntimeManager?.Count ?? 0) == 0 &&
             _runtime is null &&
             _projectState is null)
         {
@@ -724,26 +723,38 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             }
         }
 
-        foreach (var provider in _providers.AsEnumerable().Reverse())
+        var sourceRuntimeManager = _sourceRuntimeManager;
+        if (sourceRuntimeManager is not null)
         {
             try
             {
-                await AwaitWithTimeoutAsync(
-                    provider.StopAsync(cancellationToken),
-                    StopTimeout,
-                    $"Source provider '{provider.Name}' did not stop before StopTimeout.",
+                await sourceRuntimeManager.StopAllAsync(
+                    async (sourceRuntime, ct) =>
+                    {
+                        await AwaitWithTimeoutAsync(
+                            sourceRuntime.StopAsync(ct),
+                            StopTimeout,
+                            $"Source provider '{sourceRuntime.Name}' did not stop before StopTimeout.",
+                            ct).ConfigureAwait(false);
+                    },
+                    (sourceRuntime, ex) =>
+                    {
+                        MediaForgeDiagnostics.Report(
+                            _diagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "engine.provider_stop_failed",
+                            $"Failed to stop source provider '{sourceRuntime.Name}'.",
+                            nameof(MediaForgeEngine),
+                            ex);
+                    },
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                cleanupErrors.Add(ex);
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Error,
-                    "engine.provider_stop_failed",
-                    $"Failed to stop source provider '{provider.Name}'.",
-                    nameof(MediaForgeEngine),
-                    ex);
+                if (ex is AggregateException aggregate)
+                    cleanupErrors.AddRange(aggregate.InnerExceptions);
+                else
+                    cleanupErrors.Add(ex);
             }
         }
 
@@ -838,7 +849,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             _outputSinks.Clear();
         }
 
-        _providers.Clear();
+        _sourceRuntimeManager?.Clear();
+        _sourceRuntimeManager = null;
         _runtime = null;
         _projectState = null;
 
