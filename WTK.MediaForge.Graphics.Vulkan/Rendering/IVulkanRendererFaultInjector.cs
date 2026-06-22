@@ -5,6 +5,11 @@ internal interface IVulkanRendererFaultInjector
     void BeforeAcquireTexture(int attempt);
 
     void BeforeQueueSubmit();
+
+    void AfterFailedSubmitCleanup(
+        bool commandBufferFreed,
+        bool fenceDestroyed,
+        int textureLeaseDisposeCount);
 }
 
 internal sealed class NullVulkanRendererFaultInjector : IVulkanRendererFaultInjector
@@ -14,4 +19,11 @@ internal sealed class NullVulkanRendererFaultInjector : IVulkanRendererFaultInje
     public void BeforeAcquireTexture(int attempt) { }
 
     public void BeforeQueueSubmit() { }
+
+    public void AfterFailedSubmitCleanup(
+        bool commandBufferFreed,
+        bool fenceDestroyed,
+        int textureLeaseDisposeCount)
+    {
+    }
 }

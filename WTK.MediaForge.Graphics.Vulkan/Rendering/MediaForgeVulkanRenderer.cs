@@ -397,36 +397,49 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
     {
         var vk = _deviceContext.Vk;
         var device = _deviceContext.Device;
+        var commandBufferFreed = false;
+        var fenceDestroyed = false;
+        var textureLeaseDisposeCount = 0;
 
         if (fence.Handle != 0)
+        {
             vk.DestroyFence(device, fence, null);
+            fenceDestroyed = true;
+        }
 
         if (commandBuffer.Handle != 0)
         {
             var localCommandBuffer = commandBuffer;
             vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &localCommandBuffer);
+            commandBufferFreed = true;
         }
 
-        if (textureLeases is null)
-            return;
-
-        foreach (var lease in textureLeases)
+        if (textureLeases is not null)
         {
-            try
+            foreach (var lease in textureLeases)
             {
-                lease.Dispose();
-            }
-            catch (Exception ex)
-            {
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Error,
-                    "vulkan.texture_lease_dispose_failed",
-                    "Failed to dispose texture lease after failed submit.",
-                    nameof(MediaForgeVulkanRenderer),
-                    ex);
+                try
+                {
+                    lease.Dispose();
+                    textureLeaseDisposeCount++;
+                }
+                catch (Exception ex)
+                {
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "vulkan.texture_lease_dispose_failed",
+                        "Failed to dispose texture lease after failed submit.",
+                        nameof(MediaForgeVulkanRenderer),
+                        ex);
+                }
             }
         }
+
+        _faultInjector.AfterFailedSubmitCleanup(
+            commandBufferFreed,
+            fenceDestroyed,
+            textureLeaseDisposeCount);
     }
 
     /// <summary>

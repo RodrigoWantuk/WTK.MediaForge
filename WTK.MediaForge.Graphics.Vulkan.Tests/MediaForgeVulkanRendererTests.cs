@@ -702,6 +702,119 @@ public class MediaForgeVulkanRendererTests
         }
     }
 
+    [Fact]
+    public void Vulkan_submit_failure_cleanup_runs_once()
+    {
+        var faultInjector = new TestVulkanRendererFaultInjector();
+
+        if (!TryCreateRenderer(out var renderer, faultInjector))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                faultInjector.FailQueueSubmit = true;
+
+                Assert.Throws<InvalidOperationException>(() =>
+                    renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle)));
+
+                Assert.Equal(1, faultInjector.FailedSubmitCleanupCount);
+            }
+            finally
+            {
+                faultInjector.FailQueueSubmit = false;
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void Vulkan_submit_failure_does_not_double_free_command_buffer()
+    {
+        var faultInjector = new TestVulkanRendererFaultInjector();
+
+        if (!TryCreateRenderer(out var renderer, faultInjector))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                faultInjector.FailQueueSubmit = true;
+
+                Assert.Throws<InvalidOperationException>(() =>
+                    renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle)));
+
+                Assert.Equal(1, faultInjector.FreedCommandBufferCount);
+                Assert.Equal(1, faultInjector.DestroyedFenceCount);
+            }
+            finally
+            {
+                faultInjector.FailQueueSubmit = false;
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public void Vulkan_submit_failure_disposes_texture_leases_once()
+    {
+        var faultInjector = new TestVulkanRendererFaultInjector();
+
+        if (!TryCreateRenderer(out var renderer, faultInjector))
+            return;
+
+        if (!TryCreateSharedTexture(out var device, out var handle))
+            return;
+
+        using (renderer)
+        using (device)
+        using (handle)
+        {
+            SimulateCaptureReleasedToConsumer(handle);
+
+            var guard = renderer!.Guard;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                faultInjector.FailQueueSubmit = true;
+
+                Assert.Throws<InvalidOperationException>(() =>
+                    renderer.Backend.Submit(CreateSnapshotWithD3D11Frame(handle)));
+
+                Assert.Equal(1, faultInjector.DisposedTextureLeaseCount);
+                Assert.Equal(0, renderer.Backend.TextureRegistryActiveLeaseCount);
+            }
+            finally
+            {
+                faultInjector.FailQueueSubmit = false;
+                guard.Clear();
+            }
+        }
+    }
+
     private static void SimulateCaptureReleasedToConsumer(D3D11SharedTextureFrameHandle handle)
     {
         handle.KeyedMutex.AcquireSync(handle.ProducerAcquireKey, 1000);
