@@ -1,5 +1,7 @@
+using System.Collections.Immutable;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
 using Xunit;
@@ -49,6 +51,26 @@ public class RenderedOutputFrameBatchTests
 
         Assert.False(batch.HasOutstandingLeases);
         Assert.Equal(1, surface.DisposeCount);
+    }
+
+    [Fact]
+    public void Null_backend_may_use_snapshot_frames_for_tests_only()
+    {
+        var outputId = RenderOutputId.New();
+        var snapshot = new RenderFrameSnapshot
+        {
+            Outputs = ImmutableArray.Create(new RenderOutputStateSnapshot
+            {
+                Id = outputId,
+                OutputSize = new FrameSize(320, 180)
+            })
+        };
+
+        var batch = RenderedOutputFrameBatch.FromSnapshot(snapshot);
+        var frame = Assert.Single(batch.Frames);
+
+        Assert.IsType<NullRenderedOutputSurfaceLease>(frame.SurfaceLease);
+        Assert.Null(frame.SurfaceLease.BackendSurface);
     }
 
     private static RenderOutputFrameInfo CreateInfo(
