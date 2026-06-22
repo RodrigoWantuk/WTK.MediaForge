@@ -56,6 +56,7 @@ public class CaptureRenderThreadVulkanIntegrationTests
         await WaitUntilAsync(() => vulkanBackend.SubmitCount >= 1, TimeSpan.FromSeconds(10));
 
         renderThread.Dispose();
+        runtime.Dispose();
         await provider.StopAsync(CancellationToken.None);
     }
 

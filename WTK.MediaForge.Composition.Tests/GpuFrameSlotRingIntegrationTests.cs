@@ -35,7 +35,10 @@ public class GpuFrameSlotRingIntegrationTests
         Assert.Equal(1, source.ActiveSlotRetainCount);
 
         backend.CompleteAllPending();
-        WaitUntil(() => source.ActiveSlotRetainCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.ActiveSlotRetainCount == 1, TimeSpan.FromSeconds(5));
+        renderThread.Dispose();
+        runtime.Dispose();
+        Assert.Equal(0, source.ActiveSlotRetainCount);
     }
 
     private static void WaitUntil(Func<bool> condition, TimeSpan timeout)

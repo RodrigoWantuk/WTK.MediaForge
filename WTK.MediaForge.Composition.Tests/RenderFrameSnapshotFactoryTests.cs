@@ -293,6 +293,8 @@ public class RenderFrameSnapshotFactoryTests
         Assert.Equal(layerA.BoundFrame!.Value.FrameNumber, layerB.BoundFrame!.Value.FrameNumber);
 
         snapshot.Dispose();
+        Assert.Equal(1, source.RetainCount);
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 
@@ -337,6 +339,8 @@ public class RenderFrameSnapshotFactoryTests
         Assert.Equal(1, source.RetainCount);
 
         snapshot!.Dispose();
+        Assert.Equal(1, source.RetainCount);
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 

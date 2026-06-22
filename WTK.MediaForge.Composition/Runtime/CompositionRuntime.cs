@@ -5,7 +5,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime;
 
-internal sealed class CompositionRuntime
+internal sealed class CompositionRuntime : IDisposable
 {
     private readonly SourceRuntimeManager _sourceRuntimeManager;
 
@@ -32,4 +32,6 @@ internal sealed class CompositionRuntime
 
     public SourceFrameAcquireResult TryAcquireFrame(SourceId sourceId, TimeSpan renderTimestamp) =>
         _sourceRuntimeManager.TryAcquireFrame(sourceId, renderTimestamp);
+
+    public void Dispose() => _sourceRuntimeManager.Dispose();
 }

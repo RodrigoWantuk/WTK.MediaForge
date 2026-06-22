@@ -99,6 +99,23 @@ internal sealed class SourceFrameBuffer : IDisposable
         }
     }
 
+    public bool TryAcquireForRender(TimeSpan renderTimestamp, out GpuFrameLease lease)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            return _options.Mode switch
+            {
+                MediaSourceBufferMode.Queue => TryTakeQueuedFrameLocked(out lease),
+                MediaSourceBufferMode.KeepLatest => TryAcquireCurrentFrameLocked(out lease),
+                MediaSourceBufferMode.Static => TryAcquireCurrentFrameLocked(out lease),
+                MediaSourceBufferMode.TimelineDriven => TryAcquireCurrentFrameLocked(out lease),
+                _ => throw new InvalidOperationException($"Unsupported source buffer mode '{_options.Mode}'.")
+            };
+        }
+    }
+
     public void Dispose()
     {
         List<RetainedFrame> retained = [];

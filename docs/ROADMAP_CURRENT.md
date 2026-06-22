@@ -91,9 +91,11 @@ Documentation, tests, and API contract work remain allowed.
 
 1. `SourceRuntimeManager` and `MediaSourceRuntime` isolate provider lifecycle/acquisition from the engine.
 2. `SourceFrameBuffer` provides internal lease-based source buffering primitives for `KeepLatest`, `Queue`, `TimelineDriven`, and `Static` modes.
-3. Existing render snapshots acquire source frames through the runtime manager instead of directly from raw providers.
-4. Source acquire failures report diagnostics and produce a missing-frame layer instead of crashing snapshot build/render pump.
-5. Source manager start rollback and stop aggregation are covered by tests.
+3. `KeepLatest` and `Static` reuse the last valid frame across render ticks until a newer frame replaces it or the runtime is cleaned up.
+4. `Queue` consumes frames in order and releases each dropped or drained lease.
+5. Existing render snapshots acquire source frames through the runtime manager instead of directly from raw providers.
+6. Source acquire failures report diagnostics and produce a missing-frame layer instead of crashing snapshot build/render pump.
+7. Source manager start rollback and stop aggregation are covered by tests.
 
 ## Completed - Public API Stabilization
 

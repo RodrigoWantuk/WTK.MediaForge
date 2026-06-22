@@ -71,8 +71,9 @@ public class RenderThreadTests
         renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
 
         WaitUntil(() => backend.RenderCount >= 1, TimeSpan.FromSeconds(5));
-        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.RetainCount == 1, TimeSpan.FromSeconds(5));
 
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 
@@ -97,7 +98,11 @@ public class RenderThreadTests
         Assert.Equal(1, source.RetainCount);
 
         backend.CompleteAllPending();
-        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => renderThread.PendingTracker.PendingCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.RetainCount == 1, TimeSpan.FromSeconds(5));
+        renderThread.Dispose();
+        runtime.Dispose();
+        Assert.Equal(0, source.RetainCount);
     }
 
     [Fact]
@@ -249,7 +254,9 @@ public class RenderThreadTests
         renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
 
         WaitUntil(() => backend.SubmitAttempts >= 1, TimeSpan.FromSeconds(5));
-        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.RetainCount == 1, TimeSpan.FromSeconds(5));
+        runtime.Dispose();
+        Assert.Equal(0, source.RetainCount);
     }
 
     [Fact]
@@ -270,7 +277,10 @@ public class RenderThreadTests
         renderThread.PublishFrame(BuildSnapshot(runtime, source, frameNumber: 1));
 
         WaitUntil(() => backend.RenderCount >= 1, TimeSpan.FromSeconds(5));
-        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.RetainCount == 1, TimeSpan.FromSeconds(5));
+        renderThread.Dispose();
+        runtime.Dispose();
+        Assert.Equal(0, source.RetainCount);
     }
 
     [Fact]
@@ -291,8 +301,10 @@ public class RenderThreadTests
         }
 
         WaitUntil(() => backend.RenderCount >= 1, TimeSpan.FromSeconds(5));
-        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.RetainCount == 1, TimeSpan.FromSeconds(5));
 
+        renderThread.Dispose();
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 
@@ -326,6 +338,8 @@ public class RenderThreadTests
         Assert.Equal(1, source.RetainCount);
 
         Assert.Throws<ObjectDisposedException>(() => renderThread.PublishFrame(snapshot));
+        Assert.Equal(1, source.RetainCount);
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 
@@ -345,7 +359,9 @@ public class RenderThreadTests
 
         renderThread.Dispose();
 
-        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => source.RetainCount == 1, TimeSpan.FromSeconds(5));
+        runtime.Dispose();
+        Assert.Equal(0, source.RetainCount);
         Assert.False(renderThread.IsRunning);
     }
 

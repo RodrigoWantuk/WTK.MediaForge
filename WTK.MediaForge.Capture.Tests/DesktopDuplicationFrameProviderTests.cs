@@ -53,7 +53,11 @@ public class DesktopDuplicationFrameProviderTests
         Assert.True(provider.ActiveSlotRetainCount >= 1);
 
         backend.CompleteAllPending();
-        WaitUntil(() => provider.ActiveSlotRetainCount == 0, TimeSpan.FromSeconds(5));
+        WaitUntil(() => renderThread.PendingTracker.PendingCount == 0, TimeSpan.FromSeconds(5));
+        Assert.True(provider.ActiveSlotRetainCount >= 1);
+        renderThread.Dispose();
+        runtime.Dispose();
+        Assert.Equal(0, provider.ActiveSlotRetainCount);
 
         await provider.StopAsync(CancellationToken.None);
     }
@@ -290,6 +294,7 @@ public class DesktopDuplicationFrameProviderTests
         Assert.Single(snapshot!.FrameLeases);
 
         snapshot.Dispose();
+        runtime.Dispose();
         await provider.StopAsync(CancellationToken.None);
     }
 

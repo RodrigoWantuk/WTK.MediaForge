@@ -370,6 +370,8 @@ public class RenderFrameSnapshotFactorySafetyTests
             Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Kind == SnapshotDiagnosticKind.SourceFailed);
         }
 
+        Assert.Equal(1, goodSource.RetainCount);
+        runtime.Dispose();
         Assert.Equal(0, goodSource.RetainCount);
     }
 

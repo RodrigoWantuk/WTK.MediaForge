@@ -45,6 +45,77 @@ public class SourceFrameBufferTests
     }
 
     [Fact]
+    public void KeepLatest_source_reuses_last_frame_when_provider_has_no_new_frame()
+    {
+        using var buffer = new SourceFrameBuffer(new MediaSourceBufferOptions
+        {
+            Mode = MediaSourceBufferMode.KeepLatest,
+            Capacity = 1
+        });
+        buffer.Publish(CreateLease(9));
+
+        Assert.True(buffer.TryAcquireForRender(TimeSpan.Zero, out var first));
+        Assert.Equal(9, first.Frame.FrameNumber);
+        first.Dispose();
+
+        Assert.True(buffer.TryAcquireForRender(TimeSpan.FromMilliseconds(16), out var second));
+        Assert.Equal(9, second.Frame.FrameNumber);
+        Assert.Equal(1, buffer.Count);
+        second.Dispose();
+    }
+
+    [Fact]
+    public void Static_source_reuses_same_frame_across_render_ticks()
+    {
+        using var buffer = new SourceFrameBuffer(new MediaSourceBufferOptions
+        {
+            Mode = MediaSourceBufferMode.Static,
+            Capacity = 1
+        });
+        var firstReleaseCount = 0;
+        var ignoredReleaseCount = 0;
+
+        buffer.Publish(CreateLease(1, () => firstReleaseCount++));
+        buffer.Publish(CreateLease(2, () => ignoredReleaseCount++));
+
+        Assert.Equal(1, ignoredReleaseCount);
+        Assert.True(buffer.TryAcquireForRender(TimeSpan.Zero, out var firstTick));
+        Assert.True(buffer.TryAcquireForRender(TimeSpan.FromMilliseconds(16), out var secondTick));
+        Assert.Equal(1, firstTick.Frame.FrameNumber);
+        Assert.Equal(1, secondTick.Frame.FrameNumber);
+
+        firstTick.Dispose();
+        secondTick.Dispose();
+        Assert.Equal(0, firstReleaseCount);
+
+        buffer.Dispose();
+        Assert.Equal(1, firstReleaseCount);
+    }
+
+    [Fact]
+    public void Queue_source_consumes_frames_in_order()
+    {
+        using var buffer = new SourceFrameBuffer(new MediaSourceBufferOptions
+        {
+            Mode = MediaSourceBufferMode.Queue,
+            Capacity = 2
+        });
+
+        buffer.Publish(CreateLease(1));
+        buffer.Publish(CreateLease(2));
+
+        Assert.True(buffer.TryAcquireForRender(TimeSpan.Zero, out var first));
+        Assert.Equal(1, first.Frame.FrameNumber);
+        first.Dispose();
+
+        Assert.True(buffer.TryAcquireForRender(TimeSpan.FromMilliseconds(16), out var second));
+        Assert.Equal(2, second.Frame.FrameNumber);
+        second.Dispose();
+
+        Assert.False(buffer.TryAcquireForRender(TimeSpan.FromMilliseconds(32), out _));
+    }
+
+    [Fact]
     public void Source_buffer_dispose_releases_current_frame()
     {
         var releaseCount = 0;

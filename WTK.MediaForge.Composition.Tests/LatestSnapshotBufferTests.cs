@@ -61,6 +61,8 @@ public class LatestSnapshotBufferTests
         Assert.Equal(1, source.RetainCount);
 
         buffer.Dispose();
+        Assert.Equal(1, source.RetainCount);
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 
@@ -93,6 +95,8 @@ public class LatestSnapshotBufferTests
         Assert.Throws<ObjectDisposedException>(() => buffer.Publish(snapshot));
 
         snapshot.Dispose();
+        Assert.Equal(1, source.RetainCount);
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 
@@ -149,6 +153,8 @@ public class LatestSnapshotBufferTests
         publisher.Join(TimeSpan.FromSeconds(10));
         disposer.Join(TimeSpan.FromSeconds(10));
 
+        Assert.True(source.RetainCount <= 1);
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 
@@ -204,7 +210,7 @@ public class LatestSnapshotBufferTests
         var source = CreateRunningSource();
         source.PublishFrame(frameNumber, MediaTime.Zero);
 
-        var runtime = new CompositionRuntime();
+        using var runtime = new CompositionRuntime();
         runtime.RegisterFrameProvider(source);
 
         return BuildSnapshot(runtime, source.Id, frameNumber);

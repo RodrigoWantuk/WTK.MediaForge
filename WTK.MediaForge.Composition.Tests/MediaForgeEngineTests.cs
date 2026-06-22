@@ -722,7 +722,7 @@ public class MediaForgeEngineTests
         var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
         var backendFactory = new ManualRecordingRenderBackendFactory();
         await using var engine = CreateEngine(providerFactory, backendFactory);
-        engine.RenderFramesPerSecond = 1;
+        engine.RenderFramesPerSecond = 0.1;
         var project = CreateOffscreenProject();
         var sink = new BlockingPublicRenderOutputSink();
 
@@ -738,7 +738,10 @@ public class MediaForgeEngineTests
         Assert.Equal(1, source.ActiveSlotRetainCount);
 
         sink.Release();
-        await WaitUntilAsync(() => source.ActiveSlotRetainCount == 0, TimeSpan.FromSeconds(5));
+        await WaitUntilAsync(() => source.ActiveSlotRetainCount == 1, TimeSpan.FromSeconds(5));
+        backendFactory.Backend!.CompleteAllPending();
+        await engine.StopAsync();
+        Assert.Equal(0, source.ActiveSlotRetainCount);
     }
 
     [Fact]
@@ -1290,7 +1293,7 @@ public class MediaForgeEngineTests
         var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
         var backendFactory = new ManualRecordingRenderBackendFactory();
         await using var engine = CreateEngine(providerFactory, backendFactory);
-        engine.RenderFramesPerSecond = 1;
+        engine.RenderFramesPerSecond = 0.1;
         await engine.LoadProjectAsync(CreateValidProject());
         await engine.StartAsync();
 
@@ -1299,7 +1302,9 @@ public class MediaForgeEngineTests
         Assert.Equal(1, source.ActiveSlotRetainCount);
 
         backendFactory.Backend!.CompleteAllPending();
-        await WaitUntilAsync(() => source.ActiveSlotRetainCount == 0, TimeSpan.FromSeconds(5));
+        await WaitUntilAsync(() => source.ActiveSlotRetainCount == 1, TimeSpan.FromSeconds(5));
+        await engine.StopAsync();
+        Assert.Equal(0, source.ActiveSlotRetainCount);
     }
 
     [Fact]

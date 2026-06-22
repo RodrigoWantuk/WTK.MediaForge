@@ -62,7 +62,7 @@ internal sealed class MediaSourceRuntime : IDisposable
                 providerLease = null;
             }
 
-            return _buffer.TryTakeLatestFrame(out var bufferedLease)
+            return _buffer.TryAcquireForRender(renderTimestamp, out var bufferedLease)
                 ? SourceFrameAcquireResult.Acquired(bufferedLease)
                 : SourceFrameAcquireResult.NoFrameAvailable();
         }

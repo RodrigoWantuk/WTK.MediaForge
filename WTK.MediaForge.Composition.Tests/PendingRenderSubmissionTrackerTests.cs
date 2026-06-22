@@ -170,6 +170,8 @@ public class PendingRenderSubmissionTrackerTests
             }
         }
 
+        Assert.Equal(1, source.RetainCount);
+        runtime.Dispose();
         Assert.Equal(0, source.RetainCount);
     }
 
