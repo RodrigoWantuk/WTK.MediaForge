@@ -1,4 +1,4 @@
-# Current Roadmap - Sprint 0 Hardening, Then CP2
+# Current Roadmap - Post-CP2 Output and Composition
 
 This roadmap is mandatory. Do not choose a different order inside the active
 track.
@@ -14,47 +14,43 @@ track.
 - **Public runtime/sink foundation:** complete for safe project ownership, timeouts, render pump, and completed-frame notification sink
 - **Source runtime/buffer foundation:** complete for internal source runtime ownership, lease-buffer primitives, source acquire diagnostics, and engine integration
 - **Sink queue foundation:** complete for extracted bounded per-sink queue policy and fanout lease coverage
-- **Sprint 0 hardening:** active
-- **CP2/multi-layer renderer track:** starts after Sprint 0 validation is green
+- **Sprint 0 hardening:** complete
+- **CP2/multi-layer renderer track:** complete
+- **First public visual output sink:** active
+- **CP3 composition expansion:** starts after CpuReadbackSink validation is green
 
 ## Blocking Rule
 
 Do not implement the following until the roadmap step that owns it is active:
 
-- CP3 nested canvas compositor
-- chroma/effect rendering
 - productive WinForms preview
 - UI shells beyond test harnesses
 - NDI, RTSP, webcam, MP4 decode sources
 - encoder, audio, recording, streaming sinks
 - public plugin APIs
 
-Documentation, tests, API contract work, Sprint 0 hardening, and the CP2
-renderer track listed below are allowed.
+Documentation, tests, API contract work, the public CpuReadbackSink, Solid
+layers, CP3 nested canvas, and the first ChromaKeyEffect listed below are
+allowed.
 
 ## Active Commit Order
 
-1. **Sprint 0.1 - Render pump wait cleanup**
-   - Replace competing delay/wake tasks with one timeout-aware wake wait.
-   - Cover prompt request, stop cancellation, and no pending wait accumulation.
-2. **Sprint 0.2 - Sink attach rollback timeout**
-   - Roll back failed sink attach with bounded cleanup, diagnostics, and
-     aggregated failures.
-3. **Sprint 0.3 - Sink enqueue signal safety**
-   - Ensure enqueue signaling failures return failure and release/drain leases.
-4. **Sprint 0.4 - Rendered surface/batch guards**
-   - Keep real backends tied to rendered surface leases while preserving the
-     null backend test path.
-5. **CP2.1 - Same source, multiple layers**
-   - Render one source through more than one layer without double acquiring or
-     double releasing source frames.
-6. **CP2.2 - Multiple sources, order, alpha, transforms**
-   - Render multiple source layers in canvas order with opacity and alpha blend.
-7. **CP2.3 - Unsupported draw object/effect diagnostics**
-   - Report unsupported draw objects, effects, and blend modes explicitly.
-8. **CP2.4 - CP2 stress and lifetime coverage**
-   - Validate repeated submissions, descriptor lifetime, offscreen surfaces, and
-     source leases under sustained multi-layer load.
+1. **Sprint 2.1 - CpuReadbackSink**
+   - Add the first public visual output sink.
+   - Read pixels from completed backend surfaces through an internal backend
+     capability without exposing Vulkan or D3D11 handles.
+   - Deliver owned, stable CPU buffers with stride, format, size, frame number,
+     and timestamp.
+2. **Sprint 3.1 - Solid layer rendering**
+   - Render `SolidDrawObject` on the GPU with transform, clipping, opacity, and
+     normal alpha blending.
+3. **Sprint 3.2 - Nested canvas rendering**
+   - Render child canvases into submission-retained intermediate targets and
+     sample them in parent canvases.
+   - Preserve the existing maximum canvas recursion depth contract.
+4. **Sprint 3.3 - ChromaKeyEffect**
+   - Implement the first real source-layer effect while preserving explicit
+     diagnostics for unsupported effects and invalid effect configuration.
 
 ## Completed - GPU Lifecycle
 
@@ -86,6 +82,24 @@ renderer track listed below are allowed.
 9. Source frame buffers own lease-based `KeepLatest`, `Queue`,
    `TimelineDriven`, and `Static` behavior.
 10. Source acquire failures report diagnostics and produce missing-frame layers.
+
+## Completed - Sprint 0 Hardening
+
+1. Render pump wait cleanup uses a single timeout-aware wake wait.
+2. Sink attach rollback cleanup is bounded, diagnostic, and aggregated.
+3. Sink enqueue signaling failures release/drain leases and report failure.
+4. Real backend output frame coverage asserts rendered surface ownership while
+   preserving the null backend snapshot test path.
+
+## Completed - CP2 Multi-layer Renderer
+
+1. Same source can be used by multiple layers without double acquisition or
+   double release.
+2. Multiple sources render in canvas order with normal alpha, opacity, disabled
+   layer handling, opacity-zero skipping, and transforms.
+3. Unsupported draw objects, effects, and blend modes emit explicit diagnostics.
+4. Repeated CP2 submissions cover descriptor, framebuffer, offscreen surface,
+   and source lease lifetime.
 
 ## Validation Gates
 
