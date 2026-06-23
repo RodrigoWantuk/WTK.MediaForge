@@ -1,11 +1,19 @@
 using WTK.MediaForge.Capture.DesktopDuplication;
+using WTK.MediaForge.Composition.Engine;
+using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Core.Capture;
+using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Windows;
 
 namespace WMF.Testing
 {
     public partial class Form1 : Form
     {
         private IReadOnlyList<CaptureSourceInfo> _monitors = Array.Empty<CaptureSourceInfo>();
+        private MediaForgeEngine? _engine;
+        private PreviewPanelSink? _previewSink;
+        private RenderOutputId _outputId;
 
         public Form1()
         {
@@ -28,27 +36,65 @@ namespace WMF.Testing
             if (_monitors.Count > 0)
                 cmbMonitors.SelectedIndex = 0;
 
-            btnStart.Enabled = false;
+            btnStart.Enabled = _monitors.Count > 0;
             btnStop.Enabled = false;
 
             lblStatus.Text =
-                $"Monitors found: {_monitors.Count} | Capture preview disabled: legacy GPU path is blocked.";
+                _monitors.Count > 0
+                    ? $"Monitors found: {_monitors.Count}. Ready to start GPU preview."
+                    : "No monitors found.";
             lblDiagnostics.Text =
-                "Preview must run through the hardened render-thread backend before UI capture is enabled.";
+                "Preview uses MediaForgeEngine + PreviewPanelSink on the hardened render-thread backend.";
         }
 
-        private void btnStart_Click(object sender, EventArgs e)
+        private async void btnStart_Click(object sender, EventArgs e)
         {
-            MessageBox.Show(
-                "Capture preview is disabled until it runs through the hardened render-thread backend.",
-                "WTK MediaForge",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            if (_engine is not null)
+                return;
+
+            if (cmbMonitors.SelectedItem is not CaptureSourceInfo monitor)
+                return;
+
+            btnStart.Enabled = false;
+
+            try
+            {
+                _engine = MediaForgeWindows.CreateEngine();
+
+                var project = MediaForgeProjectBuilder.Create()
+                    .Canvas("Main", 1920, 1080, out var main)
+                    .DesktopSource(
+                        "Desktop",
+                        adapterIndex: (int)monitor.AdapterIndex,
+                        outputIndex: (int)monitor.OutputIndex,
+                        out var desktop)
+                    .AddSourceLayer(
+                        main,
+                        desktop,
+                        layer => layer.SetBounds(0, 0, 1920, 1080).SetFit())
+                    .OffscreenOutput("Program", main, 1920, 1080, out var output)
+                    .BuildValidated();
+
+                await _engine.LoadProjectAsync(project);
+
+                _outputId = output.Id;
+                _previewSink = new PreviewPanelSink(pnlPreview.Handle);
+                await _engine.AttachSinkAsync(_outputId, _previewSink);
+                await _engine.StartAsync();
+
+                btnStop.Enabled = true;
+                lblStatus.Text = $"Preview running on monitor {monitor.OutputName}.";
+            }
+            catch (Exception ex)
+            {
+                lblStatus.Text = $"Preview failed to start: {ex.Message}";
+                await StopCaptureAsync();
+            }
         }
 
-        private void btnStop_Click(object sender, EventArgs e)
+        private async void btnStop_Click(object sender, EventArgs e)
         {
-            StopCapture();
+            await StopCaptureAsync();
         }
 
         private void timerCapture_Tick(object sender, EventArgs e)
@@ -64,18 +110,41 @@ namespace WMF.Testing
         {
         }
 
-        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        private async void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
-            StopCapture();
+            await StopCaptureAsync();
         }
 
-        private void StopCapture()
+        private async Task StopCaptureAsync()
         {
             timerCapture.Stop();
-            btnStart.Enabled = false;
+
+            if (_engine is not null)
+            {
+                try
+                {
+                    if (_previewSink is not null)
+                        await _engine.DetachSinkAsync(_outputId, _previewSink.Id);
+
+                    await _engine.StopAsync();
+                }
+                catch (Exception ex)
+                {
+                    lblDiagnostics.Text = $"Stop failed: {ex.Message}";
+                }
+                finally
+                {
+                    await _engine.DisposeAsync();
+                    _engine = null;
+                    _previewSink = null;
+                }
+            }
+
+            btnStart.Enabled = _monitors.Count > 0;
             btnStop.Enabled = false;
-            lblStatus.Text =
-                $"Monitors found: {_monitors.Count} | Capture preview disabled: legacy GPU path is blocked.";
+
+            if (_monitors.Count > 0)
+                lblStatus.Text = $"Monitors found: {_monitors.Count}. Ready to start GPU preview.";
         }
     }
 }

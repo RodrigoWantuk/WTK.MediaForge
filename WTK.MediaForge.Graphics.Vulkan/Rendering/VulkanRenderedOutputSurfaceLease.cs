@@ -7,6 +7,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal sealed class VulkanRenderedOutputSurfaceLease : IRenderedOutputSurfaceLease
     , ICpuReadableRenderedOutputSurfaceLease
+    , IPreviewPresentableRenderedOutputSurfaceLease
 {
     private readonly VulkanOffscreenTargetHandle _targetHandle;
     private int _disposed;
@@ -53,6 +54,21 @@ internal sealed class VulkanRenderedOutputSurfaceLease : IRenderedOutputSurfaceL
             info,
             readback.StrideBytes,
             readback.Pixels));
+    }
+
+    public ValueTask PresentToWin32PanelAsync(nint panelHandle, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+        if (_targetHandle.Target is not VulkanOffscreenRenderTarget target)
+        {
+            throw new NotSupportedException(
+                "Vulkan rendered output surface does not support GPU preview presentation for this target type.");
+        }
+
+        VulkanWin32PanelPresenterRegistry.Present(target, panelHandle, cancellationToken);
+        return ValueTask.CompletedTask;
     }
 
     public ValueTask DisposeAsync()

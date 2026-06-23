@@ -57,6 +57,12 @@ internal static unsafe class VulkanImageLayoutTransition
                 (PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.TransferReadBit, AccessFlags.ShaderReadBit),
             (ImageLayout.TransferSrcOptimal, ImageLayout.ColorAttachmentOptimal) =>
                 (PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit, AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentWriteBit),
+            (ImageLayout.Undefined, ImageLayout.TransferDstOptimal) =>
+                (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit),
+            (ImageLayout.PresentSrcKhr, ImageLayout.TransferDstOptimal) =>
+                (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit),
+            (ImageLayout.TransferDstOptimal, ImageLayout.PresentSrcKhr) =>
+                (PipelineStageFlags.TransferBit, PipelineStageFlags.BottomOfPipeBit, AccessFlags.TransferWriteBit, 0),
             _ => throw new InvalidOperationException(
                 $"Unsupported image layout transition: {oldLayout} -> {newLayout}.")
         };

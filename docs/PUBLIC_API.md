@@ -112,6 +112,7 @@ Current public sink contracts:
 - `CpuReadbackFrame`
 - `CpuReadbackFrameEventArgs`
 - `CpuReadbackSink`
+- `PreviewPanelSink`
 - `IRenderOutputSink`
 - `RenderOutputSinkId`
 - `RenderOutputSinkKind`
@@ -130,7 +131,7 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is the first public visual sink: it consumes a completed rendered output frame, copies pixels into an owned CPU buffer, releases the render output frame lease, and then raises the completed readback frame.
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink: it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. `PreviewPanelSink` is the first GPU preview sink: it consumes a completed rendered output surface and presents it to a Win32 panel handle through an internal Vulkan swapchain blit, without CPU readback.
 
 Real preview, NDI, MP4, streaming, and audio outputs remain blocked until the renderer composition track is stable.
 

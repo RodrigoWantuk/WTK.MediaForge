@@ -20,12 +20,13 @@ track.
 - **CP3 solid layer:** complete — see `docs/CP3_SOLID_ACCEPTANCE.md`
 - **CP3 nested canvas:** complete — see `docs/CP3_NESTED_ACCEPTANCE.md`
 - **CP3 first effect (ChromaKeyEffect):** complete — see `docs/CP3_CHROMA_ACCEPTANCE.md`
+- **PreviewPanelSink MVP:** active
 
 ## Blocking Rule
 
 Do not implement the following until the roadmap step that owns it is active:
 
-- productive WinForms preview
+- productive WinForms preview shell beyond the PreviewPanelSink MVP wiring
 - UI shells beyond test harnesses
 - NDI, RTSP, webcam, MP4 decode sources
 - encoder, audio, recording, streaming sinks
@@ -37,8 +38,10 @@ allowed.
 
 ## Active Commit Order
 
-No active renderer composition commit is open. Next roadmap work must be chosen
-explicitly before starting preview, real sources, encoders, or additional effects.
+1. **PreviewPanelSink MVP**
+   - Public GPU preview sink that consumes completed `RenderOutputSurface` frames.
+   - Present offscreen Vulkan output to a Win32 panel/swapchain with `KeepLatest` backpressure.
+   - No CPU readback, no parallel render path, no encoder/NDI/streaming scope.
 
 ## Completed - CP3 ChromaKeyEffect
 

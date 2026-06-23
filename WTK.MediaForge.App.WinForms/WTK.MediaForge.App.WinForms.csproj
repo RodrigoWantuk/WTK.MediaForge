@@ -16,6 +16,7 @@
     <ProjectReference Include="..\WTK.MediaForge.Diagnostics\WTK.MediaForge.Diagnostics.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Graphics.D3D11\WTK.MediaForge.Graphics.D3D11.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Graphics.Interop\WTK.MediaForge.Graphics.Interop.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Windows\WTK.MediaForge.Windows.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Graphics.Vulkan\WTK.MediaForge.Graphics.Vulkan.csproj" />
   </ItemGroup>
 

@@ -75,7 +75,7 @@ The legacy WinForms preview path has been removed as a product path because it u
 - CP3 nested canvas rendering is implemented in Vulkan by rendering child canvases into submission-retained intermediate targets and compositing them into parent canvases with transform, opacity, and depth-8 coverage.
 - CP3 `ChromaKeyEffect` is the only supported source-layer effect. Unsupported/invalid/multiple chroma configurations emit explicit diagnostics and are covered by `Cp3ChromaKeyEffectTests`.
 - Vulkan offscreen composition is implemented through `VulkanCompositionShaderPipelines` and `VulkanOffscreenCompositor`.
-- Engine/source/sink long-running public operations use linked cancellation plus hard `WaitAsync` timeouts.
+- `PreviewPanelSink` presents completed Vulkan offscreen surfaces to a Win32 panel through an internal swapchain blit. It is the GPU preview path; `CpuReadbackSink` remains debug/sample only.
 
 ## Remaining Blockers
 

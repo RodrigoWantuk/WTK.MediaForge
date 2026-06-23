@@ -187,6 +187,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Outputs.IRenderOutputSettings",
                 "WTK.MediaForge.Composition.Outputs.IRenderOutputSink",
                 "WTK.MediaForge.Composition.Outputs.OffscreenRenderOutputTarget",
+                "WTK.MediaForge.Composition.Outputs.PreviewPanelSink",
                 "WTK.MediaForge.Composition.Outputs.RenderBackendKind",
                 "WTK.MediaForge.Composition.Outputs.RenderOutputFrameInfo",
                 "WTK.MediaForge.Composition.Outputs.RenderOutputFrameLease",

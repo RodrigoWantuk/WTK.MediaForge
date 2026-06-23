@@ -1,6 +1,7 @@
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.KHR;
 using System.Runtime.InteropServices;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
@@ -17,6 +18,9 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
     private Queue _graphicsQueue;
     private uint _graphicsQueueFamilyIndex;
     private CommandPool _commandPool;
+    private KhrSurface? _khrSurface;
+    private KhrWin32Surface? _khrWin32Surface;
+    private KhrSwapchain? _khrSwapchain;
 
     private VulkanHeadlessDevice(
         Vk vk,
@@ -25,7 +29,10 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         Device device,
         Queue graphicsQueue,
         uint graphicsQueueFamilyIndex,
-        CommandPool commandPool)
+        CommandPool commandPool,
+        KhrSurface? khrSurface,
+        KhrWin32Surface? khrWin32Surface,
+        KhrSwapchain? khrSwapchain)
     {
         _vk = vk;
         _instance = instance;
@@ -34,7 +41,26 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         _graphicsQueue = graphicsQueue;
         _graphicsQueueFamilyIndex = graphicsQueueFamilyIndex;
         _commandPool = commandPool;
+        _khrSurface = khrSurface;
+        _khrWin32Surface = khrWin32Surface;
+        _khrSwapchain = khrSwapchain;
     }
+
+    public Instance Instance => _instance;
+
+    public uint GraphicsQueueFamilyIndex => _graphicsQueueFamilyIndex;
+
+    public bool SupportsWin32Presentation =>
+        OperatingSystem.IsWindows() &&
+        _khrSurface is not null &&
+        _khrWin32Surface is not null &&
+        _khrSwapchain is not null;
+
+    public KhrSurface? KhrSurface => _khrSurface;
+
+    public KhrWin32Surface? KhrWin32Surface => _khrWin32Surface;
+
+    public KhrSwapchain? KhrSwapchain => _khrSwapchain;
 
     public Vk Vk => _vk;
 
@@ -55,6 +81,7 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         PickPhysicalDevice(vk, instance, out var physicalDevice, out var graphicsQueueFamilyIndex);
         CreateLogicalDevice(vk, physicalDevice, graphicsQueueFamilyIndex, out var device, out var graphicsQueue);
         CreateCommandPool(vk, device, graphicsQueueFamilyIndex, out var commandPool);
+        LoadPresentationExtensions(vk, instance, device, out var khrSurface, out var khrWin32Surface, out var khrSwapchain);
 
         return new VulkanHeadlessDevice(
             vk,
@@ -63,7 +90,10 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
             device,
             graphicsQueue,
             graphicsQueueFamilyIndex,
-            commandPool);
+            commandPool,
+            khrSurface,
+            khrWin32Surface,
+            khrSwapchain);
     }
 
     public uint FindMemoryType(uint typeFilter, MemoryPropertyFlags properties)
@@ -134,8 +164,32 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
                 PApplicationInfo = &appInfo
             };
 
-            if (vk.CreateInstance(&createInfo, null, out instance) != Result.Success)
+            if (OperatingSystem.IsWindows())
+            {
+                nint extSurface = SilkMarshal.StringToPtr(KhrSurface.ExtensionName);
+                nint extWin32Surface = SilkMarshal.StringToPtr(KhrWin32Surface.ExtensionName);
+
+                try
+                {
+                    byte** extensionNames = stackalloc byte*[2];
+                    extensionNames[0] = (byte*)extSurface;
+                    extensionNames[1] = (byte*)extWin32Surface;
+                    createInfo.EnabledExtensionCount = 2;
+                    createInfo.PpEnabledExtensionNames = extensionNames;
+
+                    if (vk.CreateInstance(&createInfo, null, out instance) != Result.Success)
+                        throw new InvalidOperationException("vkCreateInstance failed.");
+                }
+                finally
+                {
+                    SilkMarshal.FreeString(extSurface);
+                    SilkMarshal.FreeString(extWin32Surface);
+                }
+            }
+            else if (vk.CreateInstance(&createInfo, null, out instance) != Result.Success)
+            {
                 throw new InvalidOperationException("vkCreateInstance failed.");
+            }
         }
         finally
         {
@@ -201,12 +255,20 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
 
     private static bool SupportsRequiredDeviceExtensions(Vk vk, PhysicalDevice device)
     {
-        ReadOnlySpan<string> required =
-        [
-            "VK_KHR_external_memory",
-            "VK_KHR_external_memory_win32",
-            "VK_KHR_win32_keyed_mutex"
-        ];
+        var required = OperatingSystem.IsWindows()
+            ? new[]
+            {
+                "VK_KHR_external_memory",
+                "VK_KHR_external_memory_win32",
+                "VK_KHR_win32_keyed_mutex",
+                "VK_KHR_swapchain"
+            }
+            : new[]
+            {
+                "VK_KHR_external_memory",
+                "VK_KHR_external_memory_win32",
+                "VK_KHR_win32_keyed_mutex"
+            };
 
         uint extensionCount = 0;
         vk.EnumerateDeviceExtensionProperties(device, (byte*)null, &extensionCount, null);
@@ -255,13 +317,19 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         nint externalMemoryExtensionName = SilkMarshal.StringToPtr("VK_KHR_external_memory");
         nint externalMemoryWin32ExtensionName = SilkMarshal.StringToPtr("VK_KHR_external_memory_win32");
         nint win32KeyedMutexExtensionName = SilkMarshal.StringToPtr("VK_KHR_win32_keyed_mutex");
+        nint? swapchainExtensionName = OperatingSystem.IsWindows()
+            ? SilkMarshal.StringToPtr(KhrSwapchain.ExtensionName)
+            : null;
 
         try
         {
-            byte** enabledExtensions = stackalloc byte*[3];
+            var extensionCount = OperatingSystem.IsWindows() ? 4 : 3;
+            byte** enabledExtensions = stackalloc byte*[4];
             enabledExtensions[0] = (byte*)externalMemoryExtensionName;
             enabledExtensions[1] = (byte*)externalMemoryWin32ExtensionName;
             enabledExtensions[2] = (byte*)win32KeyedMutexExtensionName;
+            if (swapchainExtensionName is not null)
+                enabledExtensions[3] = (byte*)swapchainExtensionName.Value;
 
             var features = new PhysicalDeviceFeatures();
 
@@ -270,7 +338,7 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
                 SType = StructureType.DeviceCreateInfo,
                 QueueCreateInfoCount = 1,
                 PQueueCreateInfos = &queueCreateInfo,
-                EnabledExtensionCount = 3,
+                EnabledExtensionCount = (uint)extensionCount,
                 PpEnabledExtensionNames = enabledExtensions,
                 PEnabledFeatures = &features
             };
@@ -285,7 +353,34 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
             SilkMarshal.FreeString(externalMemoryExtensionName);
             SilkMarshal.FreeString(externalMemoryWin32ExtensionName);
             SilkMarshal.FreeString(win32KeyedMutexExtensionName);
+            if (swapchainExtensionName is not null)
+                SilkMarshal.FreeString(swapchainExtensionName.Value);
         }
+    }
+
+    private static void LoadPresentationExtensions(
+        Vk vk,
+        Instance instance,
+        Device device,
+        out KhrSurface? khrSurface,
+        out KhrWin32Surface? khrWin32Surface,
+        out KhrSwapchain? khrSwapchain)
+    {
+        khrSurface = null;
+        khrWin32Surface = null;
+        khrSwapchain = null;
+
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        if (!vk.TryGetInstanceExtension(instance, out khrSurface))
+            throw new InvalidOperationException("KHR_surface extension was not loaded.");
+
+        if (!vk.TryGetInstanceExtension(instance, out khrWin32Surface))
+            throw new InvalidOperationException("KHR_win32_surface extension was not loaded.");
+
+        if (!vk.TryGetDeviceExtension(instance, device, out khrSwapchain))
+            throw new InvalidOperationException("KHR_swapchain extension was not loaded.");
     }
 
     private static void CreateCommandPool(
