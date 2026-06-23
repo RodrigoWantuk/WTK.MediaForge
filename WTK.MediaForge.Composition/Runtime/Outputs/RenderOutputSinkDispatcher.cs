@@ -260,11 +260,11 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
         foreach (var (registration, lease) in deliveries)
         {
-            var delivered = false;
             try
             {
                 _beforeDeliveryEnqueue?.Invoke();
-                delivered = registration.TryEnqueue(lease);
+                if (!registration.TryEnqueue(lease))
+                    DisposeUndeliveredFrame(registration, lease);
             }
             catch (Exception ex)
             {
@@ -275,10 +275,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                     $"Failed to enqueue frame for output {registration.OutputId} and sink {registration.Sink.Id}.",
                     nameof(RenderOutputSinkDispatcher),
                     ex);
-            }
-
-            if (!delivered)
                 DisposeUndeliveredFrame(registration, lease);
+            }
         }
     }
 
@@ -574,8 +572,7 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             _beforeAvailabilitySignal = beforeAvailabilitySignal;
             _queue = new RenderOutputSinkQueue(
                 capacity,
-                sink.BackpressureMode,
-                DropFrame);
+                sink.BackpressureMode);
         }
 
         public RenderOutputId OutputId { get; }
@@ -599,9 +596,20 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
             try
             {
-                var result = _queue.TryEnqueue(lease);
+                var result = _queue.TryEnqueue(lease, out var releaseLease);
 
-                if (result == RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem)
+                if (releaseLease is not null)
+                {
+                    if (result is RenderOutputSinkQueueEnqueueResult.ReplacedPendingOldReturnedToCaller or
+                        RenderOutputSinkQueueEnqueueResult.DroppedIncomingReturnedToCaller)
+                    {
+                        ReportBackpressureDrop();
+                    }
+
+                    DisposeDroppedFrame(releaseLease);
+                }
+
+                if (result == RenderOutputSinkQueueEnqueueResult.EnqueuedAndWorkerSignaled)
                 {
                     try
                     {
@@ -618,7 +626,6 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                             nameof(RenderOutputSinkDispatcher),
                             ex);
                         StopAfterSignalFailure();
-                        return false;
                     }
                 }
 
@@ -829,9 +836,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                 await DisposeDroppedFrameAsync(lease).ConfigureAwait(false);
         }
 
-        private void DropFrame(RenderOutputFrameLease lease)
+        private void ReportBackpressureDrop()
         {
-            DisposeDroppedFrame(lease);
             MediaForgeDiagnostics.Report(
                 _diagnostics,
                 MediaForgeDiagnosticSeverity.Warning,

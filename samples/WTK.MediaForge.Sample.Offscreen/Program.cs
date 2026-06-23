@@ -30,16 +30,15 @@ var readback = await firstFrame.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
 var centerX = readback.Size.Width / 2;
 var centerY = readback.Size.Height / 2;
-var centerOffset = checked(centerY * readback.StrideBytes + centerX * 4);
+var offset = checked((int)centerY * readback.StrideBytes + (int)centerX * 4);
 var pixels = readback.Pixels.ToArray();
-var checksum =
-    (long)pixels[centerOffset] +
-    pixels[centerOffset + 1] +
-    pixels[centerOffset + 2] +
-    pixels[centerOffset + 3];
+var r = pixels[offset + 0];
+var g = pixels[offset + 1];
+var b = pixels[offset + 2];
+var a = pixels[offset + 3];
+var checksum = (long)r + g + b + a;
 
-Console.WriteLine(
-    $"Output {output.Id} frame {readback.FrameNumber} {readback.Size} center-rgba=({pixels[centerOffset + 2]},{pixels[centerOffset + 1]},{pixels[centerOffset + 3]},{pixels[centerOffset]}) checksum={checksum}");
+Console.WriteLine($"Output {output.Id} frame {readback.FrameNumber} {readback.Size} rgba=({r},{g},{b},{a}) checksum={checksum}");
 
 if (checksum == 0)
     throw new InvalidOperationException("Sample did not receive non-zero CPU pixel data from the rendered output.");

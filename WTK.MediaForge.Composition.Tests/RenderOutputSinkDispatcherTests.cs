@@ -288,7 +288,7 @@ public class RenderOutputSinkDispatcherTests
     }
 
     [Fact]
-    public async Task TryEnqueue_signal_failure_returns_false()
+    public async Task Signal_failure_does_not_double_dispose()
     {
         var diagnostics = new InMemoryDiagnosticsSink();
         var output = CreateOutput();
@@ -296,14 +296,39 @@ public class RenderOutputSinkDispatcherTests
         var dispatcher = new RenderOutputSinkDispatcher(
             diagnostics,
             beforeAvailabilitySignal: () => throw new ObjectDisposedException("availability"));
-        var batch = CreateTrackedBatch(output, out _, out _);
+        var batch = CreateTrackedBatch(output, out var surface, out var releaseCount);
 
         await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
 
         dispatcher.PublishCompletedFrames(batch);
         await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
 
+        Assert.Equal(1, releaseCount());
+        Assert.Equal(1, surface.DisposeCount);
         Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.enqueue_signal_failed");
+
+        await dispatcher.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TryEnqueue_signal_failure_still_reports_success_to_dispatcher()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var output = CreateOutput();
+        var sink = new ControlledSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            beforeAvailabilitySignal: () => throw new ObjectDisposedException("availability"));
+        var batch = CreateTrackedBatch(output, out _, out var releaseCount);
+
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        dispatcher.PublishCompletedFrames(batch);
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.Equal(1, releaseCount());
+        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.enqueue_signal_failed");
+        Assert.DoesNotContain(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.undelivered_frame_dispose_failed");
 
         await dispatcher.DisposeAsync();
     }

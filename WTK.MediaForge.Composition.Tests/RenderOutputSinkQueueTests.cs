@@ -9,109 +9,121 @@ namespace WTK.MediaForge.Composition.Tests;
 public class RenderOutputSinkQueueTests
 {
     [Fact]
-    public void KeepLatest_replaces_pending_frame_and_releases_old()
+    public void KeepLatest_returns_replaced_old_to_dispatcher()
     {
-        var released = new List<long>();
-        var queue = CreateQueue(
-            RenderOutputSinkBackpressureMode.KeepLatest,
-            lease => released.Add(lease.FrameNumber));
+        var queue = CreateQueue(RenderOutputSinkBackpressureMode.KeepLatest);
         var first = CreateLease(1);
         var second = CreateLease(2);
 
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem, queue.TryEnqueue(first));
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.ReplacedPendingItem, queue.TryEnqueue(second));
+        Assert.Equal(
+            RenderOutputSinkQueueEnqueueResult.EnqueuedAndWorkerSignaled,
+            queue.TryEnqueue(first.Lease, out var firstRelease));
+        Assert.Null(firstRelease);
 
-        Assert.Equal([1], released);
+        Assert.Equal(
+            RenderOutputSinkQueueEnqueueResult.ReplacedPendingOldReturnedToCaller,
+            queue.TryEnqueue(second.Lease, out var secondRelease));
+        Assert.Same(first.Lease, secondRelease);
+
         Assert.True(queue.TryDequeue(out var dequeued));
         Assert.Equal(2, dequeued.FrameNumber);
     }
 
     [Fact]
-    public void DropOldest_releases_oldest_frame()
+    public void DropOldest_returns_dropped_oldest_to_dispatcher()
     {
-        var released = new List<long>();
-        var queue = CreateQueue(
-            RenderOutputSinkBackpressureMode.DropOldest,
-            lease => released.Add(lease.FrameNumber));
+        var queue = CreateQueue(RenderOutputSinkBackpressureMode.DropOldest);
 
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem, queue.TryEnqueue(CreateLease(1)));
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.ReplacedPendingItem, queue.TryEnqueue(CreateLease(2)));
+        Assert.Equal(
+            RenderOutputSinkQueueEnqueueResult.EnqueuedAndWorkerSignaled,
+            queue.TryEnqueue(CreateLease(1).Lease, out _));
+        Assert.Equal(
+            RenderOutputSinkQueueEnqueueResult.ReplacedPendingOldReturnedToCaller,
+            queue.TryEnqueue(CreateLease(2).Lease, out var release));
+        Assert.Equal(1, release!.FrameNumber);
 
-        Assert.Equal([1], released);
         Assert.True(queue.TryDequeue(out var dequeued));
         Assert.Equal(2, dequeued.FrameNumber);
     }
 
     [Fact]
-    public void DropNewest_releases_new_frame()
+    public void DropNewest_returns_rejected_and_dispatcher_releases_incoming()
     {
-        var released = new List<long>();
-        var queue = CreateQueue(
-            RenderOutputSinkBackpressureMode.DropNewest,
-            lease => released.Add(lease.FrameNumber));
+        var queue = CreateQueue(RenderOutputSinkBackpressureMode.DropNewest);
 
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem, queue.TryEnqueue(CreateLease(1)));
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.DroppedIncoming, queue.TryEnqueue(CreateLease(2)));
+        Assert.Equal(
+            RenderOutputSinkQueueEnqueueResult.EnqueuedAndWorkerSignaled,
+            queue.TryEnqueue(CreateLease(1).Lease, out _));
+        Assert.Equal(
+            RenderOutputSinkQueueEnqueueResult.DroppedIncomingReturnedToCaller,
+            queue.TryEnqueue(CreateLease(2).Lease, out var release));
+        Assert.Equal(2, release!.FrameNumber);
 
-        Assert.Equal([2], released);
         Assert.True(queue.TryDequeue(out var dequeued));
         Assert.Equal(1, dequeued.FrameNumber);
     }
 
     [Fact]
-    public void StopAccepting_releases_new_frame()
+    public void StopAccepting_returns_rejected_and_dispatcher_releases_incoming()
     {
-        var released = new List<long>();
-        var queue = CreateQueue(
-            RenderOutputSinkBackpressureMode.KeepLatest,
-            lease => released.Add(lease.FrameNumber));
-
+        var queue = CreateQueue(RenderOutputSinkBackpressureMode.KeepLatest);
         queue.StopAccepting();
 
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.DroppedIncoming, queue.TryEnqueue(CreateLease(5)));
-        Assert.Equal([5], released);
+        Assert.Equal(
+            RenderOutputSinkQueueEnqueueResult.RejectedCallerMustRelease,
+            queue.TryEnqueue(CreateLease(5).Lease, out var release));
+        Assert.Equal(5, release!.FrameNumber);
     }
 
     [Fact]
     public void Enqueue_result_distinguishes_new_items_from_replacements()
     {
-        var released = new List<long>();
-        var queue = CreateQueue(
-            RenderOutputSinkBackpressureMode.KeepLatest,
-            lease => released.Add(lease.FrameNumber));
+        var queue = CreateQueue(RenderOutputSinkBackpressureMode.KeepLatest);
 
-        var first = queue.TryEnqueue(CreateLease(1));
-        var replacement = queue.TryEnqueue(CreateLease(2));
+        var first = queue.TryEnqueue(CreateLease(1).Lease, out var firstRelease);
+        var replacement = queue.TryEnqueue(CreateLease(2).Lease, out var secondRelease);
 
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem, first);
-        Assert.Equal(RenderOutputSinkQueueEnqueueResult.ReplacedPendingItem, replacement);
-        Assert.Equal([1], released);
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.EnqueuedAndWorkerSignaled, first);
+        Assert.Equal(RenderOutputSinkQueueEnqueueResult.ReplacedPendingOldReturnedToCaller, replacement);
+        Assert.Null(firstRelease);
+        Assert.Equal(1, secondRelease!.FrameNumber);
         Assert.Equal(1, queue.Count);
     }
 
-    private static RenderOutputSinkQueue CreateQueue(
-        RenderOutputSinkBackpressureMode mode,
-        Action<RenderOutputFrameLease> onDrop) =>
-        new(
-            capacity: 1,
-            backpressureMode: mode,
-            lease =>
-            {
-                onDrop(lease);
-                lease.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            });
-
-    private static RenderOutputFrameLease CreateLease(long frameNumber)
+    [Fact]
+    public void Queue_never_disposes_returned_leases()
     {
-        var frameSize = new FrameSize(1280, 720);
-        return new RenderOutputFrameLease(
+        var queue = CreateQueue(RenderOutputSinkBackpressureMode.DropNewest);
+        var (incoming, releaseCount) = CreateLease(2);
+
+        queue.TryEnqueue(CreateLease(1).Lease, out _);
+        queue.TryEnqueue(incoming, out var release);
+
+        Assert.Same(incoming, release);
+        Assert.Equal(0, releaseCount());
+    }
+
+    private static RenderOutputSinkQueue CreateQueue(RenderOutputSinkBackpressureMode mode) =>
+        new(capacity: 1, backpressureMode: mode);
+
+    private static (RenderOutputFrameLease Lease, Func<int> ReleaseCount) CreateLease(long frameNumber)
+    {
+        var releaseCount = 0;
+        var lease = new RenderOutputFrameLease(
             new RenderOutputFrameInfo(
                 RenderOutputId.New(),
                 RenderOutputSinkId.New(),
                 frameNumber,
                 TimeSpan.Zero,
-                frameSize,
+                new FrameSize(1280, 720),
                 RenderPixelFormat.Rgba8Unorm,
-                RenderBackendKind.Vulkan));
+                RenderBackendKind.Vulkan),
+            release: () =>
+            {
+                Interlocked.Increment(ref releaseCount);
+                return ValueTask.CompletedTask;
+            });
+
+        return (lease, () => Volatile.Read(ref releaseCount));
     }
 }

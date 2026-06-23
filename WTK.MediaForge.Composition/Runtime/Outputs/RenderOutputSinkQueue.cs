@@ -8,17 +8,14 @@ internal sealed class RenderOutputSinkQueue
     private readonly Queue<RenderOutputFrameLease> _queue = [];
     private readonly int _capacity;
     private readonly RenderOutputSinkBackpressureMode _backpressureMode;
-    private readonly Action<RenderOutputFrameLease> _dropFrame;
     private bool _accepting = true;
 
     public RenderOutputSinkQueue(
         int capacity,
-        RenderOutputSinkBackpressureMode backpressureMode,
-        Action<RenderOutputFrameLease> dropFrame)
+        RenderOutputSinkBackpressureMode backpressureMode)
     {
         _capacity = Math.Max(1, capacity);
         _backpressureMode = backpressureMode;
-        _dropFrame = dropFrame ?? throw new ArgumentNullException(nameof(dropFrame));
     }
 
     public bool IsAccepting
@@ -39,47 +36,42 @@ internal sealed class RenderOutputSinkQueue
         }
     }
 
-    public RenderOutputSinkQueueEnqueueResult TryEnqueue(RenderOutputFrameLease lease)
+    public RenderOutputSinkQueueEnqueueResult TryEnqueue(
+        RenderOutputFrameLease lease,
+        out RenderOutputFrameLease? leaseForCallerToRelease)
     {
         ArgumentNullException.ThrowIfNull(lease);
-        RenderOutputFrameLease? dropped = null;
-        var result = RenderOutputSinkQueueEnqueueResult.DroppedIncoming;
+        leaseForCallerToRelease = null;
 
         lock (_gate)
         {
             if (!_accepting)
             {
-                dropped = lease;
+                leaseForCallerToRelease = lease;
+                return RenderOutputSinkQueueEnqueueResult.RejectedCallerMustRelease;
             }
-            else if (_queue.Count < _capacity)
+
+            if (_queue.Count < _capacity)
             {
                 _queue.Enqueue(lease);
-                result = RenderOutputSinkQueueEnqueueResult.EnqueuedNewItem;
+                return RenderOutputSinkQueueEnqueueResult.EnqueuedAndWorkerSignaled;
             }
-            else
+
+            switch (_backpressureMode)
             {
-                switch (_backpressureMode)
-                {
-                    case RenderOutputSinkBackpressureMode.DropNewest:
-                        dropped = lease;
-                        break;
-                    case RenderOutputSinkBackpressureMode.DropOldest:
-                    case RenderOutputSinkBackpressureMode.KeepLatest:
-                        dropped = _queue.Dequeue();
-                        _queue.Enqueue(lease);
-                        result = RenderOutputSinkQueueEnqueueResult.ReplacedPendingItem;
-                        break;
-                    default:
-                        dropped = lease;
-                        break;
-                }
+                case RenderOutputSinkBackpressureMode.DropNewest:
+                    leaseForCallerToRelease = lease;
+                    return RenderOutputSinkQueueEnqueueResult.DroppedIncomingReturnedToCaller;
+                case RenderOutputSinkBackpressureMode.DropOldest:
+                case RenderOutputSinkBackpressureMode.KeepLatest:
+                    leaseForCallerToRelease = _queue.Dequeue();
+                    _queue.Enqueue(lease);
+                    return RenderOutputSinkQueueEnqueueResult.ReplacedPendingOldReturnedToCaller;
+                default:
+                    leaseForCallerToRelease = lease;
+                    return RenderOutputSinkQueueEnqueueResult.DroppedIncomingReturnedToCaller;
             }
         }
-
-        if (dropped is not null)
-            _dropFrame(dropped);
-
-        return result;
     }
 
     public bool TryDequeue(out RenderOutputFrameLease lease)
@@ -119,7 +111,8 @@ internal sealed class RenderOutputSinkQueue
 
 internal enum RenderOutputSinkQueueEnqueueResult
 {
-    DroppedIncoming = 0,
-    EnqueuedNewItem = 1,
-    ReplacedPendingItem = 2
+    EnqueuedAndWorkerSignaled = 0,
+    ReplacedPendingOldReturnedToCaller = 1,
+    DroppedIncomingReturnedToCaller = 2,
+    RejectedCallerMustRelease = 3
 }
