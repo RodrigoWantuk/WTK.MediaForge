@@ -15,11 +15,11 @@ track.
 - **Source runtime/buffer foundation:** complete for internal source runtime ownership, lease-buffer primitives, source acquire diagnostics, and engine integration
 - **Sink queue foundation:** complete for extracted bounded per-sink queue policy and fanout lease coverage
 - **Sprint 0 hardening:** complete
-- **CP2/multi-layer renderer track:** complete
+- **CP2/multi-layer renderer track:** complete — see `docs/CP2_ACCEPTANCE.md`
 - **First public visual output sink:** complete
-- **CP3 solid layer:** complete
-- **CP3 nested canvas:** complete
-- **CP3 first effect (ChromaKeyEffect):** complete
+- **CP3 solid layer:** complete — see `docs/CP3_SOLID_ACCEPTANCE.md`
+- **CP3 nested canvas:** complete — see `docs/CP3_NESTED_ACCEPTANCE.md`
+- **CP3 first effect (ChromaKeyEffect):** complete — see `docs/CP3_CHROMA_ACCEPTANCE.md`
 
 ## Blocking Rule
 

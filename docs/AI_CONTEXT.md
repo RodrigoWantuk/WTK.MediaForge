@@ -55,7 +55,8 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `RenderedOutputFrame` carries an internal `IRenderedOutputSurfaceLease`; public `RenderOutputFrameLease` hides backend details while preserving lifetime for real rendered surfaces.
 - `RenderOutputSinkDispatcher` fans out frames through bounded per-sink queues and keeps sink callbacks off the render thread.
 - `RenderOutputSinkDispatcher` uses explicit sink stop timeouts for detach/dispose and reports hung sinks instead of blocking engine shutdown indefinitely.
-- `CpuReadbackSink` is the first public visual output sink. It reads a completed rendered output surface through an internal backend capability, copies pixels into an owned CPU buffer, releases the render output frame lease, and then raises the readback frame.
+- `RenderOutputSinkQueue` returns explicit enqueue outcomes and never disposes leases. The dispatcher owns release of undelivered or backpressured frames.
+- `CpuReadbackSink` is the first public visual output sink for tests, debug, samples, and validation. It must not become the primary preview, encoder, or streaming path.
 - Vulkan offscreen output targets are replaced before a submit when the current target still has submission or sink references, so a slow sink cannot read pixels overwritten by the next frame.
 - Source acquisition is routed through `SourceRuntimeManager` and `MediaSourceRuntime`; the engine must not manage a raw provider list as its runtime source model.
 - Source buffers and sink queues are lease/reference infrastructure only. They must not copy pixels to CPU memory by default or become visual composition objects.
