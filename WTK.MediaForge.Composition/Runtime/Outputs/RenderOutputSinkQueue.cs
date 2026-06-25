@@ -36,41 +36,42 @@ internal sealed class RenderOutputSinkQueue
         }
     }
 
-    public RenderOutputSinkQueueEnqueueResult TryEnqueue(
-        RenderOutputFrameLease lease,
-        out RenderOutputFrameLease? leaseForCallerToRelease)
+    public SinkQueueEnqueueResult TryEnqueue(RenderOutputFrameLease lease)
     {
         ArgumentNullException.ThrowIfNull(lease);
-        leaseForCallerToRelease = null;
 
         lock (_gate)
         {
             if (!_accepting)
             {
-                leaseForCallerToRelease = lease;
-                return RenderOutputSinkQueueEnqueueResult.RejectedCallerMustRelease;
+                return new SinkQueueEnqueueResult(
+                    SinkQueueEnqueueResultKind.Rejected,
+                    lease);
+            }
+
+            if (_queue.Count == 0)
+            {
+                _queue.Enqueue(lease);
+                return new SinkQueueEnqueueResult(SinkQueueEnqueueResultKind.EnqueuedIntoPreviouslyEmptyQueue);
             }
 
             if (_queue.Count < _capacity)
             {
                 _queue.Enqueue(lease);
-                return RenderOutputSinkQueueEnqueueResult.EnqueuedAndWorkerSignaled;
+                return new SinkQueueEnqueueResult(SinkQueueEnqueueResultKind.EnqueuedIntoNonEmptyQueue);
             }
 
-            switch (_backpressureMode)
+            return _backpressureMode switch
             {
-                case RenderOutputSinkBackpressureMode.DropNewest:
-                    leaseForCallerToRelease = lease;
-                    return RenderOutputSinkQueueEnqueueResult.DroppedIncomingReturnedToCaller;
-                case RenderOutputSinkBackpressureMode.DropOldest:
-                case RenderOutputSinkBackpressureMode.KeepLatest:
-                    leaseForCallerToRelease = _queue.Dequeue();
-                    _queue.Enqueue(lease);
-                    return RenderOutputSinkQueueEnqueueResult.ReplacedPendingOldReturnedToCaller;
-                default:
-                    leaseForCallerToRelease = lease;
-                    return RenderOutputSinkQueueEnqueueResult.DroppedIncomingReturnedToCaller;
-            }
+                RenderOutputSinkBackpressureMode.DropNewest => new SinkQueueEnqueueResult(
+                    SinkQueueEnqueueResultKind.DroppedIncoming,
+                    lease),
+                RenderOutputSinkBackpressureMode.DropOldest or RenderOutputSinkBackpressureMode.KeepLatest =>
+                    DequeueAndEnqueueReplacement(lease),
+                _ => new SinkQueueEnqueueResult(
+                    SinkQueueEnqueueResultKind.DroppedIncoming,
+                    lease)
+            };
         }
     }
 
@@ -107,12 +108,28 @@ internal sealed class RenderOutputSinkQueue
 
         return leases;
     }
+
+    private SinkQueueEnqueueResult DequeueAndEnqueueReplacement(RenderOutputFrameLease lease)
+    {
+        var replaced = _queue.Dequeue();
+        _queue.Enqueue(lease);
+        return new SinkQueueEnqueueResult(SinkQueueEnqueueResultKind.ReplacedOldest, replaced);
+    }
 }
 
-internal enum RenderOutputSinkQueueEnqueueResult
+internal enum SinkQueueEnqueueResultKind
 {
-    EnqueuedAndWorkerSignaled = 0,
-    ReplacedPendingOldReturnedToCaller = 1,
-    DroppedIncomingReturnedToCaller = 2,
-    RejectedCallerMustRelease = 3
+    EnqueuedIntoPreviouslyEmptyQueue,
+    EnqueuedIntoNonEmptyQueue,
+    ReplacedOldest,
+    DroppedIncoming,
+    Rejected
+}
+
+internal readonly record struct SinkQueueEnqueueResult(
+    SinkQueueEnqueueResultKind Kind,
+    RenderOutputFrameLease? LeaseToRelease = null)
+{
+    public bool ShouldSignalWorker =>
+        Kind is SinkQueueEnqueueResultKind.EnqueuedIntoPreviouslyEmptyQueue;
 }

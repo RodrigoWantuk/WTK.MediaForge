@@ -72,8 +72,9 @@ public class VulkanSubmissionLifetimeTests
                 await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
 
                 Assert.Equal(0, backend.TextureRegistryActiveLeaseCount);
-                Assert.Equal(0, VulkanOffscreenRenderTargetLifetime.LiveCount);
-                Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.DisposeCount);
+                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.LiveCount);
+                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.DisposeCount);
+                Assert.Equal(1, backend.IntermediateTargetPoolLiveCountForTests);
 
                 snapshot.Dispose();
             }

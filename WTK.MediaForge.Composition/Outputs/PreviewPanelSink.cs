@@ -2,6 +2,10 @@ using WTK.MediaForge.Composition.Runtime.Rendering;
 
 namespace WTK.MediaForge.Composition.Outputs;
 
+/// <summary>
+/// Experimental GPU preview sink. Presents completed Vulkan output surfaces to a Win32 panel.
+/// Not a final product API until presenter lifecycle is fully hardened.
+/// </summary>
 public sealed class PreviewPanelSink : IRenderOutputSink
 {
     private readonly nint _panelHandle;
@@ -89,12 +93,14 @@ public sealed class PreviewPanelSink : IRenderOutputSink
     {
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Exchange(ref _started, 0);
+        PreviewPanelPresenterLifecycle.RemovePresentersForPanel(_panelHandle);
         return ValueTask.CompletedTask;
     }
 
     public ValueTask DisposeAsync()
     {
         Interlocked.Exchange(ref _started, 0);
+        PreviewPanelPresenterLifecycle.RemovePresentersForPanel(_panelHandle);
         return ValueTask.CompletedTask;
     }
 }

@@ -82,6 +82,75 @@ public class PreviewPanelSinkTests
             frame.Format,
             frame.BackendKind);
 
+    [Fact]
+    public async Task PreviewPanelSink_dispose_removes_presenter_for_panel()
+    {
+        var removedHandle = 0L;
+        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
+            Interlocked.Exchange(ref removedHandle, handle));
+
+        var sink = new PreviewPanelSink(panelHandle: 42);
+        await sink.DisposeAsync();
+
+        Assert.Equal(42, removedHandle);
+    }
+
+    [Fact]
+    public async Task PreviewPanelSink_stop_removes_presenter_for_panel()
+    {
+        var removedHandle = 0L;
+        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
+            Interlocked.Exchange(ref removedHandle, handle));
+
+        var sink = new PreviewPanelSink(panelHandle: 77);
+        await sink.StopAsync(CancellationToken.None);
+
+        Assert.Equal(77, removedHandle);
+    }
+
+    [Fact]
+    public async Task Preview_present_honors_cancellation_when_acquire_or_fence_wait_blocks()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new CancellingPreviewSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 1);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
+                cts.Token).AsTask());
+    }
+
+    private sealed class CancellingPreviewSurface(
+        RenderOutputId outputId,
+        FrameSize size)
+        : IRenderedOutputSurfaceLease, IPreviewPresentableRenderedOutputSurfaceLease
+    {
+        public RenderOutputId OutputId { get; } = outputId;
+
+        public FrameSize Size { get; } = size;
+
+        public RenderPixelFormat Format => RenderPixelFormat.Rgba8Unorm;
+
+        public RenderBackendKind BackendKind => RenderBackendKind.Vulkan;
+
+        public object? BackendSurface => null;
+
+        public ValueTask PresentToWin32PanelAsync(nint panelHandle, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromException(new OperationCanceledException(cancellationToken));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class FakePreviewPresentableSurface(
         RenderOutputId outputId,
         FrameSize size)

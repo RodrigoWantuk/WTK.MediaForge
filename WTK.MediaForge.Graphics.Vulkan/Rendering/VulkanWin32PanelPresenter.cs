@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
+using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Core.Frames;
 using VulkanSemaphore = Silk.NET.Vulkan.Semaphore;
 
@@ -10,6 +11,16 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 internal static class VulkanWin32PanelPresenterRegistry
 {
     private static readonly ConcurrentDictionary<PresenterKey, VulkanWin32PanelPresenter> Presenters = new();
+
+    static VulkanWin32PanelPresenterRegistry()
+    {
+        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(RemovePresentersForPanel);
+    }
+
+    internal static int RegisteredPresenterCountForTests => Presenters.Count;
+
+    internal static int TotalPendingCommandBuffersForTests =>
+        Presenters.Values.Sum(static presenter => presenter.PendingCommandBufferCountForTests);
 
     public static void Present(
         VulkanOffscreenRenderTarget source,
@@ -35,6 +46,21 @@ internal static class VulkanWin32PanelPresenterRegistry
         presenter.Present(source, cancellationToken);
     }
 
+    public static void RemovePresentersForPanel(nint panelHandle)
+    {
+        if (panelHandle == 0)
+            return;
+
+        foreach (var key in Presenters.Keys)
+        {
+            if (key.PanelHandle != panelHandle)
+                continue;
+
+            if (Presenters.TryRemove(key, out var presenter))
+                presenter.Dispose();
+        }
+    }
+
     public static void RemovePresenter(VulkanHeadlessDevice device, nint panelHandle)
     {
         if (panelHandle == 0)
@@ -49,6 +75,9 @@ internal static class VulkanWin32PanelPresenterRegistry
 
 internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
 {
+    private const ulong WaitSliceNanoseconds = 50_000_000;
+    private static readonly TimeSpan DisposeFenceTimeout = TimeSpan.FromSeconds(5);
+
     private readonly VulkanHeadlessDevice _device;
     private readonly nint _panelHandle;
     private readonly KhrSurface _khrSurface;
@@ -63,7 +92,11 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
     private VulkanSemaphore _imageAvailable;
     private VulkanSemaphore _renderFinished;
     private Fence _presentFence;
+    private CommandBuffer _pendingCommandBuffer;
+    private bool _hasPendingCommandBuffer;
     private int _disposed;
+
+    internal int PendingCommandBufferCountForTests => _hasPendingCommandBuffer ? 1 : 0;
 
     public VulkanWin32PanelPresenter(VulkanHeadlessDevice device, nint panelHandle)
     {
@@ -85,35 +118,23 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
 
         var desiredExtent = ChooseExtent(source.Size);
         if (desiredExtent.Width != _swapchainExtent.Width || desiredExtent.Height != _swapchainExtent.Height)
-            RecreateSwapchain(desiredExtent);
+            RecreateSwapchain(desiredExtent, cancellationToken);
 
         var vk = _device.Vk;
         var device = _device.Device;
 
         lock (_device.CommandQueueGate)
         {
-            if (vk.WaitForFences(device, 1, in _presentFence, true, ulong.MaxValue) != Result.Success)
-                throw new InvalidOperationException("Failed to wait for preview present fence.");
+            WaitForFence(vk, device, _presentFence, cancellationToken);
+            ReleasePendingCommandBuffer();
 
             uint imageIndex = 0;
-            var acquireResult = _khrSwapchain.AcquireNextImage(
-                device,
-                _swapchain,
-                ulong.MaxValue,
-                _imageAvailable,
-                default,
-                ref imageIndex);
+            var acquireResult = AcquireNextImage(ref imageIndex, cancellationToken);
 
             if (acquireResult is Result.ErrorOutOfDateKhr or Result.SuboptimalKhr)
             {
-                RecreateSwapchain(desiredExtent);
-                acquireResult = _khrSwapchain.AcquireNextImage(
-                    device,
-                    _swapchain,
-                    ulong.MaxValue,
-                    _imageAvailable,
-                    default,
-                    ref imageIndex);
+                RecreateSwapchain(desiredExtent, cancellationToken);
+                acquireResult = AcquireNextImage(ref imageIndex, cancellationToken);
 
                 if (acquireResult is Result.ErrorOutOfDateKhr)
                     return;
@@ -199,6 +220,7 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
                 throw new InvalidOperationException("Failed to end preview present command buffer.");
 
             vk.ResetFences(device, 1, in _presentFence);
+
             var waitSemaphores = stackalloc VulkanSemaphore[] { _imageAvailable };
             var waitStages = PipelineStageFlags.TransferBit;
             var signalSemaphores = stackalloc VulkanSemaphore[] { _renderFinished };
@@ -218,6 +240,9 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
             if (vk.QueueSubmit(_device.GraphicsQueue, 1, in submitInfo, _presentFence) != Result.Success)
                 throw new InvalidOperationException("Failed to submit preview present command buffer.");
 
+            _pendingCommandBuffer = commandBuffer;
+            _hasPendingCommandBuffer = true;
+
             var swapchain = _swapchain;
             var presentInfo = new PresentInfoKHR
             {
@@ -231,7 +256,7 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
 
             var presentResult = _khrSwapchain.QueuePresent(_device.GraphicsQueue, in presentInfo);
             if (presentResult is Result.ErrorOutOfDateKhr or Result.SuboptimalKhr)
-                RecreateSwapchain(desiredExtent);
+                RecreateSwapchain(desiredExtent, cancellationToken);
             else if (presentResult != Result.Success)
                 throw new InvalidOperationException($"Failed to present swapchain image: {presentResult}");
         }
@@ -245,21 +270,92 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
         var vk = _device.Vk;
         var device = _device.Device;
 
-        vk.DeviceWaitIdle(device);
+        lock (_device.CommandQueueGate)
+        {
+            try
+            {
+                WaitForFence(vk, device, _presentFence, CancellationToken.None, DisposeFenceTimeout);
+            }
+            catch (TimeoutException)
+            {
+            }
 
-        DestroySwapchain();
+            ReleasePendingCommandBuffer();
+            DestroySwapchain();
 
-        if (_presentFence.Handle != 0)
-            vk.DestroyFence(device, _presentFence, null);
+            if (_presentFence.Handle != 0)
+                vk.DestroyFence(device, _presentFence, null);
 
-        if (_renderFinished.Handle != 0)
-            vk.DestroySemaphore(device, _renderFinished, null);
+            if (_renderFinished.Handle != 0)
+                vk.DestroySemaphore(device, _renderFinished, null);
 
-        if (_imageAvailable.Handle != 0)
-            vk.DestroySemaphore(device, _imageAvailable, null);
+            if (_imageAvailable.Handle != 0)
+                vk.DestroySemaphore(device, _imageAvailable, null);
 
-        if (_surface.Handle != 0)
-            _khrSurface.DestroySurface(_device.Instance, _surface, null);
+            if (_surface.Handle != 0)
+                _khrSurface.DestroySurface(_device.Instance, _surface, null);
+        }
+    }
+
+    private Result AcquireNextImage(ref uint acquiredIndex, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = _khrSwapchain.AcquireNextImage(
+                _device.Device,
+                _swapchain,
+                WaitSliceNanoseconds,
+                _imageAvailable,
+                default,
+                ref acquiredIndex);
+
+            if (result != Result.Timeout)
+                return result;
+        }
+    }
+
+    private static void WaitForFence(
+        Vk vk,
+        Device device,
+        Fence fence,
+        CancellationToken cancellationToken,
+        TimeSpan? totalTimeout = null)
+    {
+        var deadline = totalTimeout is { } timeout
+            ? Environment.TickCount64 + (long)timeout.TotalMilliseconds
+            : long.MaxValue;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (Environment.TickCount64 >= deadline)
+                throw new TimeoutException("Timed out waiting for preview present fence.");
+
+            var result = vk.WaitForFences(device, 1, in fence, true, WaitSliceNanoseconds);
+            if (result == Result.Success)
+                return;
+
+            if (result != Result.Timeout)
+                throw new InvalidOperationException($"Failed to wait for preview present fence: {result}");
+        }
+    }
+
+    private void ReleasePendingCommandBuffer()
+    {
+        if (!_hasPendingCommandBuffer)
+            return;
+
+        _device.Vk.FreeCommandBuffers(
+            _device.Device,
+            _device.CommandPool,
+            1,
+            in _pendingCommandBuffer);
+
+        _pendingCommandBuffer = default;
+        _hasPendingCommandBuffer = false;
     }
 
     private void CreateSurface()
@@ -372,10 +468,13 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
         _swapchainImageLayouts = new ImageLayout[imageCount];
     }
 
-    private void RecreateSwapchain(Extent2D extent)
+    private void RecreateSwapchain(Extent2D extent, CancellationToken cancellationToken)
     {
         var vk = _device.Vk;
         var device = _device.Device;
+
+        WaitForFence(vk, device, _presentFence, cancellationToken);
+        ReleasePendingCommandBuffer();
         vk.DeviceWaitIdle(device);
         DestroySwapchain();
         CreateSwapchain(extent);

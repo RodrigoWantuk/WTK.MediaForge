@@ -44,7 +44,7 @@ namespace WMF.Testing
                     ? $"Monitors found: {_monitors.Count}. Ready to start GPU preview."
                     : "No monitors found.";
             lblDiagnostics.Text =
-                "Preview uses MediaForgeEngine + PreviewPanelSink on the hardened render-thread backend.";
+                "Experimental GPU preview harness (PreviewPanelSink). Not a final product API.";
         }
 
         private async void btnStart_Click(object sender, EventArgs e)
@@ -78,6 +78,7 @@ namespace WMF.Testing
                 await _engine.LoadProjectAsync(project);
 
                 _outputId = output.Id;
+                // GPU preview experimental — harness only until presenter lifecycle is product-ready.
                 _previewSink = new PreviewPanelSink(pnlPreview.Handle);
                 await _engine.AttachSinkAsync(_outputId, _previewSink);
                 await _engine.StartAsync();

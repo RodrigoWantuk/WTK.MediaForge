@@ -100,6 +100,35 @@ public class CpuReadbackSinkTests
         await lease.DisposeAsync();
     }
 
+    [Fact]
+    public async Task CpuReadbackSink_rate_limit_skips_excess_frames()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new FakeCpuReadableSurface(outputId, new FrameSize(2, 2));
+        var readCount = 0;
+        var sink = new CpuReadbackSink(
+            maxFramesPerSecond: 1,
+            onFrame: (_, _) =>
+            {
+                Interlocked.Increment(ref readCount);
+                return ValueTask.CompletedTask;
+            });
+
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+
+        for (var i = 0; i < 3; i++)
+        {
+            var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+            var frame = Assert.Single(batch.Frames);
+            await sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id, i + 1)),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(1, readCount);
+        Assert.Equal(3, surface.DisposeCount);
+    }
+
     private static RenderOutputSinkContext CreateContext(
         RenderOutputId outputId,
         FrameSize? size = null) =>
@@ -111,12 +140,13 @@ public class CpuReadbackSinkTests
 
     private static RenderOutputFrameInfo CreateInfo(
         RenderedOutputFrame frame,
-        RenderOutputSinkId sinkId) =>
+        RenderOutputSinkId sinkId,
+        long frameNumber = 7) =>
         new(
             frame.OutputId,
             sinkId,
-            frameNumber: 7,
-            timestamp: TimeSpan.FromMilliseconds(33),
+            frameNumber,
+            TimeSpan.FromMilliseconds(33),
             frame.Size,
             frame.Format,
             frame.BackendKind);

@@ -230,7 +230,8 @@ public class Cp3NestedCanvasTests
 
                 submission.DisposeCompleted();
 
-                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.LiveCount);
+                Assert.Equal(3, VulkanOffscreenRenderTargetLifetime.LiveCount);
+                Assert.Equal(2, backend.IntermediateTargetPoolLiveCountForTests);
             }
             finally
             {

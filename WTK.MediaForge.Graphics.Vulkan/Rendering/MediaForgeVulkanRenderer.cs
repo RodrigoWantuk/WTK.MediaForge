@@ -60,6 +60,12 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
     internal int OffscreenTargetCount =>
         _offscreenTargets.Values.Count(handle => handle.IsAlive);
 
+    internal int IntermediateTargetPoolLiveCountForTests =>
+        _compositionPipelines.IntermediateTargetPoolLiveCountForTests;
+
+    internal void InvalidateIntermediateTargetCacheForTests() =>
+        _compositionPipelines.InvalidateIntermediateTargets();
+
     internal bool TryGetOffscreenTargetSize(RenderOutputId outputId, out FrameSize size)
     {
         if (_offscreenTargets.TryGetValue(outputId, out var handle) && handle.IsAlive)
@@ -83,6 +89,22 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         }
 
         layout = default;
+        return false;
+    }
+
+    internal bool TryGetOffscreenRenderTargetForTests(
+        RenderOutputId outputId,
+        out VulkanOffscreenRenderTarget target)
+    {
+        if (_offscreenTargets.TryGetValue(outputId, out var handle) &&
+            handle.IsAlive &&
+            handle.Target is VulkanOffscreenRenderTarget renderTarget)
+        {
+            target = renderTarget;
+            return true;
+        }
+
+        target = null!;
         return false;
     }
 
@@ -159,6 +181,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
             _offscreenTargets[binding.OutputId] = new VulkanOffscreenTargetHandle(
                 _offscreenTargetFactory(_deviceContext, binding.SurfaceSize));
+            _compositionPipelines.InvalidateIntermediateTargets();
         }
 
         _bindings[binding.OutputId] = binding;
@@ -207,12 +230,17 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                 handle.Retire();
                 _offscreenTargets[outputId] = new VulkanOffscreenTargetHandle(
                     _offscreenTargetFactory(_deviceContext, surfaceSize));
+                _compositionPipelines.InvalidateIntermediateTargets();
             }
             else if (existing.TargetKind == RenderTargetKind.Offscreen &&
                      _offscreenTargets.TryGetValue(outputId, out var resizeHandle) &&
                      resizeHandle.IsAlive)
             {
-                resizeHandle.Target.Resize(surfaceSize);
+                if (resizeHandle.Target.Size != surfaceSize)
+                {
+                    resizeHandle.Target.Resize(surfaceSize);
+                    _compositionPipelines.InvalidateIntermediateTargets();
+                }
             }
         }
     }
@@ -497,6 +525,15 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         }
 
         _offscreenTargets.Clear();
+
+        try
+        {
+            VulkanOffscreenReadbackStagingPool.DisposeAllForDevice(_deviceContext);
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
 
         try
         {

@@ -113,6 +113,66 @@ public class RenderOutputSinkDispatcherTests
     }
 
     [Fact]
+    public async Task Sink_worker_ignoring_cancellation_does_not_block_detach_forever()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            sinkStopTimeout: TimeSpan.FromMilliseconds(50));
+        var output = CreateOutput();
+        var sink = new HungWorkerSink();
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces(
+            [
+                new TrackingRenderedOutputSurfaceLease(
+                    output.Id,
+                    output.OutputSize,
+                    backendSurface: new object())
+            ]);
+
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
+        dispatcher.PublishCompletedFrames(batch);
+        await sink.WaitForFrameAsync(TimeSpan.FromSeconds(5));
+
+        var started = Environment.TickCount64;
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            dispatcher.DetachAsync(output.Id, sink.Id, CancellationToken.None));
+        var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
+        Assert.True(elapsed < TimeSpan.FromSeconds(2));
+        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.worker_stop_timeout");
+        Assert.False(dispatcher.IsSinkAttached(output.Id, sink.Id));
+    }
+
+    [Fact]
+    public async Task Sink_worker_ignoring_cancellation_does_not_block_dispatcher_dispose_forever()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var dispatcher = new RenderOutputSinkDispatcher(
+            diagnostics,
+            sinkStopTimeout: TimeSpan.FromMilliseconds(50));
+        var output = CreateOutput();
+        var sink = new HungWorkerSink();
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces(
+            [
+                new TrackingRenderedOutputSurfaceLease(
+                    output.Id,
+                    output.OutputSize,
+                    backendSurface: new object())
+            ]);
+
+        await dispatcher.AttachAsync(output, sink, TimeSpan.FromSeconds(5), CancellationToken.None);
+        dispatcher.PublishCompletedFrames(batch);
+        await sink.WaitForFrameAsync(TimeSpan.FromSeconds(5));
+
+        var started = Environment.TickCount64;
+        await dispatcher.DisposeAsync();
+        var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
+        Assert.True(elapsed < TimeSpan.FromSeconds(2));
+        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.worker_stop_timeout");
+    }
+
+    [Fact]
     public async Task Dispatcher_dispose_times_out_hung_sink()
     {
         var diagnostics = new InMemoryDiagnosticsSink();
@@ -134,12 +194,11 @@ public class RenderOutputSinkDispatcherTests
         await sink.WaitForFrameAsync(TimeSpan.FromSeconds(5));
 
         var started = Environment.TickCount64;
-        var ex = await Assert.ThrowsAsync<AggregateException>(() => dispatcher.DisposeAsync().AsTask());
+        await dispatcher.DisposeAsync();
         var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
 
-        Assert.Contains(ex.InnerExceptions, inner => inner is TimeoutException);
         Assert.True(elapsed < TimeSpan.FromSeconds(2));
-        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.stop_timeout");
+        Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "sink.worker_stop_timeout");
 
         sink.Release();
     }
@@ -528,6 +587,42 @@ public class RenderOutputSinkDispatcherTests
             Interlocked.Increment(ref _disposeCount);
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class HungWorkerSink : PublicRenderOutputSink
+    {
+        private readonly TaskCompletionSource _frameEntered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
+
+        public RenderOutputSinkKind Kind => RenderOutputSinkKind.Custom;
+
+        public RenderOutputSinkBackpressureMode BackpressureMode => RenderOutputSinkBackpressureMode.KeepLatest;
+
+        public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public async ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken)
+        {
+            _frameEntered.TrySetResult();
+            await _release.Task.ConfigureAwait(false);
+        }
+
+        public ValueTask StopAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public Task WaitForFrameAsync(TimeSpan timeout) =>
+            _frameEntered.Task.WaitAsync(timeout);
+
+        public void Release() => _release.TrySetResult();
     }
 
     private sealed class HungSink : PublicRenderOutputSink

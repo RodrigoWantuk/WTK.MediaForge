@@ -35,6 +35,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     private readonly ShaderModule _solidFragmentModule;
     private readonly ShaderModule _canvasCompositeFragmentModule;
     private readonly ShaderModule _outputLetterboxFragmentModule;
+    private readonly VulkanIntermediateTargetPool _intermediateTargetPool;
     private bool _disposed;
 
     public VulkanCompositionShaderPipelines(
@@ -43,6 +44,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     {
         _device = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
+        _intermediateTargetPool = new VulkanIntermediateTargetPool(_device);
         _vk = deviceContext.Vk;
         _deviceHandle = deviceContext.Device;
 
@@ -66,6 +68,11 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 
     public RenderPass RenderPass => _renderPass;
 
+    internal int IntermediateTargetPoolLiveCountForTests =>
+        _intermediateTargetPool.LiveEntryCountForTests;
+
+    public void InvalidateIntermediateTargets() => _intermediateTargetPool.InvalidateAll();
+
     public VulkanSubmissionResourceScope CreateSubmissionResourceScope() =>
         new(_vk, _deviceHandle, _descriptorPool);
 
@@ -77,9 +84,9 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         VulkanOffscreenRenderTarget outputTarget,
         VulkanSubmissionResourceScope submissionResources)
     {
-        var canvasTarget = new VulkanOffscreenRenderTarget(_device, canvas.Size);
-        var canvasHandle = new VulkanOffscreenTargetHandle(canvasTarget);
+        var canvasHandle = _intermediateTargetPool.Rent(canvas.Id, canvas.Size);
         submissionResources.RetainOffscreenTarget(canvasHandle);
+        var canvasTarget = (VulkanOffscreenRenderTarget)canvasHandle.Target;
         canvasHandle.Retire();
 
         RenderCanvasPass(commandBuffer, canvas, output, importsByHandle, canvasTarget, submissionResources, depth: 0);
@@ -249,9 +256,9 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                 continue;
             }
 
-            var nestedTarget = new VulkanOffscreenRenderTarget(_device, nested.NestedCanvas.Size);
-            var nestedHandle = new VulkanOffscreenTargetHandle(nestedTarget);
+            var nestedHandle = _intermediateTargetPool.Rent(nested.NestedCanvas.Id, nested.NestedCanvas.Size);
             submissionResources.RetainOffscreenTarget(nestedHandle);
+            var nestedTarget = (VulkanOffscreenRenderTarget)nestedHandle.Target;
             nestedHandle.Retire();
 
             RenderCanvasPass(
@@ -870,6 +877,8 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             return;
 
         _disposed = true;
+
+        _intermediateTargetPool.Dispose();
 
         if (_sourceLayerPipeline.Handle != 0)
             _vk.DestroyPipeline(_deviceHandle, _sourceLayerPipeline, null);

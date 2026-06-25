@@ -215,4 +215,139 @@ public class CpuReadbackSinkVulkanTests
             }
         }
     }
+
+    [Fact]
+    public async Task CpuReadbackSink_reuses_staging_buffer_for_same_size()
+    {
+        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var size = new FrameSize(64, 64);
+                backend.BindOutput(VulkanCompositionTestHarness.CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = VulkanCompositionTestHarness.CreateCp1Snapshot(
+                    context.SharedHandle,
+                    CanvasId.New(),
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size);
+
+                var submission = backend.Submit(snapshot);
+                await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryGetOffscreenRenderTargetForTests(outputId, out var target));
+                _ = VulkanOffscreenReadback.ReadPixel(target, 16, 16);
+                _ = VulkanOffscreenReadback.ReadPixel(target, 16, 16);
+
+                Assert.Equal(1, VulkanOffscreenReadbackStagingPool.LiveLeaseCountForTests);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CpuReadbackSink_reallocates_on_resize()
+    {
+        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                backend.BindOutput(VulkanCompositionTestHarness.CreateOffscreenBinding(outputId, 64, 64));
+
+                using var smallSnapshot = VulkanCompositionTestHarness.CreateCp1Snapshot(
+                    context.SharedHandle,
+                    CanvasId.New(),
+                    outputId,
+                    canvasSize: new FrameSize(64, 64),
+                    outputSize: new FrameSize(64, 64));
+
+                var smallSubmission = backend.Submit(smallSnapshot);
+                await VulkanCompositionTestHarness.ReleaseSubmissionAsync(smallSubmission);
+
+                Assert.True(backend.TryGetOffscreenRenderTargetForTests(outputId, out var smallTarget));
+                _ = VulkanOffscreenReadback.ReadPixel(smallTarget, 8, 8);
+
+                backend.ResizeOutput(outputId, new FrameSize(128, 128));
+
+                using var largeSnapshot = VulkanCompositionTestHarness.CreateCp1Snapshot(
+                    context.SharedHandle,
+                    CanvasId.New(),
+                    outputId,
+                    canvasSize: new FrameSize(128, 128),
+                    outputSize: new FrameSize(128, 128));
+
+                var largeSubmission = backend.Submit(largeSnapshot);
+                await VulkanCompositionTestHarness.ReleaseSubmissionAsync(largeSubmission);
+
+                Assert.True(backend.TryGetOffscreenRenderTargetForTests(outputId, out var largeTarget));
+                _ = VulkanOffscreenReadback.ReadPixel(largeTarget, 8, 8);
+
+                Assert.Equal(2, VulkanOffscreenReadbackStagingPool.LiveLeaseCountForTests);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CpuReadbackSink_releases_staging_buffers_on_dispose()
+    {
+        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+            return;
+
+        using (context)
+        {
+            context!.Guard.BindToCurrentThread();
+
+            try
+            {
+                var backend = context.Backend;
+                var outputId = RenderOutputId.New();
+                var size = new FrameSize(64, 64);
+                backend.BindOutput(VulkanCompositionTestHarness.CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = VulkanCompositionTestHarness.CreateCp1Snapshot(
+                    context.SharedHandle,
+                    CanvasId.New(),
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size);
+
+                var submission = backend.Submit(snapshot);
+                await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryGetOffscreenRenderTargetForTests(outputId, out var target));
+                _ = VulkanOffscreenReadback.ReadPixel(target, 8, 8);
+                Assert.Equal(1, VulkanOffscreenReadbackStagingPool.LiveLeaseCountForTests);
+            }
+            finally
+            {
+                context.Guard.Clear();
+            }
+        }
+
+        Assert.Equal(0, VulkanOffscreenReadbackStagingPool.LiveLeaseCountForTests);
+    }
 }

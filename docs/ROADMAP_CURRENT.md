@@ -20,7 +20,9 @@ track.
 - **CP3 solid layer:** complete — see `docs/CP3_SOLID_ACCEPTANCE.md`
 - **CP3 nested canvas:** complete — see `docs/CP3_NESTED_ACCEPTANCE.md`
 - **CP3 first effect (ChromaKeyEffect):** complete — see `docs/CP3_CHROMA_ACCEPTANCE.md`
-- **PreviewPanelSink MVP:** active
+- **PreviewPanelSink:** experimental — lifecycle hardening complete (presenter CB release, registry cleanup, finite waits)
+- **Intermediate target pool:** complete
+- **CpuReadbackSink debug optimizations:** complete (staging pool + optional FPS cap)
 
 ## Blocking Rule
 
@@ -38,9 +40,31 @@ allowed.
 
 ## Active Commit Order
 
-1. **PreviewPanelSink MVP**
-   - Public GPU preview sink that consumes completed `RenderOutputSurface` frames.
+1. **Preview local reliability milestone**
+   - Run PreviewPanelSink for extended periods without obvious GPU leaks.
+   - Validate repeated attach/detach, panel resize, and stop/start cycles.
+   - Keep PreviewPanelSink experimental in public docs until milestone criteria are met.
+
+## Completed - PreviewPanelSink Lifecycle (P0)
+
+1. Command buffers released after present fence completes.
+2. Presenter registry cleanup on sink stop/dispose.
+3. Finite waits with cancellation in Win32 panel presenter.
+4. Sink worker abandoned policy with `sink.worker_stop_timeout` diagnostic.
+
+## Completed - Performance Minimum (Sprint 4)
+
+1. `VulkanIntermediateTargetPool` reuses canvas and nested intermediate targets between frames.
+2. Intermediate cache invalidates on output bind/unbind/resize.
+3. Vulkan readback staging buffers are pooled per device/size.
+4. `CpuReadbackSink` supports optional `maxFramesPerSecond` for debug/sample throttling.
+
+## Previous Active Step (closed)
+
+1. **PreviewPanelSink lifecycle hardening (P0)**
+   - Experimental GPU preview sink; not a final product API until presenter lifecycle is closed.
    - Present offscreen Vulkan output to a Win32 panel/swapchain with `KeepLatest` backpressure.
+   - Command buffer release after fence, registry cleanup on sink stop/dispose, finite waits with cancellation.
    - No CPU readback, no parallel render path, no encoder/NDI/streaming scope.
 
 ## Completed - CP3 ChromaKeyEffect

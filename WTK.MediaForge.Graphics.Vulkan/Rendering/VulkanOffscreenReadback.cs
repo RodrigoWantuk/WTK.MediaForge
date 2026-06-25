@@ -68,15 +68,15 @@ internal static unsafe class VulkanOffscreenReadback
 
         lock (deviceContext.CommandQueueGate)
         {
-            Silk.NET.Vulkan.Buffer stagingBuffer = default;
-            DeviceMemory stagingMemory = default;
+            var stagingLease = VulkanOffscreenReadbackStagingPool.Rent(deviceContext, bufferSize);
+            var stagingBuffer = stagingLease.Buffer;
+            var stagingMemory = stagingLease.Memory;
             CommandBuffer commandBuffer = default;
             Fence fence = default;
             void* mapped = null;
 
             try
             {
-                CreateStagingBuffer(deviceContext, bufferSize, out stagingBuffer, out stagingMemory);
                 commandBuffer = BeginCommandBuffer(deviceContext);
 
                 var originalLayout = target.CurrentLayout;
@@ -152,54 +152,9 @@ internal static unsafe class VulkanOffscreenReadback
                     vk.FreeCommandBuffers(device, deviceContext.CommandPool, 1, &localCommandBuffer);
                 }
 
-                if (stagingBuffer.Handle != 0)
-                    vk.DestroyBuffer(device, stagingBuffer, null);
-
-                if (stagingMemory.Handle != 0)
-                    vk.FreeMemory(device, stagingMemory, null);
+                VulkanOffscreenReadbackStagingPool.Return(deviceContext, stagingLease);
             }
         }
-    }
-
-    private static void CreateStagingBuffer(
-        VulkanHeadlessDevice deviceContext,
-        ulong size,
-        out Silk.NET.Vulkan.Buffer buffer,
-        out DeviceMemory memory)
-    {
-        var vk = deviceContext.Vk;
-        var device = deviceContext.Device;
-
-        buffer = default;
-        memory = default;
-
-        var bufferInfo = new BufferCreateInfo
-        {
-            SType = StructureType.BufferCreateInfo,
-            Size = size,
-            Usage = BufferUsageFlags.TransferDstBit,
-            SharingMode = SharingMode.Exclusive
-        };
-
-        if (vk.CreateBuffer(device, &bufferInfo, null, out buffer) != Result.Success)
-            throw new InvalidOperationException("vkCreateBuffer failed for offscreen readback.");
-
-        vk.GetBufferMemoryRequirements(device, buffer, out var requirements);
-
-        var allocationInfo = new MemoryAllocateInfo
-        {
-            SType = StructureType.MemoryAllocateInfo,
-            AllocationSize = requirements.Size,
-            MemoryTypeIndex = deviceContext.FindMemoryType(
-                requirements.MemoryTypeBits,
-                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit)
-        };
-
-        if (vk.AllocateMemory(device, &allocationInfo, null, out memory) != Result.Success)
-            throw new InvalidOperationException("vkAllocateMemory failed for offscreen readback.");
-
-        if (vk.BindBufferMemory(device, buffer, memory, 0) != Result.Success)
-            throw new InvalidOperationException("vkBindBufferMemory failed for offscreen readback.");
     }
 
     private static CommandBuffer BeginCommandBuffer(VulkanHeadlessDevice deviceContext)

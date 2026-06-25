@@ -118,7 +118,8 @@ public class Cp2MultiLayerStressTests
                 Assert.Equal(0, VulkanSubmissionResourceLifetime.LiveDescriptorSets);
                 Assert.Equal(2, VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
                 Assert.Equal(3, VulkanSubmissionResourceLifetime.FreedDescriptorSets);
-                Assert.Equal(1, VulkanOffscreenRenderTargetLifetime.LiveCount);
+                Assert.Equal(2, VulkanOffscreenRenderTargetLifetime.LiveCount);
+                Assert.Equal(1, backend.IntermediateTargetPoolLiveCountForTests);
             }
             finally
             {

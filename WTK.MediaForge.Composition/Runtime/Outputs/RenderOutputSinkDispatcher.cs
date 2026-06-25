@@ -166,7 +166,13 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         try
         {
             await StopRegistrationAsync(registration, cancellationToken).ConfigureAwait(false);
-            RemoveRegistration(registration);
+        }
+        catch (TimeoutException)
+        {
+            if (registration.IsAbandoned)
+                RemoveRegistration(registration);
+
+            throw;
         }
         catch (Exception ex)
         {
@@ -179,6 +185,8 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
                 ex);
             throw;
         }
+
+        RemoveRegistration(registration);
 
         return true;
     }
@@ -302,6 +310,9 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             try
             {
                 await StopRegistrationAsync(registration, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (TimeoutException) when (registration.IsAbandoned)
+            {
             }
             catch (Exception ex)
             {
@@ -557,7 +568,9 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
         private CancellationTokenSource? _stopTimeout;
         private int _stopTimedOut;
         private int _active;
+        private int _abandoned;
         private int _disposed;
+        private TimeSpan _workerStopTimeout = DefaultSinkStopTimeout;
 
         public SinkRegistration(
             RenderOutputId outputId,
@@ -579,7 +592,11 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
         public PublicRenderOutputSink Sink { get; }
 
-        public bool IsActive => Volatile.Read(ref _active) != 0;
+        public bool IsActive =>
+            Volatile.Read(ref _active) != 0 &&
+            Volatile.Read(ref _abandoned) == 0;
+
+        public bool IsAbandoned => Volatile.Read(ref _abandoned) != 0;
 
         public void Start()
         {
@@ -596,20 +613,20 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
 
             try
             {
-                var result = _queue.TryEnqueue(lease, out var releaseLease);
+                var result = _queue.TryEnqueue(lease);
 
-                if (releaseLease is not null)
+                if (result.LeaseToRelease is not null)
                 {
-                    if (result is RenderOutputSinkQueueEnqueueResult.ReplacedPendingOldReturnedToCaller or
-                        RenderOutputSinkQueueEnqueueResult.DroppedIncomingReturnedToCaller)
+                    if (result.Kind is SinkQueueEnqueueResultKind.ReplacedOldest or
+                        SinkQueueEnqueueResultKind.DroppedIncoming)
                     {
                         ReportBackpressureDrop();
                     }
 
-                    DisposeDroppedFrame(releaseLease);
+                    DisposeDroppedFrame(result.LeaseToRelease);
                 }
 
-                if (result == RenderOutputSinkQueueEnqueueResult.EnqueuedAndWorkerSignaled)
+                if (result.ShouldSignalWorker)
                 {
                     try
                     {
@@ -658,11 +675,11 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             if (timeout <= TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(timeout), "Sink stop timeout must be positive.");
 
-            var stopTask = EnsureStopStarted(timeout, cancellationToken);
+            _workerStopTimeout = timeout;
 
             try
             {
-                await stopTask.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+                await EnsureStopStarted(timeout, cancellationToken).ConfigureAwait(false);
             }
             catch (AggregateException ex) when (
                 Volatile.Read(ref _stopTimedOut) != 0 &&
@@ -676,12 +693,6 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             catch (OperationCanceledException ex) when (
                 _stopTimeout?.IsCancellationRequested == true &&
                 !cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException(
-                    $"Render output sink {Sink.Id} did not stop within {timeout}.",
-                    ex);
-            }
-            catch (TimeoutException ex)
             {
                 throw new TimeoutException(
                     $"Render output sink {Sink.Id} did not stop within {timeout}.",
@@ -738,7 +749,19 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             {
                 try
                 {
-                    await _worker.ConfigureAwait(false);
+                    await _worker.WaitAsync(_workerStopTimeout, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (TimeoutException ex)
+                {
+                    Volatile.Write(ref _abandoned, 1);
+                    (errors ??= []).Add(ex);
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "sink.worker_stop_timeout",
+                        $"Render output sink {Sink.Id} worker did not stop within {_workerStopTimeout}.",
+                        nameof(RenderOutputSinkDispatcher),
+                        ex);
                 }
                 catch (OperationCanceledException) when (_stop.IsCancellationRequested)
                 {
@@ -778,7 +801,14 @@ internal sealed class RenderOutputSinkDispatcher : IAsyncDisposable
             }
 
             if (errors is not null)
+            {
+                if (Volatile.Read(ref _abandoned) != 0)
+                    throw new TimeoutException(
+                        $"Render output sink {Sink.Id} did not stop within {_workerStopTimeout}.",
+                        new AggregateException($"Failed to stop render output sink {Sink.Id}.", errors));
+
                 throw new AggregateException($"Failed to stop render output sink {Sink.Id}.", errors);
+            }
         }
 
         private async Task ProcessAsync()
