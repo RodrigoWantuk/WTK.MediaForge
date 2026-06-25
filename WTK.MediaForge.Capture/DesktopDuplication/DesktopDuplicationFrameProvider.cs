@@ -159,7 +159,7 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
         var frame = slotLease!.Frame with
         {
             SourceId = Id,
-            TextureSize = _session?.TextureSize ?? _captureSource.TextureSize,
+            TextureSize = ResolvePublishedTextureSize(slotLease.Frame.Handle),
             LogicalSize = _captureSource.LogicalSize,
             Rotation = _captureSource.Rotation,
         };
@@ -481,6 +481,18 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
             handle,
             frameNumber,
             Stopwatch.GetTimestamp());
+    }
+
+    private FrameSize ResolvePublishedTextureSize(IGpuFrameHandle? handle)
+    {
+        if (handle is D3D11SharedTextureFrameHandle sharedHandle &&
+            sharedHandle.TextureSize.Width > 0 &&
+            sharedHandle.TextureSize.Height > 0)
+        {
+            return sharedHandle.TextureSize;
+        }
+
+        return _session?.TextureSize ?? _captureSource.TextureSize;
     }
 
     private void RecreateSlotRing(DesktopDuplicationSession session, Texture2DDescription description)

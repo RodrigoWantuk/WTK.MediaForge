@@ -6,7 +6,7 @@ namespace WTK.MediaForge.Graphics.Vulkan;
 /// <summary>
 /// Push constants for mf.source.layer fragment shader.
 /// </summary>
-[StructLayout(LayoutKind.Explicit, Size = 84)]
+[StructLayout(LayoutKind.Explicit, Size = 112)]
 internal struct MediaForgeLayerPushConstants
 {
     [FieldOffset(0)]
@@ -35,4 +35,7 @@ internal struct MediaForgeLayerPushConstants
 
     [FieldOffset(80)]
     public int ContentRotation;
+
+    [FieldOffset(96)]
+    public Vector4 LetterboxColor;
 }

@@ -159,6 +159,56 @@ public class Cp1OffscreenCompositionTests
             }
         }
     }
+
+    [Fact]
+    public async Task Cp1_source_layer_fit_uses_configured_letterbox_color()
+    {
+        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+            return;
+
+        using (context)
+        {
+            VulkanCompositionTestHarness.FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
+
+            var guard = context.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(128, 64);
+
+                backend.BindOutput(VulkanCompositionTestHarness.CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = VulkanCompositionTestHarness.CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size,
+                    transform: new Transform2D { Size = new CanvasSize(128, 64) },
+                    layerLayoutMode: LayoutMode.Fit,
+                    layerLetterboxColor: ColorRgba.From(0, 1, 0, 1),
+                    outputCanvasLayoutMode: LayoutMode.Stretch,
+                    outputLetterboxColor: ColorRgba.From(1, 0, 0, 1));
+
+                var submission = backend.Submit(snapshot);
+                await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 4, 32, out var letterboxPixel));
+                VulkanCompositionTestHarness.AssertPixelNear(letterboxPixel, expectedR: 0, expectedG: 255, expectedB: 0, expectedA: 255);
+
+                Assert.True(backend.TryReadOffscreenPixel(outputId, 64, 32, out var contentPixel));
+                VulkanCompositionTestHarness.AssertPixelNear(contentPixel, expectedR: 255, expectedG: 0, expectedB: 0, expectedA: 255);
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
     [Fact]
     public async Task SourceLayer_Fit_remains_Fit_when_Output_CanvasLayoutMode_is_Fill()
     {

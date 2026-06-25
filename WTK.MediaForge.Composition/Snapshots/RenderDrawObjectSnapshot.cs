@@ -33,6 +33,8 @@ internal sealed class RenderSourceLayerDrawObjectSnapshot : RenderDrawObjectSnap
 
     public LayoutMode LayoutMode { get; init; } = LayoutMode.Fit;
 
+    public ColorRgba LetterboxColor { get; init; } = ColorRgba.Transparent;
+
     public DisplayRotation? ContentRotationOverride { get; init; }
 
     public GpuFrameReference? BoundFrame { get; init; }

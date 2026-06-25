@@ -46,6 +46,14 @@ public sealed class PreviewPanelSink : IRenderOutputSink
 
     public nint PanelHandle => _panelHandle;
 
+    public void NotifyPanelClientSizeChanged(int width, int height)
+    {
+        if (width <= 0 || height <= 0)
+            return;
+
+        PreviewPanelClientSizeTracker.NotifyClientSize(_panelHandle, (uint)width, (uint)height);
+    }
+
     public ValueTask StartAsync(
         RenderOutputSinkContext context,
         CancellationToken cancellationToken)

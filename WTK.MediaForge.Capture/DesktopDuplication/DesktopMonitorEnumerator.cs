@@ -47,6 +47,9 @@ public static class DesktopMonitorEnumerator
                             outputDescription.DesktopCoordinates.Right,
                             outputDescription.DesktopCoordinates.Bottom);
 
+                        var rotation = MapRotation(outputDescription.Rotation);
+                        var logicalSize = new FrameSize((uint)width, (uint)height);
+
                         result.Add(new CaptureSourceInfo
                         {
                             AdapterIndex = adapterIndex,
@@ -59,8 +62,9 @@ public static class DesktopMonitorEnumerator
                                 HighPart = adapterLuid.HighPart
                             },
                             DesktopRect = desktopRect,
-                            LogicalSize = new FrameSize((uint)width, (uint)height),
-                            Rotation = MapRotation(outputDescription.Rotation)
+                            LogicalSize = logicalSize,
+                            TextureSize = CaptureDuplicationSizes.EstimateNativeTextureSize(logicalSize, rotation),
+                            Rotation = rotation
                         });
                     }
                 }

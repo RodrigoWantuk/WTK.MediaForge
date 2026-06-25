@@ -13,6 +13,7 @@ layout(push_constant) uniform LayerParams
     float opacity;
     int layoutMode;
     int contentRotation;
+    vec4 letterboxColor;
 } params;
 
 layout(location = 0) in vec2 vUv;
@@ -96,7 +97,7 @@ void main()
     if (uvInCropped.x < 0.0 || uvInCropped.x > 1.0 ||
         uvInCropped.y < 0.0 || uvInCropped.y > 1.0)
     {
-        outColor = vec4(0.0);
+        outColor = vec4(params.letterboxColor.rgb, params.letterboxColor.a * params.opacity);
         return;
     }
 

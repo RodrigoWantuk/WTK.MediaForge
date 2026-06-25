@@ -17,6 +17,7 @@ internal static class CompositionPushConstantsBuilder
     {
         var crop = layer.EffectiveCrop;
         var keyColor = chromaKey?.KeyColor ?? ColorRgba.Transparent;
+        var letterbox = layer.LetterboxColor;
 
         return new MediaForgeLayerPushConstants
         {
@@ -34,10 +35,13 @@ internal static class CompositionPushConstantsBuilder
             Pivot = new Vector2(layer.Transform.Pivot.X, layer.Transform.Pivot.Y),
             Opacity = layer.Opacity,
             LayoutMode = (int)layer.LayoutMode,
-            ContentRotation = CapturePreviewGeometry.ResolveShaderRotation(
-                frame.Rotation,
-                frame.LogicalSize,
-                frame.TextureSize)
+            ContentRotation = layer.ContentRotationOverride is { } rotationOverride
+                ? (int)rotationOverride
+                : CapturePreviewGeometry.ResolveShaderRotation(
+                    frame.Rotation,
+                    frame.LogicalSize,
+                    frame.TextureSize),
+            LetterboxColor = ToVector4(letterbox)
         };
     }
 

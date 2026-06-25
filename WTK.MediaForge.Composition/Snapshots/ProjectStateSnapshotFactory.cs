@@ -73,6 +73,7 @@ internal static class ProjectStateSnapshotFactory
                 Effects = effects,
                 SourceId = sourceLayer.SourceId,
                 LayoutMode = sourceLayer.LayoutMode,
+                LetterboxColor = sourceLayer.LetterboxColor,
                 ContentRotationOverride = sourceLayer.ContentRotationOverride
             },
             TextDrawObject text => new TextDrawObjectSnapshot

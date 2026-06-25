@@ -128,6 +128,103 @@ public class VulkanWin32PanelPresenterTests
     }
 
     [Fact]
+    public void Preview_present_recovers_from_panel_resize()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        using var device = VulkanHeadlessDevice.Create();
+        if (!device.SupportsWin32Presentation)
+            return;
+
+        var panelHandle = Win32TestPanel.Create(width: 640, height: 360);
+        try
+        {
+            using var target = new VulkanOffscreenRenderTarget(device, new FrameSize(64, 64));
+            target.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
+
+            VulkanWin32PanelPresenterRegistry.Present(target, panelHandle, CancellationToken.None);
+            Assert.True(VulkanWin32PanelPresenterRegistry.TryGetSwapchainExtentForTests(device, panelHandle, out var initialExtent));
+
+            var initialClient = Win32TestPanel.GetClientSize(panelHandle);
+            Assert.Equal((int)initialExtent.Width, initialClient.Width);
+            Assert.Equal((int)initialExtent.Height, initialClient.Height);
+
+            Win32TestPanel.ResizeClient(panelHandle, 480, 240);
+            PreviewPanelClientSizeTracker.NotifyClientSize(panelHandle, 480, 240);
+            VulkanWin32PanelPresenterRegistry.Present(target, panelHandle, CancellationToken.None);
+
+            Assert.True(VulkanWin32PanelPresenterRegistry.TryGetSwapchainExtentForTests(device, panelHandle, out var resizedExtent));
+            var resizedClient = Win32TestPanel.GetClientSize(panelHandle);
+            Assert.Equal(480, resizedClient.Width);
+            Assert.Equal(240, resizedClient.Height);
+            Assert.Equal((uint)resizedClient.Width, resizedExtent.Width);
+            Assert.Equal((uint)resizedClient.Height, resizedExtent.Height);
+
+            Win32TestPanel.ResizeClient(panelHandle, 320, 180);
+            PreviewPanelClientSizeTracker.NotifyClientSize(panelHandle, 320, 180);
+            for (var frame = 0; frame < 4; frame++)
+                VulkanWin32PanelPresenterRegistry.Present(target, panelHandle, CancellationToken.None);
+
+            Assert.True(VulkanWin32PanelPresenterRegistry.TryGetSwapchainExtentForTests(device, panelHandle, out var shrunkExtent));
+            Assert.Equal(320u, shrunkExtent.Width);
+            Assert.Equal(180u, shrunkExtent.Height);
+
+            Win32TestPanel.ResizeClient(panelHandle, 640, 360);
+            PreviewPanelClientSizeTracker.NotifyClientSize(panelHandle, 640, 360);
+            for (var frame = 0; frame < 4; frame++)
+                VulkanWin32PanelPresenterRegistry.Present(target, panelHandle, CancellationToken.None);
+
+            Assert.True(VulkanWin32PanelPresenterRegistry.TryGetSwapchainExtentForTests(device, panelHandle, out var restoredExtent));
+            Assert.Equal(640u, restoredExtent.Width);
+            Assert.Equal(360u, restoredExtent.Height);
+        }
+        finally
+        {
+            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            Win32TestPanel.Destroy(panelHandle);
+        }
+    }
+
+    [Fact]
+    public void Preview_present_does_not_block_when_swapchain_is_repeatedly_out_of_date()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        using var device = VulkanHeadlessDevice.Create();
+        if (!device.SupportsWin32Presentation)
+            return;
+
+        var panelHandle = Win32TestPanel.Create(width: 640, height: 360);
+        try
+        {
+            using var target = new VulkanOffscreenRenderTarget(device, new FrameSize(64, 64));
+            target.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
+
+            for (var resize = 0; resize < 6; resize++)
+            {
+                var width = 640 - resize * 40;
+                var height = 360 - resize * 20;
+                Win32TestPanel.ResizeClient(panelHandle, width, height);
+                PreviewPanelClientSizeTracker.NotifyClientSize(panelHandle, (uint)width, (uint)height);
+
+                for (var frame = 0; frame < 2; frame++)
+                    VulkanWin32PanelPresenterRegistry.Present(target, panelHandle, CancellationToken.None);
+            }
+
+            Assert.True(VulkanWin32PanelPresenterRegistry.TryGetSwapchainExtentForTests(device, panelHandle, out var extent));
+            Assert.Equal(440u, extent.Width);
+            Assert.Equal(260u, extent.Height);
+        }
+        finally
+        {
+            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            Win32TestPanel.Destroy(panelHandle);
+        }
+    }
+
+    [Fact]
     public void Preview_present_honors_cancellation_during_acquire()
     {
         if (!OperatingSystem.IsWindows())

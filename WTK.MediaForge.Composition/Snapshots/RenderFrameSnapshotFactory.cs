@@ -131,6 +131,7 @@ internal static class RenderFrameSnapshotFactory
                 Effects = sourceLayer.Effects,
                 SourceId = sourceLayer.SourceId,
                 LayoutMode = sourceLayer.LayoutMode,
+                LetterboxColor = sourceLayer.LetterboxColor,
                 ContentRotationOverride = sourceLayer.ContentRotationOverride,
                 BoundFrame = sourceLayer.Enabled
                     ? TryAcquireSourceFrame(

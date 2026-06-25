@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Core.Capture;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Windows;
 
 namespace WMF.Testing
@@ -71,8 +72,12 @@ namespace WMF.Testing
                     .AddSourceLayer(
                         main,
                         desktop,
-                        layer => layer.SetBounds(0, 0, 1920, 1080).SetFit())
-                    .OffscreenOutput("Program", main, 1920, 1080, out var output)
+                        layer => layer
+                            .SetBounds(0, 0, 1920, 1080)
+                            .SetFit()
+                            .SetLetterboxBlack())
+                    .OffscreenOutput("Program", main, 1920, 1080, out var output, output =>
+                        output.CanvasLayoutMode = LayoutMode.Stretch)
                     .BuildValidated();
 
                 await _engine.LoadProjectAsync(project);
@@ -80,6 +85,7 @@ namespace WMF.Testing
                 _outputId = output.Id;
                 // GPU preview experimental — harness only until presenter lifecycle is product-ready.
                 _previewSink = new PreviewPanelSink(pnlPreview.Handle);
+                _previewSink.NotifyPanelClientSizeChanged(pnlPreview.ClientSize.Width, pnlPreview.ClientSize.Height);
                 await _engine.AttachSinkAsync(_outputId, _previewSink);
                 await _engine.StartAsync();
 
@@ -105,6 +111,7 @@ namespace WMF.Testing
 
         private void pnlPreview_Resize(object? sender, EventArgs e)
         {
+            _previewSink?.NotifyPanelClientSizeChanged(pnlPreview.ClientSize.Width, pnlPreview.ClientSize.Height);
         }
 
         private void txtOverlay_TextChanged(object sender, EventArgs e)

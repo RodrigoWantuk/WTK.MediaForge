@@ -157,6 +157,8 @@ public static class MediaForgeProjectValidator
                     issues.Add(ValidationIssue.Error("drawobject.source.empty", $"Source layer '{drawObject.Name}' has empty SourceId."));
                 else if (!sourceIds.Contains(sourceLayer.SourceId))
                     issues.Add(ValidationIssue.Error("drawobject.source.missing", $"Source layer '{drawObject.Name}' references missing source {sourceLayer.SourceId}."));
+                else if (!sourceLayer.LetterboxColor.IsInRange())
+                    issues.Add(ValidationIssue.Error("drawobject.source.letterbox", $"Source layer '{drawObject.Name}' letterbox color out of range."));
                 break;
 
             case TextDrawObject text:

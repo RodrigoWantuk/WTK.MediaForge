@@ -108,6 +108,7 @@ public class PublicApiSurfaceTests
             ["WTK.MediaForge.Core"] =
             [
                 "WTK.MediaForge.Core.Capture.CaptureCenterPixel",
+                "WTK.MediaForge.Core.Capture.CaptureDuplicationSizes",
                 "WTK.MediaForge.Core.Capture.CaptureFrameStats",
                 "WTK.MediaForge.Core.Capture.CapturePreviewGeometry",
                 "WTK.MediaForge.Core.Capture.CaptureSessionInfo",
@@ -143,6 +144,8 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Core.Identifiers.RenderOutputTypeId",
                 "WTK.MediaForge.Core.Identifiers.SourceId",
                 "WTK.MediaForge.Core.Media.BlendMode",
+                "WTK.MediaForge.Core.Media.ContentFitLayout",
+                "WTK.MediaForge.Core.Media.ContentFitRect",
                 "WTK.MediaForge.Core.Media.FrameRate",
                 "WTK.MediaForge.Core.Media.LayoutMode",
                 "WTK.MediaForge.Core.Time.MediaTime"

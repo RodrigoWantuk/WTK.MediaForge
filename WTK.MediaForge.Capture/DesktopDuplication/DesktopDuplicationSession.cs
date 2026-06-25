@@ -11,6 +11,8 @@ internal sealed class DesktopDuplicationSession : IDisposable
 {
     private D3D11GpuDevice? _device;
     private IDXGIOutputDuplication? _duplication;
+    private FrameSize _logicalSize;
+    private DisplayRotation _rotation;
     private bool _disposed;
 
     public D3D11GpuDevice Device =>
@@ -52,11 +54,17 @@ internal sealed class DesktopDuplicationSession : IDisposable
         }
 
         var duplicationDescription = _duplication.Description;
-
-        TextureSize = new FrameSize(
+        var modeDescriptionSize = new FrameSize(
             duplicationDescription.ModeDescription.Width,
             duplicationDescription.ModeDescription.Height);
+
+        TextureSize = CaptureDuplicationSizes.ResolveNativeTextureSize(
+            modeDescriptionSize,
+            source.LogicalSize,
+            source.Rotation);
         TextureFormat = duplicationDescription.ModeDescription.Format;
+        _logicalSize = source.LogicalSize;
+        _rotation = source.Rotation;
 
         SessionInfo = new CaptureSessionInfo
         {
@@ -98,7 +106,11 @@ internal sealed class DesktopDuplicationSession : IDisposable
             description.Height != TextureSize.Height ||
             description.Format != TextureFormat)
         {
-            TextureSize = new FrameSize(description.Width, description.Height);
+            var acquiredSize = new FrameSize(description.Width, description.Height);
+            TextureSize = CaptureDuplicationSizes.ResolveNativeTextureSize(
+                acquiredSize,
+                _logicalSize,
+                _rotation);
             TextureFormat = description.Format;
 
             if (SessionInfo is not null)
@@ -132,6 +144,8 @@ internal sealed class DesktopDuplicationSession : IDisposable
 
         TextureSize = default;
         TextureFormat = default;
+        _logicalSize = default;
+        _rotation = DisplayRotation.None;
         SessionInfo = null;
     }
 

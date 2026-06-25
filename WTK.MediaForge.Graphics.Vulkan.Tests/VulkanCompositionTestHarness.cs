@@ -30,6 +30,7 @@ internal static class VulkanCompositionTestHarness
         Transform2D? transform = null,
         LayoutMode layerLayoutMode = LayoutMode.Fit,
         LayoutMode outputCanvasLayoutMode = LayoutMode.Fit,
+        ColorRgba? layerLetterboxColor = null,
         ColorRgba? outputLetterboxColor = null,
         ColorRgba? canvasBackgroundColor = null,
         float opacity = 1f,
@@ -62,6 +63,7 @@ internal static class VulkanCompositionTestHarness
                 SourceId = frame.SourceId,
                 Transform = resolvedTransform,
                 LayoutMode = layerLayoutMode,
+                LetterboxColor = layerLetterboxColor ?? ColorRgba.Transparent,
                 Opacity = opacity,
                 BoundFrame = frame
             })
@@ -210,7 +212,8 @@ internal static class VulkanCompositionTestHarness
         SourceId sourceId,
         Transform2D transform,
         float opacity = 1f,
-        LayoutMode layoutMode = LayoutMode.Stretch)
+        LayoutMode layoutMode = LayoutMode.Stretch,
+        ColorRgba? letterboxColor = null)
     {
         var frame = new GpuFrameReference
         {
@@ -229,6 +232,7 @@ internal static class VulkanCompositionTestHarness
             SourceId = sourceId,
             Transform = transform,
             LayoutMode = layoutMode,
+            LetterboxColor = letterboxColor ?? ColorRgba.Transparent,
             Opacity = opacity,
             BoundFrame = frame
         };

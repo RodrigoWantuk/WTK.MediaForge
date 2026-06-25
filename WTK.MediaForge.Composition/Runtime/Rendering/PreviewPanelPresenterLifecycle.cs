@@ -13,6 +13,7 @@ internal static class PreviewPanelPresenterLifecycle
         if (panelHandle == 0)
             return;
 
+        PreviewPanelClientSizeTracker.RemovePanel(panelHandle);
         _removePresentersForPanel?.Invoke(panelHandle);
     }
 }

@@ -151,8 +151,9 @@ public sealed class MediaForgeProjectBuilder
         MediaForgeCanvas canvas,
         int width,
         int height,
-        out MediaForgeRenderOutput output) =>
-        Output(name, canvas, new OffscreenOutputSettings(), width, height, out output);
+        out MediaForgeRenderOutput output,
+        Action<MediaForgeRenderOutput>? configure = null) =>
+        Output(name, canvas, new OffscreenOutputSettings(), width, height, out output, configure);
 
     public MediaForgeProjectBuilder Output(
         string name,
@@ -160,10 +161,12 @@ public sealed class MediaForgeProjectBuilder
         IRenderOutputSettings settings,
         int width,
         int height,
-        out MediaForgeRenderOutput output)
+        out MediaForgeRenderOutput output,
+        Action<MediaForgeRenderOutput>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         output = _editor.CreateOutput(name, canvas.Id, settings, ToFrameSize(width, height));
+        configure?.Invoke(output);
         return this;
     }
 
@@ -229,6 +232,21 @@ public sealed class SourceLayerBuilder
         _layer.LayoutMode = LayoutMode.Stretch;
         return this;
     }
+
+    public SourceLayerBuilder SetLetterboxColor(ColorRgba color)
+    {
+        if (!color.IsInRange())
+            throw new ArgumentOutOfRangeException(nameof(color), "Color components must be finite and between 0 and 1.");
+
+        _layer.LetterboxColor = color;
+        return this;
+    }
+
+    public SourceLayerBuilder SetLetterboxTransparent() =>
+        SetLetterboxColor(ColorRgba.Transparent);
+
+    public SourceLayerBuilder SetLetterboxBlack() =>
+        SetLetterboxColor(ColorRgba.Black);
 
     public SourceLayerBuilder SetOpacity(float opacity)
     {

@@ -9,14 +9,15 @@ public static class CapturePreviewGeometry
         FrameSize logicalSize,
         FrameSize textureSize)
     {
-        if (reportedRotation != DisplayRotation.None)
-            return (int)reportedRotation;
-
         if (logicalSize.Width == 0 || logicalSize.Height == 0)
             return (int)DisplayRotation.None;
 
         if (textureSize.Width == 0 || textureSize.Height == 0)
-            return (int)DisplayRotation.None;
+        {
+            return reportedRotation != DisplayRotation.None
+                ? (int)reportedRotation
+                : (int)DisplayRotation.None;
+        }
 
         bool logicalPortrait = logicalSize.Height > logicalSize.Width;
         bool texturePortrait = textureSize.Height > textureSize.Width;
@@ -27,10 +28,17 @@ public static class CapturePreviewGeometry
 
         if (orientationsDiffer || dimensionsSwapped)
         {
+            if (reportedRotation != DisplayRotation.None)
+                return (int)reportedRotation;
+
             return logicalPortrait
                 ? (int)DisplayRotation.Rotate90
                 : (int)DisplayRotation.Rotate270;
         }
+
+        // Metadata can report logical==texture while DXGI rotation still applies to duplication pixels.
+        if (reportedRotation != DisplayRotation.None)
+            return (int)reportedRotation;
 
         return (int)DisplayRotation.None;
     }
