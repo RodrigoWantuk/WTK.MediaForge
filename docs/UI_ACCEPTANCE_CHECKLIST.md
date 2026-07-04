@@ -33,6 +33,16 @@ Use this checklist when reviewing the first Avalonia implementation of WTK Media
 - [ ] Splitters preserve usable min sizes for explorer, preview, inspector, and bottom workbench.
 - [ ] No large unexplained empty area appears below the status bar.
 
+## Manual Resize Matrix
+
+- [ ] `1180 x 740`
+- [ ] `1366 x 768`
+- [ ] `1440 x 900`
+- [ ] `1920 x 1080`
+- [ ] `2560 x 1440`
+
+For each size, verify that explorer, preview, inspector, bottom workbench, and status bar remain visible, non-overlapping, and scrollable where needed.
+
 ## Theme
 
 - [ ] Dark theme is centralized in resources.

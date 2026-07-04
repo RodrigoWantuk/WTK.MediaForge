@@ -181,11 +181,11 @@ public sealed class LayerItemViewModel : ViewModelBase
         }
     }
 
-    public string VisibilityGlyph => IsVisible ? "VIS" : "HID";
+    public string VisibilityGlyph => IsVisible ? "Visible" : "Hidden";
 
     public string VisibilityTip => IsVisible ? "Layer visible" : "Layer hidden";
 
-    public string LockGlyph => IsLocked ? "LOCK" : "EDIT";
+    public string LockGlyph => IsLocked ? "Locked" : "Editable";
 
     public string LockTip => IsLocked ? "Layer locked" : "Layer editable";
 }
@@ -212,8 +212,16 @@ public sealed class EffectItemViewModel : ViewModelBase
     public bool IsEnabled
     {
         get => _isEnabled;
-        set => SetProperty(ref _isEnabled, value);
+        set
+        {
+            if (SetProperty(ref _isEnabled, value))
+            {
+                OnPropertyChanged(nameof(EnabledText));
+            }
+        }
     }
+
+    public string EnabledText => IsEnabled ? "Enabled" : "Disabled";
 
     public bool IsExpanded
     {
@@ -295,6 +303,8 @@ public sealed class AudioStripViewModel
     public string Peak { get; }
 
     public bool IsMuted { get; }
+
+    public string MuteText => IsMuted ? "Muted" : "Active";
 }
 
 public sealed class BottomTabViewModel : ViewModelBase

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using Avalonia.Threading;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.ViewModels;
 
@@ -46,9 +47,9 @@ public sealed class FakeStudioEngineService : IStudioEngineService
             return;
         }
 
-        Publish(new StudioEngineStatus(StudioEngineUiState.Starting, "Starting mock engine"));
+        Publish(new StudioEngineStatus(StudioEngineUiState.Starting, "Starting engine"));
         await Task.Delay(5, cancellationToken).ConfigureAwait(true);
-        Publish(new StudioEngineStatus(StudioEngineUiState.Running, "Mock engine running"));
+        Publish(new StudioEngineStatus(StudioEngineUiState.Running, "Engine running (mock)"));
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -58,7 +59,7 @@ public sealed class FakeStudioEngineService : IStudioEngineService
             return;
         }
 
-        Publish(new StudioEngineStatus(StudioEngineUiState.Stopping, "Stopping mock engine"));
+        Publish(new StudioEngineStatus(StudioEngineUiState.Stopping, "Stopping engine"));
         await Task.Delay(5, cancellationToken).ConfigureAwait(true);
         Publish(new StudioEngineStatus(StudioEngineUiState.Stopped, "Engine stopped"));
     }
@@ -72,9 +73,22 @@ public sealed class FakeStudioEngineService : IStudioEngineService
 
 public sealed class FakeStudioOutputService : IStudioOutputService
 {
+    private readonly IStudioClock _clock;
+
+    public FakeStudioOutputService(IStudioClock clock)
+    {
+        _clock = clock;
+    }
+
     public StudioOutputUiState StreamingState { get; private set; } = StudioOutputUiState.Ready;
 
     public StudioOutputUiState RecordingState { get; private set; } = StudioOutputUiState.Ready;
+
+    public DateTimeOffset? RecordingStartedAt { get; private set; }
+
+    public TimeSpan RecordingElapsed => RecordingState == StudioOutputUiState.Running && RecordingStartedAt is not null
+        ? _clock.Now - RecordingStartedAt.Value
+        : TimeSpan.Zero;
 
     public event EventHandler<StudioOutputStatusChangedEventArgs>? StatusChanged;
 
@@ -92,7 +106,17 @@ public sealed class FakeStudioOutputService : IStudioOutputService
         RecordingState = RecordingState == StudioOutputUiState.Running ? StudioOutputUiState.Stopping : StudioOutputUiState.Starting;
         Publish();
         await Task.Delay(5, cancellationToken).ConfigureAwait(true);
-        RecordingState = RecordingState == StudioOutputUiState.Stopping ? StudioOutputUiState.Ready : StudioOutputUiState.Running;
+        if (RecordingState == StudioOutputUiState.Stopping)
+        {
+            RecordingState = StudioOutputUiState.Ready;
+            RecordingStartedAt = null;
+        }
+        else
+        {
+            RecordingState = StudioOutputUiState.Running;
+            RecordingStartedAt = _clock.Now;
+        }
+
         Publish();
     }
 
@@ -101,6 +125,7 @@ public sealed class FakeStudioOutputService : IStudioOutputService
         cancellationToken.ThrowIfCancellationRequested();
         StreamingState = StudioOutputUiState.Ready;
         RecordingState = StudioOutputUiState.Ready;
+        RecordingStartedAt = null;
         Publish();
         return Task.CompletedTask;
     }
@@ -108,6 +133,77 @@ public sealed class FakeStudioOutputService : IStudioOutputService
     private void Publish()
     {
         StatusChanged?.Invoke(this, new StudioOutputStatusChangedEventArgs(StreamingState, RecordingState));
+    }
+}
+
+public sealed class SystemStudioClock : IStudioClock
+{
+    public DateTimeOffset Now => DateTimeOffset.Now;
+}
+
+public sealed class FakeStudioClock : IStudioClock
+{
+    public FakeStudioClock(DateTimeOffset? now = null)
+    {
+        Now = now ?? DateTimeOffset.UnixEpoch;
+    }
+
+    public DateTimeOffset Now { get; private set; }
+
+    public void Advance(TimeSpan value)
+    {
+        Now += value;
+    }
+}
+
+public sealed class AvaloniaStudioUiTimer : IStudioUiTimer
+{
+    private readonly DispatcherTimer _timer;
+
+    public AvaloniaStudioUiTimer()
+    {
+        _timer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _timer.Tick += (_, _) => Tick?.Invoke(this, EventArgs.Empty);
+    }
+
+    public event EventHandler? Tick;
+
+    public void Start()
+    {
+        _timer.Start();
+    }
+
+    public void Stop()
+    {
+        _timer.Stop();
+    }
+}
+
+public sealed class FakeStudioUiTimer : IStudioUiTimer
+{
+    public event EventHandler? Tick;
+
+    public bool IsRunning { get; private set; }
+
+    public void Start()
+    {
+        IsRunning = true;
+    }
+
+    public void Stop()
+    {
+        IsRunning = false;
+    }
+
+    public void RaiseTick()
+    {
+        if (IsRunning)
+        {
+            Tick?.Invoke(this, EventArgs.Empty);
+        }
     }
 }
 
@@ -175,14 +271,19 @@ public sealed class StudioInspectorPageFactory : IInspectorPageFactory
 
 public static class StudioServiceFactory
 {
-    public static StudioServiceBundle CreateFake(IEnumerable<DiagnosticLogItemViewModel>? diagnostics = null)
+    public static StudioServiceBundle CreateFake(
+        IEnumerable<DiagnosticLogItemViewModel>? diagnostics = null,
+        IStudioClock? clock = null,
+        IStudioUiTimer? uiTimer = null)
     {
+        clock ??= new SystemStudioClock();
         return new StudioServiceBundle(
             new FakeStudioProjectService(),
             new FakeStudioEngineService(),
-            new FakeStudioOutputService(),
+            new FakeStudioOutputService(clock),
             new StudioDiagnosticsService(diagnostics),
             new StudioSelectionService(),
-            new StudioInspectorPageFactory());
+            new StudioInspectorPageFactory(),
+            uiTimer ?? new AvaloniaStudioUiTimer());
     }
 }

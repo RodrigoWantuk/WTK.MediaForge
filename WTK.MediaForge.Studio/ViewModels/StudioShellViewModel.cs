@@ -14,6 +14,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private readonly IStudioDiagnosticsService _diagnosticsService;
     private readonly IStudioSelectionService _selectionService;
     private readonly IInspectorPageFactory _inspectorPageFactory;
+    private readonly IStudioUiTimer _uiTimer;
     private ProjectTreeItemViewModel? _selectedProjectItem;
     private LayerItemViewModel? _selectedLayer;
     private StudioSelectionState _currentSelection = StudioSelectionState.None;
@@ -30,7 +31,8 @@ public sealed class StudioShellViewModel : ViewModelBase
             services.OutputService,
             services.DiagnosticsService,
             services.SelectionService,
-            services.InspectorPageFactory)
+            services.InspectorPageFactory,
+            services.UiTimer)
     {
     }
 
@@ -40,7 +42,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         IStudioOutputService outputService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
-        IInspectorPageFactory inspectorPageFactory)
+        IInspectorPageFactory inspectorPageFactory,
+        IStudioUiTimer uiTimer)
     {
         _projectService = projectService;
         _engineService = engineService;
@@ -48,6 +51,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         _diagnosticsService = diagnosticsService;
         _selectionService = selectionService;
         _inspectorPageFactory = inspectorPageFactory;
+        _uiTimer = uiTimer;
 
         BottomWorkbench = new BottomWorkbenchViewModel(_diagnosticsService.Items);
 
@@ -70,6 +74,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         _engineService.StatusChanged += OnEngineStatusChanged;
         _outputService.StatusChanged += OnOutputStatusChanged;
         _selectionService.SelectionChanged += OnSelectionChanged;
+        _uiTimer.Tick += OnUiTimerTick;
+        _uiTimer.Start();
 
         ApplyProjectDocument();
         ApplyEngineStatus(_engineService.CurrentStatus);
@@ -207,6 +213,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         item.IsSelected = true;
         SelectedProjectItem = item;
         SelectedLayer = null;
+        ProjectExplorer.SelectFromOwner(item);
+        BottomWorkbench.SelectLayerFromOwner(null);
         _selectionService.Select(CreateSelection(item));
     }
 
@@ -225,6 +233,8 @@ public sealed class StudioShellViewModel : ViewModelBase
 
         SelectedProjectItem = null;
         SelectedLayer = layer;
+        ProjectExplorer.SelectFromOwner(null);
+        BottomWorkbench.SelectLayerFromOwner(layer);
         Preview.SelectedLayerName = layer.Name;
         _selectionService.Select(new StudioSelectionState(
             StudioSelectionKind.Layer,
@@ -321,12 +331,12 @@ public sealed class StudioShellViewModel : ViewModelBase
         {
             await _outputService.StopAllAsync(cancellationToken).ConfigureAwait(true);
             await _engineService.StopAsync(cancellationToken).ConfigureAwait(true);
-            LogAction("INFO", "Engine", "Mock engine stopped.");
+            LogAction("INFO", "Engine", "Engine stopped.");
             return;
         }
 
         await _engineService.StartAsync(cancellationToken).ConfigureAwait(true);
-        LogAction("INFO", "Engine", "Mock engine started.");
+        LogAction("INFO", "Engine", "Engine started in mock mode.");
     }
 
     private async Task ToggleStreamingAsync(CancellationToken cancellationToken)
@@ -381,7 +391,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         effect.IsEnabled = !effect.IsEnabled;
-        LogAction("INFO", "Effect", $"{effect.Name} enabled set to {effect.IsEnabled}.");
+        LogAction("INFO", "Effect", $"{effect.Name} set to {effect.EnabledText}.");
     }
 
     private void ClearProjectSelection()
@@ -450,20 +460,28 @@ public sealed class StudioShellViewModel : ViewModelBase
         };
         Toolbar.StateBadge = status.State switch
         {
-            StudioEngineUiState.Running => "Mock engine running",
-            StudioEngineUiState.Starting => "Mock engine starting",
-            StudioEngineUiState.Stopping => "Mock engine stopping",
-            StudioEngineUiState.Failed => "Mock engine failed",
-            _ => "Mock mode"
+            StudioEngineUiState.Running => "Engine running (mock)",
+            StudioEngineUiState.Starting => "Engine starting",
+            StudioEngineUiState.Stopping => "Engine stopping",
+            StudioEngineUiState.Failed => "Engine failed",
+            _ => "Preview mode"
         };
         TitleBar.EngineState = status.Message;
         StatusBar.EngineText = status.State.ToString();
-        StatusBar.GpuText = status.State == StudioEngineUiState.Running ? "GPU mock 31%" : "GPU mock idle";
+        StatusBar.GpuText = status.State == StudioEngineUiState.Running ? "GPU 31%" : "GPU idle";
 
         OnPropertyChanged(nameof(IsEngineRunning));
         ToggleEngineCommand.NotifyCanExecuteChanged();
         ToggleStreamingCommand.NotifyCanExecuteChanged();
         ToggleRecordingCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnUiTimerTick(object? sender, EventArgs e)
+    {
+        if (_outputService.RecordingState == StudioOutputUiState.Running)
+        {
+            ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
+        }
     }
 
     private void OnOutputStatusChanged(object? sender, StudioOutputStatusChangedEventArgs e)
@@ -486,8 +504,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         };
         Toolbar.RecordingButtonText = recordingState switch
         {
-            StudioOutputUiState.Starting => "Recording...",
-            StudioOutputUiState.Running => "Recording 00:00:00",
+            StudioOutputUiState.Starting => "Starting Recording...",
+            StudioOutputUiState.Running => $"Recording {_outputService.RecordingElapsed:hh\\:mm\\:ss}",
             StudioOutputUiState.Stopping => "Stopping...",
             StudioOutputUiState.Error => "Record Error",
             StudioOutputUiState.Planned => "Record Planned",
@@ -518,6 +536,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         if (e.Selection.Kind == StudioSelectionKind.Scene)
         {
             Preview.SceneName = e.Selection.DisplayName;
+            Preview.CanvasSize = "1920 x 1080";
+            Preview.FrameRate = "60 fps";
+            Preview.ZoomLabel = e.Selection.DisplayName == "Main Scene" ? "82%" : "Fit";
         }
     }
 

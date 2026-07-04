@@ -4,6 +4,11 @@ WTK MediaForge exposes a product API for authoring, validating, loading, and ope
 
 This document is the public API boundary. New public types must fit one of the public sections below. Runtime/GPU helper types must remain internal unless this document is updated first.
 
+The Avalonia Studio application is a product shell over these APIs. Its
+ViewModels, mock services, workspace editor state, dialogs, and visual controls
+are not part of the engine/library public API unless explicitly listed here in a
+future revision.
+
 ## 1. Public Authoring API
 
 The public authoring surface is the supported way for applications and tools to create or edit projects.

@@ -51,7 +51,7 @@
               <Border Classes="metric-card" Margin="0,0,0,6">
                 <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
                   <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                  <TextBlock Grid.Column="1" Text="{Binding IsEnabled}" Classes="accent" />
+                  <TextBlock Grid.Column="1" Text="{Binding EnabledText}" Classes="accent" />
                   <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" />
                 </Grid>
               </Border>

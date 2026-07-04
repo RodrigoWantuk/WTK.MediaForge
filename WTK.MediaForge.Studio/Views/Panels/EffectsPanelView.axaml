@@ -10,7 +10,7 @@
           <Border Classes="metric-card" Margin="0,0,0,8">
             <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto">
               <TextBlock Text="{Binding Name}" Classes="title" />
-              <Button Grid.Column="1" Content="{Binding IsEnabled}" Command="{Binding ToggleEnabledCommand}" CommandParameter="{Binding}" />
+              <Button Grid.Column="1" Content="{Binding EnabledText}" Command="{Binding ToggleEnabledCommand}" CommandParameter="{Binding}" />
               <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" Margin="0,6,0,0" />
               <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,*,*" ColumnSpacing="8" Margin="0,12,0,0" IsVisible="{Binding IsExpanded}">
                 <TextBox Text="Tolerance 0.32" IsReadOnly="True" />

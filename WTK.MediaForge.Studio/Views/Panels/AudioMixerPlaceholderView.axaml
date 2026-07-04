@@ -28,7 +28,7 @@
               </Border>
               <StackPanel Grid.Row="2" Spacing="2">
                 <TextBlock Text="{Binding Peak}" HorizontalAlignment="Center" Classes="mono secondary" />
-                <TextBlock Text="{Binding IsMuted}" HorizontalAlignment="Center" Classes="muted" />
+                <TextBlock Text="{Binding MuteText}" HorizontalAlignment="Center" Classes="muted" />
               </StackPanel>
             </Grid>
           </Border>

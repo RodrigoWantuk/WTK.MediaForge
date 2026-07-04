@@ -39,6 +39,20 @@ public interface IStudioProjectService
     Task SaveAsync(string? path, CancellationToken cancellationToken);
 }
 
+public interface IStudioClock
+{
+    DateTimeOffset Now { get; }
+}
+
+public interface IStudioUiTimer
+{
+    event EventHandler? Tick;
+
+    void Start();
+
+    void Stop();
+}
+
 public sealed class StudioEngineStatus
 {
     public StudioEngineStatus(StudioEngineUiState state, string message)
@@ -92,6 +106,10 @@ public interface IStudioOutputService
 
     StudioOutputUiState RecordingState { get; }
 
+    DateTimeOffset? RecordingStartedAt { get; }
+
+    TimeSpan RecordingElapsed { get; }
+
     event EventHandler<StudioOutputStatusChangedEventArgs>? StatusChanged;
 
     Task ToggleStreamingAsync(CancellationToken cancellationToken);
@@ -140,7 +158,8 @@ public sealed class StudioServiceBundle
         IStudioOutputService outputService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
-        IInspectorPageFactory inspectorPageFactory)
+        IInspectorPageFactory inspectorPageFactory,
+        IStudioUiTimer uiTimer)
     {
         ProjectService = projectService;
         EngineService = engineService;
@@ -148,6 +167,7 @@ public sealed class StudioServiceBundle
         DiagnosticsService = diagnosticsService;
         SelectionService = selectionService;
         InspectorPageFactory = inspectorPageFactory;
+        UiTimer = uiTimer;
     }
 
     public IStudioProjectService ProjectService { get; }
@@ -161,4 +181,6 @@ public sealed class StudioServiceBundle
     public IStudioSelectionService SelectionService { get; }
 
     public IInspectorPageFactory InspectorPageFactory { get; }
+
+    public IStudioUiTimer UiTimer { get; }
 }

@@ -1,13 +1,14 @@
 using WTK.MediaForge.Studio.Models;
+using WTK.MediaForge.Studio.Services;
 using WTK.MediaForge.Studio.ViewModels;
 
 namespace WTK.MediaForge.Studio.DesignData;
 
 public static class StudioDesignData
 {
-    public static StudioShellViewModel CreateShellViewModel()
+    public static StudioShellViewModel CreateShellViewModel(StudioServiceBundle? services = null)
     {
-        var shell = new StudioShellViewModel();
+        var shell = services is null ? new StudioShellViewModel() : new StudioShellViewModel(services);
 
         shell.LoadDesignData(
             CreateProjectGroups(),

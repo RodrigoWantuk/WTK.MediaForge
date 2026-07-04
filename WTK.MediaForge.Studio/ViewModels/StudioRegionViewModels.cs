@@ -30,7 +30,7 @@ public sealed class ToolbarViewModel : ViewModelBase
     private string _engineButtonText = "Start Engine";
     private string _streamButtonText = "Start Stream";
     private string _recordingButtonText = "Start Recording";
-    private string _stateBadge = "Mock mode";
+    private string _stateBadge = "Preview mode";
     private StudioEngineUiState _engineState = StudioEngineUiState.Stopped;
     private StudioOutputUiState _streamingState = StudioOutputUiState.Ready;
     private StudioOutputUiState _recordingState = StudioOutputUiState.Ready;
@@ -62,25 +62,109 @@ public sealed class ToolbarViewModel : ViewModelBase
     public StudioEngineUiState EngineState
     {
         get => _engineState;
-        set => SetProperty(ref _engineState, value);
+        set
+        {
+            if (SetProperty(ref _engineState, value))
+            {
+                OnPropertyChanged(nameof(IsEngineBusy));
+                OnPropertyChanged(nameof(EngineButtonClasses));
+            }
+        }
     }
 
     public StudioOutputUiState StreamingState
     {
         get => _streamingState;
-        set => SetProperty(ref _streamingState, value);
+        set
+        {
+            if (SetProperty(ref _streamingState, value))
+            {
+                OnPropertyChanged(nameof(IsStreamBusy));
+                OnPropertyChanged(nameof(StreamButtonClasses));
+            }
+        }
     }
 
     public StudioOutputUiState RecordingState
     {
         get => _recordingState;
-        set => SetProperty(ref _recordingState, value);
+        set
+        {
+            if (SetProperty(ref _recordingState, value))
+            {
+                OnPropertyChanged(nameof(IsRecordingBusy));
+                OnPropertyChanged(nameof(RecordingButtonClasses));
+            }
+        }
     }
+
+    public bool IsEngineBusy => EngineState is StudioEngineUiState.Starting or StudioEngineUiState.Stopping;
+
+    public bool IsStreamBusy => StreamingState is StudioOutputUiState.Starting or StudioOutputUiState.Stopping;
+
+    public bool IsRecordingBusy => RecordingState is StudioOutputUiState.Starting or StudioOutputUiState.Stopping;
+
+    public string EngineButtonClasses => EngineState switch
+    {
+        StudioEngineUiState.Running => "danger",
+        StudioEngineUiState.Failed => "danger",
+        StudioEngineUiState.Starting or StudioEngineUiState.Stopping => "busy",
+        _ => "primary"
+    };
+
+    public string StreamButtonClasses => StreamingState switch
+    {
+        StudioOutputUiState.Running => "primary live",
+        StudioOutputUiState.Error => "danger",
+        StudioOutputUiState.Starting or StudioOutputUiState.Stopping => "busy",
+        _ => "primary"
+    };
+
+    public string RecordingButtonClasses => RecordingState switch
+    {
+        StudioOutputUiState.Running => "danger recording",
+        StudioOutputUiState.Error => "danger",
+        StudioOutputUiState.Starting or StudioOutputUiState.Stopping => "busy",
+        _ => "danger"
+    };
 }
 
 public sealed class ProjectExplorerViewModel : ViewModelBase
 {
+    private ProjectTreeItemViewModel? _selectedItem;
+    private bool _suppressSelectionCommand;
+
     public ObservableCollection<ProjectTreeGroupViewModel> Groups { get; } = new();
+
+    public ProjectTreeItemViewModel? SelectedItem
+    {
+        get => _selectedItem;
+        set
+        {
+            if (!SetProperty(ref _selectedItem, value) || _suppressSelectionCommand || value is null)
+            {
+                return;
+            }
+
+            if (value.SelectCommand?.CanExecute(value) == true)
+            {
+                value.SelectCommand.Execute(value);
+            }
+        }
+    }
+
+    public void SelectFromOwner(ProjectTreeItemViewModel? item)
+    {
+        _suppressSelectionCommand = true;
+        try
+        {
+            SelectedItem = item;
+        }
+        finally
+        {
+            _suppressSelectionCommand = false;
+        }
+    }
 }
 
 public sealed class PreviewCanvasViewModel : ViewModelBase
@@ -89,14 +173,34 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     private bool _isSafeFrameVisible = true;
     private string _selectedLayerName = "Lower Third";
     private string _timingLabel = "16.6 ms";
+    private string _sceneName = "Main Scene";
+    private string _canvasSize = "1920 x 1080";
+    private string _frameRate = "60 fps";
+    private string _zoomLabel = "82%";
 
-    public string SceneName { get; set; } = "Main Scene";
+    public string SceneName
+    {
+        get => _sceneName;
+        set => SetProperty(ref _sceneName, value);
+    }
 
-    public string CanvasSize { get; set; } = "1920 x 1080";
+    public string CanvasSize
+    {
+        get => _canvasSize;
+        set => SetProperty(ref _canvasSize, value);
+    }
 
-    public string FrameRate { get; set; } = "60 fps";
+    public string FrameRate
+    {
+        get => _frameRate;
+        set => SetProperty(ref _frameRate, value);
+    }
 
-    public string ZoomLabel { get; set; } = "82%";
+    public string ZoomLabel
+    {
+        get => _zoomLabel;
+        set => SetProperty(ref _zoomLabel, value);
+    }
 
     public ICommand ToggleGridCommand { get; }
 
@@ -136,6 +240,8 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 public sealed class BottomWorkbenchViewModel : ViewModelBase
 {
     private BottomTabViewModel? _selectedTab;
+    private LayerItemViewModel? _selectedLayer;
+    private bool _suppressLayerSelectionCommand;
     private bool _isLayersSelected;
     private bool _isEffectsSelected;
     private bool _isTimelineSelected;
@@ -170,6 +276,36 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
     {
         get => _selectedTab;
         private set => SetProperty(ref _selectedTab, value);
+    }
+
+    public LayerItemViewModel? SelectedLayer
+    {
+        get => _selectedLayer;
+        set
+        {
+            if (!SetProperty(ref _selectedLayer, value) || _suppressLayerSelectionCommand || value is null)
+            {
+                return;
+            }
+
+            if (value.SelectCommand?.CanExecute(value) == true)
+            {
+                value.SelectCommand.Execute(value);
+            }
+        }
+    }
+
+    public void SelectLayerFromOwner(LayerItemViewModel? layer)
+    {
+        _suppressLayerSelectionCommand = true;
+        try
+        {
+            SelectedLayer = layer;
+        }
+        finally
+        {
+            _suppressLayerSelectionCommand = false;
+        }
     }
 
     public bool IsLayersSelected
@@ -252,7 +388,7 @@ public sealed class StatusBarViewModel : ViewModelBase
     private string _statusText = "Ready";
     private string _engineText = "Stopped";
     private string _framesText = "0 dropped";
-    private string _gpuText = "GPU mock idle";
+    private string _gpuText = "GPU idle";
     private string _outputText = "Preview idle";
 
     public string StatusText
