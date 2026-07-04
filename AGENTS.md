@@ -18,6 +18,15 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
 - Do not call GPU wait APIs without explicit timeout.
 - Every lifetime change must include tests.
 
+
+## Studio UI Exception
+
+A limited Avalonia Studio UI/mock track is allowed when it follows `docs/UI_STUDIO_DESIGN.md`, `docs/UI_REACT_TO_AVALONIA_MAPPING.md`, `docs/UI_IMPLEMENTATION_PLAN.md`, and `docs/UI_ACCEPTANCE_CHECKLIST.md`.
+
+This exception is UI-only. It permits dark-theme shell layout, mock/design data, Project Explorer, preview mock, Inspector, Bottom Workbench, diagnostics/performance/output-monitor mock panels, status bar, and fake command state.
+
+It does not permit real capture adapters, real media adapters, real recording/streaming/NDI/virtual-camera sinks, real audio pipeline work, real GPU preview integration before the approved preview reliability gate, or any legacy direct preview/capture path.
+
 ## Current Technical Contract
 
 - Submission cleanup must be `WaitForCompletionAsync(timeout, cancellationToken)` then `DisposeCompleted()`.

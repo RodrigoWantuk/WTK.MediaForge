@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             x:Class="WTK.MediaForge.Studio.Views.Inspectors.SceneInspectorView"
+             x:DataType="vm:SceneInspectorViewModel">
+  <StackPanel Margin="14" Spacing="14">
+    <StackPanel Spacing="3">
+      <TextBlock Text="{Binding Title}" Classes="title" />
+      <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
+    </StackPanel>
+
+    <Border Classes="metric-card">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+        <TextBlock Text="{Binding CanvasSize, StringFormat='Canvas: {0}'}" Classes="secondary" />
+        <TextBlock Grid.Row="1" Text="{Binding AspectRatio, StringFormat='Aspect: {0}'}" Classes="secondary" />
+        <TextBlock Grid.Row="2" Text="{Binding LayerCount, StringFormat='Layers: {0}'}" Classes="secondary" />
+        <TextBlock Grid.Row="3" Text="{Binding LinkedOutputs, StringFormat='Routes: {0}'}" Classes="secondary" TextWrapping="Wrap" />
+        <TextBlock Grid.Row="4" Text="{Binding CompositionMode}" Classes="accent" />
+      </Grid>
+    </Border>
+  </StackPanel>
+</UserControl>

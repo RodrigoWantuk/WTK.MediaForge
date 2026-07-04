@@ -1,0 +1,36 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Color x:Key="MfBackgroundColor">#10141B</Color>
+  <Color x:Key="MfSurface1Color">#151A22</Color>
+  <Color x:Key="MfSurface2Color">#1A2029</Color>
+  <Color x:Key="MfSurface3Color">#222A35</Color>
+  <Color x:Key="MfBorderColor">#2D3746</Color>
+  <Color x:Key="MfBorderStrongColor">#3F4D61</Color>
+  <Color x:Key="MfTextPrimaryColor">#F2F6FB</Color>
+  <Color x:Key="MfTextSecondaryColor">#A9B5C4</Color>
+  <Color x:Key="MfTextMutedColor">#697789</Color>
+  <Color x:Key="MfAccentColor">#38BDF8</Color>
+  <Color x:Key="MfAccentSoftColor">#12384D</Color>
+  <Color x:Key="MfSuccessColor">#36D399</Color>
+  <Color x:Key="MfWarningColor">#FBBF24</Color>
+  <Color x:Key="MfErrorColor">#FB7185</Color>
+  <Color x:Key="MfRecordColor">#F43F5E</Color>
+
+  <SolidColorBrush x:Key="MfBackgroundBrush" Color="{StaticResource MfBackgroundColor}" />
+  <SolidColorBrush x:Key="MfSurface1Brush" Color="{StaticResource MfSurface1Color}" />
+  <SolidColorBrush x:Key="MfSurface2Brush" Color="{StaticResource MfSurface2Color}" />
+  <SolidColorBrush x:Key="MfSurface3Brush" Color="{StaticResource MfSurface3Color}" />
+  <SolidColorBrush x:Key="MfBorderBrush" Color="{StaticResource MfBorderColor}" />
+  <SolidColorBrush x:Key="MfBorderStrongBrush" Color="{StaticResource MfBorderStrongColor}" />
+  <SolidColorBrush x:Key="MfTextPrimaryBrush" Color="{StaticResource MfTextPrimaryColor}" />
+  <SolidColorBrush x:Key="MfTextSecondaryBrush" Color="{StaticResource MfTextSecondaryColor}" />
+  <SolidColorBrush x:Key="MfTextMutedBrush" Color="{StaticResource MfTextMutedColor}" />
+  <SolidColorBrush x:Key="MfAccentBrush" Color="{StaticResource MfAccentColor}" />
+  <SolidColorBrush x:Key="MfAccentSoftBrush" Color="{StaticResource MfAccentSoftColor}" />
+  <SolidColorBrush x:Key="MfSuccessBrush" Color="{StaticResource MfSuccessColor}" />
+  <SolidColorBrush x:Key="MfWarningBrush" Color="{StaticResource MfWarningColor}" />
+  <SolidColorBrush x:Key="MfErrorBrush" Color="{StaticResource MfErrorColor}" />
+  <SolidColorBrush x:Key="MfRecordBrush" Color="{StaticResource MfRecordColor}" />
+  <SolidColorBrush x:Key="MfCheckerA" Color="#141922" />
+  <SolidColorBrush x:Key="MfCheckerB" Color="#111720" />
+</ResourceDictionary>

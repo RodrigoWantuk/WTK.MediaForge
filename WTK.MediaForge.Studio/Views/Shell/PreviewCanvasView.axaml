@@ -1,0 +1,108 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:controls="using:WTK.MediaForge.Studio.Views.Controls"
+             x:Class="WTK.MediaForge.Studio.Views.Shell.PreviewCanvasView"
+             x:DataType="vm:PreviewCanvasViewModel">
+  <Grid Background="{StaticResource MfBackgroundBrush}">
+    <controls:CheckerboardControl BrushA="{StaticResource MfCheckerA}"
+                                  BrushB="{StaticResource MfCheckerB}"
+                                  CellSize="20" />
+
+    <Viewbox Stretch="Uniform" Margin="34">
+      <Grid Width="960" Height="540">
+        <Border Background="{StaticResource MfSurface1Brush}"
+                BorderBrush="{StaticResource MfBorderStrongBrush}"
+                BorderThickness="1"
+                CornerRadius="4" />
+
+        <Grid IsVisible="{Binding IsGridVisible}" Opacity="0.35">
+          <Grid ColumnDefinitions="*,*,*,*,*" RowDefinitions="*,*,*,*">
+            <Border Grid.Column="1" BorderBrush="{StaticResource MfBorderBrush}" BorderThickness="1,0,0,0" />
+            <Border Grid.Column="2" BorderBrush="{StaticResource MfBorderBrush}" BorderThickness="1,0,0,0" />
+            <Border Grid.Column="3" BorderBrush="{StaticResource MfBorderBrush}" BorderThickness="1,0,0,0" />
+            <Border Grid.Row="1" Grid.ColumnSpan="5" BorderBrush="{StaticResource MfBorderBrush}" BorderThickness="0,1,0,0" />
+            <Border Grid.Row="2" Grid.ColumnSpan="5" BorderBrush="{StaticResource MfBorderBrush}" BorderThickness="0,1,0,0" />
+          </Grid>
+        </Grid>
+
+        <Border Margin="42"
+                BorderBrush="{StaticResource MfBorderBrush}"
+                BorderThickness="1"
+                IsVisible="{Binding IsSafeFrameVisible}" />
+
+        <Border Margin="54,46,54,112"
+                CornerRadius="8"
+                Background="{StaticResource MfSurface2Brush}"
+                BorderBrush="{StaticResource MfBorderBrush}"
+                BorderThickness="1">
+          <Grid>
+            <TextBlock Text="Desktop Capture"
+                       Classes="secondary"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Top"
+                       Margin="18" />
+            <Border Width="220"
+                    Height="140"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0,36,42,0"
+                    Background="{StaticResource MfSurface3Brush}"
+                    BorderBrush="{StaticResource MfAccentBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6">
+              <TextBlock Text="Webcam"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         Classes="secondary" />
+            </Border>
+            <Border Width="88"
+                    Height="52"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,42,30"
+                    Background="{StaticResource MfAccentSoftBrush}"
+                    BorderBrush="{StaticResource MfAccentBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6">
+              <TextBlock Text="Logo.png"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         FontSize="11"
+                         Classes="accent" />
+            </Border>
+          </Grid>
+        </Border>
+
+        <Border Height="74"
+                Width="650"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="96,0,0,58"
+                Background="{StaticResource MfAccentSoftBrush}"
+                BorderBrush="{StaticResource MfAccentBrush}"
+                BorderThickness="2"
+                CornerRadius="6">
+          <Grid ColumnDefinitions="5,*">
+            <Border Background="{StaticResource MfAccentBrush}" CornerRadius="4,0,0,4" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="18,0">
+              <TextBlock Text="{Binding SelectedLayerName}" FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Text="Selected layer overlay / transform handles" Classes="secondary" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Grid Width="650"
+              Height="74"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Bottom"
+              Margin="96,0,0,58">
+          <Border Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{StaticResource MfAccentBrush}" />
+          <Border Width="8" Height="8" HorizontalAlignment="Right" VerticalAlignment="Top" Background="{StaticResource MfAccentBrush}" />
+          <Border Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="{StaticResource MfAccentBrush}" />
+          <Border Width="8" Height="8" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="{StaticResource MfAccentBrush}" />
+        </Grid>
+      </Grid>
+    </Viewbox>
+  </Grid>
+</UserControl>

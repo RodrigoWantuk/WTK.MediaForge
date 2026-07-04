@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             x:Class="WTK.MediaForge.Studio.Views.Panels.DiagnosticsPanelView"
+             x:DataType="vm:BottomWorkbenchViewModel">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
+    <ItemsControl ItemsSource="{Binding Diagnostics}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:DiagnosticLogItemViewModel">
+          <Grid ColumnDefinitions="72,58,*" Margin="0,0,0,5">
+            <TextBlock Text="{Binding Time}" Classes="mono muted" />
+            <TextBlock Grid.Column="1" Text="{Binding Level}" Classes="mono accent" />
+            <TextBlock Grid.Column="2" Text="{Binding Message}" Classes="mono secondary" />
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </ScrollViewer>
+</UserControl>

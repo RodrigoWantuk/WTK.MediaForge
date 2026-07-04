@@ -1,0 +1,25 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WTK.MediaForge.Studio.App"
+             xmlns:local="using:WTK.MediaForge.Studio"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://WTK.MediaForge.Studio/Styles/Theme.axaml" />
+                <ResourceInclude Source="avares://WTK.MediaForge.Studio/Styles/Icons.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+  
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Typography.axaml" />
+        <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Controls.axaml" />
+    </Application.Styles>
+</Application>

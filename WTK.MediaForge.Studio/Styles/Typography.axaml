@@ -1,0 +1,49 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="TextBlock">
+    <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI" />
+    <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{StaticResource MfTextMutedBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.secondary">
+    <Setter Property="Foreground" Value="{StaticResource MfTextSecondaryBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.title">
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <Style Selector="TextBlock.panel-title">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource MfTextSecondaryBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.metric">
+    <Setter Property="FontSize" Value="20" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <Style Selector="TextBlock.mono">
+    <Setter Property="FontFamily" Value="Consolas, Cascadia Mono, Segoe UI Mono" />
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+
+  <Style Selector="TextBlock.accent">
+    <Setter Property="Foreground" Value="{StaticResource MfAccentBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.success">
+    <Setter Property="Foreground" Value="{StaticResource MfSuccessBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.warning">
+    <Setter Property="Foreground" Value="{StaticResource MfWarningBrush}" />
+  </Style>
+</Styles>

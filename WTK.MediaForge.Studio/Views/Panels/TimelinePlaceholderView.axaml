@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WTK.MediaForge.Studio.Views.Panels.TimelinePlaceholderView">
+  <Grid Margin="12">
+    <Border Classes="metric-card">
+      <Grid RowDefinitions="Auto,*">
+        <TextBlock Text="Timeline" Classes="title" />
+        <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="120,*,*,*,*" RowDefinitions="32,32,32">
+          <TextBlock Text="Intro.mp4" Classes="secondary" VerticalAlignment="Center" />
+          <Border Grid.Column="1" Grid.ColumnSpan="2" Background="{StaticResource MfAccentSoftBrush}" CornerRadius="5" Margin="4" />
+          <TextBlock Grid.Row="1" Text="BRB Loop" Classes="secondary" VerticalAlignment="Center" />
+          <Border Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Background="{StaticResource MfSurface3Brush}" CornerRadius="5" Margin="4" />
+          <TextBlock Grid.Row="2" Text="Lower Third" Classes="secondary" VerticalAlignment="Center" />
+          <Border Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Background="{StaticResource MfSurface2Brush}" BorderBrush="{StaticResource MfBorderBrush}" BorderThickness="1" CornerRadius="5" Margin="4" />
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

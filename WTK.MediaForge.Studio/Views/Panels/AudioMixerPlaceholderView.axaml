@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             x:Class="WTK.MediaForge.Studio.Views.Panels.AudioMixerPlaceholderView"
+             x:DataType="vm:BottomWorkbenchViewModel">
+  <Grid Margin="12" RowDefinitions="Auto,*">
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <TextBlock Text="Audio Mixer" Classes="title" />
+      <Border Classes="badge">
+        <TextBlock Text="BETA" Classes="warning" />
+      </Border>
+      <TextBlock Text="Future video/audio sync contract placeholder" Classes="secondary" VerticalAlignment="Center" />
+    </StackPanel>
+
+    <ItemsControl Grid.Row="1" ItemsSource="{Binding AudioStrips}" Margin="0,12,0,0">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Orientation="Horizontal" Spacing="10" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:AudioStripViewModel">
+          <Border Classes="metric-card" Width="120" Height="142">
+            <Grid RowDefinitions="Auto,*,Auto">
+              <TextBlock Text="{Binding Name}" Classes="secondary" />
+              <Border Grid.Row="1" Width="18" HorizontalAlignment="Center" Margin="0,10" Background="{StaticResource MfSurface3Brush}" CornerRadius="4">
+                <Border Height="62" VerticalAlignment="Bottom" Background="{StaticResource MfAccentBrush}" CornerRadius="4" />
+              </Border>
+              <StackPanel Grid.Row="2" Spacing="2">
+                <TextBlock Text="{Binding Peak}" HorizontalAlignment="Center" Classes="mono secondary" />
+                <TextBlock Text="{Binding IsMuted}" HorizontalAlignment="Center" Classes="muted" />
+              </StackPanel>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </Grid>
+</UserControl>

@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             x:Class="WTK.MediaForge.Studio.Views.Inspectors.LayerInspectorView"
+             x:DataType="vm:LayerInspectorViewModel">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="14" Spacing="14">
+      <StackPanel Spacing="3">
+        <TextBlock Text="{Binding Title}" Classes="title" />
+        <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
+      </StackPanel>
+
+      <StackPanel Spacing="7">
+        <TextBlock Text="Transform" Classes="panel-title" />
+        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+          <TextBox Text="{Binding X, Mode=OneWay}" IsReadOnly="True" PlaceholderText="X" />
+          <TextBox Grid.Column="1" Text="{Binding Y, Mode=OneWay}" IsReadOnly="True" PlaceholderText="Y" />
+          <TextBox Grid.Row="1" Text="{Binding Width, Mode=OneWay}" IsReadOnly="True" PlaceholderText="Width" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Height, Mode=OneWay}" IsReadOnly="True" PlaceholderText="Height" />
+        </Grid>
+      </StackPanel>
+
+      <StackPanel Spacing="7">
+        <TextBlock Text="Crop" Classes="panel-title" />
+        <TextBox Text="{Binding Crop, Mode=OneWay}" IsReadOnly="True" />
+      </StackPanel>
+
+      <StackPanel Spacing="7">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="Opacity" Classes="panel-title" />
+          <TextBlock Grid.Column="1" Text="{Binding Opacity, StringFormat='{}{0}%'}" Classes="secondary" />
+        </Grid>
+        <ProgressBar Minimum="0" Maximum="100" Value="{Binding Opacity}" Height="5" />
+      </StackPanel>
+
+      <StackPanel Spacing="7">
+        <TextBlock Text="Blend" Classes="panel-title" />
+        <TextBox Text="{Binding BlendMode, Mode=OneWay}" IsReadOnly="True" />
+      </StackPanel>
+
+      <StackPanel Spacing="7">
+        <TextBlock Text="Effects" Classes="panel-title" />
+        <ItemsControl ItemsSource="{Binding Effects}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:EffectItemViewModel">
+              <Border Classes="metric-card" Margin="0,0,0,6">
+                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="1" Text="{Binding IsEnabled}" Classes="accent" />
+                  <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

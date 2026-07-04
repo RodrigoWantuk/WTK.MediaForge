@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             x:Class="WTK.MediaForge.Studio.Views.Inspectors.PackageInspectorView"
+             x:DataType="vm:PackageInspectorViewModel">
+  <StackPanel Margin="14" Spacing="12">
+    <TextBlock Text="{Binding Title}" Classes="title" />
+    <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
+    <TextBlock Text="{Binding Items, StringFormat='Contains: {0}'}" Classes="secondary" />
+    <TextBlock Text="{Binding ImportMode}" Classes="accent" />
+  </StackPanel>
+</UserControl>

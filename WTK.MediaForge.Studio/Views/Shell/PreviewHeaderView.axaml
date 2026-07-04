@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             x:Class="WTK.MediaForge.Studio.Views.Shell.PreviewHeaderView"
+             x:DataType="vm:PreviewCanvasViewModel">
+  <Border Background="{StaticResource MfSurface1Brush}"
+          BorderBrush="{StaticResource MfBorderBrush}"
+          BorderThickness="0,0,0,1">
+    <Grid ColumnDefinitions="*,Auto" Margin="12,0">
+      <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+        <TextBlock Text="{Binding SceneName}" Classes="title" />
+        <TextBlock Text="{Binding CanvasSize}" Classes="secondary" />
+        <TextBlock Text="{Binding FrameRate}" Classes="secondary" />
+        <Border Classes="badge">
+          <TextBlock Text="{Binding TimingLabel}" Classes="success" FontSize="11" />
+        </Border>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Content="{Binding ZoomLabel}" Classes="flat" />
+        <Button Content="Grid" Command="{Binding ToggleGridCommand}" />
+        <Button Content="Safe" Command="{Binding ToggleSafeFrameCommand}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

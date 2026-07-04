@@ -1,0 +1,96 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="Button">
+    <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
+    <Setter Property="Background" Value="{StaticResource MfSurface2Brush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="10,5" />
+  </Style>
+
+  <Style Selector="Button.primary">
+    <Setter Property="Background" Value="{StaticResource MfAccentSoftBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
+  </Style>
+
+  <Style Selector="Button.danger">
+    <Setter Property="Background" Value="#321923" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfRecordBrush}" />
+  </Style>
+
+  <Style Selector="Button.flat">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="6,4" />
+  </Style>
+
+  <Style Selector="Border.panel">
+    <Setter Property="Background" Value="{StaticResource MfSurface1Brush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+  </Style>
+
+  <Style Selector="Border.project-row">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="7,6" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <Style Selector="Border.project-row.selected">
+    <Setter Property="Background" Value="{StaticResource MfAccentSoftBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.project-row.active">
+    <Setter Property="BorderBrush" Value="{StaticResource MfSuccessBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.layer-row">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="8,6" />
+    <Setter Property="Background" Value="{StaticResource MfSurface2Brush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.layer-row.selected">
+    <Setter Property="Background" Value="{StaticResource MfAccentSoftBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
+  </Style>
+
+  <Style Selector="Border.tab-pill">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="10,5" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <Style Selector="Border.tab-pill.selected">
+    <Setter Property="Background" Value="{StaticResource MfSurface3Brush}" />
+  </Style>
+
+  <Style Selector="Border.badge">
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="Padding" Value="5,1" />
+    <Setter Property="Background" Value="{StaticResource MfSurface3Brush}" />
+  </Style>
+
+  <Style Selector="Border.metric-card">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="Background" Value="{StaticResource MfSurface2Brush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="TextBox">
+    <Setter Property="Background" Value="{StaticResource MfSurface2Brush}" />
+    <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="CornerRadius" Value="5" />
+  </Style>
+</Styles>

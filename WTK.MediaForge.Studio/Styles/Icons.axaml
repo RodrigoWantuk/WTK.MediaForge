@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+  <sys:String x:Key="MfIconScene">SCN</sys:String>
+  <sys:String x:Key="MfIconSource">SRC</sys:String>
+  <sys:String x:Key="MfIconOutput">OUT</sys:String>
+  <sys:String x:Key="MfIconLayer">LYR</sys:String>
+</ResourceDictionary>

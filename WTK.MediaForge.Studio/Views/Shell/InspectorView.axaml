@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:inspectors="using:WTK.MediaForge.Studio.Views.Inspectors"
+             x:Class="WTK.MediaForge.Studio.Views.Shell.InspectorView"
+             x:DataType="vm:InspectorHostViewModel">
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="{x:Type vm:EmptyInspectorViewModel}">
+      <inspectors:EmptyInspectorView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:LayerInspectorViewModel}">
+      <inspectors:LayerInspectorView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SourceInspectorViewModel}">
+      <inspectors:SourceInspectorView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SceneInspectorViewModel}">
+      <inspectors:SceneInspectorView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:OutputInspectorViewModel}">
+      <inspectors:OutputInspectorView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:PresetInspectorViewModel}">
+      <inspectors:PresetInspectorView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:PackageInspectorViewModel}">
+      <inspectors:PackageInspectorView />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Border Background="{StaticResource MfSurface1Brush}"
+          BorderBrush="{StaticResource MfBorderBrush}"
+          BorderThickness="1,0,0,0">
+    <Grid RowDefinitions="38,*">
+      <Border Grid.Row="0"
+              BorderBrush="{StaticResource MfBorderBrush}"
+              BorderThickness="0,0,0,1"
+              Padding="12,0">
+        <TextBlock Text="Inspector" Classes="panel-title" VerticalAlignment="Center" />
+      </Border>
+      <ContentControl Grid.Row="1" Content="{Binding SelectedPage}" />
+    </Grid>
+  </Border>
+</UserControl>

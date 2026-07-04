@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:panels="using:WTK.MediaForge.Studio.Views.Panels"
+             x:Class="WTK.MediaForge.Studio.Views.Shell.BottomWorkbenchView"
+             x:DataType="vm:BottomWorkbenchViewModel">
+  <Border Background="{StaticResource MfSurface1Brush}"
+          BorderBrush="{StaticResource MfBorderBrush}"
+          BorderThickness="0,1,0,0">
+    <Grid RowDefinitions="38,*">
+      <Border Grid.Row="0"
+              BorderBrush="{StaticResource MfBorderBrush}"
+              BorderThickness="0,0,0,1">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Tabs}" Margin="8,0">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="4" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:BottomTabViewModel">
+                <Button Classes="flat"
+                        Command="{Binding SelectCommand}"
+                        CommandParameter="{Binding}">
+                  <Border Classes="tab-pill" Classes.selected="{Binding IsSelected}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="{Binding Title}" Classes="secondary" />
+                      <Border Classes="badge" IsVisible="{Binding HasBadge}">
+                        <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="10" />
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+
+      <Grid Grid.Row="1">
+        <panels:LayersPanelView IsVisible="{Binding IsLayersSelected}" />
+        <panels:EffectsPanelView IsVisible="{Binding IsEffectsSelected}" />
+        <panels:TimelinePlaceholderView IsVisible="{Binding IsTimelineSelected}" />
+        <panels:DiagnosticsPanelView IsVisible="{Binding IsDiagnosticsSelected}" />
+        <panels:PerformancePanelView IsVisible="{Binding IsPerformanceSelected}" />
+        <panels:OutputMonitorPanelView IsVisible="{Binding IsOutputMonitorSelected}" />
+        <panels:AudioMixerPlaceholderView IsVisible="{Binding IsAudioMixerSelected}" />
+      </Grid>
+    </Grid>
+  </Border>
+</UserControl>

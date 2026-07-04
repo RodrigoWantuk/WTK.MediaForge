@@ -86,6 +86,38 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Sink attach timeout is owned by `RenderOutputSinkDispatcher`; the engine does not wrap that operation in a competing timeout that could abandon dispatcher cleanup before the sink observes cancellation.
 - Source/output type catalogs now include product contracts for animated images, Lottie, IP camera, encoded file, SRT, RTSP, and HLS. These are project/API contracts only until runtime adapters land.
 
+
+## Studio UI Direction
+
+WTK MediaForge Studio is the planned Avalonia desktop application for users who want a complete tool instead of direct API usage. The approved UI direction is documented in:
+
+- `docs/UI_STUDIO_DESIGN.md`
+- `docs/UI_REACT_TO_AVALONIA_MAPPING.md`
+- `docs/UI_IMPLEMENTATION_PLAN.md`
+- `docs/UI_ACCEPTANCE_CHECKLIST.md`
+
+The Studio shell must be built with Avalonia UI, C#, MVVM, CommunityToolkit.Mvvm, compiled bindings, centralized dark theme resources, and mock/design data for the first milestone.
+
+The downloaded React/Lovable prototype is a visual/component-behavior reference only. Do not embed React, Tailwind, WebView, Vite, Electron, or browser runtime dependencies into the Studio app. Translate the prototype into Avalonia controls, styles, resources, view models, commands, and data templates.
+
+Allowed in the UI track before runtime gates open:
+
+- Avalonia shell layout;
+- centralized dark theme;
+- mock Project Explorer, canvas, inspector, bottom workbench, output monitor, diagnostics, performance, and future audio placeholder;
+- fake Start/Stop/Stream/Record UI state;
+- ViewModel tests for selection, command state, inspector resolution, and mock status.
+
+Not allowed in the UI track before runtime gates open:
+
+- real webcam/desktop/media/NDI/RTSP adapters;
+- real recording/streaming/virtual-camera/NDI outputs;
+- real audio capture/mix/mux/equalization;
+- real native/GPU preview integration before the `PreviewPanelSink` reliability milestone;
+- resurrecting old direct preview/capture paths.
+
+The UI must hide internal GPU/backend details. Users may see health/status concepts such as backend, FPS, frame time, dropped frames, output health, source buffering, and warnings, but must not manipulate native handles, leases, fences, keyed mutexes, command buffers, or backend-owned surfaces.
+
 ## Remaining Blockers
 
 The application shell must not re-enable capture preview until it is wired through the hardened runtime path. The old direct `DesktopDuplicationCaptureSource -> VulkanPreviewRenderer` path must not return.

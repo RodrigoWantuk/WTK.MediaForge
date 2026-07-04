@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+        xmlns:shell="using:WTK.MediaForge.Studio.Views.Shell"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        x:Class="WTK.MediaForge.Studio.Views.MainWindow"
+        x:DataType="vm:StudioShellViewModel"
+        mc:Ignorable="d"
+        d:DesignWidth="1440"
+        d:DesignHeight="900"
+        Width="1440"
+        Height="900"
+        MinWidth="1180"
+        MinHeight="740"
+        Background="{StaticResource MfBackgroundBrush}"
+        Title="WTK MediaForge Studio">
+
+  <Grid RowDefinitions="36,44,*,240,27"
+        Background="{StaticResource MfBackgroundBrush}">
+    <shell:StudioTitleBarView Grid.Row="0" />
+    <shell:StudioToolbarView Grid.Row="1" />
+
+    <Grid Grid.Row="2" ColumnDefinitions="256,*,320">
+      <shell:ProjectExplorerView Grid.Column="0"
+                                 DataContext="{Binding ProjectExplorer}" />
+
+      <Grid Grid.Column="1" RowDefinitions="44,*">
+        <shell:PreviewHeaderView Grid.Row="0"
+                                 DataContext="{Binding Preview}" />
+        <shell:PreviewCanvasView Grid.Row="1"
+                                 DataContext="{Binding Preview}" />
+      </Grid>
+
+      <shell:InspectorView Grid.Column="2"
+                           DataContext="{Binding Inspector}" />
+    </Grid>
+
+    <shell:BottomWorkbenchView Grid.Row="3"
+                               DataContext="{Binding BottomWorkbench}" />
+    <shell:StudioStatusBarView Grid.Row="4"
+                               DataContext="{Binding StatusBar}" />
+  </Grid>
+</Window>

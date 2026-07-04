@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             x:Class="WTK.MediaForge.Studio.Views.Inspectors.PresetInspectorView"
+             x:DataType="vm:PresetInspectorViewModel">
+  <StackPanel Margin="14" Spacing="12">
+    <TextBlock Text="{Binding Title}" Classes="title" />
+    <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
+    <TextBlock Text="{Binding Canvas, StringFormat='Canvas: {0}'}" Classes="secondary" />
+    <TextBlock Text="{Binding FrameRate, StringFormat='Frame rate: {0}'}" Classes="secondary" />
+    <TextBlock Text="{Binding OutputProfile, StringFormat='Output: {0}'}" Classes="secondary" />
+  </StackPanel>
+</UserControl>

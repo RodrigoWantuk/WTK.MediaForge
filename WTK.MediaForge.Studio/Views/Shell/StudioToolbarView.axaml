@@ -1,0 +1,27 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             x:Class="WTK.MediaForge.Studio.Views.Shell.StudioToolbarView"
+             x:DataType="vm:StudioShellViewModel">
+  <Border Background="{StaticResource MfSurface2Brush}"
+          BorderBrush="{StaticResource MfBorderBrush}"
+          BorderThickness="0,0,0,1">
+    <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,0">
+      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Content="New" Command="{Binding NewProjectCommand}" />
+        <Button Content="Open" Command="{Binding OpenProjectCommand}" />
+        <Button Content="Save" Command="{Binding SaveProjectCommand}" Classes="primary" />
+        <Border Width="1" Height="22" Background="{StaticResource MfBorderBrush}" Margin="6,0" />
+        <Button Content="Add Source" Command="{Binding AddSourceCommand}" />
+        <Button Content="Add Scene" Command="{Binding AddSceneCommand}" />
+      </StackPanel>
+
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Content="{Binding Toolbar.EngineButtonText}" Command="{Binding ToggleEngineCommand}" Classes="primary" />
+        <Button Content="{Binding Toolbar.StreamButtonText}" Command="{Binding ToggleStreamingCommand}" />
+        <Button Content="{Binding Toolbar.RecordingButtonText}" Command="{Binding ToggleRecordingCommand}" Classes="danger" />
+        <Button Content="Settings" Command="{Binding SettingsCommand}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>
