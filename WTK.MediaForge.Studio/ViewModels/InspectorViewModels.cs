@@ -33,16 +33,26 @@ public sealed class EmptyInspectorViewModel : InspectorPageViewModel
 
 public sealed class LayerInspectorViewModel : InspectorPageViewModel
 {
+    private double _x;
+    private double _y;
+    private double _width;
+    private double _height;
+    private double _rotationDegrees;
+    private double _opacity;
+    private StudioCropThickness _crop;
+    private StudioBlendMode _blendMode;
+
     public LayerInspectorViewModel(string layerName, string sourceName)
         : base(StudioSelectionKind.Layer, layerName, sourceName, "LYR")
     {
-        X = "96";
-        Y = "684";
-        Width = "1,280";
-        Height = "148";
-        Crop = "0 / 0 / 0 / 0";
+        _x = 96;
+        _y = 684;
+        _width = 1280;
+        _height = 148;
+        _rotationDegrees = 0;
+        _crop = new StudioCropThickness(0, 0, 0, 0);
         Opacity = 92;
-        BlendMode = "Alpha";
+        BlendMode = StudioBlendMode.Alpha;
         Effects = new ObservableCollection<EffectItemViewModel>
         {
             new("Chroma Key", "Green spill tightened, edge smooth 0.24", true, true),
@@ -50,19 +60,61 @@ public sealed class LayerInspectorViewModel : InspectorPageViewModel
         };
     }
 
-    public string X { get; }
+    public double X
+    {
+        get => _x;
+        set => SetProperty(ref _x, value);
+    }
 
-    public string Y { get; }
+    public double Y
+    {
+        get => _y;
+        set => SetProperty(ref _y, value);
+    }
 
-    public string Width { get; }
+    public double Width
+    {
+        get => _width;
+        set => SetProperty(ref _width, value);
+    }
 
-    public string Height { get; }
+    public double Height
+    {
+        get => _height;
+        set => SetProperty(ref _height, value);
+    }
 
-    public string Crop { get; }
+    public double RotationDegrees
+    {
+        get => _rotationDegrees;
+        set => SetProperty(ref _rotationDegrees, value);
+    }
 
-    public int Opacity { get; }
+    public StudioCropThickness Crop
+    {
+        get => _crop;
+        set
+        {
+            if (SetProperty(ref _crop, value))
+            {
+                OnPropertyChanged(nameof(CropText));
+            }
+        }
+    }
 
-    public string BlendMode { get; }
+    public string CropText => Crop.ToString();
+
+    public double Opacity
+    {
+        get => _opacity;
+        set => SetProperty(ref _opacity, Math.Clamp(value, 0, 100));
+    }
+
+    public StudioBlendMode BlendMode
+    {
+        get => _blendMode;
+        set => SetProperty(ref _blendMode, value);
+    }
 
     public ObservableCollection<EffectItemViewModel> Effects { get; }
 }
@@ -74,8 +126,9 @@ public sealed class SourceInspectorViewModel : InspectorPageViewModel
     {
         SourceType = sourceType;
         Endpoint = endpoint;
-        Resolution = sourceType.Contains("Desktop", StringComparison.OrdinalIgnoreCase) ? "2560 x 1440" : "1920 x 1080";
-        FrameRate = sourceType.Contains("Media", StringComparison.OrdinalIgnoreCase) ? "29.97 fps" : "60 fps";
+        Width = sourceType.Contains("desktop", StringComparison.OrdinalIgnoreCase) ? 2560 : 1920;
+        Height = sourceType.Contains("desktop", StringComparison.OrdinalIgnoreCase) ? 1440 : 1080;
+        FrameRate = sourceType.Contains("media", StringComparison.OrdinalIgnoreCase) ? 29.97 : 60;
         Status = "Healthy";
     }
 
@@ -83,9 +136,15 @@ public sealed class SourceInspectorViewModel : InspectorPageViewModel
 
     public string Endpoint { get; }
 
-    public string Resolution { get; }
+    public int Width { get; }
 
-    public string FrameRate { get; }
+    public int Height { get; }
+
+    public string ResolutionText => $"{Width} x {Height}";
+
+    public double FrameRate { get; }
+
+    public string FrameRateText => $"{FrameRate:0.##} fps";
 
     public string Status { get; }
 

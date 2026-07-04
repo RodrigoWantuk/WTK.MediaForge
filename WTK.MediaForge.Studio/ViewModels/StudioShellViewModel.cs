@@ -2,34 +2,78 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using WTK.MediaForge.Studio.Models;
+using WTK.MediaForge.Studio.Services;
 
 namespace WTK.MediaForge.Studio.ViewModels;
 
 public sealed class StudioShellViewModel : ViewModelBase
 {
+    private readonly IStudioProjectService _projectService;
+    private readonly IStudioEngineService _engineService;
+    private readonly IStudioOutputService _outputService;
+    private readonly IStudioDiagnosticsService _diagnosticsService;
+    private readonly IStudioSelectionService _selectionService;
+    private readonly IInspectorPageFactory _inspectorPageFactory;
     private ProjectTreeItemViewModel? _selectedProjectItem;
     private LayerItemViewModel? _selectedLayer;
-    private bool _isEngineRunning;
-    private bool _isStreaming;
-    private bool _isRecording;
+    private StudioSelectionState _currentSelection = StudioSelectionState.None;
 
     public StudioShellViewModel()
+        : this(StudioServiceFactory.CreateFake())
     {
-        NewProjectCommand = new RelayCommand(() => LogAction("INFO", "Created a new mock project shell."));
-        OpenProjectCommand = new AsyncRelayCommand(() => RunFakeAsync("Opened project package."));
-        SaveProjectCommand = new AsyncRelayCommand(() => RunFakeAsync("Saved project package."));
-        AddSourceCommand = new RelayCommand(() => LogAction("INFO", "Prepared Add Source dialog state."));
-        AddSceneCommand = new RelayCommand(() => LogAction("INFO", "Added empty scene placeholder."));
-        SettingsCommand = new RelayCommand(() => LogAction("INFO", "Opened settings placeholder."));
-        ToggleEngineCommand = new RelayCommand(ToggleEngine);
-        ToggleStreamingCommand = new RelayCommand(ToggleStreaming, () => IsEngineRunning);
-        ToggleRecordingCommand = new RelayCommand(ToggleRecording, () => IsEngineRunning);
+    }
+
+    public StudioShellViewModel(StudioServiceBundle services)
+        : this(
+            services.ProjectService,
+            services.EngineService,
+            services.OutputService,
+            services.DiagnosticsService,
+            services.SelectionService,
+            services.InspectorPageFactory)
+    {
+    }
+
+    public StudioShellViewModel(
+        IStudioProjectService projectService,
+        IStudioEngineService engineService,
+        IStudioOutputService outputService,
+        IStudioDiagnosticsService diagnosticsService,
+        IStudioSelectionService selectionService,
+        IInspectorPageFactory inspectorPageFactory)
+    {
+        _projectService = projectService;
+        _engineService = engineService;
+        _outputService = outputService;
+        _diagnosticsService = diagnosticsService;
+        _selectionService = selectionService;
+        _inspectorPageFactory = inspectorPageFactory;
+
+        BottomWorkbench = new BottomWorkbenchViewModel(_diagnosticsService.Items);
+
+        NewProjectCommand = new AsyncRelayCommand(NewProjectAsync);
+        OpenProjectCommand = new AsyncRelayCommand(OpenProjectAsync);
+        SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
+        AddSourceCommand = new RelayCommand(() => LogAction("INFO", "Project", "Prepared Add Source dialog state."));
+        AddSceneCommand = new RelayCommand(() => LogAction("INFO", "Project", "Added empty scene placeholder."));
+        SettingsCommand = new RelayCommand(() => LogAction("INFO", "Studio", "Opened settings placeholder."));
+        ToggleEngineCommand = new AsyncRelayCommand(ToggleEngineAsync, CanToggleEngine);
+        ToggleStreamingCommand = new AsyncRelayCommand(ToggleStreamingAsync, CanToggleStreaming);
+        ToggleRecordingCommand = new AsyncRelayCommand(ToggleRecordingAsync, CanToggleRecording);
         SelectProjectItemCommand = new RelayCommand<ProjectTreeItemViewModel>(SelectProjectItem, item => item is not null);
         SelectLayerCommand = new RelayCommand<LayerItemViewModel>(SelectLayer, layer => layer is not null);
         ToggleLayerVisibilityCommand = new RelayCommand<LayerItemViewModel>(ToggleLayerVisibility, layer => layer is not null);
         ToggleLayerLockCommand = new RelayCommand<LayerItemViewModel>(ToggleLayerLock, layer => layer is not null);
         ToggleEffectEnabledCommand = new RelayCommand<EffectItemViewModel>(ToggleEffectEnabled, effect => effect is not null);
-        ReconnectSourceCommand = new RelayCommand(() => LogAction("INFO", "Queued mock source reconnect."));
+        ReconnectSourceCommand = new RelayCommand(() => LogAction("INFO", "Source", "Queued mock source reconnect."));
+
+        _engineService.StatusChanged += OnEngineStatusChanged;
+        _outputService.StatusChanged += OnOutputStatusChanged;
+        _selectionService.SelectionChanged += OnSelectionChanged;
+
+        ApplyProjectDocument();
+        ApplyEngineStatus(_engineService.CurrentStatus);
+        ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
     }
 
     public TitleBarViewModel TitleBar { get; } = new();
@@ -42,15 +86,15 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public InspectorHostViewModel Inspector { get; } = new();
 
-    public BottomWorkbenchViewModel BottomWorkbench { get; } = new();
+    public BottomWorkbenchViewModel BottomWorkbench { get; }
 
     public StatusBarViewModel StatusBar { get; } = new();
 
-    public ICommand NewProjectCommand { get; }
+    public IAsyncRelayCommand NewProjectCommand { get; }
 
-    public ICommand OpenProjectCommand { get; }
+    public IAsyncRelayCommand OpenProjectCommand { get; }
 
-    public ICommand SaveProjectCommand { get; }
+    public IAsyncRelayCommand SaveProjectCommand { get; }
 
     public ICommand AddSourceCommand { get; }
 
@@ -58,11 +102,11 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public ICommand SettingsCommand { get; }
 
-    public IRelayCommand ToggleEngineCommand { get; }
+    public IAsyncRelayCommand ToggleEngineCommand { get; }
 
-    public IRelayCommand ToggleStreamingCommand { get; }
+    public IAsyncRelayCommand ToggleStreamingCommand { get; }
 
-    public IRelayCommand ToggleRecordingCommand { get; }
+    public IAsyncRelayCommand ToggleRecordingCommand { get; }
 
     public IRelayCommand<ProjectTreeItemViewModel> SelectProjectItemCommand { get; }
 
@@ -76,44 +120,16 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public ICommand ReconnectSourceCommand { get; }
 
-    public bool IsEngineRunning
-    {
-        get => _isEngineRunning;
-        private set
-        {
-            if (SetProperty(ref _isEngineRunning, value))
-            {
-                ToggleStreamingCommand.NotifyCanExecuteChanged();
-                ToggleRecordingCommand.NotifyCanExecuteChanged();
-                UpdateEngineStateText();
-            }
-        }
-    }
+    public bool IsEngineRunning => _engineService.CurrentStatus.State == StudioEngineUiState.Running;
 
-    public bool IsStreaming
-    {
-        get => _isStreaming;
-        private set
-        {
-            if (SetProperty(ref _isStreaming, value))
-            {
-                Toolbar.StreamButtonText = value ? "Stop Stream" : "Start Stream";
-                UpdateOutputStatus();
-            }
-        }
-    }
+    public bool IsStreaming => _outputService.StreamingState == StudioOutputUiState.Running;
 
-    public bool IsRecording
+    public bool IsRecording => _outputService.RecordingState == StudioOutputUiState.Running;
+
+    public StudioSelectionState CurrentSelection
     {
-        get => _isRecording;
-        private set
-        {
-            if (SetProperty(ref _isRecording, value))
-            {
-                Toolbar.RecordingButtonText = value ? "Stop Recording" : "Start Recording";
-                UpdateOutputStatus();
-            }
-        }
+        get => _currentSelection;
+        private set => SetProperty(ref _currentSelection, value);
     }
 
     public ProjectTreeItemViewModel? SelectedProjectItem
@@ -140,7 +156,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         Replace(ProjectExplorer.Groups, projectGroups);
         Replace(BottomWorkbench.Layers, layers);
         Replace(BottomWorkbench.Effects, effects);
-        Replace(BottomWorkbench.Diagnostics, diagnostics);
+        Replace(_diagnosticsService.Items, diagnostics);
         Replace(BottomWorkbench.PerformanceMetrics, performanceMetrics);
         Replace(BottomWorkbench.Outputs, outputs);
         Replace(BottomWorkbench.AudioStrips, audioStrips);
@@ -186,22 +202,12 @@ public sealed class StudioShellViewModel : ViewModelBase
             return;
         }
 
+        ClearLayerSelection();
         ClearProjectSelection();
         item.IsSelected = true;
         SelectedProjectItem = item;
-
-        Inspector.SelectedPage = item.Kind switch
-        {
-            StudioProjectItemKind.Scene => new SceneInspectorViewModel(item.Name, item.Name == "Main Scene" ? "Preview, Recording MP4, RTMP Twitch" : "Preview"),
-            StudioProjectItemKind.Source => CreateSourceInspector(item),
-            StudioProjectItemKind.Output => CreateOutputInspector(item),
-            StudioProjectItemKind.Preset => new PresetInspectorViewModel(item.Name, item.Metadata),
-            StudioProjectItemKind.Package => new PackageInspectorViewModel(item.Name, item.Metadata),
-            _ => new EmptyInspectorViewModel()
-        };
-
-        StatusBar.StatusText = $"Selected {item.Name}";
-        Preview.SceneName = item.Kind == StudioProjectItemKind.Scene ? item.Name : Preview.SceneName;
+        SelectedLayer = null;
+        _selectionService.Select(CreateSelection(item));
     }
 
     public void SelectLayer(LayerItemViewModel? layer)
@@ -211,15 +217,22 @@ public sealed class StudioShellViewModel : ViewModelBase
             return;
         }
 
+        ClearProjectSelection();
         foreach (var item in BottomWorkbench.Layers)
         {
             item.IsSelected = ReferenceEquals(item, layer);
         }
 
+        SelectedProjectItem = null;
         SelectedLayer = layer;
         Preview.SelectedLayerName = layer.Name;
-        Inspector.SelectedPage = new LayerInspectorViewModel(layer.Name, layer.Source);
-        StatusBar.StatusText = $"Selected layer {layer.Name}";
+        _selectionService.Select(new StudioSelectionState(
+            StudioSelectionKind.Layer,
+            layer.Id,
+            layer.Name,
+            layer.Type,
+            layer.Type,
+            layer.Source));
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> source)
@@ -257,39 +270,85 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
     }
 
-    private void ToggleEngine()
+    private async Task NewProjectAsync(CancellationToken cancellationToken)
     {
-        IsEngineRunning = !IsEngineRunning;
-
-        if (!IsEngineRunning)
-        {
-            IsStreaming = false;
-            IsRecording = false;
-        }
-
-        LogAction("INFO", IsEngineRunning ? "Mock engine started." : "Mock engine stopped.");
+        await _projectService.NewAsync(cancellationToken).ConfigureAwait(true);
+        ApplyProjectDocument();
+        LogAction("INFO", "Project", "Created a new mock project shell.");
     }
 
-    private void ToggleStreaming()
+    private async Task OpenProjectAsync(CancellationToken cancellationToken)
     {
-        if (!IsEngineRunning)
+        await _projectService.OpenAsync("mock-project.mforge.json", cancellationToken).ConfigureAwait(true);
+        ApplyProjectDocument();
+        LogAction("INFO", "Project", "Opened project package.");
+    }
+
+    private async Task SaveProjectAsync(CancellationToken cancellationToken)
+    {
+        await _projectService.SaveAsync(null, cancellationToken).ConfigureAwait(true);
+        ApplyProjectDocument();
+        LogAction("INFO", "Project", "Saved project package.");
+    }
+
+    private bool CanToggleEngine()
+    {
+        return _engineService.CurrentStatus.State is StudioEngineUiState.Stopped or StudioEngineUiState.Running or StudioEngineUiState.Failed;
+    }
+
+    private bool CanToggleStreaming()
+    {
+        return CanToggleOutput(_outputService.StreamingState);
+    }
+
+    private bool CanToggleRecording()
+    {
+        return CanToggleOutput(_outputService.RecordingState);
+    }
+
+    private bool CanToggleOutput(StudioOutputUiState state)
+    {
+        return _engineService.CurrentStatus.State == StudioEngineUiState.Running
+            && state is not StudioOutputUiState.Starting
+            && state is not StudioOutputUiState.Stopping
+            && state is not StudioOutputUiState.Planned
+            && state is not StudioOutputUiState.NotConfigured;
+    }
+
+    private async Task ToggleEngineAsync(CancellationToken cancellationToken)
+    {
+        if (_engineService.CurrentStatus.State == StudioEngineUiState.Running)
+        {
+            await _outputService.StopAllAsync(cancellationToken).ConfigureAwait(true);
+            await _engineService.StopAsync(cancellationToken).ConfigureAwait(true);
+            LogAction("INFO", "Engine", "Mock engine stopped.");
+            return;
+        }
+
+        await _engineService.StartAsync(cancellationToken).ConfigureAwait(true);
+        LogAction("INFO", "Engine", "Mock engine started.");
+    }
+
+    private async Task ToggleStreamingAsync(CancellationToken cancellationToken)
+    {
+        if (!CanToggleStreaming())
         {
             return;
         }
 
-        IsStreaming = !IsStreaming;
-        LogAction(IsStreaming ? "LIVE" : "INFO", IsStreaming ? "Mock RTMP stream marked live." : "Mock RTMP stream stopped.");
+        await _outputService.ToggleStreamingAsync(cancellationToken).ConfigureAwait(true);
+        LogAction(IsStreaming ? "LIVE" : "INFO", "Output", IsStreaming ? "Mock RTMP stream marked live." : "Mock RTMP stream stopped.");
     }
 
-    private void ToggleRecording()
+    private async Task ToggleRecordingAsync(CancellationToken cancellationToken)
     {
-        if (!IsEngineRunning)
+        if (!CanToggleRecording())
         {
             return;
         }
 
-        IsRecording = !IsRecording;
-        LogAction(IsRecording ? "REC" : "INFO", IsRecording ? "Mock MP4 recording started." : "Mock MP4 recording stopped.");
+        await _outputService.ToggleRecordingAsync(cancellationToken).ConfigureAwait(true);
+        LogAction(IsRecording ? "REC" : "INFO", "Output", IsRecording ? "Mock MP4 recording started." : "Mock MP4 recording stopped.");
     }
 
     private void ToggleLayerVisibility(LayerItemViewModel? layer)
@@ -300,7 +359,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         layer.IsVisible = !layer.IsVisible;
-        LogAction("INFO", $"{layer.Name} visibility set to {layer.IsVisible}.");
+        LogAction("INFO", "Layer", $"{layer.Name} visibility set to {layer.VisibilityGlyph}.");
     }
 
     private void ToggleLayerLock(LayerItemViewModel? layer)
@@ -311,7 +370,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         layer.IsLocked = !layer.IsLocked;
-        LogAction("INFO", $"{layer.Name} lock set to {layer.IsLocked}.");
+        LogAction("INFO", "Layer", $"{layer.Name} lock set to {layer.LockGlyph}.");
     }
 
     private void ToggleEffectEnabled(EffectItemViewModel? effect)
@@ -322,13 +381,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         effect.IsEnabled = !effect.IsEnabled;
-        LogAction("INFO", $"{effect.Name} enabled set to {effect.IsEnabled}.");
-    }
-
-    private async Task RunFakeAsync(string message)
-    {
-        await Task.Delay(10).ConfigureAwait(true);
-        LogAction("INFO", message);
+        LogAction("INFO", "Effect", $"{effect.Name} enabled set to {effect.IsEnabled}.");
     }
 
     private void ClearProjectSelection()
@@ -339,58 +392,138 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
     }
 
-    private SourceInspectorViewModel CreateSourceInspector(ProjectTreeItemViewModel item)
+    private void ClearLayerSelection()
     {
-        var endpoint = item.Name switch
+        foreach (var layer in BottomWorkbench.Layers)
         {
-            "Webcam" => "Logitech BRIO / Device 0",
-            "Desktop Capture" => "Display 1 / Desktop duplication",
-            "Logo.png" => "assets/brand/Logo.png",
-            "Lower Third" => "Text template / Brand Kit",
-            "Intro.mp4" => "media/intro.mp4",
-            _ => item.Metadata
-        };
-
-        return new SourceInspectorViewModel(item.Name, item.Metadata, endpoint)
-        {
-            ReconnectCommand = ReconnectSourceCommand
-        };
+            layer.IsSelected = false;
+        }
     }
 
-    private static OutputInspectorViewModel CreateOutputInspector(ProjectTreeItemViewModel item)
+    private static StudioSelectionState CreateSelection(ProjectTreeItemViewModel item)
     {
-        return item.Name switch
+        var kind = item.Kind switch
         {
-            "Recording MP4" => new OutputInspectorViewModel(item.Name, "D:/captures/session.mp4", "H.264", "18 Mb/s", ""),
-            "RTMP Twitch" => new OutputInspectorViewModel(item.Name, "rtmp://live.twitch.tv/app", "H.264", "6 Mb/s", "sk_live_2d97c8a6_raw_secret"),
-            "Virtual Camera" => new OutputInspectorViewModel(item.Name, "Virtual camera device", "NV12", "60 fps", ""),
-            _ => new OutputInspectorViewModel(item.Name, "Local preview panel", "RGBA", "GPU surface", "")
+            StudioProjectItemKind.Scene => StudioSelectionKind.Scene,
+            StudioProjectItemKind.Source => StudioSelectionKind.Source,
+            StudioProjectItemKind.Output => StudioSelectionKind.Output,
+            StudioProjectItemKind.Preset => StudioSelectionKind.Preset,
+            StudioProjectItemKind.Package => StudioSelectionKind.Package,
+            _ => StudioSelectionKind.None
         };
+
+        return new StudioSelectionState(
+            kind,
+            item.Id,
+            item.Name,
+            item.TypeId,
+            item.Metadata,
+            item.Detail,
+            item.Destination,
+            item.Codec,
+            item.Bitrate,
+            item.Secret);
     }
 
-    private void UpdateEngineStateText()
+    private void ApplyProjectDocument()
     {
-        Toolbar.EngineButtonText = IsEngineRunning ? "Stop Engine" : "Start Engine";
-        Toolbar.StateBadge = IsEngineRunning ? "Mock engine running" : "Mock mode";
-        TitleBar.EngineState = IsEngineRunning ? "Engine running" : "Engine stopped";
-        StatusBar.EngineText = IsEngineRunning ? "Running" : "Stopped";
-        StatusBar.GpuText = IsEngineRunning ? "GPU mock 31%" : "GPU mock idle";
+        TitleBar.ProjectName = _projectService.Current.HasUnsavedChanges
+            ? $"{_projectService.Current.DisplayName} *"
+            : _projectService.Current.DisplayName;
     }
 
-    private void UpdateOutputStatus()
+    private void OnEngineStatusChanged(object? sender, StudioEngineStatusChangedEventArgs e)
     {
-        StatusBar.OutputText = (IsStreaming, IsRecording) switch
+        ApplyEngineStatus(e.Status);
+    }
+
+    private void ApplyEngineStatus(StudioEngineStatus status)
+    {
+        Toolbar.EngineState = status.State;
+        Toolbar.EngineButtonText = status.State switch
+        {
+            StudioEngineUiState.Starting => "Starting...",
+            StudioEngineUiState.Running => "Stop Engine",
+            StudioEngineUiState.Stopping => "Stopping...",
+            StudioEngineUiState.Failed => "Restart Engine",
+            _ => "Start Engine"
+        };
+        Toolbar.StateBadge = status.State switch
+        {
+            StudioEngineUiState.Running => "Mock engine running",
+            StudioEngineUiState.Starting => "Mock engine starting",
+            StudioEngineUiState.Stopping => "Mock engine stopping",
+            StudioEngineUiState.Failed => "Mock engine failed",
+            _ => "Mock mode"
+        };
+        TitleBar.EngineState = status.Message;
+        StatusBar.EngineText = status.State.ToString();
+        StatusBar.GpuText = status.State == StudioEngineUiState.Running ? "GPU mock 31%" : "GPU mock idle";
+
+        OnPropertyChanged(nameof(IsEngineRunning));
+        ToggleEngineCommand.NotifyCanExecuteChanged();
+        ToggleStreamingCommand.NotifyCanExecuteChanged();
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnOutputStatusChanged(object? sender, StudioOutputStatusChangedEventArgs e)
+    {
+        ApplyOutputState(e.StreamingState, e.RecordingState);
+    }
+
+    private void ApplyOutputState(StudioOutputUiState streamingState, StudioOutputUiState recordingState)
+    {
+        Toolbar.StreamingState = streamingState;
+        Toolbar.RecordingState = recordingState;
+        Toolbar.StreamButtonText = streamingState switch
+        {
+            StudioOutputUiState.Starting => "Connecting...",
+            StudioOutputUiState.Running => "Live",
+            StudioOutputUiState.Stopping => "Stopping...",
+            StudioOutputUiState.Error => "Stream Error",
+            StudioOutputUiState.Planned => "Stream Planned",
+            _ => "Start Streaming"
+        };
+        Toolbar.RecordingButtonText = recordingState switch
+        {
+            StudioOutputUiState.Starting => "Recording...",
+            StudioOutputUiState.Running => "Recording 00:00:00",
+            StudioOutputUiState.Stopping => "Stopping...",
+            StudioOutputUiState.Error => "Record Error",
+            StudioOutputUiState.Planned => "Record Planned",
+            _ => "Start Recording"
+        };
+        StatusBar.OutputText = (streamingState == StudioOutputUiState.Running, recordingState == StudioOutputUiState.Running) switch
         {
             (true, true) => "Live + Recording",
             (true, false) => "Live",
             (false, true) => "Recording",
             _ => "Preview idle"
         };
+
+        OnPropertyChanged(nameof(IsStreaming));
+        OnPropertyChanged(nameof(IsRecording));
+        ToggleStreamingCommand.NotifyCanExecuteChanged();
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
     }
 
-    private void LogAction(string level, string message)
+    private void OnSelectionChanged(object? sender, StudioSelectionChangedEventArgs e)
     {
-        BottomWorkbench.AddDiagnostic(level, message);
+        CurrentSelection = e.Selection;
+        Inspector.SelectedPage = _inspectorPageFactory.Create(e.Selection, ReconnectSourceCommand);
+        StatusBar.StatusText = e.Selection.Kind == StudioSelectionKind.Layer
+            ? $"Selected layer {e.Selection.DisplayName}"
+            : $"Selected {e.Selection.DisplayName}";
+
+        if (e.Selection.Kind == StudioSelectionKind.Scene)
+        {
+            Preview.SceneName = e.Selection.DisplayName;
+        }
+    }
+
+    private void LogAction(string level, string category, string message)
+    {
+        _diagnosticsService.Append(level, category, message);
         StatusBar.StatusText = message;
     }
 }

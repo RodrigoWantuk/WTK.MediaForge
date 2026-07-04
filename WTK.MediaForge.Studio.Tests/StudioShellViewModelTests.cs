@@ -30,27 +30,29 @@ public sealed class StudioShellViewModelTests
         shell.SelectProjectItem(webcam);
 
         Assert.Same(webcam, shell.SelectedProjectItem);
+        Assert.Null(shell.SelectedLayer);
         Assert.True(webcam.IsSelected);
         Assert.IsType<SourceInspectorViewModel>(shell.Inspector.SelectedPage);
+        Assert.Equal(StudioSelectionKind.Source, shell.CurrentSelection.Kind);
         Assert.Equal("Selected Webcam", shell.StatusBar.StatusText);
     }
 
     [Fact]
-    public void Toggle_engine_command_updates_toolbar_and_status()
+    public async Task Toggle_engine_command_updates_toolbar_and_status()
     {
         var shell = StudioDesignData.CreateShellViewModel();
 
         Assert.False(shell.IsEngineRunning);
         Assert.False(shell.ToggleStreamingCommand.CanExecute(null));
 
-        shell.ToggleEngineCommand.Execute(null);
+        await shell.ToggleEngineCommand.ExecuteAsync(null);
 
         Assert.True(shell.IsEngineRunning);
         Assert.Equal("Stop Engine", shell.Toolbar.EngineButtonText);
         Assert.Equal("Running", shell.StatusBar.EngineText);
         Assert.True(shell.ToggleStreamingCommand.CanExecute(null));
 
-        shell.ToggleEngineCommand.Execute(null);
+        await shell.ToggleEngineCommand.ExecuteAsync(null);
 
         Assert.False(shell.IsEngineRunning);
         Assert.Equal("Start Engine", shell.Toolbar.EngineButtonText);
@@ -94,8 +96,10 @@ public sealed class StudioShellViewModelTests
         shell.SelectLayer(webcamLayer);
 
         Assert.Same(webcamLayer, shell.SelectedLayer);
+        Assert.Null(shell.SelectedProjectItem);
         Assert.True(webcamLayer.IsSelected);
         Assert.Equal("Webcam", shell.Preview.SelectedLayerName);
+        Assert.Equal(StudioSelectionKind.Layer, shell.CurrentSelection.Kind);
         Assert.IsType<LayerInspectorViewModel>(shell.Inspector.SelectedPage);
     }
 
@@ -113,7 +117,7 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public void Commands_respect_can_execute_when_engine_is_stopped()
+    public async Task Commands_respect_can_execute_when_engine_is_stopped()
     {
         var shell = StudioDesignData.CreateShellViewModel();
 
@@ -126,10 +130,40 @@ public sealed class StudioShellViewModelTests
         Assert.False(shell.IsStreaming);
         Assert.False(shell.IsRecording);
 
-        shell.ToggleEngineCommand.Execute(null);
+        await shell.ToggleEngineCommand.ExecuteAsync(null);
 
         Assert.True(shell.ToggleStreamingCommand.CanExecute(null));
         Assert.True(shell.ToggleRecordingCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Layer_visibility_and_lock_use_product_glyphs()
+    {
+        var shell = StudioDesignData.CreateShellViewModel();
+        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Logo.png");
+
+        Assert.Equal("VIS", layer.VisibilityGlyph);
+        Assert.Equal("EDIT", layer.LockGlyph);
+
+        shell.ToggleLayerVisibilityCommand.Execute(layer);
+        shell.ToggleLayerLockCommand.Execute(layer);
+
+        Assert.Equal("HID", layer.VisibilityGlyph);
+        Assert.Equal("LOCK", layer.LockGlyph);
+    }
+
+    [Fact]
+    public void Layer_inspector_uses_typed_editable_properties()
+    {
+        var inspector = new LayerInspectorViewModel("Lower Third", "Text");
+
+        inspector.X = 111.5;
+        inspector.Opacity = 140;
+
+        Assert.Equal(111.5, inspector.X);
+        Assert.Equal(100, inspector.Opacity);
+        Assert.Equal(StudioBlendMode.Alpha, inspector.BlendMode);
+        Assert.Equal("0 / 0 / 0 / 0", inspector.CropText);
     }
 
     private static ProjectTreeItemViewModel FindItem(StudioShellViewModel shell, string itemName)

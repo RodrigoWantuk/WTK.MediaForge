@@ -1,7 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using WTK.MediaForge.Studio.DesignData;
+using WTK.MediaForge.Studio.Services;
 using WTK.MediaForge.Studio.Views;
 
 namespace WTK.MediaForge.Studio
@@ -19,7 +19,7 @@ namespace WTK.MediaForge.Studio
             {
                 desktop.MainWindow = new MainWindow
                 {
-                    DataContext = StudioDesignData.CreateShellViewModel(),
+                    DataContext = StudioBootstrapper.CreateShellViewModel(),
                 };
             }
 

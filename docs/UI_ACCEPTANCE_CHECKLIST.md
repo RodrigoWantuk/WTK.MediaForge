@@ -16,11 +16,13 @@ Use this checklist when reviewing the first Avalonia implementation of WTK Media
 
 - [ ] `dotnet build` passes.
 - [ ] `./scripts/test.ps1 -Tier Fast` passes.
+- [ ] Fast tier includes `WTK.MediaForge.Studio.Tests`.
 - [ ] No GPU tests are required unless render/capture/GPU code changed.
 
 ## Shell Layout
 
-- [ ] Title bar exists.
+- [ ] Native OS title bar is kept, or custom chrome is explicitly implemented and tested.
+- [ ] Studio app header exists.
 - [ ] Toolbar exists.
 - [ ] Project Explorer exists on the left.
 - [ ] Preview/canvas area exists in the center.
@@ -28,6 +30,7 @@ Use this checklist when reviewing the first Avalonia implementation of WTK Media
 - [ ] Bottom Workbench exists below preview.
 - [ ] Status bar exists at the bottom.
 - [ ] Window can be resized without major layout breakage.
+- [ ] Splitters preserve usable min sizes for explorer, preview, inspector, and bottom workbench.
 - [ ] No large unexplained empty area appears below the status bar.
 
 ## Theme
@@ -46,7 +49,9 @@ Use this checklist when reviewing the first Avalonia implementation of WTK Media
 - [ ] Presets group appears.
 - [ ] Packages group appears.
 - [ ] Rows support icon, label, metadata, badge/dot.
+- [ ] Health dot/state is visible for scenes, sources, outputs, presets, and packages where applicable.
 - [ ] Active/selected item is visible.
+- [ ] Active/program state is visually distinct from selected state.
 - [ ] Selecting items updates shell selection.
 
 ## Preview Canvas
@@ -63,6 +68,7 @@ Use this checklist when reviewing the first Avalonia implementation of WTK Media
 
 - [ ] Inspector changes based on selected item kind.
 - [ ] Layer inspector shows Transform, Crop, Effects.
+- [ ] Layer transform properties are typed in ViewModels, not stored only as formatted strings.
 - [ ] Source inspector shows Device and Status.
 - [ ] Scene inspector shows Canvas and linked outputs.
 - [ ] Output inspector shows Destination, Encoder, Health.
@@ -89,6 +95,7 @@ Use this checklist when reviewing the first Avalonia implementation of WTK Media
 - [ ] Start/Stop Engine command toggles fake state.
 - [ ] Start Streaming command has a visual state, even if fake/disabled.
 - [ ] Start Recording command has a visual state, even if fake/disabled.
+- [ ] Raw booleans such as `True`/`False` are not shown as product-facing layer state.
 - [ ] Settings command exists or is visibly planned.
 - [ ] Button enabled state is controlled by command `CanExecute` or bound ViewModel state.
 
@@ -99,6 +106,8 @@ Use this checklist when reviewing the first Avalonia implementation of WTK Media
 - [ ] ViewModels do not reference Avalonia controls.
 - [ ] Product logic is not placed in `.axaml.cs`.
 - [ ] Design/mock data is isolated from views.
+- [ ] ViewModels use Studio services for project, engine, output, diagnostics, and selection behavior.
+- [ ] Selection is represented by one unified selection state.
 - [ ] Lists use observable collections where mutability is expected.
 
 ## Documentation
@@ -107,4 +116,3 @@ Use this checklist when reviewing the first Avalonia implementation of WTK Media
 - [ ] `docs/UI_REACT_TO_AVALONIA_MAPPING.md` remains current if the implementation deviates intentionally.
 - [ ] `docs/UI_IMPLEMENTATION_PLAN.md` is updated when implementation phases change.
 - [ ] Any UI/runtime boundary decision is reflected in `docs/AI_CONTEXT.md` or `docs/ROADMAP_CURRENT.md`.
-

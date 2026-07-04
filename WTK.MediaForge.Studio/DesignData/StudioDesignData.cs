@@ -29,42 +29,42 @@ public static class StudioDesignData
                 "Scenes",
                 new[]
                 {
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Scene, "Main Scene", "1920 x 1080 / 60 fps", "SCN", "PROGRAM") { IsActive = true },
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Scene, "Interview", "Two camera layout", "SCN"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Scene, "Break BRB", "Holding screen", "SCN")
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Scene, "Main Scene", "1920 x 1080 / 60 fps", "SCN", "PROGRAM", id: "scene-main", typeId: "scene.canvas", detail: "Preview, Recording MP4, RTMP Twitch") { IsActive = true },
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Scene, "Interview", "Two camera layout", "SCN", id: "scene-interview", typeId: "scene.canvas", detail: "Preview"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Scene, "Break BRB", "Holding screen", "SCN", id: "scene-brb", typeId: "scene.canvas", detail: "Preview")
                 }),
             new ProjectTreeGroupViewModel(
                 "Sources",
                 new[]
                 {
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Webcam", "Camera / 1080p60", "CAM", "LIVE"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Desktop Capture", "Display 1 / 1440p60", "DSP", "GPU"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Logo.png", "Image / 512 px", "IMG"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Lower Third", "Text template", "TXT"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Intro.mp4", "Media / buffered", "VID", "BUFFER")
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Webcam", "Camera / 1080p60", "CAM", "LIVE", id: "source-webcam", typeId: "source.webcam", detail: "Logitech BRIO / Device 0"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Desktop Capture", "Display 1 / 1440p60", "DSP", "GPU", id: "source-desktop-1", typeId: "source.desktop", detail: "Display 1 / Desktop duplication"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Logo.png", "Image / 512 px", "IMG", id: "source-logo", typeId: "source.image", detail: "assets/brand/Logo.png"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Lower Third", "Text template", "TXT", id: "source-lower-third", typeId: "source.text", detail: "Text template / Brand Kit"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Source, "Intro.mp4", "Media / buffered", "VID", "BUFFER", StudioHealthState.Warning, id: "source-intro", typeId: "source.media", detail: "media/intro.mp4")
                 }),
             new ProjectTreeGroupViewModel(
                 "Outputs",
                 new[]
                 {
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Output, "Preview", "Local preview panel", "PRV", "RUNNING"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Output, "Recording MP4", "H.264 / 18 Mb/s", "REC", "READY"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Output, "RTMP Twitch", "6 Mb/s / Twitch", "RTM", "LIVE"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Output, "Virtual Camera", "Planned output", "VCM", "PLAN")
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Output, "Preview", "Local preview panel", "PRV", "RUNNING", id: "output-preview", typeId: "output.preview", destination: "Local preview panel", codec: "RGBA", bitrate: "GPU surface"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Output, "Recording MP4", "H.264 / 18 Mb/s", "REC", "READY", id: "output-recording", typeId: "output.file.mp4", destination: "D:/captures/session.mp4", codec: "H.264", bitrate: "18 Mb/s"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Output, "RTMP Twitch", "6 Mb/s / Twitch", "RTM", "LIVE", id: "output-rtmp-twitch", typeId: "output.rtmp", destination: "rtmp://live.twitch.tv/app", codec: "H.264", bitrate: "6 Mb/s", secret: "sk_live_2d97c8a6_raw_secret"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Output, "Virtual Camera", "Planned output", "VCM", "PLAN", StudioHealthState.Planned, id: "output-virtual-camera", typeId: "output.virtual-camera", destination: "Virtual camera device", codec: "NV12", bitrate: "60 fps")
                 }),
             new ProjectTreeGroupViewModel(
                 "Presets",
                 new[]
                 {
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Preset, "1080p Streaming", "16:9 / 60 fps", "PRE"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Preset, "YouTube 1080p60", "H.264 high profile", "PRE")
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Preset, "1080p Streaming", "16:9 / 60 fps", "PRE", id: "preset-1080p-streaming", typeId: "preset.canvas-output"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Preset, "YouTube 1080p60", "H.264 high profile", "PRE", id: "preset-youtube-1080p60", typeId: "preset.output")
                 }),
             new ProjectTreeGroupViewModel(
                 "Packages",
                 new[]
                 {
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Package, "Starter Pack", "Scenes and source templates", "PKG"),
-                    new ProjectTreeItemViewModel(StudioProjectItemKind.Package, "Brand Kit", "Lower thirds and logo set", "PKG", "v2")
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Package, "Starter Pack", "Scenes and source templates", "PKG", id: "package-starter", typeId: "package.scene"),
+                    new ProjectTreeItemViewModel(StudioProjectItemKind.Package, "Brand Kit", "Lower thirds and logo set", "PKG", "v2", id: "package-brand-kit", typeId: "package.brand")
                 })
         };
     }

@@ -32,8 +32,18 @@
                   </StackPanel>
                   <TextBlock Grid.Column="2" Text="{Binding Source}" Classes="secondary" VerticalAlignment="Center" />
                   <TextBlock Grid.Column="3" Text="{Binding Type}" Classes="secondary" VerticalAlignment="Center" />
-                  <Button Grid.Column="4" Content="{Binding IsVisible}" Command="{Binding ToggleVisibilityCommand}" CommandParameter="{Binding}" Classes="flat" />
-                  <Button Grid.Column="5" Content="{Binding IsLocked}" Command="{Binding ToggleLockCommand}" CommandParameter="{Binding}" Classes="flat" />
+                  <Button Grid.Column="4"
+                          Content="{Binding VisibilityGlyph}"
+                          Command="{Binding ToggleVisibilityCommand}"
+                          CommandParameter="{Binding}"
+                          ToolTip.Tip="{Binding VisibilityTip}"
+                          Classes="flat" />
+                  <Button Grid.Column="5"
+                          Content="{Binding LockGlyph}"
+                          Command="{Binding ToggleLockCommand}"
+                          CommandParameter="{Binding}"
+                          ToolTip.Tip="{Binding LockTip}"
+                          Classes="flat" />
                 </Grid>
               </Border>
             </Button>

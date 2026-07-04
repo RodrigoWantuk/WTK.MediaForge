@@ -32,8 +32,17 @@
                                 Classes.selected="{Binding IsSelected}"
                                 Classes.active="{Binding IsActive}"
                                 HorizontalAlignment="Stretch">
-                          <Grid ColumnDefinitions="32,*,Auto" RowDefinitions="Auto,Auto">
+                          <Grid ColumnDefinitions="14,32,*,Auto" RowDefinitions="Auto,Auto">
                             <Border Grid.RowSpan="2"
+                                    Classes="health-dot"
+                                    Classes.healthy="{Binding IsHealthy}"
+                                    Classes.warning="{Binding IsWarning}"
+                                    Classes.error="{Binding IsError}"
+                                    Classes.planned="{Binding IsPlanned}"
+                                    Classes.disabled="{Binding IsDisabled}"
+                                    VerticalAlignment="Center" />
+                            <Border Grid.Column="1"
+                                    Grid.RowSpan="2"
                                     Width="24"
                                     Height="24"
                                     CornerRadius="5"
@@ -45,9 +54,9 @@
                                          FontWeight="SemiBold"
                                          Classes="secondary" />
                             </Border>
-                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" />
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Metadata}" Classes="muted" FontSize="11" />
-                            <Border Grid.Column="2" Grid.RowSpan="2" Classes="badge" IsVisible="{Binding HasBadge}">
+                            <TextBlock Grid.Column="2" Text="{Binding Name}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Metadata}" Classes="muted" FontSize="11" />
+                            <Border Grid.Column="3" Grid.RowSpan="2" Classes="badge" IsVisible="{Binding HasBadge}">
                               <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="10" />
                             </Border>
                           </Grid>

@@ -38,17 +38,33 @@ public sealed class ProjectTreeItemViewModel : ViewModelBase
         string metadata,
         string icon,
         string badge = "",
-        string health = "OK")
+        StudioHealthState healthState = StudioHealthState.Healthy,
+        string id = "",
+        string typeId = "",
+        string detail = "",
+        string destination = "",
+        string codec = "",
+        string bitrate = "",
+        string secret = "")
     {
         Kind = kind;
+        Id = string.IsNullOrWhiteSpace(id) ? $"{kind}:{name}".ToLowerInvariant().Replace(' ', '-') : id;
         Name = name;
         Metadata = metadata;
         Icon = icon;
         Badge = badge;
-        Health = health;
+        HealthState = healthState;
+        TypeId = string.IsNullOrWhiteSpace(typeId) ? kind.ToString().ToLowerInvariant() : typeId;
+        Detail = detail;
+        Destination = destination;
+        Codec = codec;
+        Bitrate = bitrate;
+        Secret = secret;
     }
 
     public StudioProjectItemKind Kind { get; }
+
+    public string Id { get; }
 
     public string Name { get; }
 
@@ -58,9 +74,31 @@ public sealed class ProjectTreeItemViewModel : ViewModelBase
 
     public string Badge { get; }
 
-    public string Health { get; }
+    public StudioHealthState HealthState { get; }
+
+    public string TypeId { get; }
+
+    public string Detail { get; }
+
+    public string Destination { get; }
+
+    public string Codec { get; }
+
+    public string Bitrate { get; }
+
+    public string Secret { get; }
 
     public bool HasBadge => !string.IsNullOrWhiteSpace(Badge);
+
+    public bool IsHealthy => HealthState == StudioHealthState.Healthy;
+
+    public bool IsWarning => HealthState == StudioHealthState.Warning;
+
+    public bool IsError => HealthState == StudioHealthState.Error;
+
+    public bool IsPlanned => HealthState == StudioHealthState.Planned;
+
+    public bool IsDisabled => HealthState == StudioHealthState.Disabled;
 
     public ICommand? SelectCommand { get; set; }
 
@@ -83,8 +121,9 @@ public sealed class LayerItemViewModel : ViewModelBase
     private bool _isVisible = true;
     private bool _isLocked;
 
-    public LayerItemViewModel(string name, string source, string type, string icon, int order)
+    public LayerItemViewModel(string name, string source, string type, string icon, int order, string id = "")
     {
+        Id = string.IsNullOrWhiteSpace(id) ? $"layer:{name}".ToLowerInvariant().Replace(' ', '-') : id;
         Name = name;
         Source = source;
         Type = type;
@@ -93,6 +132,8 @@ public sealed class LayerItemViewModel : ViewModelBase
     }
 
     public string Name { get; }
+
+    public string Id { get; }
 
     public string Source { get; }
 
@@ -117,14 +158,36 @@ public sealed class LayerItemViewModel : ViewModelBase
     public bool IsVisible
     {
         get => _isVisible;
-        set => SetProperty(ref _isVisible, value);
+        set
+        {
+            if (SetProperty(ref _isVisible, value))
+            {
+                OnPropertyChanged(nameof(VisibilityGlyph));
+                OnPropertyChanged(nameof(VisibilityTip));
+            }
+        }
     }
 
     public bool IsLocked
     {
         get => _isLocked;
-        set => SetProperty(ref _isLocked, value);
+        set
+        {
+            if (SetProperty(ref _isLocked, value))
+            {
+                OnPropertyChanged(nameof(LockGlyph));
+                OnPropertyChanged(nameof(LockTip));
+            }
+        }
     }
+
+    public string VisibilityGlyph => IsVisible ? "VIS" : "HID";
+
+    public string VisibilityTip => IsVisible ? "Layer visible" : "Layer hidden";
+
+    public string LockGlyph => IsLocked ? "LOCK" : "EDIT";
+
+    public string LockTip => IsLocked ? "Layer locked" : "Layer editable";
 }
 
 public sealed class EffectItemViewModel : ViewModelBase
@@ -161,16 +224,19 @@ public sealed class EffectItemViewModel : ViewModelBase
 
 public sealed class DiagnosticLogItemViewModel
 {
-    public DiagnosticLogItemViewModel(string time, string level, string message)
+    public DiagnosticLogItemViewModel(string time, string level, string message, string category = "Studio")
     {
         Time = time;
         Level = level;
         Message = message;
+        Category = category;
     }
 
     public string Time { get; }
 
     public string Level { get; }
+
+    public string Category { get; }
 
     public string Message { get; }
 }

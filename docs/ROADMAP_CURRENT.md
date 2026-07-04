@@ -71,12 +71,20 @@ Acceptance records:
 
 A limited Avalonia Studio UI track may run in parallel with the active runtime roadmap when it stays strictly inside the UI/mock scope. This is allowed because it does not change engine contracts or open blocked media/runtime work.
 
+Current Studio UI status:
+
+- first Avalonia mock shell is implemented;
+- Studio tests run in the Fast tier;
+- current UI milestone is shell stabilization, fake service boundaries, typed UI state, and model-backed project workflow preparation;
+- runtime preview remains blocked until `PreviewPanelSink` reliability criteria are complete.
+
 Allowed UI work before runtime gates open:
 
 - create/update `docs/UI_STUDIO_DESIGN.md`, `docs/UI_REACT_TO_AVALONIA_MAPPING.md`, `docs/UI_IMPLEMENTATION_PLAN.md`, and `docs/UI_ACCEPTANCE_CHECKLIST.md`;
 - create an Avalonia dark-theme Studio shell;
 - implement the Project Explorer, preview/canvas mock, Inspector, Bottom Workbench, Output Monitor, Diagnostics, Performance, Status Bar, and future Audio Mixer placeholder using mock data;
 - implement fake command state for Start/Stop/Stream/Record;
+- introduce Studio-only fake services, unified selection state, typed UI state, and model-backed project workflow scaffolding;
 - add ViewModel/unit tests for UI selection, command enablement, inspector routing, and mock state.
 
 Still blocked until their roadmap step opens:

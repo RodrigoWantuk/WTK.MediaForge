@@ -6,6 +6,24 @@ This plan is for an AI/developer implementing the first WTK MediaForge Studio sh
 
 Create a realistic dark-theme desktop shell that matches the approved Studio mockup and operates entirely from mock/design data at first. The shell prepares the product surface for the MediaForge pipeline without prematurely coupling to GPU preview, capture, encoders, NDI, RTSP, or audio.
 
+## Current Status
+
+The first Studio shell exists and is in the stabilization/service-boundary milestone. Completed:
+
+- dark theme and shell frame;
+- mock state and shell ViewModels;
+- Project Explorer with selection, badges, health dots, and active state;
+- contextual inspector pages;
+- Bottom Workbench tabs;
+- fake canvas;
+- fake commands;
+- Studio ViewModel tests;
+- Studio tests in `./scripts/test.ps1 -Tier Fast`;
+- fake Studio services for project, engine, outputs, diagnostics, selection, and inspector creation;
+- typed engine/output UI states and typed layer inspector fields.
+
+The internal Studio header is not custom window chrome. Keep the native OS title bar until a dedicated custom chrome milestone is approved.
+
 ## Pre-flight
 
 Before implementation:
@@ -177,6 +195,52 @@ Acceptance:
 - buttons enable/disable from command state;
 - diagnostics fake log receives command events where useful.
 
+### UI-8: Shell stabilization and service boundary
+
+Implemented foundation:
+
+- `Services/` interfaces and fake implementations;
+- constructor-injected `StudioShellViewModel`;
+- unified `StudioSelectionState`;
+- typed engine/output state enums;
+- responsive shell splitters and min/max panel sizing;
+- product glyphs for layer visibility/lock state.
+
+Next refinements:
+
+- input validation visuals for editable inspector fields;
+- richer status/badge variants;
+- panel size persistence;
+- keyboard shortcuts and context menus.
+
+### UI-9: Real project file workflow
+
+Next gated UI/product workflow step:
+
+- implement `IStudioProjectService` backed by the MediaForge project/package model;
+- create default projects through approved product APIs;
+- open/save project files through a dialog service;
+- surface validation errors in Diagnostics;
+- track dirty state and update command enablement.
+
+Do not bind ViewModels directly to `MediaForgeEngine`.
+
+### UI-10: Runtime bridge without preview
+
+Future step:
+
+- implement a real engine service bridge;
+- bridge engine state and diagnostics into Studio services;
+- keep preview disconnected until the preview reliability gate is complete.
+
+### UI-11: Preview integration after reliability gate
+
+Future gated step:
+
+- introduce `IStudioPreviewSurfaceHost`;
+- attach `PreviewPanelSink` only through approved engine/sink APIs;
+- keep Avalonia overlays separate from native/GPU preview presentation.
+
 ## ViewModel Guidelines
 
 Use CommunityToolkit patterns:
@@ -300,4 +364,3 @@ Manual validation:
 - It runs without MediaForge engine integration.
 - It creates no new runtime obligations.
 - It gives future developers a stable visual and architectural base.
-

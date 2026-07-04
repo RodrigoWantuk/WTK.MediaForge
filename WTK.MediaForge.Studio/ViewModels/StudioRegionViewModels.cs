@@ -8,10 +8,15 @@ namespace WTK.MediaForge.Studio.ViewModels;
 public sealed class TitleBarViewModel : ViewModelBase
 {
     private string _engineState = "Engine stopped";
+    private string _projectName = "Live Production Workspace";
 
     public string ProductName { get; } = "WTK MediaForge Studio";
 
-    public string ProjectName { get; } = "Live Production Workspace";
+    public string ProjectName
+    {
+        get => _projectName;
+        set => SetProperty(ref _projectName, value);
+    }
 
     public string EngineState
     {
@@ -26,6 +31,9 @@ public sealed class ToolbarViewModel : ViewModelBase
     private string _streamButtonText = "Start Stream";
     private string _recordingButtonText = "Start Recording";
     private string _stateBadge = "Mock mode";
+    private StudioEngineUiState _engineState = StudioEngineUiState.Stopped;
+    private StudioOutputUiState _streamingState = StudioOutputUiState.Ready;
+    private StudioOutputUiState _recordingState = StudioOutputUiState.Ready;
 
     public string EngineButtonText
     {
@@ -49,6 +57,24 @@ public sealed class ToolbarViewModel : ViewModelBase
     {
         get => _stateBadge;
         set => SetProperty(ref _stateBadge, value);
+    }
+
+    public StudioEngineUiState EngineState
+    {
+        get => _engineState;
+        set => SetProperty(ref _engineState, value);
+    }
+
+    public StudioOutputUiState StreamingState
+    {
+        get => _streamingState;
+        set => SetProperty(ref _streamingState, value);
+    }
+
+    public StudioOutputUiState RecordingState
+    {
+        get => _recordingState;
+        set => SetProperty(ref _recordingState, value);
     }
 }
 
@@ -118,8 +144,9 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
     private bool _isOutputMonitorSelected;
     private bool _isAudioMixerSelected;
 
-    public BottomWorkbenchViewModel()
+    public BottomWorkbenchViewModel(ObservableCollection<DiagnosticLogItemViewModel>? diagnostics = null)
     {
+        Diagnostics = diagnostics ?? new ObservableCollection<DiagnosticLogItemViewModel>();
         SelectTabCommand = new RelayCommand<BottomTabViewModel>(SelectTab, tab => tab is not null);
     }
 
@@ -129,7 +156,7 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
 
     public ObservableCollection<EffectItemViewModel> Effects { get; } = new();
 
-    public ObservableCollection<DiagnosticLogItemViewModel> Diagnostics { get; } = new();
+    public ObservableCollection<DiagnosticLogItemViewModel> Diagnostics { get; }
 
     public ObservableCollection<PerformanceMetricViewModel> PerformanceMetrics { get; } = new();
 

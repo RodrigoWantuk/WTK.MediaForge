@@ -15,6 +15,7 @@ $stressFilter = "Category=Stress"
 $coreTests = "WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj"
 $diagnosticsTests = "WTK.MediaForge.Diagnostics.Tests\WTK.MediaForge.Diagnostics.Tests.csproj"
 $compositionTests = "WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj"
+$studioTests = "WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj"
 $d3d11Tests = "WTK.MediaForge.Graphics.D3D11.Tests\WTK.MediaForge.Graphics.D3D11.Tests.csproj"
 $vulkanTests = "WTK.MediaForge.Graphics.Vulkan.Tests\WTK.MediaForge.Graphics.Vulkan.Tests.csproj"
 $captureTests = "WTK.MediaForge.Capture.Tests\WTK.MediaForge.Capture.Tests.csproj"
@@ -47,6 +48,7 @@ switch ($Tier) {
         Invoke-TestProject -Project $coreTests -Filter $fastFilter
         Invoke-TestProject -Project $diagnosticsTests -Filter $fastFilter
         Invoke-TestProject -Project $compositionTests -Filter $fastFilter
+        Invoke-TestProject -Project $studioTests -Filter $fastFilter
     }
     "Gpu" {
         # Never run GPU projects via solution — sequential, one at a time.

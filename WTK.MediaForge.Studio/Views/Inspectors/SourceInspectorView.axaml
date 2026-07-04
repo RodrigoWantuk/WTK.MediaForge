@@ -12,8 +12,8 @@
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
       <TextBlock Text="{Binding SourceType, StringFormat='Type: {0}'}" Classes="secondary" />
       <TextBlock Grid.Row="1" Text="{Binding Endpoint, StringFormat='Endpoint: {0}'}" Classes="secondary" TextWrapping="Wrap" />
-      <TextBlock Grid.Row="2" Text="{Binding Resolution, StringFormat='Resolution: {0}'}" Classes="secondary" />
-      <TextBlock Grid.Row="3" Text="{Binding FrameRate, StringFormat='Frame rate: {0}'}" Classes="secondary" />
+      <TextBlock Grid.Row="2" Text="{Binding ResolutionText, StringFormat='Resolution: {0}'}" Classes="secondary" />
+      <TextBlock Grid.Row="3" Text="{Binding FrameRateText, StringFormat='Frame rate: {0}'}" Classes="secondary" />
       <TextBlock Grid.Row="4" Text="{Binding Status, StringFormat='Status: {0}'}" Classes="success" />
     </Grid>
 

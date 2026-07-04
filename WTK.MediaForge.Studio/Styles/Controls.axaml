@@ -27,6 +27,14 @@
     <Setter Property="Padding" Value="6,4" />
   </Style>
 
+  <Style Selector="Button:pointerover">
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderStrongBrush}" />
+  </Style>
+
+  <Style Selector="Button:disabled">
+    <Setter Property="Opacity" Value="0.45" />
+  </Style>
+
   <Style Selector="Border.panel">
     <Setter Property="Background" Value="{StaticResource MfSurface1Brush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
@@ -77,6 +85,33 @@
     <Setter Property="CornerRadius" Value="5" />
     <Setter Property="Padding" Value="5,1" />
     <Setter Property="Background" Value="{StaticResource MfSurface3Brush}" />
+  </Style>
+
+  <Style Selector="Border.health-dot">
+    <Setter Property="Width" Value="7" />
+    <Setter Property="Height" Value="7" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Background" Value="{StaticResource MfTextMutedBrush}" />
+  </Style>
+
+  <Style Selector="Border.health-dot.healthy">
+    <Setter Property="Background" Value="{StaticResource MfSuccessBrush}" />
+  </Style>
+
+  <Style Selector="Border.health-dot.warning">
+    <Setter Property="Background" Value="{StaticResource MfWarningBrush}" />
+  </Style>
+
+  <Style Selector="Border.health-dot.error">
+    <Setter Property="Background" Value="{StaticResource MfErrorBrush}" />
+  </Style>
+
+  <Style Selector="Border.health-dot.planned">
+    <Setter Property="Background" Value="{StaticResource MfTextMutedBrush}" />
+  </Style>
+
+  <Style Selector="Border.health-dot.disabled">
+    <Setter Property="Opacity" Value="0.45" />
   </Style>
 
   <Style Selector="Border.metric-card">

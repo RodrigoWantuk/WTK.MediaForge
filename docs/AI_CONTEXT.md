@@ -98,6 +98,16 @@ WTK MediaForge Studio is the planned Avalonia desktop application for users who 
 
 The Studio shell must be built with Avalonia UI, C#, MVVM, CommunityToolkit.Mvvm, compiled bindings, centralized dark theme resources, and mock/design data for the first milestone.
 
+Current Studio state:
+
+- `WTK.MediaForge.Studio` contains the first Avalonia mock shell.
+- Studio ViewModel tests are included in `./scripts/test.ps1 -Tier Fast`.
+- The current UI milestone is shell stabilization and service-boundary cleanup.
+- Fake Studio services own mock project, engine, output, diagnostics, selection, and inspector behavior.
+- `StudioSelectionState` is the single selection contract for explorer/layer/canvas/output selection.
+- Engine/output UI states are typed enums, not only booleans.
+- The internal Studio header is an app header; native OS chrome remains active for now.
+
 The downloaded React/Lovable prototype is a visual/component-behavior reference only. Do not embed React, Tailwind, WebView, Vite, Electron, or browser runtime dependencies into the Studio app. Translate the prototype into Avalonia controls, styles, resources, view models, commands, and data templates.
 
 Allowed in the UI track before runtime gates open:
@@ -106,6 +116,7 @@ Allowed in the UI track before runtime gates open:
 - centralized dark theme;
 - mock Project Explorer, canvas, inspector, bottom workbench, output monitor, diagnostics, performance, and future audio placeholder;
 - fake Start/Stop/Stream/Record UI state;
+- fake Studio service boundaries and unified selection state;
 - ViewModel tests for selection, command state, inspector resolution, and mock status.
 
 Not allowed in the UI track before runtime gates open:
@@ -125,8 +136,10 @@ The application shell must not re-enable capture preview until it is wired throu
 PAPI, CP2 multi-layer, CP3 solid/nested/chroma, first public visual sink, scene
 routing helpers, package serialization foundation, and render-graph planning
 foundation are complete. Productive preview, additional effects, real media
-source adapters, encoder/streaming/NDI/virtual-camera sinks, UI shells, plugin
-APIs, and audio remain blocked until the roadmap explicitly starts those tracks.
+source adapters, encoder/streaming/NDI/virtual-camera sinks, runtime-connected
+UI shells, plugin APIs, and audio remain blocked until the roadmap explicitly
+starts those tracks. The Avalonia Studio mock shell is the only allowed UI
+track before those gates open.
 
 ## Review Style Expected
 
