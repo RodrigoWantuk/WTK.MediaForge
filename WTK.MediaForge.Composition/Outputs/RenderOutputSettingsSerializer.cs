@@ -17,8 +17,12 @@ public static class RenderOutputSettingsSerializer
             [RenderOutputTypes.PreviewWindow.Value] = typeof(PreviewWindowOutputSettings),
             [RenderOutputTypes.Offscreen.Value] = typeof(OffscreenOutputSettings),
             [RenderOutputTypes.Ndi.Value] = typeof(NdiOutputSettings),
+            [RenderOutputTypes.EncodedFile.Value] = typeof(EncodedFileOutputSettings),
             [RenderOutputTypes.RecordingMp4.Value] = typeof(RecordingMp4OutputSettings),
             [RenderOutputTypes.StreamingRtmp.Value] = typeof(StreamingRtmpOutputSettings),
+            [RenderOutputTypes.StreamingSrt.Value] = typeof(StreamingSrtOutputSettings),
+            [RenderOutputTypes.StreamingRtsp.Value] = typeof(StreamingRtspOutputSettings),
+            [RenderOutputTypes.StreamingHls.Value] = typeof(StreamingHlsOutputSettings),
             [RenderOutputTypes.VirtualCamera.Value] = typeof(VirtualCameraOutputSettings)
         };
 

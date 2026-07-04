@@ -52,6 +52,13 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `MediaForgeWindows.CreateEngine` applies start, command, stop, and render pump frame-rate options.
 - `MediaForgeRenderPump` publishes frames continuously while running and reports backpressure drops instead of flooding the render thread.
 - Public output consumption is `RenderOutput -> RenderOutputSink(s)`. The internal surface remains GPU/backend-owned; public sinks receive leases and metadata without exposing Vulkan/D3D11 handles.
+- Public `Scene` terminology is an ergonomic alias over `MediaForgeCanvas`. Do not introduce a second scene primitive unless the product model is explicitly revised.
+- The public authoring foundation includes typed source/output helper factories, `Scene(...)`, route helpers, and package export/import APIs.
+- Multiple canvases/scenes can be routed independently to outputs and sinks. The same source can feed multiple scenes/layers, and the renderer must minimize redundant GPU work.
+- The render graph target is `Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects`. The current internal planner deduplicates source frame, reusable source effect-chain, canvas render, and output pass nodes by stable keys.
+- Sinks never cause rendering directly. They consume completed `RenderOutput` frame leases after the renderer has produced the surface.
+- Package JSON is product model data only. It may contain schema versions, ids, type ids, typed settings, transforms, effects, canvas graph, routes, and metadata. It must not contain runtime leases, native handles, Vulkan/D3D11 objects, command buffers, fences, backend worker state, sink queues, or secrets unless explicitly exported.
+- Scene package import must build and validate a candidate project first. Replace, merge-as-new-scene, merge-presets-only, and dry-run modes must not mutate the existing engine/project state on failure.
 - `RenderedOutputFrame` carries an internal `IRenderedOutputSurfaceLease`; public `RenderOutputFrameLease` hides backend details while preserving lifetime for real rendered surfaces.
 - `RenderOutputSinkDispatcher` fans out frames through bounded per-sink queues and keeps sink callbacks off the render thread.
 - `RenderOutputSinkDispatcher` uses explicit sink stop timeouts for detach/dispose and reports hung sinks instead of blocking engine shutdown indefinitely.
@@ -76,12 +83,18 @@ The legacy WinForms preview path has been removed as a product path because it u
 - CP3 `ChromaKeyEffect` is the only supported source-layer effect. Unsupported/invalid/multiple chroma configurations emit explicit diagnostics and are covered by `Cp3ChromaKeyEffectTests`.
 - Vulkan offscreen composition is implemented through `VulkanCompositionShaderPipelines` and `VulkanOffscreenCompositor`.
 - `PreviewPanelSink` presents completed Vulkan offscreen surfaces to a Win32 panel through an internal swapchain blit. It is the GPU preview path; `CpuReadbackSink` remains debug/sample only.
+- Sink attach timeout is owned by `RenderOutputSinkDispatcher`; the engine does not wrap that operation in a competing timeout that could abandon dispatcher cleanup before the sink observes cancellation.
+- Source/output type catalogs now include product contracts for animated images, Lottie, IP camera, encoded file, SRT, RTSP, and HLS. These are project/API contracts only until runtime adapters land.
 
 ## Remaining Blockers
 
 The application shell must not re-enable capture preview until it is wired through the hardened runtime path. The old direct `DesktopDuplicationCaptureSource -> VulkanPreviewRenderer` path must not return.
 
-PAPI, CP2 multi-layer, CP3 solid/nested/chroma, and the first public visual sink are complete. Productive preview, additional effects, and real source/output integrations remain blocked until the roadmap explicitly starts the next track.
+PAPI, CP2 multi-layer, CP3 solid/nested/chroma, first public visual sink, scene
+routing helpers, package serialization foundation, and render-graph planning
+foundation are complete. Productive preview, additional effects, real media
+source adapters, encoder/streaming/NDI/virtual-camera sinks, UI shells, plugin
+APIs, and audio remain blocked until the roadmap explicitly starts those tracks.
 
 ## Review Style Expected
 

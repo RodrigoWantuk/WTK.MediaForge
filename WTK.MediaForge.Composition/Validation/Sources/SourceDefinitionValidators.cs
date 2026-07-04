@@ -146,6 +146,22 @@ internal sealed class RtspInputSourceDefinitionValidator : TypedSourceDefinition
     }
 }
 
+internal sealed class IpCameraSourceDefinitionValidator : TypedSourceDefinitionValidator<IpCameraSourceSettings>
+{
+    public override MediaSourceTypeId TypeId => MediaSourceTypes.IpCamera;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeSourceDefinition source,
+        IpCameraSourceSettings settings)
+    {
+        foreach (var issue in SourceSettingsValidation.ValidateSchemaVersion(settings, source.Name))
+            yield return issue;
+
+        foreach (var issue in SourceSettingsValidation.ValidateNonEmptyString(settings.Url, source.Name, "source.ipcamera.url", "Url"))
+            yield return issue;
+    }
+}
+
 internal sealed class VideoFileSourceDefinitionValidator : TypedSourceDefinitionValidator<VideoFileSourceSettings>
 {
     public override MediaSourceTypeId TypeId => MediaSourceTypes.VideoFile;
@@ -174,6 +190,44 @@ internal sealed class ImageFileSourceDefinitionValidator : TypedSourceDefinition
             yield return issue;
 
         foreach (var issue in SourceSettingsValidation.ValidateNonEmptyPath(settings.Path, source.Name, "source.image.path"))
+            yield return issue;
+    }
+}
+
+internal sealed class AnimatedImageSourceDefinitionValidator : TypedSourceDefinitionValidator<AnimatedImageSourceSettings>
+{
+    public override MediaSourceTypeId TypeId => MediaSourceTypes.AnimatedImage;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeSourceDefinition source,
+        AnimatedImageSourceSettings settings)
+    {
+        foreach (var issue in SourceSettingsValidation.ValidateSchemaVersion(settings, source.Name))
+            yield return issue;
+
+        foreach (var issue in SourceSettingsValidation.ValidateNonEmptyPath(settings.Path, source.Name, "source.animated_image.path"))
+            yield return issue;
+
+        foreach (var issue in SourceSettingsValidation.ValidatePositiveOptional(settings.PreferredFrameRate, source.Name, "source.animated_image.framerate", "PreferredFrameRate"))
+            yield return issue;
+    }
+}
+
+internal sealed class LottieSourceDefinitionValidator : TypedSourceDefinitionValidator<LottieSourceSettings>
+{
+    public override MediaSourceTypeId TypeId => MediaSourceTypes.Lottie;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeSourceDefinition source,
+        LottieSourceSettings settings)
+    {
+        foreach (var issue in SourceSettingsValidation.ValidateSchemaVersion(settings, source.Name))
+            yield return issue;
+
+        foreach (var issue in SourceSettingsValidation.ValidateNonEmptyPath(settings.Path, source.Name, "source.lottie.path"))
+            yield return issue;
+
+        foreach (var issue in SourceSettingsValidation.ValidatePositiveOptional(settings.PreferredFrameRate, source.Name, "source.lottie.framerate", "PreferredFrameRate"))
             yield return issue;
     }
 }

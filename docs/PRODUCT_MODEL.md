@@ -23,7 +23,9 @@ see [ARCHITECTURE.md](../ARCHITECTURE.md). For public API boundaries, see
 | H4 effect model | Complete foundation | Effect types, ordering, snapshots, and validation exist. Renderer support is not implied. |
 | H5 project editor | Complete foundation | `MediaForgeProjectEditor` is the supported mutation primitive. |
 | H6 canvas graph validation | Complete foundation | Cycles and max nested depth 8 are validated. |
-| H7 engine facade skeleton | Complete foundation | Engine exists and now has transactional update/bind/unbind and safer stop behavior. Public API ergonomics are still PAPI work. |
+| H7 engine facade skeleton | Complete foundation | Engine exists and now has transactional update/bind/unbind and safer stop behavior. |
+| Scene routing/packages | Complete foundation | Public `Scene` alias, route helpers, scene package export/import, presets, and dry-run validation exist. |
+| Render graph planning | Complete foundation | Internal DAG planning deduplicates sources, reusable effect chains, canvases, and output passes. |
 
 ## Layer Boundary
 
@@ -52,9 +54,9 @@ Forbidden product-layer shortcuts:
 - `Outputs`
 - schema/version metadata
 
-It is valid storage API. It is not the final ergonomic authoring API for users.
-Public callers should move toward `MediaForgeProjectBuilder` and
-`MediaForgeProjectEditor` once PAPI-3 is implemented.
+It is valid storage API. Public callers should prefer `MediaForgeProjectBuilder`,
+`MediaForgeProjectEditor`, typed helper factories, and package import/export
+APIs for normal authoring.
 
 ## Sources
 
@@ -62,9 +64,12 @@ Sources are defined once and referenced by source layers.
 
 Current public settings DTOs include:
 
+- `AnimatedImageSourceSettings`
 - `DesktopCaptureSourceSettings`
 - `WindowCaptureSourceSettings`
 - `ImageFileSourceSettings`
+- `IpCameraSourceSettings`
+- `LottieSourceSettings`
 - `VideoFileSourceSettings`
 - `WebcamSourceSettings`
 - `NdiInputSourceSettings`
@@ -74,8 +79,9 @@ Current public settings DTOs include:
 `JsonObject` remains storage, migration, and validator infrastructure. It is not
 the normal public authoring experience.
 
-Real webcam, NDI, RTSP, MP4, and image/video providers are still blocked until
-the public API track is complete.
+Real webcam, NDI, RTSP/IP camera, MP4 timeline, static image, animated image,
+and Lottie providers remain planned integrations. Their project type contracts
+exist before the runtime adapters are implemented.
 
 ## Draw Objects
 
@@ -98,8 +104,34 @@ Rules:
 
 - cycles are invalid
 - maximum nested canvas depth is 8
-- nested canvas rendering remains CP3 work
-- CP2 multi-layer rendering must not start until PAPI work is complete or the roadmap explicitly changes
+- nested canvas rendering is implemented in the Vulkan offscreen path
+- a canvas can be routed to multiple outputs
+- public `Scene` naming is an ergonomic alias over `MediaForgeCanvas`
+- reusable canvases should be render-graph dedupe points when size/config/version match
+
+## Routing And Render Graph
+
+Outputs route to canvases. Public applications may treat those canvases as
+scenes, preview scenes, program scenes, nested layouts, or reusable templates.
+
+The target routing model is:
+
+```text
+Source -> SourceLayer(s) -> Canvas/Scene -> RenderOutput -> RenderOutputSink(s)
+```
+
+The first internal render-graph planner exists and compiles routed outputs into
+stable nodes:
+
+- source frame nodes
+- reusable source effect-chain nodes
+- canvas render nodes
+- output pass nodes
+
+This planner is currently a product/runtime foundation and test target. It is
+not yet the Vulkan execution scheduler, but new renderer and sink work should
+preserve the same dedupe contract: same source once, same reusable effect chain
+once, same canvas once, then split only for output-specific fit/presentation.
 
 ## Effects
 
@@ -118,10 +150,14 @@ prove it.
 
 Current output settings DTOs include:
 
+- `EncodedFileOutputSettings`
 - `OffscreenOutputSettings`
 - `PreviewWindowOutputSettings`
 - `RecordingMp4OutputSettings`
+- `StreamingHlsOutputSettings`
+- `StreamingRtspOutputSettings`
 - `StreamingRtmpOutputSettings`
+- `StreamingSrtOutputSettings`
 - `VirtualCameraOutputSettings`
 - `NdiOutputSettings`
 
@@ -155,8 +191,32 @@ first functional public sink for completed-frame metadata in diagnostics, tests,
 and samples. It is not CPU readback and not the main GPU-first path for
 production preview or encoding. `CpuReadbackSink` is the first public visual
 sink and delivers owned CPU pixel buffers after a backend surface has completed.
-Productive preview, NDI, MP4, streaming, virtual camera, and audio outputs
-remain blocked.
+`PreviewPanelSink` is the experimental GPU preview path. Productive preview
+shells, NDI, MP4/encoded file, RTMP/SRT/RTSP/HLS streaming, virtual camera, and
+audio outputs remain planned integrations until the active roadmap opens those
+tracks.
+
+## Package Serialization
+
+Serializable package types exist for saving and exchanging product model state:
+
+- `MediaForgeProject` for full save/load
+- `MediaForgeScenePackage` for one scene/canvas with nested canvases, sources,
+  routed outputs, effects, and metadata
+- `MediaForgeCanvasPreset` for reusable layout/PiP/mosaic/canvas arrangements
+- `MediaForgeSourcePreset` for source definitions without runtime state
+- `MediaForgeOutputPreset` for output profiles with secret-safe export by default
+- `MediaForgeEffectPreset` for reusable effect chains
+
+Package JSON is schema-versioned product data. It must not contain runtime
+leases, native handles, Vulkan/D3D11 objects, command buffers, fences, backend
+worker state, sink queue state, or secrets unless explicitly requested through
+export options.
+
+Import modes are replace project, merge as new scene, merge presets only, and
+dry-run validation. Import builds and validates a candidate project before
+returning it to callers; failed import and dry-run modes must not mutate the
+existing project.
 
 ## Engine
 
@@ -196,13 +256,20 @@ Now covered:
 - layers partially outside the canvas are clipped and fully outside layers draw nothing
 - center, fit, fill, stretch, opacity, letterbox, background, and clipping pixels have GPU tests
 
-Still not implemented:
+Implemented after CP1:
 
 - CP2 multi-layer product compositor
+- CP3 solid layers
 - CP3 nested canvas rendering
-- chroma/effect rendering
-- productive preview binding
-- encoder, NDI, webcam, RTSP, MP4, audio
+- first effect rendering through `ChromaKeyEffect`
+- experimental GPU preview through `PreviewPanelSink`
+
+Still not implemented:
+
+- productive preview shell
+- text rendering
+- blur/color correction/transitions
+- encoder, NDI, webcam, RTSP/IP camera, MP4 timeline, animated image, Lottie, audio
 
 ## Readiness Checklist
 
@@ -213,9 +280,12 @@ Still not implemented:
 | Editor API | Yes | Foundation complete |
 | Engine facade | Yes | Public runtime foundation complete |
 | CP1 offscreen Vulkan path | Yes | Hardened for first-source visual proof |
-| CP2/CP3 compositor | Yes | Blocked |
-| Public SDK experience | Yes | Initial authoring/runtime/sink path exists |
+| CP2/CP3 compositor | Yes | Multi-layer, solid, nested, and chroma foundation complete |
+| Scene routing/packages | Yes | Foundation complete |
+| Render graph planning | Yes | Foundation complete |
+| Public SDK experience | Yes | Initial authoring/runtime/sink/package path exists |
 
 Verdict: the product model foundation and initial public runtime/sink path are
-in good shape. The next renderer work should be CP2 multi-layer, not media
-integrations.
+in good shape. The next work should stabilize PreviewPanelSink locally, then
+advance renderer primitives and media adapters in the order defined by
+`docs/ROADMAP_CURRENT.md` and `docs/FULL_PIPELINE_ROADMAP.md`.

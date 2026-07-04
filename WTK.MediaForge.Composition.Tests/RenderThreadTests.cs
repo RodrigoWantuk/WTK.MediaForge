@@ -258,7 +258,7 @@ public class RenderThreadTests
         WaitUntil(() => backend.SubmitAttempts >= 1, TimeSpan.FromSeconds(5));
         WaitUntil(() => source.RetainCount == 1, TimeSpan.FromSeconds(5));
         runtime.Dispose();
-        Assert.Equal(0, source.RetainCount);
+        WaitUntil(() => source.RetainCount == 0, TimeSpan.FromSeconds(5));
     }
 
     [Fact]

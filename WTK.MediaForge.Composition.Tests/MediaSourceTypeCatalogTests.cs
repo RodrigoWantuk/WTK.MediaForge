@@ -18,13 +18,39 @@ public class MediaSourceTypeCatalogTests
         [
             "wtk.source.desktop",
             "wtk.source.generated",
+            "wtk.source.image.animated",
             "wtk.source.image.file",
+            "wtk.source.ip.camera",
+            "wtk.source.lottie",
             "wtk.source.ndi.input",
             "wtk.source.rtsp.input",
             "wtk.source.video.file",
             "wtk.source.webcam",
             "wtk.source.window.capture"
         ], typeIds);
+    }
+
+    [Fact]
+    public void Settings_serializer_round_trips_new_media_source_settings()
+    {
+        var animated = MediaForgeSources.AnimatedImage("overlay.webp", preferredFrameRate: 30);
+        var animatedJson = MediaSourceSettingsSerializer.ToJson(animated);
+        var restoredAnimated = Assert.IsType<AnimatedImageSourceSettings>(
+            MediaSourceSettingsSerializer.Deserialize(MediaSourceTypes.AnimatedImage, animatedJson));
+        Assert.Equal("overlay.webp", restoredAnimated.Path);
+        Assert.Equal(30, restoredAnimated.PreferredFrameRate);
+
+        var lottie = MediaForgeSources.Lottie("lower-third.json", loop: false);
+        var lottieJson = MediaSourceSettingsSerializer.ToJson(lottie);
+        var restoredLottie = Assert.IsType<LottieSourceSettings>(
+            MediaSourceSettingsSerializer.Deserialize(MediaSourceTypes.Lottie, lottieJson));
+        Assert.False(restoredLottie.Loop);
+
+        var camera = MediaForgeSources.IpCamera("rtsp://camera/live", RtspTransportMode.Udp);
+        var cameraJson = MediaSourceSettingsSerializer.ToJson(camera);
+        var restoredCamera = Assert.IsType<IpCameraSourceSettings>(
+            MediaSourceSettingsSerializer.Deserialize(MediaSourceTypes.IpCamera, cameraJson));
+        Assert.Equal(RtspTransportMode.Udp, restoredCamera.Transport);
     }
 
     [Theory]

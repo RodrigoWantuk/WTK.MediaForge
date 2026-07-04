@@ -18,8 +18,11 @@ public static class MediaSourceSettingsSerializer
             [MediaSourceTypes.Webcam.Value] = typeof(WebcamSourceSettings),
             [MediaSourceTypes.NdiInput.Value] = typeof(NdiInputSourceSettings),
             [MediaSourceTypes.RtspInput.Value] = typeof(RtspInputSourceSettings),
+            [MediaSourceTypes.IpCamera.Value] = typeof(IpCameraSourceSettings),
             [MediaSourceTypes.VideoFile.Value] = typeof(VideoFileSourceSettings),
             [MediaSourceTypes.ImageFile.Value] = typeof(ImageFileSourceSettings),
+            [MediaSourceTypes.AnimatedImage.Value] = typeof(AnimatedImageSourceSettings),
+            [MediaSourceTypes.Lottie.Value] = typeof(LottieSourceSettings),
             [MediaSourceTypes.WindowCapture.Value] = typeof(WindowCaptureSourceSettings),
             [MediaSourceTypes.Generated.Value] = typeof(GeneratedSourceSettings)
         };

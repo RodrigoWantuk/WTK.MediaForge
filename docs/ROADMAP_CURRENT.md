@@ -23,6 +23,11 @@ track.
 - **PreviewPanelSink:** experimental — lifecycle hardening complete (presenter CB release, registry cleanup, finite waits)
 - **Intermediate target pool:** complete
 - **CpuReadbackSink debug optimizations:** complete (staging pool + optional FPS cap)
+- **Full pipeline product foundation:** complete for high-level scene/source/output helpers, multi-scene route modeling, package/preset serialization contracts, and render-graph planning tests
+
+For the final product map across scenes, sources, outputs, effects,
+serialization, render-graph dedupe, and future audio contracts, see
+`docs/FULL_PIPELINE_ROADMAP.md`.
 
 ## Blocking Rule
 
@@ -35,7 +40,8 @@ Do not implement the following until the roadmap step that owns it is active:
 - public plugin APIs
 
 Documentation, tests, API contract work, the public CpuReadbackSink, Solid
-layers, CP3 nested canvas, and the first ChromaKeyEffect listed below are
+layers, CP3 nested canvas, first ChromaKeyEffect, scene routing contracts,
+package serialization contracts, and render-graph planning foundations are
 allowed.
 
 ## Active Commit Order
@@ -44,6 +50,48 @@ allowed.
    - Run PreviewPanelSink for extended periods without obvious GPU leaks.
    - Validate repeated attach/detach, panel resize, and stop/start cycles.
    - Keep PreviewPanelSink experimental in public docs until milestone criteria are met.
+
+2. **Renderer primitives after preview reliability**
+   - Full transform/crop/rotation.
+   - Text rendering.
+   - Blur.
+   - Color correction.
+   - Transitions.
+   - PiP and mosaic helpers.
+   - Reusable effect-chain intermediate targets.
+
+3. **Media adapters after renderer primitives**
+   - Desktop/window reliability.
+   - Webcam.
+   - Static image.
+   - Animated image/GIF/APNG/WebP.
+   - Lottie raster source.
+   - Media file timeline/MP4.
+   - RTSP/IP camera.
+   - NDI input.
+
+4. **Output adapters after source/runtime contracts**
+   - Encoded file output.
+   - RTMP/SRT streaming.
+   - NDI output.
+   - Virtual camera.
+   - Audio remains future contract only.
+
+## Completed - Full Pipeline Product Foundation
+
+1. `MediaForgeProjectBuilder.Scene` provides public scene terminology over
+   `MediaForgeCanvas`.
+2. Typed helper factories exist for current and planned source/output
+   definitions without starting runtime adapters.
+3. Route helpers allow any scene/canvas to be assigned to an output definition.
+4. Scene packages, canvas/source/output/effect presets, dry-run import,
+   merge-as-new-scene, and replace import contracts exist.
+5. Secret-safe output package export redacts RTMP stream keys by default.
+6. Internal render-graph planning tests cover multi-output canvas reuse,
+   cross-scene source/effect reuse, output-pass splitting, and nested canvas
+   dependencies.
+7. Sink attach timeout is owned by the dispatcher so timeout cleanup is not
+   abandoned by a competing engine wrapper timeout.
 
 ## Completed - PreviewPanelSink Lifecycle (P0)
 

@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Editor;
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Sources;
@@ -34,6 +35,13 @@ public sealed class MediaForgeProjectBuilder
         canvas = _editor.CreateCanvas(name, ToFrameSize(width, height));
         return this;
     }
+
+    public MediaForgeProjectBuilder Scene(
+        string name,
+        int width,
+        int height,
+        out MediaForgeCanvas scene) =>
+        Canvas(name, width, height, out scene);
 
     public MediaForgeProjectBuilder DesktopSource(
         string name,
@@ -71,6 +79,64 @@ public sealed class MediaForgeProjectBuilder
         source = _editor.CreateSource(name, settings);
         return this;
     }
+
+    public MediaForgeProjectBuilder WebcamSource(
+        string name,
+        string deviceId,
+        out MediaForgeSourceDefinition source,
+        int? preferredWidth = null,
+        int? preferredHeight = null,
+        double? preferredFrameRate = null) =>
+        Source(name, MediaForgeSources.Webcam(deviceId, preferredWidth, preferredHeight, preferredFrameRate), out source);
+
+    public MediaForgeProjectBuilder ImageSource(
+        string name,
+        string path,
+        out MediaForgeSourceDefinition source) =>
+        Source(name, MediaForgeSources.Image(path), out source);
+
+    public MediaForgeProjectBuilder AnimatedImageSource(
+        string name,
+        string path,
+        out MediaForgeSourceDefinition source,
+        bool loop = true,
+        double? preferredFrameRate = null) =>
+        Source(name, MediaForgeSources.AnimatedImage(path, loop, preferredFrameRate), out source);
+
+    public MediaForgeProjectBuilder LottieSource(
+        string name,
+        string path,
+        out MediaForgeSourceDefinition source,
+        bool loop = true,
+        double? preferredFrameRate = null) =>
+        Source(name, MediaForgeSources.Lottie(path, loop, preferredFrameRate), out source);
+
+    public MediaForgeProjectBuilder MediaFileSource(
+        string name,
+        string path,
+        out MediaForgeSourceDefinition source,
+        bool loop = true) =>
+        Source(name, MediaForgeSources.MediaFile(path, loop), out source);
+
+    public MediaForgeProjectBuilder RtspSource(
+        string name,
+        string url,
+        out MediaForgeSourceDefinition source,
+        RtspTransportMode transport = RtspTransportMode.Tcp) =>
+        Source(name, MediaForgeSources.Rtsp(url, transport), out source);
+
+    public MediaForgeProjectBuilder IpCameraSource(
+        string name,
+        string url,
+        out MediaForgeSourceDefinition source,
+        RtspTransportMode transport = RtspTransportMode.Tcp) =>
+        Source(name, MediaForgeSources.IpCamera(url, transport), out source);
+
+    public MediaForgeProjectBuilder NdiSource(
+        string name,
+        string sourceName,
+        out MediaForgeSourceDefinition source) =>
+        Source(name, MediaForgeSources.Ndi(sourceName), out source);
 
     public MediaForgeProjectBuilder AddSourceLayer(
         MediaForgeCanvas canvas,
@@ -154,6 +220,85 @@ public sealed class MediaForgeProjectBuilder
         out MediaForgeRenderOutput output,
         Action<MediaForgeRenderOutput>? configure = null) =>
         Output(name, canvas, new OffscreenOutputSettings(), width, height, out output, configure);
+
+    public MediaForgeProjectBuilder PreviewOutput(
+        string name,
+        MediaForgeCanvas scene,
+        int width,
+        int height,
+        out MediaForgeRenderOutput output,
+        string title = "Preview",
+        Action<MediaForgeRenderOutput>? configure = null) =>
+        Output(name, scene, MediaForgeOutputs.PreviewWindow(title), width, height, out output, configure);
+
+    public MediaForgeProjectBuilder RecordMp4Output(
+        string name,
+        MediaForgeCanvas scene,
+        string path,
+        int width,
+        int height,
+        out MediaForgeRenderOutput output,
+        Action<MediaForgeRenderOutput>? configure = null) =>
+        Output(name, scene, MediaForgeOutputs.RecordMp4(path), width, height, out output, configure);
+
+    public MediaForgeProjectBuilder EncodedFileOutput(
+        string name,
+        MediaForgeCanvas scene,
+        string path,
+        int width,
+        int height,
+        out MediaForgeRenderOutput output,
+        Action<MediaForgeRenderOutput>? configure = null) =>
+        Output(name, scene, MediaForgeOutputs.EncodedFile(path), width, height, out output, configure);
+
+    public MediaForgeProjectBuilder RtmpOutput(
+        string name,
+        MediaForgeCanvas scene,
+        string url,
+        string streamKey,
+        int width,
+        int height,
+        out MediaForgeRenderOutput output,
+        Action<MediaForgeRenderOutput>? configure = null) =>
+        Output(name, scene, MediaForgeOutputs.Rtmp(url, streamKey), width, height, out output, configure);
+
+    public MediaForgeProjectBuilder NdiOutput(
+        string name,
+        MediaForgeCanvas scene,
+        string sourceName,
+        int width,
+        int height,
+        out MediaForgeRenderOutput output,
+        Action<MediaForgeRenderOutput>? configure = null) =>
+        Output(name, scene, MediaForgeOutputs.Ndi(sourceName), width, height, out output, configure);
+
+    public MediaForgeProjectBuilder VirtualCameraOutput(
+        string name,
+        MediaForgeCanvas scene,
+        string deviceName,
+        int width,
+        int height,
+        out MediaForgeRenderOutput output,
+        Action<MediaForgeRenderOutput>? configure = null) =>
+        Output(name, scene, MediaForgeOutputs.VirtualCamera(deviceName), width, height, out output, configure);
+
+    public MediaForgeProjectBuilder Route(
+        MediaForgeCanvas scene,
+        MediaForgeRenderOutput output)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(output);
+
+        if (!_editor.Project.Canvases.Any(canvas => canvas.Id == scene.Id))
+            throw new InvalidOperationException($"Scene {scene.Id} was not found in the project.");
+
+        var projectOutput = _editor.Project.Outputs.FirstOrDefault(existing => existing.Id == output.Id)
+            ?? throw new InvalidOperationException($"Output {output.Id} was not found in the project.");
+
+        projectOutput.CanvasId = scene.Id;
+        output.CanvasId = scene.Id;
+        return this;
+    }
 
     public MediaForgeProjectBuilder Output(
         string name,
@@ -258,6 +403,29 @@ public sealed class SourceLayerBuilder
     public SourceLayerBuilder SetBlendMode(BlendMode blendMode)
     {
         _layer.BlendMode = blendMode;
+        return this;
+    }
+
+    public SourceLayerBuilder AddChromaKey(
+        ColorRgba keyColor,
+        float similarity = 0.4f,
+        float smoothness = 0.08f,
+        float spillReduction = 0.5f)
+    {
+        EnsureUnitRange(similarity, nameof(similarity));
+        EnsureUnitRange(smoothness, nameof(smoothness));
+        EnsureUnitRange(spillReduction, nameof(spillReduction));
+
+        if (!keyColor.IsInRange())
+            throw new ArgumentOutOfRangeException(nameof(keyColor), "Color components must be finite and between 0 and 1.");
+
+        _layer.Effects.Add(new ChromaKeyEffect
+        {
+            KeyColor = keyColor,
+            Similarity = similarity,
+            Smoothness = smoothness,
+            SpillReduction = spillReduction
+        });
         return this;
     }
 

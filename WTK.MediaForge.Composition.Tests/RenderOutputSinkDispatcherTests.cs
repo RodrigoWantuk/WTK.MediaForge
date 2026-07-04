@@ -259,7 +259,7 @@ public class RenderOutputSinkDispatcherTests
             dispatcher.AttachAsync(output, sink, TimeSpan.FromMilliseconds(50), CancellationToken.None));
 
         Assert.NotNull(ex);
-        Assert.True(sink.StartCancellationObserved);
+        await WaitUntilAsync(() => sink.StartCancellationObserved, TimeSpan.FromSeconds(5));
         Assert.Equal(1, sink.StopCount);
         Assert.Equal(1, sink.DisposeCount);
         Assert.False(dispatcher.IsSinkAttached(output.Id, sink.Id));

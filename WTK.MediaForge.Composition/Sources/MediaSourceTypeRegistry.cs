@@ -50,8 +50,11 @@ public static class MediaSourceTypeRegistry
         yield return Live("Webcam", MediaSourceTypes.Webcam, hasAudio: true);
         yield return Live("NDI input", MediaSourceTypes.NdiInput, hasAudio: true);
         yield return Live("RTSP stream", MediaSourceTypes.RtspInput, hasAudio: true);
+        yield return Live("IP camera", MediaSourceTypes.IpCamera, hasAudio: true);
         yield return File("Video file", MediaSourceTypes.VideoFile, hasAudio: true);
         yield return File("Image file", MediaSourceTypes.ImageFile, hasAudio: false);
+        yield return File("Animated image", MediaSourceTypes.AnimatedImage, hasAudio: false);
+        yield return File("Lottie animation", MediaSourceTypes.Lottie, hasAudio: false);
         yield return Live("Window capture", MediaSourceTypes.WindowCapture, hasAudio: false);
         yield return new MediaSourceTypeDescriptor
         {

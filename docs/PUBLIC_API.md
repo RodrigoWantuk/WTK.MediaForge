@@ -25,6 +25,8 @@ Current public authoring types:
 - `SourceLayerBuilder`
 - `TextLayerBuilder`
 - `CanvasLayerBuilder`
+- `MediaForgeSources`
+- `MediaForgeOutputs`
 - `MediaForgeProjectLoader`
 - `MediaForgeProjectSerializer`
 - `MediaForgeProjectMigrator`
@@ -34,6 +36,15 @@ Current public authoring types:
 - `ValidationIssue`
 
 Applications should not directly construct render snapshots, runtime snapshots, GPU leases, render threads, or backend submissions.
+
+`Scene(...)` is a public authoring alias over `MediaForgeCanvas`. Internally the
+canonical render primitive remains canvas; the public API may use scene naming to
+fit live-production workflows without introducing a second scene graph.
+
+`MediaForgeSources` and `MediaForgeOutputs` are typed helper factories for
+source/output definitions. They create serializable project definitions only;
+they do not create capture devices, decoders, encoders, network clients, GPU
+surfaces, or sink workers.
 
 ## 2. Public Runtime API
 
@@ -75,9 +86,12 @@ Source settings are public typed DTOs. Public callers should use these types ins
 
 Current public source settings:
 
+- `AnimatedImageSourceSettings`
 - `DesktopCaptureSourceSettings`
 - `WindowCaptureSourceSettings`
 - `ImageFileSourceSettings`
+- `IpCameraSourceSettings`
+- `LottieSourceSettings`
 - `VideoFileSourceSettings`
 - `WebcamSourceSettings`
 - `NdiInputSourceSettings`
@@ -92,10 +106,14 @@ Output settings are public typed DTOs. Public callers should use these types ins
 
 Current public output settings:
 
+- `EncodedFileOutputSettings`
 - `OffscreenOutputSettings`
 - `PreviewWindowOutputSettings`
 - `RecordingMp4OutputSettings`
+- `StreamingHlsOutputSettings`
+- `StreamingRtspOutputSettings`
 - `StreamingRtmpOutputSettings`
+- `StreamingSrtOutputSettings`
 - `VirtualCameraOutputSettings`
 - `NdiOutputSettings`
 
@@ -135,7 +153,36 @@ Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s
 
 Real preview, NDI, MP4, streaming, and audio outputs remain blocked until the renderer composition track is stable.
 
-## 5. Public Effect Model
+## 5. Public Package And Preset Serialization
+
+The public package surface supports save/load, scene export/import, and reusable
+presets without exposing runtime resources.
+
+Current public package types:
+
+- `MediaForgePackageExportOptions`
+- `MediaForgePackageSerializer`
+- `MediaForgeProjectPackages`
+- `MediaForgeProjectImportMode`
+- `MediaForgeProjectImportResult`
+- `MediaForgeScenePackage`
+- `MediaForgeCanvasPreset`
+- `MediaForgeSourcePreset`
+- `MediaForgeOutputPreset`
+- `MediaForgeEffectPreset`
+
+Package JSON can contain stable ids, schema version, type ids, typed settings,
+transforms, effects, canvas graph, output routes, and metadata. Package JSON
+must not contain runtime leases, native handles, Vulkan/D3D11 resources, command
+buffers, fences, backend worker state, sink queues, or secret credentials unless
+export options explicitly allow secrets.
+
+Supported import modes are replace project, merge as new scene, merge presets
+only, and dry-run validation. Import validates by building a candidate project
+first; it must not mutate the caller's project when validation fails or when the
+mode is dry-run.
+
+## 6. Public Effect Model
 
 Effects are public project-level authoring types.
 
@@ -149,7 +196,7 @@ Current public effects:
 
 Effects may exist as project model contracts before the renderer implements every effect. Public API must not imply that an effect is rendered unless renderer support and tests exist.
 
-## 6. Public Diagnostics
+## 7. Public Diagnostics
 
 Diagnostics are public so host applications can observe failures and warnings without depending on internal logs.
 
@@ -164,7 +211,7 @@ Current public diagnostics:
 - `ListDiagnosticsSink`
 - `InMemoryDiagnosticsSink`
 
-## 7. Advanced Low-Level API
+## 8. Advanced Low-Level API
 
 The primary SDK path does not require D3D11, Vulkan, GPU slot, or native handle
 types. Some low-level assemblies still expose advanced types for diagnostics,
@@ -175,7 +222,7 @@ Advanced public types are allowed only when they are intentionally listed in the
 public API allowlist test. New low-level public types must update this document
 and the allowlist in the same change.
 
-## 8. Internal GPU/Runtime APIs
+## 9. Internal GPU/Runtime APIs
 
 The following categories are internal implementation details:
 
@@ -196,7 +243,7 @@ The following categories are internal implementation details:
 
 These types may be visible to test assemblies or implementation assemblies through `InternalsVisibleTo`; that does not make them product API.
 
-## 9. Prohibited Public Exposure
+## 10. Prohibited Public Exposure
 
 The following types must not be public:
 
@@ -245,6 +292,9 @@ Current post-PAPI status:
 - A continuous render pump exists.
 - Public render output sinks exist with bounded asynchronous dispatch.
 - Frame notification sink proves completed public frame delivery for samples/tests.
-- CP1 now honors canvas background and clips source layers to the canvas.
+- Scene routing, source/output helper factories, package export/import, and the
+  first render-graph planning foundation exist.
+- CP1/CP2/CP3 offscreen Vulkan composition is in place through multi-layer,
+  solid, nested canvas, and first chroma-key effect coverage.
 
 NDI, encoder, streaming, MP4, webcam, RTSP, productive WinForms preview, UI designer, and plugin APIs remain blocked until the renderer composition track is explicitly resumed.

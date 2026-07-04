@@ -16,11 +16,15 @@ public class RenderOutputTypeCatalogTests
 
         Assert.Equal(
         [
+            "wtk.output.file.encoded",
             "wtk.output.ndi",
             "wtk.output.offscreen",
             "wtk.output.preview.window",
             "wtk.output.recording.mp4",
+            "wtk.output.streaming.hls",
             "wtk.output.streaming.rtmp",
+            "wtk.output.streaming.rtsp",
+            "wtk.output.streaming.srt",
             "wtk.output.virtual.camera"
         ], typeIds);
     }
@@ -40,6 +44,23 @@ public class RenderOutputTypeCatalogTests
         var preview = Assert.IsType<PreviewWindowOutputSettings>(restored);
         Assert.Equal("Program", preview.Title);
         Assert.False(preview.EnableVSync);
+    }
+
+    [Fact]
+    public void Settings_serializer_round_trips_new_output_settings()
+    {
+        var encoded = MediaForgeOutputs.EncodedFile("program.mov", container: "mov", videoCodec: "prores");
+        var encodedJson = RenderOutputSettingsSerializer.ToJson(encoded);
+        var restoredEncoded = Assert.IsType<EncodedFileOutputSettings>(
+            RenderOutputSettingsSerializer.Deserialize(RenderOutputTypes.EncodedFile, encodedJson));
+        Assert.Equal("mov", restoredEncoded.Container);
+        Assert.Equal("prores", restoredEncoded.VideoCodec);
+
+        var srt = MediaForgeOutputs.Srt("srt://example.test:9000");
+        var srtJson = RenderOutputSettingsSerializer.ToJson(srt);
+        var restoredSrt = Assert.IsType<StreamingSrtOutputSettings>(
+            RenderOutputSettingsSerializer.Deserialize(RenderOutputTypes.StreamingSrt, srtJson));
+        Assert.Equal("srt://example.test:9000", restoredSrt.Url);
     }
 
     [Fact]

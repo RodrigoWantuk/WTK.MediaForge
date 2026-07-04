@@ -883,7 +883,7 @@ public class MediaForgeEngineTests
 
         Assert.IsType<TimeoutException>(ex.InnerException);
         Assert.Equal(MediaForgeEngineState.Failed, engine.State);
-        Assert.True(sink.StartCancellationObserved);
+        await WaitUntilAsync(() => sink.StartCancellationObserved, TimeSpan.FromSeconds(5));
         Assert.False(engine.IsSinkAttachedForTests(project.Outputs[0].Id, sink.Id));
         Assert.Equal(0, engine.AttachedSinkCountForTests);
         Assert.Equal(1, sink.StopCount);

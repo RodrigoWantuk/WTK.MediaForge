@@ -40,8 +40,12 @@ public sealed class RenderOutputDefinitionValidatorRegistry
             new Outputs.PreviewWindowOutputDefinitionValidator(),
             new Outputs.OffscreenOutputDefinitionValidator(),
             new Outputs.NdiOutputDefinitionValidator(),
+            new Outputs.EncodedFileOutputDefinitionValidator(),
             new Outputs.RecordingMp4OutputDefinitionValidator(),
             new Outputs.StreamingRtmpOutputDefinitionValidator(),
+            new Outputs.StreamingSrtOutputDefinitionValidator(),
+            new Outputs.StreamingRtspOutputDefinitionValidator(),
+            new Outputs.StreamingHlsOutputDefinitionValidator(),
             new Outputs.VirtualCameraOutputDefinitionValidator()
         ];
 

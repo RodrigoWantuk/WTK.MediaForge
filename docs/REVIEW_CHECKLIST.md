@@ -11,6 +11,7 @@ Before considering a change complete, verify:
 - [ ] Runtime/GPU/snapshot internals are not exposed as public product API.
 - [ ] Public API changes update `docs/PUBLIC_API.md` and `Public_api_matches_approved_allowlist`.
 - [ ] CP2, nested canvas, preview, NDI, encoder, webcam, RTSP, MP4, streaming, or audio work starts only after the roadmap explicitly opens that track.
+- [ ] New source/output types are introduced first as product contracts, not hidden runtime integrations.
 - [ ] `dotnet test` passes.
 - [ ] `scripts/test.ps1 -Tier Fast` passes.
 - [ ] `scripts/test.ps1 -Tier Gpu` passes when touching GPU code.
@@ -72,6 +73,20 @@ Before considering a change complete, verify:
 - [ ] Render commands used by public engine APIs are acknowledged before the public call returns success.
 - [ ] Public engine failures use typed public exceptions.
 - [ ] Engine diagnostics/state/frame-drop events are raised without allowing event-handler failures to kill the render thread.
+- [ ] Sink attach timeout is owned by the sink dispatcher; engine wrappers must not abandon dispatcher cleanup before the sink observes cancellation.
+
+## Scene Routing, Packages, And Render Graph
+
+- [ ] Public `Scene` APIs remain aliases over `MediaForgeCanvas`, not a competing scene primitive.
+- [ ] Routes use `CanvasId -> RenderOutput -> RenderOutputSink(s)` and never direct canvas-to-encoder/NDI/preview shortcuts.
+- [ ] Same scene routed to multiple sinks/outputs does not require duplicate canvas rendering when size/config/version match.
+- [ ] Same source across scenes/layers is acquired once per frame where the runtime graph can share it.
+- [ ] Reusable source effect-chain nodes are keyed by semantic source/effect configuration, not by runtime object identity.
+- [ ] Different output sizes reuse the same canvas render where possible and split only output-fit/presentation passes.
+- [ ] Package JSON contains schema version, ids, type ids, typed settings, transforms, effects, canvas graph, routes, and metadata only.
+- [ ] Package JSON does not contain runtime leases, native handles, Vulkan/D3D11 objects, command buffers, fences, backend worker state, sink queues, or secrets by default.
+- [ ] Import validates schema, ids, missing references, output routes, unsupported types, migrations, and canvas cycles before returning an applied candidate.
+- [ ] Dry-run import and failed import do not mutate the existing project or engine state.
 
 ## Render Output Sinks
 

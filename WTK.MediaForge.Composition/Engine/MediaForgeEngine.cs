@@ -449,10 +449,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 createdSurfaceBinding = await EnsureAutomaticSurfaceBindingAsync(output, cancellationToken)
                     .ConfigureAwait(false);
 
-                await AwaitWithTimeoutAsync(
-                    ct => _sinkDispatcher.AttachAsync(output, sink, CommandTimeout, ct),
+                await _sinkDispatcher.AttachAsync(
+                    output,
+                    sink,
                     CommandTimeout,
-                    "Render output sink attach timed out.",
                     cancellationToken).ConfigureAwait(false);
 
                 attachSucceeded = true;

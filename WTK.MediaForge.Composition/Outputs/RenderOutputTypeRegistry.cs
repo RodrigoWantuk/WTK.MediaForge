@@ -40,6 +40,13 @@ public static class RenderOutputTypeRegistry
         };
         yield return new RenderOutputTypeDescriptor
         {
+            TypeId = RenderOutputTypes.EncodedFile,
+            DisplayName = "Encoded file",
+            RequiresWindowHandle = false,
+            IsHeadless = false
+        };
+        yield return new RenderOutputTypeDescriptor
+        {
             TypeId = RenderOutputTypes.RecordingMp4,
             DisplayName = "MP4 recording",
             RequiresWindowHandle = false,
@@ -49,6 +56,27 @@ public static class RenderOutputTypeRegistry
         {
             TypeId = RenderOutputTypes.StreamingRtmp,
             DisplayName = "RTMP streaming",
+            RequiresWindowHandle = false,
+            IsHeadless = false
+        };
+        yield return new RenderOutputTypeDescriptor
+        {
+            TypeId = RenderOutputTypes.StreamingSrt,
+            DisplayName = "SRT streaming",
+            RequiresWindowHandle = false,
+            IsHeadless = false
+        };
+        yield return new RenderOutputTypeDescriptor
+        {
+            TypeId = RenderOutputTypes.StreamingRtsp,
+            DisplayName = "RTSP streaming",
+            RequiresWindowHandle = false,
+            IsHeadless = false
+        };
+        yield return new RenderOutputTypeDescriptor
+        {
+            TypeId = RenderOutputTypes.StreamingHls,
+            DisplayName = "HLS streaming",
             RequiresWindowHandle = false,
             IsHeadless = false
         };

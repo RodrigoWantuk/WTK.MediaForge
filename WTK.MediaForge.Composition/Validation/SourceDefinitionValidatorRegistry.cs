@@ -42,8 +42,11 @@ public sealed class SourceDefinitionValidatorRegistry
             new Sources.WebcamSourceDefinitionValidator(),
             new Sources.NdiInputSourceDefinitionValidator(),
             new Sources.RtspInputSourceDefinitionValidator(),
+            new Sources.IpCameraSourceDefinitionValidator(),
             new Sources.VideoFileSourceDefinitionValidator(),
             new Sources.ImageFileSourceDefinitionValidator(),
+            new Sources.AnimatedImageSourceDefinitionValidator(),
+            new Sources.LottieSourceDefinitionValidator(),
             new Sources.WindowCaptureSourceDefinitionValidator(),
             new Sources.GeneratedSourceDefinitionValidator()
         ];

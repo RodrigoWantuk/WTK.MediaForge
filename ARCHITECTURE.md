@@ -22,6 +22,40 @@ The project aims to provide a lighter and more modular alternative to traditiona
 
 ---
 
+## Current Architecture Note
+
+The current product direction is multi-scene routing over the existing canvas
+model:
+
+```text
+Sources -> Scenes/Canvases -> RenderOutputs -> RenderOutputSink(s)
+```
+
+`MediaForgeCanvas` is the canonical render primitive. Public `Scene` APIs are
+ergonomic aliases over canvas definitions. Source definitions live at project
+scope and can feed multiple scenes/layers. Render outputs route a canvas to one
+or more sinks without requiring the sink to trigger rendering.
+
+The target render graph for each frame is:
+
+```text
+Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects
+```
+
+The graph deduplicates by stable keys: source frame once per frame, reusable
+source/effect chain once per semantic chain, canvas render once per
+size/config/version, and only output-fit/presentation passes split by output.
+
+The current repository has completed the public runtime/sink foundation, CP2
+multi-layer composition, CP3 solid/nested/chroma work, scene routing helpers,
+package/preset serialization contracts, and an internal render-graph planning
+foundation. `PreviewPanelSink` is still experimental until the preview local
+reliability milestone is complete. Real webcam, RTSP/IP camera, MP4 timeline,
+NDI, encoded file, streaming, virtual camera, UI shell, plugin, and audio work
+must follow `docs/ROADMAP_CURRENT.md` and `docs/FULL_PIPELINE_ROADMAP.md`.
+
+---
+
 ## Architecture layers
 
 WTK MediaForge is intentionally split into two layers. **Do not mix them.**

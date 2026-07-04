@@ -92,6 +92,28 @@ internal sealed class RecordingMp4OutputDefinitionValidator : TypedRenderOutputD
     }
 }
 
+internal sealed class EncodedFileOutputDefinitionValidator : TypedRenderOutputDefinitionValidator<EncodedFileOutputSettings>
+{
+    public override RenderOutputTypeId TypeId => RenderOutputTypes.EncodedFile;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeRenderOutput output,
+        EncodedFileOutputSettings settings)
+    {
+        foreach (var issue in OutputSettingsValidation.ValidateSchemaVersion(settings, output.Name))
+            yield return issue;
+
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.Path, output.Name, "output.encoded.path", "Path"))
+            yield return issue;
+
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.Container, output.Name, "output.encoded.container", "Container"))
+            yield return issue;
+
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.VideoCodec, output.Name, "output.encoded.video_codec", "VideoCodec"))
+            yield return issue;
+    }
+}
+
 internal sealed class StreamingRtmpOutputDefinitionValidator : TypedRenderOutputDefinitionValidator<StreamingRtmpOutputSettings>
 {
     public override RenderOutputTypeId TypeId => RenderOutputTypes.StreamingRtmp;
@@ -107,6 +129,54 @@ internal sealed class StreamingRtmpOutputDefinitionValidator : TypedRenderOutput
             yield return issue;
 
         foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.StreamKey, output.Name, "output.rtmp.key", "StreamKey"))
+            yield return issue;
+    }
+}
+
+internal sealed class StreamingSrtOutputDefinitionValidator : TypedRenderOutputDefinitionValidator<StreamingSrtOutputSettings>
+{
+    public override RenderOutputTypeId TypeId => RenderOutputTypes.StreamingSrt;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeRenderOutput output,
+        StreamingSrtOutputSettings settings)
+    {
+        foreach (var issue in OutputSettingsValidation.ValidateSchemaVersion(settings, output.Name))
+            yield return issue;
+
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.Url, output.Name, "output.srt.url", "Url"))
+            yield return issue;
+    }
+}
+
+internal sealed class StreamingRtspOutputDefinitionValidator : TypedRenderOutputDefinitionValidator<StreamingRtspOutputSettings>
+{
+    public override RenderOutputTypeId TypeId => RenderOutputTypes.StreamingRtsp;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeRenderOutput output,
+        StreamingRtspOutputSettings settings)
+    {
+        foreach (var issue in OutputSettingsValidation.ValidateSchemaVersion(settings, output.Name))
+            yield return issue;
+
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.Url, output.Name, "output.rtsp.url", "Url"))
+            yield return issue;
+    }
+}
+
+internal sealed class StreamingHlsOutputDefinitionValidator : TypedRenderOutputDefinitionValidator<StreamingHlsOutputSettings>
+{
+    public override RenderOutputTypeId TypeId => RenderOutputTypes.StreamingHls;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeRenderOutput output,
+        StreamingHlsOutputSettings settings)
+    {
+        foreach (var issue in OutputSettingsValidation.ValidateSchemaVersion(settings, output.Name))
+            yield return issue;
+
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.Path, output.Name, "output.hls.path", "Path"))
             yield return issue;
     }
 }
