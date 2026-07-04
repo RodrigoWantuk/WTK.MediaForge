@@ -19,7 +19,7 @@ Validation date: 2026-06-22
 - Any effect other than `ChromaKeyEffect` on source layers
 - Add blend modes on source layers
 - Text draw objects
-- MP4/video timeline playback (blocked until timeline clock exists)
+- MP4/video timeline playback (deferred until timeline clock exists)
 
 ## Pixel Correctness Tests
 
@@ -57,7 +57,7 @@ File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp3ChromaKeyEffectTests.cs`
 - `CpuReadbackSink` remains a debug/sample/validation sink, not the primary preview or encoder path.
 - `TimelineDriven` source mode currently behaves as keep-latest placeholder until
   `MediaTimelineClock`, timestamp frame selection, seek, and end-of-stream policy exist.
-  MP4/video file sources remain blocked until that work lands.
+  MP4/video file sources remain deferred until that work lands.
 
 ## Acceptance Criteria
 

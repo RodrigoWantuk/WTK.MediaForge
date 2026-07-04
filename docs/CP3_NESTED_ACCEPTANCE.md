@@ -18,7 +18,7 @@ Vulkan rendering of `CanvasDrawObject` nested canvases:
 
 - Rotation on nested canvas layers
 - Crop on nested canvas layers
-- Intermediate target pooling/cache (performance work before production preview)
+- Output/product preview reliability beyond the nested-canvas renderer scope
 
 ## Pixel Correctness Tests
 
@@ -40,17 +40,12 @@ Intermediate targets created for nested canvases are owned by
 `VulkanSubmissionResourceScope` and released only from
 `VulkanRenderFrameSubmission.DisposeCompleted()` after fence completion.
 
-## Known Limitations
+## Post-Acceptance Note
 
-**Performance:** intermediate targets are currently allocated per submit. Before
-productive preview or production output, this must move to a keyed cache/pool:
-
-```text
-canvas id + size + format + generation
-```
-
-This limitation is accepted for CP3 initial delivery but is **not** accepted for
-final product performance.
+The initial CP3 acceptance did not include intermediate target pooling. That
+performance work has since landed through `VulkanIntermediateTargetPool`; this
+report remains the renderer acceptance record for nested canvas correctness and
+submission-scoped lifetime.
 
 ## Acceptance Criteria
 

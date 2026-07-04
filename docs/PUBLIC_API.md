@@ -2,7 +2,7 @@
 
 WTK MediaForge exposes a product API for authoring, validating, loading, and operating media compositions. GPU, capture, render-thread, snapshot, and submission ownership details are implementation internals.
 
-This document is the public API boundary for the PAPI stabilization track. New public types must fit one of the public sections below. Runtime/GPU helper types must remain internal unless this document is updated first.
+This document is the public API boundary. New public types must fit one of the public sections below. Runtime/GPU helper types must remain internal unless this document is updated first.
 
 ## 1. Public Authoring API
 
@@ -67,7 +67,7 @@ Engine operations are observable:
 
 - project validation failures throw `MediaForgeProjectValidationException`
 - lifecycle/runtime failures throw `MediaForgeEngineException`
-- unsupported planned features throw `MediaForgeUnsupportedFeatureException`
+- unavailable or unsupported features throw `MediaForgeUnsupportedFeatureException`
 - `CurrentProject` returns a deep clone; public callers cannot mutate engine-owned project state directly
 - `StartAsync` requires a loaded project and `StopAsync` returns to `Loaded` when that project remains loaded
 - `StartTimeout`, `CommandTimeout`, `StopTimeout`, `SinkStopTimeout`, and `RenderFramesPerSecond` are applied by `MediaForgeWindows.CreateEngine`
@@ -149,9 +149,9 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink: it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. `PreviewPanelSink` is an **experimental** GPU preview sink: it consumes a completed rendered output surface and presents it to a Win32 panel handle through an internal Vulkan swapchain blit, without CPU readback. Do not treat it as a final product API until presenter lifecycle (command buffers, registry cleanup, finite waits) is fully hardened.
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink: it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. `PreviewPanelSink` is an **experimental** GPU preview sink: it consumes a completed rendered output surface and presents it to a Win32 panel handle through an internal Vulkan swapchain blit, without CPU readback. Keep it experimental until the preview local reliability milestone in `docs/ROADMAP_CURRENT.md` is complete.
 
-Real preview, NDI, MP4, streaming, and audio outputs remain blocked until the renderer composition track is stable.
+Productive preview shells, NDI, MP4/encoded file, streaming, virtual camera, and audio outputs remain blocked until the owning roadmap track opens.
 
 ## 5. Public Package And Preset Serialization
 
@@ -272,29 +272,3 @@ The following types must not be public:
 - `VulkanSmokeTest`
 - `VulkanExternalTextureRegistry`
 - `VulkanD3D11TextureImport`
-
-PAPI status:
-
-| # | Work | Status |
-|---|---|---|
-| PAPI-1 | Public API audit | Complete |
-| PAPI-2 | `MediaForgeWindows.CreateEngine` | Complete |
-| PAPI-3 | `MediaForgeProjectBuilder` | Complete |
-| PAPI-4 | Public engine state/runtime API | Complete |
-| PAPI-5 | Typed render output targets | Complete foundation |
-| PAPI-6 | Public validation/runtime exceptions | Complete |
-| PAPI-7 | Public engine events | Complete |
-| PAPI-8 | Offscreen sample | Complete |
-
-Current post-PAPI status:
-
-- Public runtime ownership and engine state are hardened.
-- A continuous render pump exists.
-- Public render output sinks exist with bounded asynchronous dispatch.
-- Frame notification sink proves completed public frame delivery for samples/tests.
-- Scene routing, source/output helper factories, package export/import, and the
-  first render-graph planning foundation exist.
-- CP1/CP2/CP3 offscreen Vulkan composition is in place through multi-layer,
-  solid, nested canvas, and first chroma-key effect coverage.
-
-NDI, encoder, streaming, MP4, webcam, RTSP, productive WinForms preview, UI designer, and plugin APIs remain blocked until the renderer composition track is explicitly resumed.
