@@ -16,16 +16,18 @@
         MinWidth="1280"
         MinHeight="720"
         Background="{StaticResource MfBackgroundBrush}"
-        Title="WTK MediaForge Studio">
+        Title="WTK MediaForge Studio"
+        ExtendClientAreaToDecorationsHint="True"
+        WindowDecorations="None">
 
   <Grid Background="{StaticResource MfBackgroundBrush}">
     <Grid.RowDefinitions>
-      <RowDefinition Height="38" />
-      <RowDefinition Height="48" />
+      <RowDefinition Height="36" />
+      <RowDefinition Height="36" />
       <RowDefinition Height="*" />
       <RowDefinition Height="5" />
       <RowDefinition Height="260" MinHeight="210" MaxHeight="420" />
-      <RowDefinition Height="27" />
+      <RowDefinition Height="26" />
     </Grid.RowDefinitions>
     <shell:StudioTitleBarView Grid.Row="0" />
     <shell:StudioToolbarView Grid.Row="1" />

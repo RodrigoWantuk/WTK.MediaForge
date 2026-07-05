@@ -62,6 +62,8 @@ public sealed class ToolbarViewModel : ViewModelBase
             if (SetProperty(ref _streamingState, value))
             {
                 OnPropertyChanged(nameof(IsStreamBusy));
+                OnPropertyChanged(nameof(IsStreamingLive));
+                OnPropertyChanged(nameof(IsStreamNotConfigured));
                 OnPropertyChanged(nameof(StreamButtonClasses));
             }
         }
@@ -75,6 +77,8 @@ public sealed class ToolbarViewModel : ViewModelBase
             if (SetProperty(ref _recordingState, value))
             {
                 OnPropertyChanged(nameof(IsRecordingBusy));
+                OnPropertyChanged(nameof(IsRecordingLive));
+                OnPropertyChanged(nameof(IsRecordingNotConfigured));
                 OnPropertyChanged(nameof(RecordingButtonClasses));
             }
         }
@@ -83,6 +87,14 @@ public sealed class ToolbarViewModel : ViewModelBase
     public bool IsStreamBusy => StreamingState is StudioOutputUiState.Starting or StudioOutputUiState.Stopping;
 
     public bool IsRecordingBusy => RecordingState is StudioOutputUiState.Starting or StudioOutputUiState.Stopping;
+
+    public bool IsStreamingLive => StreamingState == StudioOutputUiState.Running;
+
+    public bool IsRecordingLive => RecordingState == StudioOutputUiState.Running;
+
+    public bool IsStreamNotConfigured => StreamingState == StudioOutputUiState.NotConfigured;
+
+    public bool IsRecordingNotConfigured => RecordingState == StudioOutputUiState.NotConfigured;
 
     public string StreamButtonClasses => StreamingState switch
     {

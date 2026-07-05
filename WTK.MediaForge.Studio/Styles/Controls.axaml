@@ -28,9 +28,51 @@
   </Style>
 
   <Style Selector="Button.live">
-    <Setter Property="Background" Value="{StaticResource MfErrorBrush}" />
-    <Setter Property="BorderBrush" Value="{StaticResource MfErrorBrush}" />
+    <Setter Property="Background" Value="{StaticResource MfAccentBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentHoverBrush}" />
     <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.production">
+    <Setter Property="Background" Value="{StaticResource MfInputBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderNormalBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.production.live">
+    <Setter Property="Background" Value="{StaticResource MfAccentBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentHoverBrush}" />
+    <Setter Property="Foreground" Value="#03101A" />
+  </Style>
+
+  <Style Selector="Button.production.recording">
+    <Setter Property="Background" Value="{StaticResource MfRecordBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfRecordBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.production.busy">
+    <Setter Property="Background" Value="{StaticResource MfSelectedBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
+  </Style>
+
+  <Style Selector="Button.window-control">
+    <Setter Property="MinWidth" Value="36" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Width" Value="42" />
+    <Setter Property="Height" Value="35" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <Style Selector="Button.window-control:pointerover">
+    <Setter Property="Background" Value="{StaticResource MfSurface3Brush}" />
+  </Style>
+
+  <Style Selector="Button.window-control.close:pointerover">
+    <Setter Property="Background" Value="{StaticResource MfErrorBrush}" />
   </Style>
 
   <Style Selector="Button.flat">

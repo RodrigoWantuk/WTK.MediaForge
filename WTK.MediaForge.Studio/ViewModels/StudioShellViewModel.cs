@@ -870,7 +870,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         Toolbar.StreamButtonText = Toolbar.StreamingState switch
         {
             StudioOutputUiState.Starting => "Conectando...",
-            StudioOutputUiState.Running => "● Ao vivo",
+            StudioOutputUiState.Running => "Ao vivo",
             StudioOutputUiState.Stopping => "Encerrando...",
             StudioOutputUiState.Error => "Erro na transmissão",
             StudioOutputUiState.NotConfigured => "Configurar transmissão",
@@ -879,7 +879,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         Toolbar.RecordingButtonText = Toolbar.RecordingState switch
         {
             StudioOutputUiState.Starting => "Iniciando gravação...",
-            StudioOutputUiState.Running => $"● Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}",
+            StudioOutputUiState.Running => $"Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}",
             StudioOutputUiState.Stopping => "Parando...",
             StudioOutputUiState.Error => "Erro na gravação",
             StudioOutputUiState.NotConfigured => "Configurar gravação",
