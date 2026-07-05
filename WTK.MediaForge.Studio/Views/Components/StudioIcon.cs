@@ -168,6 +168,16 @@ public sealed class StudioIcon : Control
                 DrawSearch(context, rect, pen);
                 context.DrawLine(pen, new Point(rect.Center.X - rect.Width * 0.12, rect.Center.Y), new Point(rect.Center.X + rect.Width * 0.12, rect.Center.Y));
                 break;
+            case StudioIconKind.WindowMinimize:
+                context.DrawLine(pen, new Point(rect.X + rect.Width * 0.24, rect.Center.Y), new Point(rect.Right - rect.Width * 0.24, rect.Center.Y));
+                break;
+            case StudioIconKind.WindowMaximize:
+                context.DrawRectangle(null, pen, rect.Deflate(rect.Width * 0.24), 1, 1);
+                break;
+            case StudioIconKind.WindowClose:
+                context.DrawLine(pen, new Point(rect.X + rect.Width * 0.26, rect.Y + rect.Height * 0.26), new Point(rect.Right - rect.Width * 0.26, rect.Bottom - rect.Height * 0.26));
+                context.DrawLine(pen, new Point(rect.Right - rect.Width * 0.26, rect.Y + rect.Height * 0.26), new Point(rect.X + rect.Width * 0.26, rect.Bottom - rect.Height * 0.26));
+                break;
             case StudioIconKind.Source:
             case StudioIconKind.Layer:
             default:

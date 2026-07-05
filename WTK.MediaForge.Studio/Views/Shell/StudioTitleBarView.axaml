@@ -35,17 +35,17 @@
         <Button Classes="window-control"
                 Click="OnMinimizeClick"
                 ToolTip.Tip="{loc:Loc Window_Minimize}">
-          <TextBlock Text="-" FontSize="14" />
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.WindowMinimize}" IconSize="13" />
         </Button>
         <Button Classes="window-control"
                 Click="OnMaximizeRestoreClick"
                 ToolTip.Tip="{loc:Loc Window_MaximizeRestore}">
-          <TextBlock Text="□" FontSize="13" />
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.WindowMaximize}" IconSize="13" />
         </Button>
         <Button Classes="window-control close"
                 Click="OnCloseClick"
                 ToolTip.Tip="{loc:Loc Window_Close}">
-          <TextBlock Text="×" FontSize="15" />
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.WindowClose}" IconSize="13" />
         </Button>
       </StackPanel>
     </Grid>

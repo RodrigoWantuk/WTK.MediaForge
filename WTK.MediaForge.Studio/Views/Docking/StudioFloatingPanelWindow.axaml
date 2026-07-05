@@ -3,6 +3,8 @@
         xmlns:docking="using:WTK.MediaForge.Studio.ViewModels.Docking"
         xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
         xmlns:shell="using:WTK.MediaForge.Studio.Views.Shell"
+        xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+        xmlns:models="using:WTK.MediaForge.Studio.Models"
         x:Class="WTK.MediaForge.Studio.Views.Docking.StudioFloatingPanelWindow"
         x:DataType="docking:StudioDockPanelViewModel"
         Width="420"
@@ -10,7 +12,9 @@
         MinWidth="280"
         MinHeight="220"
         Background="{StaticResource MfBackgroundBrush}"
-        Title="{Binding Title}">
+        Title="{Binding Title}"
+        ExtendClientAreaToDecorationsHint="True"
+        WindowDecorations="None">
   <Window.DataTemplates>
     <DataTemplate DataType="vm:ProjectExplorerViewModel">
       <shell:ProjectExplorerView />
@@ -26,18 +30,29 @@
     </DataTemplate>
   </Window.DataTemplates>
 
-  <Grid RowDefinitions="34,*">
-    <Border Background="{StaticResource MfSurface2Brush}"
-            BorderBrush="{StaticResource MfBorderBrush}"
-            BorderThickness="0,0,0,1"
-            Padding="10,0">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="{Binding Title}" Classes="panel-title" VerticalAlignment="Center" />
-        <Button Grid.Column="1" Command="{Binding ToggleFloatingCommand}" Padding="8,3">
-          <TextBlock Text="Reencaixar" />
-        </Button>
-      </Grid>
-    </Border>
-    <ContentControl Grid.Row="1" Content="{Binding Content}" />
-  </Grid>
+  <Border BorderBrush="{StaticResource MfBorderNormalBrush}"
+          BorderThickness="1"
+          Background="{StaticResource MfBackgroundBrush}">
+    <Grid RowDefinitions="36,*">
+      <Border Background="{StaticResource MfSurface2Brush}"
+              BorderBrush="{StaticResource MfBorderBrush}"
+              BorderThickness="0,0,0,1"
+              Padding="10,0"
+              PointerPressed="OnFloatingTitleBarPointerPressed">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+          <TextBlock Text="{Binding Title}" Classes="panel-title" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Command="{Binding ToggleFloatingCommand}" Padding="8,3">
+            <TextBlock Text="Reencaixar" />
+          </Button>
+          <Button Grid.Column="2"
+                  Classes="window-control close"
+                  Click="OnCloseClick"
+                  ToolTip.Tip="Fechar">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.WindowClose}" IconSize="13" />
+          </Button>
+        </Grid>
+      </Border>
+      <ContentControl Grid.Row="1" Content="{Binding Content}" />
+    </Grid>
+  </Border>
 </Window>

@@ -36,5 +36,8 @@ public enum StudioIconKind
     SafeArea,
     Fit,
     ZoomIn,
-    ZoomOut
+    ZoomOut,
+    WindowMinimize,
+    WindowMaximize,
+    WindowClose
 }
