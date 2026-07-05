@@ -33,10 +33,10 @@
                 <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TransitionText}" Classes="secondary" />
               </Grid>
               <Border Grid.Row="2" Classes="status-pill" HorizontalAlignment="Left">
-                <TextBlock Text="Troca visual por seletor de cena" Classes="muted" FontSize="11" />
+                <TextBlock Text="Troca explícita por cena e transição" Classes="muted" FontSize="11" />
               </Border>
               <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6">
-                <Button Content="Enviar cena"
+                <Button Content="{Binding RouteButtonText}"
                         Classes="primary"
                         Command="{Binding SendSceneCommand}" />
                 <Button Content="Configurar"

@@ -125,7 +125,9 @@
                             Padding="0"
                             Margin="0,0,0,8"
                             HorizontalAlignment="Stretch">
-                      <Border Classes="scene-card" HorizontalAlignment="Stretch">
+                      <Border Classes="scene-card"
+                              Classes.selected="{Binding IsSelected}"
+                              HorizontalAlignment="Stretch">
                         <Grid ColumnDefinitions="36,*,Auto" ColumnSpacing="10">
                           <Border Classes="icon-box" Width="34" Height="34">
                             <components:StudioIcon Kind="{Binding IconKind}"
@@ -158,6 +160,7 @@
                     Command="{Binding CancelDialogCommand}" />
             <Button Content="{Binding Dialog.PrimaryText}"
                     Classes="primary"
+                    IsEnabled="{Binding Dialog.IsPrimaryActionEnabled}"
                     Command="{Binding ConfirmDialogCommand}" />
           </StackPanel>
         </Grid>

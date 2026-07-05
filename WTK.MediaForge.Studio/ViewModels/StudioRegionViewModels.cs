@@ -758,6 +758,7 @@ public sealed class ProductionOutputCardViewModel : ViewModelBase
         bool isLive,
         bool isRecording,
         bool isConfigured,
+        string routeButtonText,
         ICommand? sendSceneCommand,
         ICommand? selectCommand)
     {
@@ -770,6 +771,7 @@ public sealed class ProductionOutputCardViewModel : ViewModelBase
         IsLive = isLive;
         IsRecording = isRecording;
         IsConfigured = isConfigured;
+        RouteButtonText = routeButtonText;
         SendSceneCommand = sendSceneCommand;
         SelectCommand = selectCommand;
     }
@@ -793,6 +795,8 @@ public sealed class ProductionOutputCardViewModel : ViewModelBase
     public bool IsConfigured { get; }
 
     public bool IsWarning => !IsConfigured;
+
+    public string RouteButtonText { get; }
 
     public ICommand? SendSceneCommand { get; }
 
@@ -1009,6 +1013,7 @@ public sealed class StudioDialogViewModel : ViewModelBase
     private string _kind = string.Empty;
     private string _targetOutputId = string.Empty;
     private string _selectedTransitionId = "transition-cut";
+    private string _selectedSceneId = string.Empty;
     private int _transitionDurationMs = 120;
     private bool _requiresLiveConfirmation;
 
@@ -1057,6 +1062,7 @@ public sealed class StudioDialogViewModel : ViewModelBase
                 OnPropertyChanged(nameof(IsRoutingDialog));
                 OnPropertyChanged(nameof(IsSourceDialog));
                 OnPropertyChanged(nameof(IsSettingsDialog));
+                OnPropertyChanged(nameof(IsPrimaryActionEnabled));
             }
         }
     }
@@ -1072,6 +1078,23 @@ public sealed class StudioDialogViewModel : ViewModelBase
         get => _selectedTransitionId;
         set => SetProperty(ref _selectedTransitionId, value);
     }
+
+    public string SelectedSceneId
+    {
+        get => _selectedSceneId;
+        set
+        {
+            if (SetProperty(ref _selectedSceneId, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedScene));
+                OnPropertyChanged(nameof(IsPrimaryActionEnabled));
+            }
+        }
+    }
+
+    public bool HasSelectedScene => !string.IsNullOrWhiteSpace(SelectedSceneId);
+
+    public bool IsPrimaryActionEnabled => !IsRoutingDialog || HasSelectedScene;
 
     public int TransitionDurationMs
     {
@@ -1100,7 +1123,10 @@ public sealed class StudioDialogViewModel : ViewModelBase
 }
 
 public sealed class StudioDialogOptionViewModel
+    : ViewModelBase
 {
+    private bool _isSelected;
+
     public StudioDialogOptionViewModel(string id, string title, string description, StudioIconKind iconKind, string badge, bool isEnabled, ICommand? selectCommand)
     {
         Id = id;
@@ -1127,6 +1153,12 @@ public sealed class StudioDialogOptionViewModel
     public bool IsEnabled { get; }
 
     public ICommand? SelectCommand { get; }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
 }
 
 public sealed class TransitionOptionViewModel

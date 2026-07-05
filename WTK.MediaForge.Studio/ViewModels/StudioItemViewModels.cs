@@ -267,6 +267,7 @@ public sealed class OutputCardViewModel : ProjectCardViewModel
         StudioHealthState healthState,
         bool isConfigured,
         bool isLive,
+        string routeButtonText,
         ICommand? sendSceneCommand,
         ICommand? configureCommand)
         : base(id, name, metadata, iconKind, badge, codecText, healthState)
@@ -276,6 +277,7 @@ public sealed class OutputCardViewModel : ProjectCardViewModel
         CodecText = codecText;
         IsConfigured = isConfigured;
         IsLive = isLive;
+        RouteButtonText = routeButtonText;
         SendSceneCommand = sendSceneCommand;
         ConfigureCommand = configureCommand;
     }
@@ -289,6 +291,8 @@ public sealed class OutputCardViewModel : ProjectCardViewModel
     public bool IsConfigured { get; }
 
     public bool IsLive { get; }
+
+    public string RouteButtonText { get; }
 
     public ICommand? SendSceneCommand { get; }
 

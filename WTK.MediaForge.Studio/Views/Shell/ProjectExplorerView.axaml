@@ -154,7 +154,7 @@
                     <TextBlock Grid.Row="1" Text="{Binding SceneName}" Classes="secondary" />
                     <TextBlock Grid.Row="2" Text="{Binding TransitionText}" Classes="muted" />
                     <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6">
-                      <Button Content="Enviar cena" Classes="primary" Command="{Binding SendSceneCommand}" />
+                      <Button Content="{Binding RouteButtonText}" Classes="primary" Command="{Binding SendSceneCommand}" />
                       <Button Content="Configurar" Command="{Binding ConfigureCommand}" />
                     </StackPanel>
                   </Grid>

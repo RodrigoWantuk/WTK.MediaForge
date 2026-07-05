@@ -352,6 +352,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     {
         var output = _document.Outputs.First(item => item.Id == outputId);
         var scene = _document.Scenes.First(item => item.Id == sceneId);
+        var wasLive = output.IsLive || output.State == StudioOutputState.Live;
         output.AssignedSceneId = scene.Id;
         output.DefaultTransitionId = transitionId;
         output.TransitionDurationMs = durationMs;
@@ -366,7 +367,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         RebuildAll();
         SelectOutput(output);
         ApplyProjectDocument();
-        SetStatus($"{scene.DisplayName} enviada para {output.DisplayName}.");
+        SetStatus(wasLive
+            ? $"{scene.DisplayName} transicionada em {output.DisplayName}."
+            : $"{scene.DisplayName} definida para {output.DisplayName}.");
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> source)
@@ -599,6 +602,8 @@ public sealed class StudioShellViewModel : ViewModelBase
     private void OpenSendSceneDialog(string outputId)
     {
         var output = _document.Outputs.First(item => item.Id == outputId);
+        var isLive = output.IsLive || output.State == StudioOutputState.Live;
+        var defaultTransition = _document.Transitions.FirstOrDefault(item => item.Id == output.DefaultTransitionId);
         Dialog.Options.Clear();
         Dialog.TransitionOptions.Clear();
         foreach (var transition in _document.Transitions)
@@ -608,26 +613,40 @@ public sealed class StudioShellViewModel : ViewModelBase
 
         Dialog.TargetOutputId = outputId;
         Dialog.SelectedTransitionId = output.DefaultTransitionId;
-        Dialog.TransitionDurationMs = output.TransitionDurationMs;
-        Dialog.RequiresLiveConfirmation = output.IsLive;
+        Dialog.TransitionDurationMs = output.TransitionDurationMs > 0
+            ? output.TransitionDurationMs
+            : defaultTransition?.DurationMs ?? 120;
+        Dialog.RequiresLiveConfirmation = isLive;
+        Dialog.SelectedSceneId = CurrentScene?.Id ?? output.AssignedSceneId;
         foreach (var scene in _document.Scenes)
         {
-            Dialog.Options.Add(new StudioDialogOptionViewModel(
+            var option = new StudioDialogOptionViewModel(
                 scene.Id,
                 scene.DisplayName,
                 $"{scene.Canvas.Width:0}×{scene.Canvas.Height:0} • {scene.Canvas.FrameRate:0.##} fps",
                 StudioIconKind.Scene,
                 scene.IsProgram ? "Principal" : string.Empty,
                 true,
-                new RelayCommand(() =>
-                {
-                    SendSceneToOutput(Dialog.TargetOutputId, scene.Id, Dialog.SelectedTransitionId, Dialog.TransitionDurationMs);
-                    CloseDialog();
-                })));
+                new RelayCommand(() => SelectRouteDialogScene(scene.Id)));
+            option.IsSelected = option.Id == Dialog.SelectedSceneId;
+            Dialog.Options.Add(option);
         }
 
         Dialog.NotifyOptionsChanged();
-        ShowDialog("Enviar cena para saída", $"Escolha a cena e a transição para {output.DisplayName}.", "route-output", "Cancelar");
+        ShowDialog(
+            isLive ? "Transicionar cena da saída" : "Alterar cena da saída",
+            $"Escolha a cena e a transição para {output.DisplayName}.",
+            "route-output",
+            isLive ? "Transicionar" : "Alterar");
+    }
+
+    private void SelectRouteDialogScene(string sceneId)
+    {
+        Dialog.SelectedSceneId = sceneId;
+        foreach (var option in Dialog.Options)
+        {
+            option.IsSelected = option.Id == sceneId;
+        }
     }
 
     private void ShowDialog(string title, string message, string kind, string primaryText)
@@ -651,7 +670,18 @@ public sealed class StudioShellViewModel : ViewModelBase
             case "settings":
             case "message":
             case "source-library":
+                CloseDialog();
+                break;
             case "route-output":
+                if (Dialog.HasSelectedScene)
+                {
+                    SendSceneToOutput(
+                        Dialog.TargetOutputId,
+                        Dialog.SelectedSceneId,
+                        Dialog.SelectedTransitionId,
+                        Dialog.TransitionDurationMs);
+                }
+
                 CloseDialog();
                 break;
         }
@@ -667,6 +697,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         Dialog.IsOpen = false;
         Dialog.Options.Clear();
         Dialog.TransitionOptions.Clear();
+        Dialog.TargetOutputId = string.Empty;
+        Dialog.SelectedSceneId = string.Empty;
         Dialog.NotifyOptionsChanged();
     }
 
@@ -964,6 +996,7 @@ public sealed class StudioShellViewModel : ViewModelBase
                 OutputHealth(output),
                 output.IsConfigured,
                 output.IsLive,
+                RouteActionText(output),
                 new RelayCommand(() => OpenSendSceneDialog(output.Id)),
                 new RelayCommand(() => SelectOutput(output)))
             {
@@ -989,9 +1022,10 @@ public sealed class StudioShellViewModel : ViewModelBase
             TransitionText(output),
             output.IsLive || output.State == StudioOutputState.Live,
             output.IsRecording || output.State == StudioOutputState.Recording,
-            output.IsConfigured,
-            new RelayCommand(() => OpenSendSceneDialog(output.Id)),
-            new RelayCommand(() => SelectOutput(output)))).ToArray();
+                output.IsConfigured,
+                RouteActionText(output),
+                new RelayCommand(() => OpenSendSceneDialog(output.Id)),
+                new RelayCommand(() => SelectOutput(output)))).ToArray();
 
         Replace(Production.Outputs, cards);
     }
@@ -1295,6 +1329,13 @@ public sealed class StudioShellViewModel : ViewModelBase
         var transition = _document.Transitions.FirstOrDefault(item => item.Id == output.DefaultTransitionId);
         var name = transition?.DisplayName ?? "Corte rápido";
         return output.TransitionDurationMs <= 0 ? name : $"{name} {output.TransitionDurationMs} ms";
+    }
+
+    private static string RouteActionText(StudioOutput output)
+    {
+        return output.IsLive || output.State == StudioOutputState.Live
+            ? "Transicionar cena"
+            : "Alterar cena";
     }
 
     private static string OutputStateText(StudioOutput output)
