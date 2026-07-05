@@ -16,9 +16,9 @@
                 Margin="26"
                 Spacing="6">
       <Border Classes="status-pill" HorizontalAlignment="Left">
-        <TextBlock Text="Preview mock" Classes="accent" FontSize="12" />
+        <TextBlock Text="Prévia visual" Classes="accent" FontSize="12" />
       </Border>
-      <TextBlock Text="Frame host boundary" Classes="secondary" />
+      <TextBlock Text="Área reservada para o frame real" Classes="secondary" />
     </StackPanel>
   </Grid>
 </UserControl>

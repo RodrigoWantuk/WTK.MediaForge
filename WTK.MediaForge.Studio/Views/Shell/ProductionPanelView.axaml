@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:loc="using:WTK.MediaForge.Studio.Localization"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
+             x:Class="WTK.MediaForge.Studio.Views.Shell.ProductionPanelView"
+             x:DataType="vm:ProductionPanelViewModel">
+  <Border Background="{StaticResource MfSurface1Brush}"
+          BorderBrush="{StaticResource MfBorderBrush}"
+          BorderThickness="1,0,0,1">
+    <Grid RowDefinitions="38,*">
+      <Border Grid.Row="0"
+              BorderBrush="{StaticResource MfBorderBrush}"
+              BorderThickness="0,0,0,1"
+              Padding="12,0">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="{loc:Loc Panel_Production}" Classes="panel-title" VerticalAlignment="Center" />
+          <Border Grid.Column="1" Classes="badge" VerticalAlignment="Center">
+            <TextBlock Text="Saídas" Classes="accent" FontSize="11" />
+          </Border>
+        </Grid>
+      </Border>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <ItemsControl ItemsSource="{Binding Outputs}" Margin="10">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ProductionOutputCardViewModel">
+              <Border Classes="output-card" Margin="0,0,0,8">
+                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                  <Grid ColumnDefinitions="34,*,Auto" ColumnSpacing="8">
+                    <Border Classes="icon-box" Width="32" Height="32">
+                      <components:StudioIcon Kind="{Binding IconKind}"
+                                             IconSize="17"
+                                             Foreground="{StaticResource MfAccentBrush}"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="1">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding StatusText}" Classes="secondary" />
+                    </StackPanel>
+                    <Border Grid.Column="2" Classes="health-dot"
+                            Classes.healthy="{Binding IsConfigured}"
+                            Classes.warning="{Binding IsWarning}"
+                            Classes.error="{Binding IsLive}"
+                            VerticalAlignment="Center" />
+                  </Grid>
+                  <Grid Grid.Row="1" ColumnDefinitions="62,*" RowDefinitions="Auto,Auto" RowSpacing="4">
+                    <TextBlock Text="Cena" Classes="muted" />
+                    <TextBlock Grid.Column="1" Text="{Binding SceneName}" Classes="secondary" />
+                    <TextBlock Grid.Row="1" Text="Transição" Classes="muted" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TransitionText}" Classes="secondary" />
+                  </Grid>
+                  <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+                    <Button Content="Enviar cena..."
+                            Classes="primary"
+                            Command="{Binding SendSceneCommand}" />
+                    <Button Content="Configurar"
+                            Command="{Binding SelectCommand}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Grid>
+  </Border>
+</UserControl>

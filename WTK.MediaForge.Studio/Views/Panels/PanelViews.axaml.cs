@@ -13,6 +13,11 @@ public partial class EffectsPanelView : UserControl
     public EffectsPanelView() => AvaloniaXamlLoader.Load(this);
 }
 
+public partial class SceneOutputsPanelView : UserControl
+{
+    public SceneOutputsPanelView() => AvaloniaXamlLoader.Load(this);
+}
+
 public partial class DiagnosticsPanelView : UserControl
 {
     public DiagnosticsPanelView() => AvaloniaXamlLoader.Load(this);

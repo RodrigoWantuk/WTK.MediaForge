@@ -29,11 +29,11 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
             "source.desktop" => "Captura de tela",
             "source.window" => "Janela",
             "source.image" => "Imagem",
-            "source.media" => "Arquivo de midia",
+            "source.media" => "Arquivo de mídia",
             "source.text" => "Texto",
-            "source.solid" => "Cor solida",
+            "source.solid" => "Cor sólida",
             "source.ndi" => "NDI",
-            "source.rtsp" => "RTSP / Camera IP",
+            "source.rtsp" => "RTSP / Câmera IP",
             _ => HumanizeTypeId(typeId)
         };
     }
@@ -42,12 +42,12 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
     {
         return typeId switch
         {
-            "output.preview" => "Preview",
-            "output.file.mp4" => "Gravacao MP4",
-            "output.rtmp" => "Transmissao RTMP",
-            "output.srt" => "Transmissao SRT",
+            "output.preview" => "Prévia",
+            "output.file.mp4" => "Gravação MP4",
+            "output.rtmp" => "Transmissão RTMP",
+            "output.srt" => "Transmissão SRT",
             "output.ndi" => "NDI",
-            "output.virtual-camera" => "Camera virtual",
+            "output.virtual-camera" => "Câmera virtual",
             _ => HumanizeTypeId(typeId)
         };
     }
@@ -56,7 +56,7 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
     {
         return state switch
         {
-            StudioOutputUiState.NotConfigured => "Nao configurada",
+            StudioOutputUiState.NotConfigured => "Não configurada",
             StudioOutputUiState.Ready => "Pronta",
             StudioOutputUiState.Starting => "Iniciando",
             StudioOutputUiState.Running => "Ativa",
@@ -75,7 +75,7 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
             StudioOutputState.Running => "Ativa",
             StudioOutputState.Recording => "Gravando",
             StudioOutputState.Live => "Ao vivo",
-            StudioOutputState.Warning => "Atencao",
+            StudioOutputState.Warning => "Atenção",
             StudioOutputState.Offline => "Offline",
             _ => state.ToString()
         };
@@ -85,8 +85,8 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
     {
         return state switch
         {
-            StudioHealthState.Healthy => "Saudavel",
-            StudioHealthState.Warning => "Atencao",
+            StudioHealthState.Healthy => "Saudável",
+            StudioHealthState.Warning => "Atenção",
             StudioHealthState.Error => "Erro",
             StudioHealthState.Planned => "Planejado",
             StudioHealthState.Disabled => "Desabilitado",
@@ -101,7 +101,7 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
             "Text" => "Texto",
             "Image" => "Imagem",
             "Source" => "Fonte",
-            "Solid" => "Cor solida",
+            "Solid" => "Cor sólida",
             _ => layerType
         };
     }

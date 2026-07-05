@@ -1,30 +1,90 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
              x:Class="WTK.MediaForge.Studio.Views.Inspectors.SceneInspectorView"
              x:DataType="vm:SceneInspectorViewModel">
   <ScrollViewer VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="16" Spacing="12">
-      <StackPanel Spacing="3">
-        <TextBlock Text="{Binding Title}" Classes="title" />
-        <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
-      </StackPanel>
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <Border Classes="icon-box" Width="40" Height="40">
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Scene}"
+                                 IconSize="22"
+                                 Foreground="{StaticResource MfAccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock Text="Propriedades da cena" Classes="panel-title" />
+          <TextBlock Text="{Binding Title}" Classes="title" />
+          <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
+        </StackPanel>
+      </Grid>
 
       <Border Classes="section">
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
-          <TextBlock Text="CANVAS" Classes="panel-title" />
-          <TextBlock Grid.Row="1" Text="{Binding CanvasSize, StringFormat='Tamanho: {0}'}" Classes="secondary" />
-          <TextBlock Grid.Row="2" Text="{Binding AspectRatio, StringFormat='Proporcao: {0}'}" Classes="secondary" />
-          <TextBlock Grid.Row="3" Text="{Binding FrameRateText, StringFormat='FPS: {0}'}" Classes="secondary" />
-          <TextBlock Grid.Row="4" Text="{Binding BackgroundColor, StringFormat='Fundo: {0}'}" Classes="secondary" />
-          <TextBlock Grid.Row="5" Text="{Binding LayerCount, StringFormat='Camadas: {0}'}" Classes="secondary" />
-        </Grid>
+        <StackPanel Spacing="10">
+          <TextBlock Text="CONFIGURAÇÃO DA CENA" Classes="panel-title" />
+          <StackPanel Spacing="4">
+            <TextBlock Text="Nome" Classes="muted" />
+            <TextBox Text="{Binding Name, Mode=TwoWay}" />
+          </StackPanel>
+          <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" RowSpacing="8" ColumnSpacing="8">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Largura" Classes="muted" />
+              <NumericUpDown Value="{Binding CanvasWidth, Mode=TwoWay}" Minimum="320" Maximum="7680" Increment="1" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="Altura" Classes="muted" />
+              <NumericUpDown Value="{Binding CanvasHeight, Mode=TwoWay}" Minimum="180" Maximum="4320" Increment="1" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Spacing="4">
+              <TextBlock Text="FPS" Classes="muted" />
+              <NumericUpDown Value="{Binding FrameRate, Mode=TwoWay}" Minimum="1" Maximum="240" Increment="1" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
+              <TextBlock Text="Fundo" Classes="muted" />
+              <TextBox Text="{Binding BackgroundColor, Mode=TwoWay}" />
+            </StackPanel>
+          </Grid>
+          <CheckBox Content="Cena principal" IsChecked="{Binding IsProgram, Mode=TwoWay}" />
+        </StackPanel>
       </Border>
 
       <Border Classes="section">
         <StackPanel Spacing="8">
-          <TextBlock Text="ROTAS" Classes="panel-title" />
-          <TextBlock Text="{Binding LinkedOutputs}" Classes="secondary" TextWrapping="Wrap" />
+          <TextBlock Text="SAÍDAS USANDO ESTA CENA" Classes="panel-title" />
+          <ItemsControl ItemsSource="{Binding LinkedOutputs}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="status-pill" Margin="0,0,0,5">
+                  <TextBlock Text="{Binding}" Classes="secondary" />
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="EFEITOS DA CENA" Classes="panel-title" />
+            <Button Grid.Column="1" Classes="flat" Content="+ Adicionar" IsEnabled="False" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Effects}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:EffectItemViewModel">
+                <Border Classes="metric-card" Margin="0,0,0,8">
+                  <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsEnabled, Mode=TwoWay}" OnContent="Ativo" OffContent="Inativo" />
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </StackPanel>
       </Border>
     </StackPanel>

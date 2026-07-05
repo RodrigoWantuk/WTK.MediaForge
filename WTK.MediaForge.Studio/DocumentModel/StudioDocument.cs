@@ -41,6 +41,8 @@ public sealed partial class StudioDocument : ObservableObject
 
     public ObservableCollection<StudioOutput> Outputs { get; } = new();
 
+    public ObservableCollection<StudioTransition> Transitions { get; } = new();
+
     public ObservableCollection<StudioPreset> Presets { get; } = new();
 
     public ObservableCollection<StudioPackage> Packages { get; } = new();
@@ -80,6 +82,8 @@ public sealed partial class StudioScene : ObservableObject
     public StudioCanvasSettings Canvas { get; } = new();
 
     public ObservableCollection<StudioLayer> Layers { get; } = new();
+
+    public ObservableCollection<StudioEffect> Effects { get; } = new();
 
     public ObservableCollection<string> OutputIds { get; } = new();
 }
@@ -285,8 +289,12 @@ public sealed partial class StudioOutput : ObservableObject
     private string _bitrate = string.Empty;
     private string _secret = string.Empty;
     private string _assignedSceneId = string.Empty;
+    private string _defaultTransitionId = "transition-cut";
+    private int _transitionDurationMs = 120;
     private bool _isEnabled = true;
     private bool _isConfigured = true;
+    private bool _isLive;
+    private bool _isRecording;
     private StudioOutputState _state = StudioOutputState.Running;
 
     public string Id
@@ -337,6 +345,18 @@ public sealed partial class StudioOutput : ObservableObject
         set => SetProperty(ref _assignedSceneId, value);
     }
 
+    public string DefaultTransitionId
+    {
+        get => _defaultTransitionId;
+        set => SetProperty(ref _defaultTransitionId, value);
+    }
+
+    public int TransitionDurationMs
+    {
+        get => _transitionDurationMs;
+        set => SetProperty(ref _transitionDurationMs, Math.Clamp(value, 0, 5000));
+    }
+
     public bool IsEnabled
     {
         get => _isEnabled;
@@ -349,10 +369,54 @@ public sealed partial class StudioOutput : ObservableObject
         set => SetProperty(ref _isConfigured, value);
     }
 
+    public bool IsLive
+    {
+        get => _isLive;
+        set => SetProperty(ref _isLive, value);
+    }
+
+    public bool IsRecording
+    {
+        get => _isRecording;
+        set => SetProperty(ref _isRecording, value);
+    }
+
     public StudioOutputState State
     {
         get => _state;
         set => SetProperty(ref _state, value);
+    }
+}
+
+public sealed partial class StudioTransition : ObservableObject
+{
+    private string _id = string.Empty;
+    private string _displayName = string.Empty;
+    private StudioTransitionKind _kind = StudioTransitionKind.Cut;
+    private int _durationMs;
+
+    public string Id
+    {
+        get => _id;
+        set => SetProperty(ref _id, value);
+    }
+
+    public string DisplayName
+    {
+        get => _displayName;
+        set => SetProperty(ref _displayName, value);
+    }
+
+    public StudioTransitionKind Kind
+    {
+        get => _kind;
+        set => SetProperty(ref _kind, value);
+    }
+
+    public int DurationMs
+    {
+        get => _durationMs;
+        set => SetProperty(ref _durationMs, Math.Clamp(value, 0, 5000));
     }
 }
 

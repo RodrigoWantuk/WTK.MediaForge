@@ -104,11 +104,12 @@ Current Studio state:
 
 - `WTK.MediaForge.Studio` contains the first Avalonia mock shell.
 - Studio ViewModel tests are included in `./scripts/test.ps1 -Tier Fast`.
-- The current UI milestone is Studio UI recovery/productization: shared mock
-  document state, native vector icons, searchable Project Explorer,
-  scene-scoped editable canvas, contextual Propriedades panel, bottom
-  Camadas/Efeitos/Saidas workbench, output routing, localization foundation,
-  and ViewModel coverage.
+- The current UI milestone is Studio UI product reset v0.2: shared mock
+  document state, native vector icons, left-side scenes-only navigation,
+  source library dialog, scene-scoped editable canvas, right-side
+  Produção/Saídas cards, explicit scene-to-output routing with transitions,
+  contextual Propriedades panel, bottom Camadas/Saídas da cena workbench,
+  localization foundation, and ViewModel/viewport coverage.
 - Fake Studio services own mock project, output, diagnostics, selection, and
   contextual properties behavior. Engine service types may exist internally for
   future bridge work, but the main UI must not expose Start/Stop Engine.
@@ -122,9 +123,10 @@ Allowed in the UI track before runtime gates open:
 
 - Avalonia shell layout;
 - centralized dark theme;
-- mock Project Explorer, canvas editor, contextual properties panel, bottom
-  Camadas/Efeitos/Saidas workbench, output routing, and advanced
-  diagnostics/performance placeholders outside the main workbench;
+- mock scenes-only navigation, source library dialog, canvas editor,
+  production output cards, contextual properties panel, bottom
+  Camadas/Saídas da cena workbench, explicit output routing with transitions,
+  and advanced diagnostics/performance placeholders outside the main workbench;
 - fake Stream/Record UI state driven by configured outputs, not by a visible
   engine toggle;
 - fake Studio service boundaries and unified selection state;

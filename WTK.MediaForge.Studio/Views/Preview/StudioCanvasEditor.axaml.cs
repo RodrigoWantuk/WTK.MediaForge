@@ -12,11 +12,9 @@ public sealed partial class StudioCanvasEditor : UserControl
 {
     private LayerItemViewModel? _activeLayer;
     private ResizeHandleKind _activeHandle = ResizeHandleKind.None;
-    private Point _lastCanvasPoint;
+    private SceneEditorInteractionMode _interactionMode = SceneEditorInteractionMode.None;
+    private Point _lastScenePoint;
     private Point _lastScreenPoint;
-    private bool _isDragging;
-    private bool _isResizing;
-    private bool _isPanning;
     private bool _isSpaceDown;
 
     public StudioCanvasEditor()
@@ -31,9 +29,32 @@ public sealed partial class StudioCanvasEditor : UserControl
         ViewModel?.SetViewport(e.NewSize.Width, e.NewSize.Height);
     }
 
+    private void OnResizeHandlePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (ViewModel is not { } vm || sender is not ResizeHandleControl handle || handle.DataContext is not LayerItemViewModel layer)
+        {
+            return;
+        }
+
+        Focus();
+        vm.RequestLayerSelection(layer);
+        if (layer.IsLocked)
+        {
+            return;
+        }
+
+        _activeLayer = layer;
+        _activeHandle = handle.HandleKind;
+        _interactionMode = SceneEditorInteractionMode.ResizeLayer;
+        _lastScreenPoint = e.GetCurrentPoint(this).Position;
+        _lastScenePoint = vm.ScreenToScene(_lastScreenPoint);
+        e.Pointer.Capture(this);
+        e.Handled = true;
+    }
+
     private void OnEditorPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (ViewModel is not { } vm)
+        if (ViewModel is not { } vm || e.Handled)
         {
             return;
         }
@@ -41,29 +62,28 @@ public sealed partial class StudioCanvasEditor : UserControl
         Focus();
         var point = e.GetCurrentPoint(this);
         _lastScreenPoint = point.Position;
-        _lastCanvasPoint = ToCanvas(point.Position, vm);
+        _lastScenePoint = vm.ScreenToScene(point.Position);
 
         if (point.Properties.IsMiddleButtonPressed || _isSpaceDown)
         {
-            _isPanning = true;
+            _interactionMode = SceneEditorInteractionMode.Pan;
             e.Pointer.Capture(this);
             e.Handled = true;
             return;
         }
 
-        var layer = vm.HitTest(_lastCanvasPoint.X, _lastCanvasPoint.Y);
+        var layer = vm.HitTest(_lastScenePoint);
         if (layer is null)
         {
-            vm.SelectLayerFromOwner(null);
+            vm.RequestLayerSelection(null);
             ClearPointerState(e);
             return;
         }
 
         vm.RequestLayerSelection(layer);
         _activeLayer = layer;
-        _activeHandle = DetectHandle(layer, _lastCanvasPoint, vm.Zoom);
-        _isResizing = _activeHandle != ResizeHandleKind.None && !layer.IsLocked;
-        _isDragging = !_isResizing && !layer.IsLocked;
+        _activeHandle = ResizeHandleKind.None;
+        _interactionMode = layer.IsLocked ? SceneEditorInteractionMode.None : SceneEditorInteractionMode.MoveLayer;
         e.Pointer.Capture(this);
         e.Handled = true;
     }
@@ -76,7 +96,7 @@ public sealed partial class StudioCanvasEditor : UserControl
         }
 
         var screen = e.GetCurrentPoint(this).Position;
-        if (_isPanning)
+        if (_interactionMode == SceneEditorInteractionMode.Pan)
         {
             var delta = screen - _lastScreenPoint;
             _lastScreenPoint = screen;
@@ -90,24 +110,24 @@ public sealed partial class StudioCanvasEditor : UserControl
             return;
         }
 
-        var current = ToCanvas(screen, vm);
-        var deltaCanvas = current - _lastCanvasPoint;
-        _lastCanvasPoint = current;
+        var scenePoint = vm.ScreenToScene(screen);
+        var deltaScene = scenePoint - _lastScenePoint;
+        _lastScenePoint = scenePoint;
 
-        if (_isDragging)
+        if (_interactionMode == SceneEditorInteractionMode.MoveLayer)
         {
-            vm.MoveLayer(_activeLayer, deltaCanvas.X, deltaCanvas.Y, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+            vm.MoveLayer(_activeLayer, deltaScene.X, deltaScene.Y, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
             e.Handled = true;
         }
-        else if (_isResizing)
+        else if (_interactionMode == SceneEditorInteractionMode.ResizeLayer)
         {
             vm.ResizeLayer(
                 _activeLayer,
                 _activeHandle,
-                deltaCanvas.X,
-                deltaCanvas.Y,
+                deltaScene.X,
+                deltaScene.Y,
                 e.KeyModifiers.HasFlag(KeyModifiers.Shift),
-                e.KeyModifiers.HasFlag(KeyModifiers.Control));
+                e.KeyModifiers.HasFlag(KeyModifiers.Alt));
             e.Handled = true;
         }
     }
@@ -124,7 +144,7 @@ public sealed partial class StudioCanvasEditor : UserControl
             return;
         }
 
-        vm.ZoomAtCenter(e.Delta.Y > 0 ? 0.1 : -0.1);
+        vm.ZoomAtScreenPoint(e.GetPosition(this), e.Delta.Y > 0 ? 1.12 : 1 / 1.12);
         e.Handled = true;
     }
 
@@ -140,6 +160,15 @@ public sealed partial class StudioCanvasEditor : UserControl
         {
             case Key.Space:
                 _isSpaceDown = true;
+                break;
+            case Key.Escape:
+                vm.RequestLayerSelection(null);
+                break;
+            case Key.D0 when e.KeyModifiers.HasFlag(KeyModifiers.Control):
+                vm.FitZoom();
+                break;
+            case Key.D1 when e.KeyModifiers.HasFlag(KeyModifiers.Control):
+                vm.SetActualSizeAtCenter();
                 break;
             case Key.Left:
                 vm.NudgeSelectedLayer(-1, 0, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
@@ -172,40 +201,16 @@ public sealed partial class StudioCanvasEditor : UserControl
         }
     }
 
-    private static Point ToCanvas(Point screenPoint, PreviewCanvasViewModel vm)
-    {
-        return new Point((screenPoint.X - vm.PanX) / vm.Zoom, (screenPoint.Y - vm.PanY) / vm.Zoom);
-    }
-
-    private static ResizeHandleKind DetectHandle(LayerItemViewModel layer, Point canvasPoint, double zoom)
-    {
-        var tolerance = Math.Max(6, 14 / Math.Max(0.1, zoom));
-        var nearLeft = Math.Abs(canvasPoint.X - layer.X) <= tolerance;
-        var nearRight = Math.Abs(canvasPoint.X - (layer.X + layer.Width)) <= tolerance;
-        var nearTop = Math.Abs(canvasPoint.Y - layer.Y) <= tolerance;
-        var nearBottom = Math.Abs(canvasPoint.Y - (layer.Y + layer.Height)) <= tolerance;
-
-        return (nearLeft, nearRight, nearTop, nearBottom) switch
-        {
-            (true, _, true, _) => ResizeHandleKind.TopLeft,
-            (_, true, true, _) => ResizeHandleKind.TopRight,
-            (true, _, _, true) => ResizeHandleKind.BottomLeft,
-            (_, true, _, true) => ResizeHandleKind.BottomRight,
-            (true, _, _, _) => ResizeHandleKind.Left,
-            (_, true, _, _) => ResizeHandleKind.Right,
-            (_, _, true, _) => ResizeHandleKind.Top,
-            (_, _, _, true) => ResizeHandleKind.Bottom,
-            _ => ResizeHandleKind.None
-        };
-    }
-
     private void ClearPointerState(RoutedEventArgs e)
     {
         _activeLayer = null;
         _activeHandle = ResizeHandleKind.None;
-        _isDragging = false;
-        _isResizing = false;
-        _isPanning = false;
+        _interactionMode = SceneEditorInteractionMode.None;
+        if (e is PointerEventArgs pointerEvent)
+        {
+            pointerEvent.Pointer.Capture(null);
+        }
+
         e.Handled = true;
     }
 }

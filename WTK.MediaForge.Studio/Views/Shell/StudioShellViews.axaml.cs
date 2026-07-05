@@ -33,6 +33,11 @@ public partial class InspectorView : UserControl
     public InspectorView() => AvaloniaXamlLoader.Load(this);
 }
 
+public partial class ProductionPanelView : UserControl
+{
+    public ProductionPanelView() => AvaloniaXamlLoader.Load(this);
+}
+
 public partial class BottomWorkbenchView : UserControl
 {
     public BottomWorkbenchView() => AvaloniaXamlLoader.Load(this);

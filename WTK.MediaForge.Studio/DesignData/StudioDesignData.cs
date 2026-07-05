@@ -30,76 +30,28 @@ public static class StudioDesignData
             .Select(scene => new ProjectTreeItemViewModel(
                 StudioProjectItemKind.Scene,
                 scene.DisplayName,
-                scene.Metadata,
+                $"{scene.Canvas.Width:0}×{scene.Canvas.Height:0} • {scene.Canvas.FrameRate:0.##} fps",
                 StudioIconKind.Scene,
-                scene.IsProgram ? "PROGRAM" : string.Empty,
+                scene.IsProgram ? "Principal" : string.Empty,
                 id: scene.Id,
                 typeId: "scene.canvas",
-                detail: string.Join(", ", document.Outputs
-                    .Where(output => output.AssignedSceneId == scene.Id)
-                    .Select(output => output.DisplayName)
-                    .Where(name => !string.IsNullOrWhiteSpace(name)))) { IsActive = scene.IsProgram })
-            .ToArray();
-
-        var sources = document.Sources
-            .Select(source => new ProjectTreeItemViewModel(
-                StudioProjectItemKind.Source,
-                source.DisplayName,
-                source.Metadata,
-                GetSourceIcon(source.TypeId),
-                source.TypeId == "source.webcam" ? "LIVE" : source.TypeId == "source.desktop" ? "GPU" : source.Health == StudioHealthState.Warning ? "BUFFER" : string.Empty,
-                source.Health,
-                source.Id,
-                source.TypeId,
-                source.Endpoint))
-            .ToArray();
-
-        var outputs = document.Outputs
-            .Select(output => new ProjectTreeItemViewModel(
-                StudioProjectItemKind.Output,
-                output.DisplayName,
-                OutputMetadata(document, output),
-                GetOutputIcon(output.TypeId),
-                output.IsConfigured ? output.State.ToString().ToUpperInvariant() : "CONFIG",
-                output.IsConfigured ? output.State == StudioOutputState.Planned ? StudioHealthState.Planned : StudioHealthState.Healthy : StudioHealthState.Warning,
-                output.Id,
-                output.TypeId,
-                detail: AssignedSceneName(document, output),
-                destination: output.Destination,
-                codec: output.Codec,
-                bitrate: output.Bitrate,
-                secret: output.Secret))
-            .ToArray();
-
-        var presets = document.Presets
-            .Select(preset => new ProjectTreeItemViewModel(
-                StudioProjectItemKind.Preset,
-                preset.DisplayName,
-                preset.Metadata,
-                StudioIconKind.Preset,
-                id: preset.Id,
-                typeId: preset.TypeId))
-            .ToArray();
-
-        var packages = document.Packages
-            .Select(pkg => new ProjectTreeItemViewModel(
-                StudioProjectItemKind.Package,
-                pkg.DisplayName,
-                pkg.Metadata,
-                StudioIconKind.Package,
-                pkg.Id == "package-brand-kit" ? "v2" : string.Empty,
-                id: pkg.Id,
-                typeId: pkg.TypeId))
+                detail: OutputDetail(document, scene)) { IsActive = scene.Id == document.SelectedSceneId })
             .ToArray();
 
         return new[]
         {
-            new ProjectTreeGroupViewModel("Cenas", scenes),
-            new ProjectTreeGroupViewModel("Fontes", sources),
-            new ProjectTreeGroupViewModel("Saidas", outputs),
-            new ProjectTreeGroupViewModel("Presets", presets),
-            new ProjectTreeGroupViewModel("Pacotes", packages)
+            new ProjectTreeGroupViewModel("Cenas", scenes)
         };
+    }
+
+    private static string OutputDetail(StudioDocument document, StudioScene scene)
+    {
+        var outputs = document.Outputs
+                    .Where(output => output.AssignedSceneId == scene.Id)
+                    .Select(output => output.DisplayName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .ToArray();
+        return outputs.Length == 0 ? "Saídas: nenhuma" : $"Saídas: {string.Join(", ", outputs)}";
     }
 
     public static IReadOnlyList<LayerItemViewModel> CreateLayers()
@@ -136,11 +88,11 @@ public static class StudioDesignData
     {
         return new[]
         {
-            new DiagnosticLogItemViewModel("12:16:01", "INFO", "Studio aberto em modo de mock visual."),
+            new DiagnosticLogItemViewModel("12:16:01", "INFO", "Studio aberto em modo visual."),
             new DiagnosticLogItemViewModel("12:16:03", "INFO", "Projeto de exemplo carregado."),
-            new DiagnosticLogItemViewModel("12:16:07", "WARN", "Segredos de transmissao aparecem mascarados."),
-            new DiagnosticLogItemViewModel("12:16:12", "INFO", "Camada Lower Third selecionada no canvas."),
-            new DiagnosticLogItemViewModel("12:16:19", "INFO", "Preview real sera conectado somente depois do gate de runtime.")
+            new DiagnosticLogItemViewModel("12:16:07", "WARN", "Segredos de transmissão aparecem mascarados."),
+            new DiagnosticLogItemViewModel("12:16:12", "INFO", "Camada Tarja inferior selecionada no canvas."),
+            new DiagnosticLogItemViewModel("12:16:19", "INFO", "Prévia real será conectada somente depois do gate de runtime.")
         };
     }
 

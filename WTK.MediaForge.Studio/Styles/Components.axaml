@@ -3,7 +3,7 @@
   <Style Selector="Border.section">
     <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Padding" Value="12" />
-    <Setter Property="Background" Value="{StaticResource MfSurface2Brush}" />
+    <Setter Property="Background" Value="{StaticResource MfCardBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>
@@ -25,6 +25,27 @@
 
   <Style Selector="Border.canvas-layer">
     <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderNormalBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.scene-card">
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="Background" Value="{StaticResource MfCardBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.scene-card.selected">
+    <Setter Property="Background" Value="{StaticResource MfAccentSoftBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
+  </Style>
+
+  <Style Selector="Border.output-card">
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="10" />
+    <Setter Property="Background" Value="{StaticResource MfCardBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfBorderNormalBrush}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>

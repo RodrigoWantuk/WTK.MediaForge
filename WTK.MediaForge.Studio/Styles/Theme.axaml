@@ -1,32 +1,36 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <Color x:Key="MfBgApp">#0F141B</Color>
-  <Color x:Key="MfBgPanel">#151B23</Color>
-  <Color x:Key="MfBgPanelRaised">#1A212B</Color>
-  <Color x:Key="MfBgInput">#111820</Color>
-  <Color x:Key="MfBgHover">#202A36</Color>
-  <Color x:Key="MfBgSelected">#0D3347</Color>
-  <Color x:Key="MfBorderSubtle">#26313D</Color>
-  <Color x:Key="MfBorderNormal">#344150</Color>
-  <Color x:Key="MfBorderStrong">#4C5F73</Color>
-  <Color x:Key="MfTextPrimary">#F2F6FA</Color>
-  <Color x:Key="MfTextSecondary">#B5C2D1</Color>
-  <Color x:Key="MfTextMuted">#728195</Color>
-  <Color x:Key="MfAccent">#14B8FF</Color>
-  <Color x:Key="MfAccentHover">#38C7FF</Color>
-  <Color x:Key="MfAccentSoft">#0B3145</Color>
-  <Color x:Key="MfSuccess">#32D583</Color>
-  <Color x:Key="MfWarning">#FDBA3B</Color>
-  <Color x:Key="MfDanger">#F05252</Color>
-  <Color x:Key="MfRecording">#F43F5E</Color>
-  <Color x:Key="MfDangerSoft">#351A22</Color>
+  <Color x:Key="MfBgApp">#080D13</Color>
+  <Color x:Key="MfBgPanel">#101823</Color>
+  <Color x:Key="MfBgPanelRaised">#172231</Color>
+  <Color x:Key="MfBgCard">#1B2938</Color>
+  <Color x:Key="MfBgInput">#0D141D</Color>
+  <Color x:Key="MfBgHover">#223247</Color>
+  <Color x:Key="MfBgSelected">#07344A</Color>
+  <Color x:Key="MfCanvasOutside">#05080D</Color>
+  <Color x:Key="MfCanvasSurface">#0A1018</Color>
+  <Color x:Key="MfBorderSubtle">#253445</Color>
+  <Color x:Key="MfBorderNormal">#37506A</Color>
+  <Color x:Key="MfBorderStrong">#5C7C9B</Color>
+  <Color x:Key="MfTextPrimary">#F4F8FC</Color>
+  <Color x:Key="MfTextSecondary">#B7C8DA</Color>
+  <Color x:Key="MfTextMuted">#6F8195</Color>
+  <Color x:Key="MfAccent">#00AEEF</Color>
+  <Color x:Key="MfAccentHover">#37C9FF</Color>
+  <Color x:Key="MfAccentSoft">#07344A</Color>
+  <Color x:Key="MfSuccess">#36D98A</Color>
+  <Color x:Key="MfWarning">#F7B733</Color>
+  <Color x:Key="MfDanger">#FF3B5F</Color>
+  <Color x:Key="MfRecording">#E11D48</Color>
+  <Color x:Key="MfDangerSoft">#3B1422</Color>
   <Color x:Key="MfWarningSoft">#3A2A10</Color>
-  <Color x:Key="MfOverlay">#AA05080D</Color>
-  <Color x:Key="MfCanvasFrame">#0B1017</Color>
+  <Color x:Key="MfOverlay">#C80A1018</Color>
+  <Color x:Key="MfCanvasFrame">#0A1018</Color>
 
   <SolidColorBrush x:Key="MfBackgroundBrush" Color="{StaticResource MfBgApp}" />
   <SolidColorBrush x:Key="MfSurface1Brush" Color="{StaticResource MfBgPanel}" />
   <SolidColorBrush x:Key="MfSurface2Brush" Color="{StaticResource MfBgPanelRaised}" />
+  <SolidColorBrush x:Key="MfCardBrush" Color="{StaticResource MfBgCard}" />
   <SolidColorBrush x:Key="MfSurface3Brush" Color="{StaticResource MfBgHover}" />
   <SolidColorBrush x:Key="MfInputBrush" Color="{StaticResource MfBgInput}" />
   <SolidColorBrush x:Key="MfSelectedBrush" Color="{StaticResource MfBgSelected}" />
@@ -47,6 +51,8 @@
   <SolidColorBrush x:Key="MfWarningSoftBrush" Color="{StaticResource MfWarningSoft}" />
   <SolidColorBrush x:Key="MfOverlayBrush" Color="{StaticResource MfOverlay}" />
   <SolidColorBrush x:Key="MfCanvasFrameBrush" Color="{StaticResource MfCanvasFrame}" />
-  <SolidColorBrush x:Key="MfCheckerA" Color="#141922" />
-  <SolidColorBrush x:Key="MfCheckerB" Color="#111720" />
+  <SolidColorBrush x:Key="MfCanvasOutsideBrush" Color="{StaticResource MfCanvasOutside}" />
+  <SolidColorBrush x:Key="MfCanvasSurfaceBrush" Color="{StaticResource MfCanvasSurface}" />
+  <SolidColorBrush x:Key="MfCheckerA" Color="#111A25" />
+  <SolidColorBrush x:Key="MfCheckerB" Color="#0A111B" />
 </ResourceDictionary>

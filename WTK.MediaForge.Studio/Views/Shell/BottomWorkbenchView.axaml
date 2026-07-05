@@ -40,8 +40,7 @@
 
       <Grid Grid.Row="1">
         <panels:LayersPanelView IsVisible="{Binding IsLayersSelected}" />
-        <panels:EffectsPanelView IsVisible="{Binding IsEffectsSelected}" />
-        <panels:OutputMonitorPanelView IsVisible="{Binding IsOutputsSelected}" />
+        <panels:SceneOutputsPanelView IsVisible="{Binding IsSceneOutputsSelected}" />
       </Grid>
     </Grid>
   </Border>

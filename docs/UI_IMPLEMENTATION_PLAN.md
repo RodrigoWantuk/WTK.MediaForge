@@ -1,13 +1,16 @@
 # Avalonia Studio Implementation Plan
 
-This plan tracks the current v0.1 overhaul of `WTK.MediaForge.Studio`.
+This plan tracks the current v0.2 reset of `WTK.MediaForge.Studio`.
 
 ## Current Goal
 
 Build a usable native Avalonia/MVVM mock editor around the product model:
 
 ```text
-Project -> Scenes/Canvas -> Sources -> Layers -> Outputs/Sinks
+Project -> Scenes -> Layers -> Outputs
+             ^          ^
+             |          |
+          Sources   Effects in context
 ```
 
 The goal is product UX correctness before runtime integration. The Studio app
@@ -17,27 +20,37 @@ audio.
 ## Implemented Direction
 
 - `StudioDocument` is the shared mock document.
-- `CurrentScene` drives the canvas, layer table, and scene properties.
-- Sources are global and can be added to the current scene as layers.
-- Layers are scene-scoped and are selectable/editable from the canvas,
-  properties panel, and layer table.
-- Effects are contextual to the selected layer.
-- Outputs have `AssignedSceneId`, `IsEnabled`, and `IsConfigured`.
+- `CurrentScene` drives the canvas, layer table, scene outputs, and properties.
+- The primary left panel lists only scenes.
+- Sources are global and reusable, but are added through the source library
+  dialog instead of the primary scene list.
+- Layers are scene-scoped and selectable/editable from the canvas, properties
+  panel, and layer table.
+- Layer effects are embedded in layer properties.
+- Scene effects are embedded in scene properties.
+- Outputs have `AssignedSceneId`, `DefaultTransitionId`,
+  `TransitionDurationMs`, `IsEnabled`, `IsConfigured`, `IsLive`, and
+  `IsRecording`.
+- Output routing uses `SendSceneToOutput(outputId, sceneId, transitionId,
+  durationMs)` and production cards, not a loose scene combo box.
 - Streaming/recording buttons depend on configured output routes, not an engine
   toggle.
-- The main bottom workbench contains only `Camadas`, `Efeitos`, and `Saidas`.
+- The bottom workbench contains only `Camadas` and `Saídas da cena`.
+- `SceneViewportState` owns deterministic pan/zoom math.
 - The main UI uses pt-BR terminology and avoids engine/debug language.
 
 ## Required Files/Concepts
 
 Key implementation areas:
 
-- `StudioShellViewModel`: document ownership, scene selection, routing, dialogs,
+- `StudioShellViewModel`: document ownership, scene selection, routing dialogs,
   command state;
-- `PreviewCanvasViewModel` and `StudioCanvasEditor`: zoom, pan, hit-test,
-  move, resize, nudge;
+- `ProductionPanelView`: output cards, routed scene, transition, state, and
+  send-scene workflow;
+- `PreviewCanvasViewModel`, `SceneViewportState`, and `StudioCanvasEditor`:
+  zoom, pan, hit-test, move, resize, nudge;
 - inspector ViewModels/views: contextual `Propriedades` pages;
-- bottom panels: scene layers, selected-layer effects, output routes;
+- bottom panels: scene layers and outputs using the selected scene;
 - localization resources and display-name service.
 
 ## Constraints
@@ -54,12 +67,13 @@ Key implementation areas:
 
 ## Next UI Work
 
-1. Improve visual polish against `docs/UIReference/ref001.png`.
-2. Add keyboard shortcut service and undo/redo command contracts.
-3. Add real dialog service abstractions for add source/scene/output.
+1. Run visual QA at 1366x768, 1600x900, and 1920x1080.
+2. Add a real dialog service abstraction for source/scene/output workflows.
+3. Add undo/redo command contracts and keyboard shortcut service.
 4. Add panel size persistence.
-5. Add advanced diagnostics/performance views behind an explicit menu.
-6. After runtime gates: introduce a preview host under the Avalonia overlay.
+5. Move advanced diagnostics/performance to an explicit advanced surface.
+6. After runtime gates: introduce the real preview frame provider below the
+   Avalonia overlay.
 
 ## Validation
 

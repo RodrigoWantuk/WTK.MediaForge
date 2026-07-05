@@ -6,7 +6,7 @@
              x:Class="WTK.MediaForge.Studio.Views.Panels.LayersPanelView"
              x:DataType="vm:BottomWorkbenchViewModel">
   <Grid RowDefinitions="Auto,*" Margin="12">
-    <Grid ColumnDefinitions="34,34,34,46,*,120,140,120,84" Margin="8,0,8,8">
+    <Grid ColumnDefinitions="34,34,34,46,*,120,160,120" Margin="8,0,8,8">
       <TextBlock Text="" />
       <TextBlock Grid.Column="1" Text="" />
       <TextBlock Grid.Column="2" Text="" />
@@ -15,7 +15,6 @@
       <TextBlock Grid.Column="5" Text="Tipo" Classes="muted" />
       <TextBlock Grid.Column="6" Text="Fonte" Classes="muted" />
       <TextBlock Grid.Column="7" Text="Estado" Classes="muted" />
-      <TextBlock Grid.Column="8" Text="Ordem" Classes="muted" />
     </Grid>
 
     <ListBox Grid.Row="1"
@@ -27,7 +26,7 @@
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="vm:LayerItemViewModel">
             <Border Classes="layer-row" Classes.selected="{Binding IsSelected}" Margin="0,0,0,6">
-              <Grid ColumnDefinitions="34,34,34,46,*,120,140,120,84" ColumnSpacing="4">
+              <Grid ColumnDefinitions="34,34,34,46,*,120,160,120" ColumnSpacing="4">
                 <components:StudioIcon Kind="{x:Static models:StudioIconKind.Drag}" IconSize="16" Foreground="{StaticResource MfTextMutedBrush}" VerticalAlignment="Center" />
                 <Button Grid.Column="1"
                         Classes="flat"
@@ -55,10 +54,6 @@
                 <Border Grid.Column="7" Classes="status-pill" HorizontalAlignment="Left" VerticalAlignment="Center">
                   <TextBlock Text="{Binding VisibilityGlyph}" Classes="secondary" FontSize="11" />
                 </Border>
-                <StackPanel Grid.Column="8" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-                  <Button Classes="flat" Command="{Binding MoveUpCommand}" CommandParameter="{Binding}" Content="Subir" />
-                  <Button Classes="flat" Command="{Binding MoveDownCommand}" CommandParameter="{Binding}" Content="Descer" />
-                </StackPanel>
               </Grid>
             </Border>
           </DataTemplate>

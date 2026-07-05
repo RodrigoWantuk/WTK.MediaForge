@@ -1,8 +1,10 @@
+using Avalonia;
 using WTK.MediaForge.Studio.DesignData;
 using WTK.MediaForge.Studio.Localization;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Services;
 using WTK.MediaForge.Studio.ViewModels;
+using WTK.MediaForge.Studio.Views.Preview;
 using Xunit;
 
 namespace WTK.MediaForge.Studio.Tests;
@@ -10,16 +12,15 @@ namespace WTK.MediaForge.Studio.Tests;
 public sealed class StudioShellViewModelTests
 {
     [Fact]
-    public void Design_data_contains_product_groups_and_items()
+    public void Project_explorer_shows_only_scene_cards()
     {
         var shell = CreateShell();
 
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Cenas" && group.Items.Any(item => item.Name == "Main Scene"));
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Fontes" && group.Items.Any(item => item.Name == "Webcam"));
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Saidas" && group.Items.Any(item => item.Name == "RTMP Twitch"));
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Presets" && group.Items.Any(item => item.Name == "YouTube 1080p60"));
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Pacotes" && group.Items.Any(item => item.Name == "Brand Kit"));
-        Assert.Equal(new[] { StudioBottomTabKind.Layers, StudioBottomTabKind.Effects, StudioBottomTabKind.Outputs }, shell.BottomWorkbench.Tabs.Select(tab => tab.Kind));
+        var group = Assert.Single(shell.ProjectExplorer.Groups);
+        Assert.Equal("Cenas", group.Title);
+        Assert.Contains(group.Items, item => item.Name == "Cena principal");
+        Assert.DoesNotContain(shell.ProjectExplorer.Groups.SelectMany(item => item.Items), item => item.Kind != StudioProjectItemKind.Scene);
+        Assert.Equal(new[] { StudioBottomTabKind.Layers, StudioBottomTabKind.SceneOutputs }, shell.BottomWorkbench.Tabs.Select(tab => tab.Kind));
     }
 
     [Fact]
@@ -34,6 +35,7 @@ public sealed class StudioShellViewModelTests
         Assert.Equal("Interview", shell.Preview.SceneName);
         Assert.All(shell.BottomWorkbench.Layers, layer => Assert.StartsWith("layer-interview", layer.Id, StringComparison.Ordinal));
         Assert.DoesNotContain(shell.BottomWorkbench.Layers, layer => layer.Id == "layer-lower-third");
+        Assert.Null(shell.SelectedLayer);
         Assert.IsType<SceneInspectorViewModel>(shell.Inspector.SelectedPage);
     }
 
@@ -50,7 +52,8 @@ public sealed class StudioShellViewModelTests
 
         shell.AddSourceCommand.Execute(null);
         Assert.True(shell.Dialog.IsOpen);
-        shell.ConfirmDialogCommand.Execute(null);
+        var imageOption = shell.Dialog.Options.Single(option => option.Id == "source.image");
+        imageOption.SelectCommand!.Execute(null);
 
         Assert.False(shell.Dialog.IsOpen);
         Assert.Equal(originalMainCount, main.Layers.Count);
@@ -59,51 +62,44 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public void Source_inspector_can_add_existing_source_to_current_scene()
-    {
-        var shell = CreateShell();
-        shell.SelectProjectItem(FindItem(shell, "Break BRB"));
-        var originalCount = shell.CurrentScene!.Layers.Count;
-
-        shell.SelectProjectItem(FindItem(shell, "Logo.png"));
-        shell.AddSelectedSourceToCurrentSceneCommand.Execute(null);
-
-        Assert.Equal(originalCount + 1, shell.CurrentScene!.Layers.Count);
-        Assert.Equal("Logo.png", shell.SelectedLayer?.Name);
-        Assert.IsType<LayerInspectorViewModel>(shell.Inspector.SelectedPage);
-    }
-
-    [Fact]
-    public void Effects_are_contextual_to_selected_layer_and_clear_for_project_items()
+    public void Selecting_layer_updates_inspector_and_preview_selection()
     {
         var shell = CreateShell();
         var webcam = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Webcam");
 
         shell.SelectLayer(webcam);
 
-        Assert.Contains(shell.BottomWorkbench.Effects, effect => effect.Name == "Chroma Key");
-        Assert.Equal("Efeitos de Webcam", shell.BottomWorkbench.EffectsContextTitle);
-
-        shell.SelectProjectItem(FindItem(shell, "Webcam"));
-
-        Assert.Empty(shell.BottomWorkbench.Effects);
-        Assert.Equal("Selecione uma camada", shell.BottomWorkbench.EffectsContextTitle);
+        Assert.Equal(webcam, shell.SelectedLayer);
+        Assert.Equal(webcam, shell.Preview.SelectedLayer);
+        Assert.IsType<LayerInspectorViewModel>(shell.Inspector.SelectedPage);
     }
 
     [Fact]
-    public void Output_route_change_updates_document_explorer_and_output_table()
+    public void Selecting_scene_clears_layer_effect_context()
     {
         var shell = CreateShell();
-        shell.SelectProjectItem(FindItem(shell, "RTMP Twitch"));
-        var inspector = Assert.IsType<OutputInspectorViewModel>(shell.Inspector.SelectedPage);
-        var interview = inspector.Scenes.Single(scene => scene.Name == "Interview");
+        var webcam = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Webcam");
+        shell.SelectLayer(webcam);
 
-        inspector.SelectedScene = interview;
+        shell.SelectProjectItem(FindItem(shell, "Break BRB"));
+
+        Assert.Null(shell.SelectedLayer);
+        Assert.Null(shell.Preview.SelectedLayer);
+        Assert.IsType<SceneInspectorViewModel>(shell.Inspector.SelectedPage);
+    }
+
+    [Fact]
+    public void Send_scene_to_output_updates_route_transition_and_panels()
+    {
+        var shell = CreateShell();
+
+        shell.SendSceneToOutput("output-rtmp-twitch", "scene-interview", "transition-fade", 300);
 
         var output = shell.Document.Outputs.Single(item => item.Id == "output-rtmp-twitch");
         Assert.Equal("scene-interview", output.AssignedSceneId);
-        Assert.Contains(shell.BottomWorkbench.Outputs, item => item.Name == "RTMP Twitch" && item.SceneName == "Interview");
-        Assert.Contains("Interview", FindItem(shell, "RTMP Twitch").Metadata, StringComparison.Ordinal);
+        Assert.Equal("transition-fade", output.DefaultTransitionId);
+        Assert.Equal(300, output.TransitionDurationMs);
+        Assert.Contains(shell.Production.Outputs, item => item.Name == "RTMP Twitch" && item.SceneName == "Interview" && item.TransitionText == "Fade 300 ms");
     }
 
     [Fact]
@@ -119,8 +115,8 @@ public sealed class StudioShellViewModelTests
 
         Assert.True(shell.IsStreaming);
         Assert.True(shell.IsRecording);
-        Assert.Equal("Ao vivo", shell.Toolbar.StreamButtonText);
-        Assert.StartsWith("Gravando", shell.Toolbar.RecordingButtonText, StringComparison.Ordinal);
+        Assert.Equal("● Ao vivo", shell.Toolbar.StreamButtonText);
+        Assert.StartsWith("● Gravando", shell.Toolbar.RecordingButtonText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -128,7 +124,7 @@ public sealed class StudioShellViewModelTests
     {
         var shell = CreateShell();
 
-        shell.SelectProjectItem(FindItem(shell, "RTMP Twitch"));
+        shell.SendSceneToOutput("output-rtmp-twitch", "scene-main", "transition-cut", 0);
 
         var inspector = Assert.IsType<OutputInspectorViewModel>(shell.Inspector.SelectedPage);
         Assert.Equal("sk_live_************", inspector.MaskedStreamKey);
@@ -137,13 +133,13 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public void Preview_view_model_supports_zoom_pan_move_resize_nudge_and_lock()
+    public void Preview_view_model_supports_move_resize_nudge_and_lock()
     {
         var shell = CreateShell();
         var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Logo.png");
 
         shell.Preview.SetViewport(1280, 720);
-        Assert.Equal("Ajustar", shell.Preview.ZoomLabel);
+        Assert.Equal("Fit", shell.Preview.ZoomLabel);
 
         shell.SelectLayer(layer);
         shell.Preview.PanBy(20, 30);
@@ -159,6 +155,55 @@ public sealed class StudioShellViewModelTests
         layer.IsLocked = true;
         shell.Preview.MoveLayer(layer, 100, 100, constrainAxis: false);
         Assert.Equal(1704, layer.X);
+    }
+
+    [Fact]
+    public void Scene_viewport_fit_centers_scene()
+    {
+        var viewport = new SceneViewportState
+        {
+            CanvasWidth = 1920,
+            CanvasHeight = 1080,
+            ViewportWidth = 1280,
+            ViewportHeight = 720
+        };
+
+        viewport.Fit(48);
+
+        Assert.InRange(viewport.Zoom, 0.57, 0.58);
+        Assert.True(Math.Abs((1280 - 1920 * viewport.Zoom) / 2 - viewport.OffsetX) < 0.001);
+        Assert.True(Math.Abs((720 - 1080 * viewport.Zoom) / 2 - viewport.OffsetY) < 0.001);
+    }
+
+    [Fact]
+    public void Scene_viewport_zoom_at_preserves_scene_point_under_cursor()
+    {
+        var viewport = new SceneViewportState
+        {
+            CanvasWidth = 1920,
+            CanvasHeight = 1080,
+            ViewportWidth = 1600,
+            ViewportHeight = 900
+        };
+        viewport.Fit(36);
+        var cursor = new Point(640, 360);
+        var before = viewport.ScreenToScene(cursor);
+
+        viewport.ZoomAt(cursor, 1.5);
+
+        var after = viewport.ScreenToScene(cursor);
+        Assert.True(Math.Abs(before.X - after.X) < 0.001);
+        Assert.True(Math.Abs(before.Y - after.Y) < 0.001);
+    }
+
+    [Fact]
+    public void Scene_viewport_pan_uses_screen_delta()
+    {
+        var viewport = new SceneViewportState();
+        viewport.Pan(new Vector(40, -12));
+
+        Assert.Equal(40, viewport.OffsetX);
+        Assert.Equal(-12, viewport.OffsetY);
     }
 
     [Fact]
@@ -179,33 +224,32 @@ public sealed class StudioShellViewModelTests
         Assert.DoesNotContain("GPU idle", visibleText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Preview idle", visibleText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Start Engine", visibleText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("mock", visibleText, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Visible_resources_do_not_mix_languages()
+    public void PtBrResources_ShouldContainExpectedAccents()
     {
         var loc = LocalizationManager.Instance;
         var values = new[]
         {
-            loc["Panel_ProjectExplorer"],
-            loc["Panel_Properties"],
-            loc["Panel_Layers"],
-            loc["Panel_Effects"],
-            loc["Panel_Outputs"],
-            loc["Action_AddSource"],
-            loc["Action_AddScene"],
-            loc["Action_ConfigureOutput"],
-            loc["Action_StartStreaming"],
-            loc["Action_StartRecording"]
+            loc["Term_Settings"],
+            loc["Term_Outputs"],
+            loc["Term_Transmission"],
+            loc["Term_Recording"],
+            loc["Term_Diagnostics"],
+            loc["Term_Preview"],
+            loc["Term_SafeArea"]
         };
 
         Assert.Equal("pt-BR", loc.CurrentCulture.Name);
-        Assert.Contains("Propriedades", values);
-        Assert.DoesNotContain(values, value => value.Contains("Inspector", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(values, value => value.Contains("Engine", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(values, value => value.Contains("Output Monitor", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(values, value => value.Contains("Timeline", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(values, value => value.Contains("Audio Mixer", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("Configurações", values);
+        Assert.Contains("Saídas", values);
+        Assert.Contains("Transmissão", values);
+        Assert.Contains("Gravação", values);
+        Assert.Contains("Diagnósticos", values);
+        Assert.Contains("Prévia", values);
+        Assert.Contains("Área segura", values);
     }
 
     private static StudioShellViewModel CreateShell()

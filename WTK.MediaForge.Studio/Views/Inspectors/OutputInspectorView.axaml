@@ -9,13 +9,14 @@
     <StackPanel Margin="16" Spacing="12">
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
         <Border Classes="icon-box" Width="40" Height="40">
-          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Output}"
+          <components:StudioIcon Kind="{Binding IconKind}"
                                  IconSize="22"
                                  Foreground="{StaticResource MfAccentBrush}"
                                  HorizontalAlignment="Center"
                                  VerticalAlignment="Center" />
         </Border>
         <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock Text="Propriedades da saída" Classes="panel-title" />
           <TextBlock Text="{Binding Title}" Classes="title" />
           <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
         </StackPanel>
@@ -23,19 +24,36 @@
 
       <Border Classes="section">
         <StackPanel Spacing="10">
-          <TextBlock Text="ROTA" Classes="panel-title" />
-          <StackPanel Spacing="4">
-            <TextBlock Text="Cena enviada para esta saida" Classes="muted" />
-            <ComboBox ItemsSource="{Binding Scenes}"
-                      SelectedItem="{Binding SelectedScene, Mode=TwoWay}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:SceneRouteOptionViewModel">
-                  <TextBlock Text="{Binding Name}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-          </StackPanel>
-          <CheckBox Content="Saida habilitada" IsChecked="{Binding IsEnabled, Mode=TwoWay}" />
+          <TextBlock Text="ROTEAMENTO" Classes="panel-title" />
+          <Border Classes="metric-card">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="4">
+              <TextBlock Text="{Binding CurrentSceneName, StringFormat='Cena atual: {0}'}" FontWeight="SemiBold" />
+              <Button Grid.Column="1" Content="Enviar outra cena" Command="{Binding SendSceneCommand}" />
+              <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                         Text="A troca de cena acontece pelo fluxo explícito de envio para saída."
+                         Classes="secondary"
+                         TextWrapping="Wrap" />
+            </Grid>
+          </Border>
+          <Grid ColumnDefinitions="*,110" ColumnSpacing="8">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Transição padrão" Classes="muted" />
+              <ComboBox ItemsSource="{Binding TransitionOptions}"
+                        SelectedValue="{Binding SelectedTransitionId, Mode=TwoWay}"
+                        SelectedValueBinding="{Binding Id}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:TransitionOptionViewModel">
+                    <TextBlock Text="{Binding Name}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="Duração" Classes="muted" />
+              <NumericUpDown Value="{Binding TransitionDurationMs, Mode=TwoWay}" Minimum="0" Maximum="5000" Increment="50" />
+            </StackPanel>
+          </Grid>
+          <CheckBox Content="Saída habilitada" IsChecked="{Binding IsEnabled, Mode=TwoWay}" />
           <CheckBox Content="Configurada" IsChecked="{Binding IsConfigured, Mode=TwoWay}" />
         </StackPanel>
       </Border>
@@ -65,7 +83,7 @@
 
       <Border Classes="section">
         <StackPanel Spacing="10">
-          <TextBlock Text="PERFIL" Classes="panel-title" />
+          <TextBlock Text="QUALIDADE" Classes="panel-title" />
           <StackPanel Spacing="4">
             <TextBlock Text="Codec" Classes="muted" />
             <ComboBox ItemsSource="{Binding CodecOptions}" SelectedItem="{Binding SelectedCodec, Mode=TwoWay}" />
@@ -78,21 +96,6 @@
             <TextBlock Text="Preset" Classes="muted" />
             <ComboBox ItemsSource="{Binding PresetOptions}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}" />
           </StackPanel>
-        </StackPanel>
-      </Border>
-
-      <Border Classes="section">
-        <StackPanel Spacing="8">
-          <TextBlock Text="ESTADO" Classes="panel-title" />
-          <Border Classes="metric-card">
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-              <Border Classes="health-dot" Classes.healthy="True" VerticalAlignment="Center" />
-              <StackPanel Grid.Column="1" Spacing="2">
-                <TextBlock Text="{Binding Health}" Classes="success" />
-                <TextBlock Text="{Binding SelectedSceneName, StringFormat='Cena atual: {0}'}" Classes="secondary" />
-              </StackPanel>
-            </Grid>
-          </Border>
         </StackPanel>
       </Border>
     </StackPanel>

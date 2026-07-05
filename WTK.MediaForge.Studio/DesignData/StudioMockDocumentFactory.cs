@@ -10,10 +10,11 @@ public static class StudioMockDocumentFactory
         var document = new StudioDocument
         {
             Id = "studio-doc-live-production",
-            DisplayName = "Live Production Workspace",
+            DisplayName = "Produção ao vivo",
             SelectedSceneId = "scene-main"
         };
 
+        SeedTransitions(document);
         SeedSources(document);
         SeedOutputs(document);
         SeedScenes(document);
@@ -21,6 +22,31 @@ public static class StudioMockDocumentFactory
         SeedPackages(document);
 
         return document;
+    }
+
+    private static void SeedTransitions(StudioDocument document)
+    {
+        document.Transitions.Add(new StudioTransition
+        {
+            Id = "transition-cut",
+            DisplayName = "Corte rápido",
+            Kind = StudioTransitionKind.Cut,
+            DurationMs = 0
+        });
+        document.Transitions.Add(new StudioTransition
+        {
+            Id = "transition-fade",
+            DisplayName = "Fade",
+            Kind = StudioTransitionKind.Fade,
+            DurationMs = 300
+        });
+        document.Transitions.Add(new StudioTransition
+        {
+            Id = "transition-dissolve",
+            DisplayName = "Dissolver",
+            Kind = StudioTransitionKind.Dissolve,
+            DurationMs = 450
+        });
     }
 
     private static void SeedSources(StudioDocument document)
@@ -36,7 +62,7 @@ public static class StudioMockDocumentFactory
         document.Sources.Add(new StudioSource
         {
             Id = "source-desktop-1",
-            DisplayName = "Desktop Capture",
+            DisplayName = "Captura de tela",
             TypeId = "source.desktop",
             Metadata = "Display 1 / 1440p60",
             Endpoint = "Display 1"
@@ -52,9 +78,9 @@ public static class StudioMockDocumentFactory
         document.Sources.Add(new StudioSource
         {
             Id = "source-lower-third",
-            DisplayName = "Lower Third",
+            DisplayName = "Tarja inferior",
             TypeId = "source.text",
-            Metadata = "Text template",
+            Metadata = "Modelo de texto",
             Endpoint = "Brand Kit / lower-third"
         });
         document.Sources.Add(new StudioSource
@@ -73,23 +99,28 @@ public static class StudioMockDocumentFactory
         document.Outputs.Add(new StudioOutput
         {
             Id = "output-preview",
-            DisplayName = "Preview",
+            DisplayName = "Prévia local",
             TypeId = "output.preview",
-            Destination = "Panel A",
+            Destination = "Painel A",
             Codec = "RGBA",
-            Bitrate = "GPU surface",
+            Bitrate = "Superfície local",
             AssignedSceneId = "scene-main",
+            DefaultTransitionId = "transition-cut",
+            TransitionDurationMs = 0,
             State = StudioOutputState.Running
         });
         document.Outputs.Add(new StudioOutput
         {
             Id = "output-recording",
-            DisplayName = "Recording MP4",
+            DisplayName = "Gravação MP4",
             TypeId = "output.file.mp4",
             Destination = "D:/captures/session.mp4",
             Codec = "H.264",
             Bitrate = "18 Mb/s",
             AssignedSceneId = "scene-main",
+            DefaultTransitionId = "transition-fade",
+            TransitionDurationMs = 300,
+            IsRecording = true,
             State = StudioOutputState.Recording
         });
         document.Outputs.Add(new StudioOutput
@@ -102,17 +133,22 @@ public static class StudioMockDocumentFactory
             Bitrate = "6 Mb/s",
             Secret = "sk_live_2d97c8a6_raw_secret",
             AssignedSceneId = "scene-main",
+            DefaultTransitionId = "transition-fade",
+            TransitionDurationMs = 300,
+            IsLive = true,
             State = StudioOutputState.Live
         });
         document.Outputs.Add(new StudioOutput
         {
             Id = "output-virtual-camera",
-            DisplayName = "Virtual Camera",
+            DisplayName = "Câmera virtual",
             TypeId = "output.virtual-camera",
-            Destination = "Virtual camera device",
+            Destination = "Dispositivo de câmera virtual",
             Codec = "NV12",
             Bitrate = "60 fps",
             AssignedSceneId = "scene-interview",
+            DefaultTransitionId = "transition-cut",
+            TransitionDurationMs = 0,
             IsConfigured = false,
             State = StudioOutputState.Planned
         });
@@ -123,27 +159,29 @@ public static class StudioMockDocumentFactory
         var main = new StudioScene
         {
             Id = "scene-main",
-            DisplayName = "Main Scene",
-            Metadata = "1920 x 1080 / 60 fps",
+            DisplayName = "Cena principal",
+            Metadata = "1920×1080 • 60 fps",
             IsProgram = true
         };
         main.OutputIds.Add("output-preview");
         main.OutputIds.Add("output-recording");
         main.OutputIds.Add("output-rtmp-twitch");
-        main.Layers.Add(CreateLayer("layer-desktop", "Desktop Capture", "source-desktop-1", "Desktop Capture", "Source", 1, 54, 46, 1812, 860, 100));
+        main.Effects.Add(CreateSceneEffect("scene-main-effect-color", "Correção de cor", "Ajuste global planejado para a cena principal.", false));
+        main.Layers.Add(CreateLayer("layer-desktop", "Captura de tela", "source-desktop-1", "Captura de tela", "Source", 1, 54, 46, 1812, 860, 100));
         main.Layers.Add(CreateLayer("layer-webcam", "Webcam", "source-webcam", "Webcam", "Source", 2, 1378, 106, 410, 232, 100));
         main.Layers.Add(CreateLayer("layer-logo", "Logo.png", "source-logo", "Logo.png", "Image", 3, 1664, 926, 176, 104, 96));
-        main.Layers.Add(CreateLayer("layer-lower-third", "Lower Third", "source-lower-third", "Lower Third", "Text", 4, 192, 820, 1280, 148, 92));
+        main.Layers.Add(CreateLayer("layer-lower-third", "Tarja inferior", "source-lower-third", "Tarja inferior", "Text", 4, 192, 820, 1280, 148, 92));
         document.Scenes.Add(main);
 
         var interview = new StudioScene
         {
             Id = "scene-interview",
             DisplayName = "Interview",
-            Metadata = "Two camera layout"
+            Metadata = "1920×1080 • 60 fps"
         };
         interview.OutputIds.Add("output-virtual-camera");
-        interview.Layers.Add(CreateLayer("layer-interview-desktop", "Desktop Capture", "source-desktop-1", "Desktop Capture", "Source", 1, 80, 82, 1120, 630, 100));
+        interview.Effects.Add(CreateSceneEffect("scene-interview-effect-soft", "Desfoque de fundo", "Planejado para cenas com câmera em destaque.", false));
+        interview.Layers.Add(CreateLayer("layer-interview-desktop", "Captura de tela", "source-desktop-1", "Captura de tela", "Source", 1, 80, 82, 1120, 630, 100));
         interview.Layers.Add(CreateLayer("layer-interview-webcam", "Webcam", "source-webcam", "Webcam", "Source", 2, 1230, 102, 560, 315, 100));
         interview.Layers.Add(CreateLayer("layer-interview-logo", "Logo.png", "source-logo", "Logo.png", "Image", 3, 1540, 870, 220, 130, 92));
         document.Scenes.Add(interview);
@@ -152,12 +190,24 @@ public static class StudioMockDocumentFactory
         {
             Id = "scene-brb",
             DisplayName = "Break BRB",
-            Metadata = "Holding screen"
+            Metadata = "1920×1080 • 60 fps"
         };
+        brb.Effects.Add(CreateSceneEffect("scene-brb-effect-lut", "LUT da cena", "Planejado para telas de espera.", false));
         brb.Layers.Add(CreateLayer("layer-brb-background", "Intro.mp4", "source-intro", "Intro.mp4", "Source", 1, 0, 0, 1920, 1080, 100));
         brb.Layers.Add(CreateLayer("layer-brb-logo", "Logo.png", "source-logo", "Logo.png", "Image", 2, 760, 280, 400, 240, 100));
-        brb.Layers.Add(CreateLayer("layer-brb-text", "Lower Third", "source-lower-third", "Lower Third", "Text", 3, 520, 660, 880, 160, 95));
+        brb.Layers.Add(CreateLayer("layer-brb-text", "Tarja inferior", "source-lower-third", "Tarja inferior", "Text", 3, 520, 660, 880, 160, 95));
         document.Scenes.Add(brb);
+    }
+
+    private static StudioEffect CreateSceneEffect(string id, string name, string description, bool isEnabled)
+    {
+        return new StudioEffect
+        {
+            Id = id,
+            Name = name,
+            Description = description,
+            IsEnabled = isEnabled
+        };
     }
 
     private static StudioLayer CreateLayer(
@@ -191,15 +241,15 @@ public static class StudioMockDocumentFactory
         {
             Id = $"{id}-effect-chroma",
             Name = "Chroma Key",
-            Description = "Green spill tightened, edge smooth 0.24",
+            Description = "Remove fundo verde com suavidade e controle de spill.",
             IsEnabled = name == "Webcam",
             IsExpanded = name == "Webcam"
         });
         layer.Effects.Add(new StudioEffect
         {
             Id = $"{id}-effect-blur",
-            Name = "Blur",
-            Description = "Soft blur reserved for this layer",
+            Name = "Desfoque",
+            Description = "Planejado para suavizar esta camada.",
             IsEnabled = false,
             IsExpanded = false,
             Tolerance = 0.12
@@ -212,7 +262,7 @@ public static class StudioMockDocumentFactory
         document.Presets.Add(new StudioPreset
         {
             Id = "preset-1080p-streaming",
-            DisplayName = "1080p Streaming",
+            DisplayName = "Streaming 1080p",
             Metadata = "16:9 / 60 fps",
             TypeId = "preset.canvas-output"
         });
@@ -220,7 +270,7 @@ public static class StudioMockDocumentFactory
         {
             Id = "preset-youtube-1080p60",
             DisplayName = "YouTube 1080p60",
-            Metadata = "H.264 high profile",
+            Metadata = "H.264 perfil alto",
             TypeId = "preset.output"
         });
     }
@@ -230,15 +280,15 @@ public static class StudioMockDocumentFactory
         document.Packages.Add(new StudioPackage
         {
             Id = "package-starter",
-            DisplayName = "Starter Pack",
-            Metadata = "Scenes and source templates",
+            DisplayName = "Pacote inicial",
+            Metadata = "Cenas e modelos de fonte",
             TypeId = "package.scene"
         });
         document.Packages.Add(new StudioPackage
         {
             Id = "package-brand-kit",
-            DisplayName = "Brand Kit",
-            Metadata = "Lower thirds and logo set",
+            DisplayName = "Kit de marca",
+            Metadata = "Tarjas e logotipos",
             TypeId = "package.brand"
         });
     }

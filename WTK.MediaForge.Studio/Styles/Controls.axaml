@@ -7,17 +7,18 @@
     <Setter Property="Background" Value="{StaticResource MfSurface2Brush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="6" />
-    <Setter Property="Padding" Value="10,5" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="Padding" Value="11,6" />
   </Style>
 
   <Style Selector="Button.primary">
-    <Setter Property="Background" Value="{StaticResource MfAccentSoftBrush}" />
+    <Setter Property="Background" Value="{StaticResource MfAccentBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
+    <Setter Property="Foreground" Value="#03101A" />
   </Style>
 
   <Style Selector="Button.danger">
-    <Setter Property="Background" Value="{StaticResource MfDangerSoftBrush}" />
+    <Setter Property="Background" Value="{StaticResource MfRecordBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfRecordBrush}" />
   </Style>
 
@@ -27,8 +28,9 @@
   </Style>
 
   <Style Selector="Button.live">
-    <Setter Property="Background" Value="{StaticResource MfDangerSoftBrush}" />
-    <Setter Property="BorderBrush" Value="{StaticResource MfRecordBrush}" />
+    <Setter Property="Background" Value="{StaticResource MfErrorBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfErrorBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
   </Style>
 
   <Style Selector="Button.flat">
@@ -52,9 +54,11 @@
   </Style>
 
   <Style Selector="Border.project-row">
-    <Setter Property="CornerRadius" Value="6" />
-    <Setter Property="Padding" Value="7,6" />
-    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="10,9" />
+    <Setter Property="Background" Value="{StaticResource MfCardBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
   </Style>
 
   <Style Selector="Border.project-row.selected">
@@ -71,7 +75,7 @@
   <Style Selector="Border.layer-row">
     <Setter Property="CornerRadius" Value="6" />
     <Setter Property="Padding" Value="8,6" />
-    <Setter Property="Background" Value="{StaticResource MfSurface2Brush}" />
+    <Setter Property="Background" Value="{StaticResource MfCardBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>

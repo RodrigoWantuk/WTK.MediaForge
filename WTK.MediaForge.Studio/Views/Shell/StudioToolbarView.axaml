@@ -30,16 +30,16 @@
           </StackPanel>
         </Button>
         <Border Width="1" Height="22" Background="{StaticResource MfBorderBrush}" Margin="6,0" />
-        <Button Command="{Binding AddSourceCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Source}" IconSize="14" />
-            <TextBlock Text="{loc:Loc Action_AddSource}" />
-          </StackPanel>
-        </Button>
         <Button Command="{Binding AddSceneCommand}">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Scene}" IconSize="14" />
             <TextBlock Text="{loc:Loc Action_AddScene}" />
+          </StackPanel>
+        </Button>
+        <Button Command="{Binding AddSourceCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Source}" IconSize="14" />
+            <TextBlock Text="{loc:Loc Action_AddSource}" />
           </StackPanel>
         </Button>
         <Button Command="{Binding ConfigureOutputCommand}">
@@ -62,9 +62,6 @@
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Record}" IconSize="14" />
             <TextBlock Text="{Binding Toolbar.RecordingButtonText}" />
           </StackPanel>
-        </Button>
-        <Button Command="{Binding SettingsCommand}">
-          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Settings}" IconSize="14" />
         </Button>
       </StackPanel>
     </Grid>

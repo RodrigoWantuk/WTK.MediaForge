@@ -85,16 +85,18 @@ Current Studio UI status:
 - first Avalonia mock shell is implemented;
 - Studio tests run in the Fast tier;
 - current UI milestone is UI recovery/productization, scene/source/layer/output
-  workflow, fake service boundaries, typed output state, and model-backed
-  project workflow preparation;
+  workflow, source library, production output cards, explicit scene-to-output
+  routing with transitions, fake service boundaries, typed output state, and
+  model-backed project workflow preparation;
 - runtime preview remains blocked until `PreviewPanelSink` reliability criteria are complete.
 
 Allowed UI work before runtime gates open:
 
 - create/update `docs/UI_STUDIO_DESIGN.md`, `docs/UI_REACT_TO_AVALONIA_MAPPING.md`, `docs/UI_IMPLEMENTATION_PLAN.md`, and `docs/UI_ACCEPTANCE_CHECKLIST.md`;
 - create an Avalonia dark-theme Studio shell;
-- implement the Project Explorer, editable canvas mock, contextual
-  Propriedades panel, bottom Camadas/Efeitos/Saidas workbench, output routing,
+- implement scenes-only navigation, source library, editable canvas mock,
+  contextual Propriedades panel, right-side Produção/Saídas cards, bottom
+  Camadas/Saídas da cena workbench, explicit output routing with transitions,
   and product status bar using mock data;
 - implement fake Stream/Record command state driven by configured output routes;
 - introduce Studio-only fake services, unified selection state, typed UI state, and model-backed project workflow scaffolding;

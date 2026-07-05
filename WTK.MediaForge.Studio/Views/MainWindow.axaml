@@ -2,6 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
         xmlns:shell="using:WTK.MediaForge.Studio.Views.Shell"
+        xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+        xmlns:models="using:WTK.MediaForge.Studio.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         x:Class="WTK.MediaForge.Studio.Views.MainWindow"
@@ -18,8 +20,8 @@
 
   <Grid Background="{StaticResource MfBackgroundBrush}">
     <Grid.RowDefinitions>
-      <RowDefinition Height="36" />
-      <RowDefinition Height="44" />
+      <RowDefinition Height="38" />
+      <RowDefinition Height="48" />
       <RowDefinition Height="*" />
       <RowDefinition Height="5" />
       <RowDefinition Height="260" MinHeight="210" MaxHeight="420" />
@@ -30,11 +32,11 @@
 
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="276" MinWidth="240" MaxWidth="420" />
+        <ColumnDefinition Width="292" MinWidth="260" MaxWidth="380" />
         <ColumnDefinition Width="5" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="5" />
-        <ColumnDefinition Width="380" MinWidth="340" MaxWidth="520" />
+        <ColumnDefinition Width="400" MinWidth="360" MaxWidth="540" />
       </Grid.ColumnDefinitions>
 
       <shell:ProjectExplorerView Grid.Column="0"
@@ -55,8 +57,12 @@
                     Background="{StaticResource MfSurface2Brush}"
                     ResizeDirection="Columns" />
 
-      <shell:InspectorView Grid.Column="4"
-                           DataContext="{Binding Inspector}" />
+      <Grid Grid.Column="4" RowDefinitions="278,*">
+        <shell:ProductionPanelView Grid.Row="0"
+                                   DataContext="{Binding Production}" />
+        <shell:InspectorView Grid.Row="1"
+                             DataContext="{Binding Inspector}" />
+      </Grid>
     </Grid>
 
     <GridSplitter Grid.Row="3"
@@ -71,17 +77,83 @@
     <Border Grid.RowSpan="6"
             Background="#99000000"
             IsVisible="{Binding Dialog.IsOpen}">
-      <Border Width="440"
+      <Border Width="560"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Classes="dialog-card">
-        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="14">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="14">
           <TextBlock Text="{Binding Dialog.Title}" Classes="title" FontSize="18" />
           <TextBlock Grid.Row="1"
                      Text="{Binding Dialog.Message}"
                      Classes="secondary"
                      TextWrapping="Wrap" />
-          <StackPanel Grid.Row="2"
+          <StackPanel Grid.Row="2" Spacing="10" IsVisible="{Binding Dialog.HasOptions}">
+            <Border Classes="section" IsVisible="{Binding Dialog.IsRoutingDialog}">
+              <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,120" RowSpacing="8" ColumnSpacing="8">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Transição" Classes="muted" />
+                  <ComboBox ItemsSource="{Binding Dialog.TransitionOptions}"
+                            SelectedValue="{Binding Dialog.SelectedTransitionId, Mode=TwoWay}"
+                            SelectedValueBinding="{Binding Id}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:TransitionOptionViewModel">
+                        <TextBlock Text="{Binding Name}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <TextBlock Text="Duração" Classes="muted" />
+                  <NumericUpDown Value="{Binding Dialog.TransitionDurationMs, Mode=TwoWay}"
+                                 Minimum="0"
+                                 Maximum="5000"
+                                 Increment="50" />
+                </StackPanel>
+                <Border Grid.Row="1" Grid.ColumnSpan="2" Classes="metric-card" IsVisible="{Binding Dialog.RequiresLiveConfirmation}">
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                    <components:StudioIcon Kind="{x:Static models:StudioIconKind.Warning}" IconSize="16" Foreground="{StaticResource MfWarningBrush}" />
+                    <TextBlock Grid.Column="1"
+                               Text="Esta saída está ao vivo. Trocar a cena agora será visível na transmissão."
+                               Classes="warning"
+                               TextWrapping="Wrap" />
+                  </Grid>
+                </Border>
+              </Grid>
+            </Border>
+            <ScrollViewer MaxHeight="360">
+              <ItemsControl ItemsSource="{Binding Dialog.Options}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:StudioDialogOptionViewModel">
+                    <Button Command="{Binding SelectCommand}"
+                            IsEnabled="{Binding IsEnabled}"
+                            Padding="0"
+                            Margin="0,0,0,8"
+                            HorizontalAlignment="Stretch">
+                      <Border Classes="scene-card" HorizontalAlignment="Stretch">
+                        <Grid ColumnDefinitions="36,*,Auto" ColumnSpacing="10">
+                          <Border Classes="icon-box" Width="34" Height="34">
+                            <components:StudioIcon Kind="{Binding IconKind}"
+                                                   IconSize="18"
+                                                   Foreground="{StaticResource MfAccentBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                          </Border>
+                          <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" />
+                          </StackPanel>
+                          <Border Grid.Column="2" Classes="badge" IsVisible="{Binding HasBadge}" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="11" />
+                          </Border>
+                        </Grid>
+                      </Border>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+          <StackPanel Grid.Row="3"
                       Orientation="Horizontal"
                       Spacing="8"
                       HorizontalAlignment="Right">

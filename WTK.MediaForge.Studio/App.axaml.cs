@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using System.Globalization;
 using WTK.MediaForge.Studio.Services;
 using WTK.MediaForge.Studio.Views;
 
@@ -10,6 +11,9 @@ namespace WTK.MediaForge.Studio
     {
         public override void Initialize()
         {
+            var culture = new CultureInfo("pt-BR");
+            CultureInfo.DefaultThreadCurrentCulture = culture;
+            CultureInfo.DefaultThreadCurrentUICulture = culture;
             AvaloniaXamlLoader.Load(this);
         }
 

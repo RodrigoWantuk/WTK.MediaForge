@@ -1,14 +1,17 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using Avalonia;
 using CommunityToolkit.Mvvm.Input;
+using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
+using WTK.MediaForge.Studio.Views.Preview;
 
 namespace WTK.MediaForge.Studio.ViewModels;
 
 public sealed class TitleBarViewModel : ViewModelBase
 {
-    private string _projectName = "Live Production Workspace";
-    private string _workspaceState = "Modo edicao";
+    private string _projectName = "Produção ao vivo";
+    private string _workspaceState = "Pronto";
 
     public string ProductName { get; } = "WTK MediaForge Studio";
 
@@ -29,7 +32,7 @@ public sealed class ToolbarViewModel : ViewModelBase
 {
     private string _streamButtonText = "Transmitir";
     private string _recordingButtonText = "Gravar";
-    private string _stateBadge = "Modo edicao";
+    private string _stateBadge = "Pronto";
     private StudioOutputUiState _streamingState = StudioOutputUiState.Ready;
     private StudioOutputUiState _recordingState = StudioOutputUiState.Ready;
 
@@ -83,7 +86,7 @@ public sealed class ToolbarViewModel : ViewModelBase
 
     public string StreamButtonClasses => StreamingState switch
     {
-        StudioOutputUiState.Running => "primary live",
+        StudioOutputUiState.Running => "live",
         StudioOutputUiState.Error => "danger",
         StudioOutputUiState.Starting or StudioOutputUiState.Stopping => "busy",
         StudioOutputUiState.NotConfigured => "warning",
@@ -107,6 +110,8 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
     private string _searchText = string.Empty;
 
     public ObservableCollection<ProjectTreeGroupViewModel> Groups { get; } = new();
+
+    public ICommand? AddSceneCommand { get; set; }
 
     public string SearchText
     {
@@ -168,18 +173,14 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
 
 public sealed class PreviewCanvasViewModel : ViewModelBase
 {
+    private readonly SceneViewportState _viewport = new();
     private bool _isGridVisible = true;
     private bool _isSafeFrameVisible = true;
     private LayerItemViewModel? _selectedLayer;
-    private string _sceneName = "Main Scene";
-    private string _sceneRole = "Cena em edicao";
-    private string _canvasSize = "1920 x 1080";
+    private string _sceneName = "Cena principal";
+    private string _sceneRole = "Cena principal";
+    private string _canvasSize = "1920×1080";
     private string _frameRate = "60 fps";
-    private double _zoom = 0.82;
-    private double _panX;
-    private double _panY;
-    private double _viewportWidth;
-    private double _viewportHeight;
     private bool _isFitZoom = true;
 
     public PreviewCanvasViewModel()
@@ -190,21 +191,31 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         ActualSizeCommand = new RelayCommand(() =>
         {
             IsFitZoom = false;
-            Zoom = 1;
-            CenterCanvas();
+            Viewport.SetZoomAt(ViewportCenter, 1);
+            NotifyViewportChanged();
         });
-        ZoomInCommand = new RelayCommand(() => ZoomAtCenter(0.1));
-        ZoomOutCommand = new RelayCommand(() => ZoomAtCenter(-0.1));
-        SelectLayerCommand = new RelayCommand<LayerItemViewModel>(RequestLayerSelection, layer => layer is not null);
+        ZoomInCommand = new RelayCommand(() => ZoomAtCenter(1.12));
+        ZoomOutCommand = new RelayCommand(() => ZoomAtCenter(1 / 1.12));
+        SelectLayerCommand = new RelayCommand<LayerItemViewModel>(RequestLayerSelection);
     }
 
     public event EventHandler<LayerSelectionRequestedEventArgs>? LayerSelectionRequested;
 
     public ObservableCollection<LayerItemViewModel> Layers { get; } = new();
 
-    public double CanvasWidth { get; private set; } = 1920;
+    public SceneViewportState Viewport => _viewport;
 
-    public double CanvasHeight { get; private set; } = 1080;
+    public double CanvasWidth => _viewport.CanvasWidth;
+
+    public double CanvasHeight => _viewport.CanvasHeight;
+
+    public double Zoom => _viewport.Zoom;
+
+    public double PanX => _viewport.OffsetX;
+
+    public double PanY => _viewport.OffsetY;
+
+    public Point ViewportCenter => new(_viewport.ViewportWidth / 2, _viewport.ViewportHeight / 2);
 
     public string SceneName
     {
@@ -230,7 +241,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         set => SetProperty(ref _frameRate, value);
     }
 
-    public string ZoomLabel => IsFitZoom ? "Ajustar" : Zoom >= 0.995 && Zoom <= 1.005 ? "100%" : $"{Zoom * 100:0}%";
+    public string ZoomLabel => IsFitZoom ? "Fit" : Zoom >= 0.995 && Zoom <= 1.005 ? "100%" : $"{Zoom * 100:0}%";
 
     public ICommand ToggleGridCommand { get; }
 
@@ -258,7 +269,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         set => SetProperty(ref _isSafeFrameVisible, value);
     }
 
-    public string SelectedLayerName => SelectedLayer?.Name ?? "Nenhuma camada selecionada";
+    public string SelectedLayerName => SelectedLayer?.Name ?? "Nenhuma camada";
 
     public LayerItemViewModel? SelectedLayer
     {
@@ -270,33 +281,6 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SelectedLayerName));
             }
         }
-    }
-
-    public double Zoom
-    {
-        get => _zoom;
-        set
-        {
-            if (SetProperty(ref _zoom, Math.Clamp(value, 0.1, 4)))
-            {
-                if (!_isFitZoom)
-                {
-                    OnPropertyChanged(nameof(ZoomLabel));
-                }
-            }
-        }
-    }
-
-    public double PanX
-    {
-        get => _panX;
-        set => SetProperty(ref _panX, value);
-    }
-
-    public double PanY
-    {
-        get => _panY;
-        set => SetProperty(ref _panY, value);
     }
 
     public bool IsFitZoom
@@ -313,11 +297,11 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public void SetCanvas(double width, double height, double frameRate, bool isProgram)
     {
-        CanvasWidth = width;
-        CanvasHeight = height;
-        CanvasSize = $"{width:0} x {height:0}";
+        _viewport.CanvasWidth = width;
+        _viewport.CanvasHeight = height;
+        CanvasSize = $"{width:0}×{height:0}";
         FrameRate = $"{frameRate:0.##} fps";
-        SceneRole = isProgram ? "Cena principal" : "Cena em edicao";
+        SceneRole = isProgram ? "Cena principal" : "Cena em edição";
         OnPropertyChanged(nameof(CanvasWidth));
         OnPropertyChanged(nameof(CanvasHeight));
         FitZoom();
@@ -330,11 +314,15 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
             return;
         }
 
-        _viewportWidth = width;
-        _viewportHeight = height;
+        _viewport.ViewportWidth = width;
+        _viewport.ViewportHeight = height;
         if (IsFitZoom)
         {
             FitZoom();
+        }
+        else
+        {
+            NotifyViewportChanged();
         }
     }
 
@@ -350,23 +338,28 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public void RequestLayerSelection(LayerItemViewModel? layer)
     {
-        if (layer is null)
-        {
-            return;
-        }
-
         SelectLayerFromOwner(layer);
         LayerSelectionRequested?.Invoke(this, new LayerSelectionRequestedEventArgs(layer));
     }
 
-    public LayerItemViewModel? HitTest(double canvasX, double canvasY)
+    public Point ScreenToScene(Point screenPoint)
+    {
+        return _viewport.ScreenToScene(screenPoint);
+    }
+
+    public Point SceneToScreen(Point scenePoint)
+    {
+        return _viewport.SceneToScreen(scenePoint);
+    }
+
+    public LayerItemViewModel? HitTest(Point scenePoint)
     {
         return Layers
             .Where(layer => layer.IsVisible
-                && canvasX >= layer.X
-                && canvasX <= layer.X + layer.Width
-                && canvasY >= layer.Y
-                && canvasY <= layer.Y + layer.Height)
+                && scenePoint.X >= layer.X
+                && scenePoint.X <= layer.X + layer.Width
+                && scenePoint.Y >= layer.Y
+                && scenePoint.Y <= layer.Y + layer.Height)
             .OrderByDescending(layer => layer.Order)
             .FirstOrDefault();
     }
@@ -415,52 +408,111 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     public void PanBy(double deltaX, double deltaY)
     {
         IsFitZoom = false;
-        PanX += deltaX;
-        PanY += deltaY;
+        _viewport.Pan(new Vector(deltaX, deltaY));
+        NotifyViewportChanged();
     }
 
     public void FitZoom()
     {
-        var availableWidth = _viewportWidth > 0 ? Math.Max(320, _viewportWidth - 72) : 1600;
-        var availableHeight = _viewportHeight > 0 ? Math.Max(220, _viewportHeight - 72) : 900;
-        var zoomX = availableWidth / CanvasWidth;
-        var zoomY = availableHeight / CanvasHeight;
-        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.1, 4);
+        _viewport.Fit(48);
         IsFitZoom = true;
-        CenterCanvas();
-        OnPropertyChanged(nameof(Zoom));
-        OnPropertyChanged(nameof(ZoomLabel));
+        NotifyViewportChanged();
     }
 
-    public void ZoomAtCenter(double delta)
+    public void ZoomAtScreenPoint(Point screenPoint, double factor)
     {
         IsFitZoom = false;
-        Zoom = Math.Clamp(Zoom + delta, 0.1, 4);
-        CenterCanvas();
+        _viewport.ZoomAt(screenPoint, factor);
+        NotifyViewportChanged();
     }
 
-    private void CenterCanvas()
+    public void ZoomAtCenter(double factor)
     {
-        if (_viewportWidth <= 0 || _viewportHeight <= 0)
-        {
-            PanX = 0;
-            PanY = 0;
-            return;
-        }
+        ZoomAtScreenPoint(ViewportCenter, factor);
+    }
 
-        PanX = (_viewportWidth - CanvasWidth * Zoom) / 2;
-        PanY = (_viewportHeight - CanvasHeight * Zoom) / 2;
+    public void SetActualSizeAtCenter()
+    {
+        IsFitZoom = false;
+        _viewport.SetZoomAt(ViewportCenter, 1);
+        NotifyViewportChanged();
+    }
+
+    private void NotifyViewportChanged()
+    {
+        OnPropertyChanged(nameof(Zoom));
+        OnPropertyChanged(nameof(PanX));
+        OnPropertyChanged(nameof(PanY));
+        OnPropertyChanged(nameof(ZoomLabel));
     }
 }
 
 public sealed class LayerSelectionRequestedEventArgs : EventArgs
 {
-    public LayerSelectionRequestedEventArgs(LayerItemViewModel layer)
+    public LayerSelectionRequestedEventArgs(LayerItemViewModel? layer)
     {
         Layer = layer;
     }
 
-    public LayerItemViewModel Layer { get; }
+    public LayerItemViewModel? Layer { get; }
+}
+
+public sealed class ProductionPanelViewModel : ViewModelBase
+{
+    public ObservableCollection<ProductionOutputCardViewModel> Outputs { get; } = new();
+}
+
+public sealed class ProductionOutputCardViewModel : ViewModelBase
+{
+    public ProductionOutputCardViewModel(
+        string id,
+        string name,
+        StudioIconKind iconKind,
+        string sceneName,
+        string statusText,
+        string transitionText,
+        bool isLive,
+        bool isRecording,
+        bool isConfigured,
+        ICommand? sendSceneCommand,
+        ICommand? selectCommand)
+    {
+        Id = id;
+        Name = name;
+        IconKind = iconKind;
+        SceneName = sceneName;
+        StatusText = statusText;
+        TransitionText = transitionText;
+        IsLive = isLive;
+        IsRecording = isRecording;
+        IsConfigured = isConfigured;
+        SendSceneCommand = sendSceneCommand;
+        SelectCommand = selectCommand;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public StudioIconKind IconKind { get; }
+
+    public string SceneName { get; }
+
+    public string StatusText { get; }
+
+    public string TransitionText { get; }
+
+    public bool IsLive { get; }
+
+    public bool IsRecording { get; }
+
+    public bool IsConfigured { get; }
+
+    public bool IsWarning => !IsConfigured;
+
+    public ICommand? SendSceneCommand { get; }
+
+    public ICommand? SelectCommand { get; }
 }
 
 public sealed class BottomWorkbenchViewModel : ViewModelBase
@@ -469,9 +521,8 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
     private LayerItemViewModel? _selectedLayer;
     private bool _suppressLayerSelectionCommand;
     private bool _isLayersSelected;
-    private bool _isEffectsSelected;
-    private bool _isOutputsSelected;
-    private string _effectsContextTitle = "Selecione uma camada";
+    private bool _isSceneOutputsSelected;
+    private string _effectsContextTitle = "Efeitos aparecem nas propriedades";
 
     public BottomWorkbenchViewModel()
     {
@@ -482,6 +533,8 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
 
     public ObservableCollection<LayerItemViewModel> Layers { get; } = new();
 
+    public ObservableCollection<SceneOutputRouteViewModel> SceneOutputs { get; } = new();
+
     public ObservableCollection<EffectItemViewModel> Effects { get; } = new();
 
     public ObservableCollection<OutputMonitorItemViewModel> Outputs { get; } = new();
@@ -491,6 +544,12 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
     public ObservableCollection<PerformanceMetricViewModel> PerformanceMetrics { get; } = new();
 
     public ObservableCollection<AudioStripViewModel> AudioStrips { get; } = new();
+
+    public string EffectsContextTitle
+    {
+        get => _effectsContextTitle;
+        set => SetProperty(ref _effectsContextTitle, value);
+    }
 
     public IRelayCommand<BottomTabViewModel> SelectTabCommand { get; }
 
@@ -517,17 +576,16 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
         }
     }
 
-    public string EffectsContextTitle
+    public bool IsLayersSelected
     {
-        get => _effectsContextTitle;
-        set => SetProperty(ref _effectsContextTitle, value);
+        get => _isLayersSelected;
+        private set => SetProperty(ref _isLayersSelected, value);
     }
 
-    public bool HasEffectsContext => Effects.Count > 0;
-
-    public void NotifyEffectsChanged()
+    public bool IsSceneOutputsSelected
     {
-        OnPropertyChanged(nameof(HasEffectsContext));
+        get => _isSceneOutputsSelected;
+        private set => SetProperty(ref _isSceneOutputsSelected, value);
     }
 
     public void SelectLayerFromOwner(LayerItemViewModel? layer)
@@ -541,24 +599,6 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
         {
             _suppressLayerSelectionCommand = false;
         }
-    }
-
-    public bool IsLayersSelected
-    {
-        get => _isLayersSelected;
-        private set => SetProperty(ref _isLayersSelected, value);
-    }
-
-    public bool IsEffectsSelected
-    {
-        get => _isEffectsSelected;
-        private set => SetProperty(ref _isEffectsSelected, value);
-    }
-
-    public bool IsOutputsSelected
-    {
-        get => _isOutputsSelected;
-        private set => SetProperty(ref _isOutputsSelected, value);
     }
 
     public void SelectTab(BottomTabViewModel? tab)
@@ -575,16 +615,40 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
 
         SelectedTab = tab;
         IsLayersSelected = tab.Kind == StudioBottomTabKind.Layers;
-        IsEffectsSelected = tab.Kind == StudioBottomTabKind.Effects;
-        IsOutputsSelected = tab.Kind == StudioBottomTabKind.Outputs;
+        IsSceneOutputsSelected = tab.Kind == StudioBottomTabKind.SceneOutputs;
     }
+}
+
+public sealed class SceneOutputRouteViewModel
+{
+    public SceneOutputRouteViewModel(string outputId, string outputName, string sceneName, string stateText, string transitionText, ICommand? sendSceneCommand)
+    {
+        OutputId = outputId;
+        OutputName = outputName;
+        SceneName = sceneName;
+        StateText = stateText;
+        TransitionText = transitionText;
+        SendSceneCommand = sendSceneCommand;
+    }
+
+    public string OutputId { get; }
+
+    public string OutputName { get; }
+
+    public string SceneName { get; }
+
+    public string StateText { get; }
+
+    public string TransitionText { get; }
+
+    public ICommand? SendSceneCommand { get; }
 }
 
 public sealed class StatusBarViewModel : ViewModelBase
 {
     private string _statusText = "Pronto";
-    private string _sceneText = "Cena Main Scene";
-    private string _outputText = "3 saidas configuradas";
+    private string _sceneText = "Cena principal";
+    private string _outputText = "3 saídas configuradas";
     private string _framesText = "0 quadros descartados";
 
     public string StatusText
@@ -620,6 +684,14 @@ public sealed class StudioDialogViewModel : ViewModelBase
     private string _primaryText = "Confirmar";
     private string _secondaryText = "Cancelar";
     private string _kind = string.Empty;
+    private string _targetOutputId = string.Empty;
+    private string _selectedTransitionId = "transition-cut";
+    private int _transitionDurationMs = 120;
+    private bool _requiresLiveConfirmation;
+
+    public ObservableCollection<StudioDialogOptionViewModel> Options { get; } = new();
+
+    public ObservableCollection<TransitionOptionViewModel> TransitionOptions { get; } = new();
 
     public bool IsOpen
     {
@@ -654,8 +726,97 @@ public sealed class StudioDialogViewModel : ViewModelBase
     public string Kind
     {
         get => _kind;
-        set => SetProperty(ref _kind, value);
+        set
+        {
+            if (SetProperty(ref _kind, value))
+            {
+                OnPropertyChanged(nameof(HasOptions));
+                OnPropertyChanged(nameof(IsRoutingDialog));
+                OnPropertyChanged(nameof(IsSourceDialog));
+            }
+        }
     }
+
+    public string TargetOutputId
+    {
+        get => _targetOutputId;
+        set => SetProperty(ref _targetOutputId, value);
+    }
+
+    public string SelectedTransitionId
+    {
+        get => _selectedTransitionId;
+        set => SetProperty(ref _selectedTransitionId, value);
+    }
+
+    public int TransitionDurationMs
+    {
+        get => _transitionDurationMs;
+        set => SetProperty(ref _transitionDurationMs, Math.Clamp(value, 0, 5000));
+    }
+
+    public bool RequiresLiveConfirmation
+    {
+        get => _requiresLiveConfirmation;
+        set => SetProperty(ref _requiresLiveConfirmation, value);
+    }
+
+    public bool HasOptions => Options.Count > 0;
+
+    public bool IsRoutingDialog => Kind == "route-output";
+
+    public bool IsSourceDialog => Kind == "source-library";
+
+    public void NotifyOptionsChanged()
+    {
+        OnPropertyChanged(nameof(HasOptions));
+    }
+}
+
+public sealed class StudioDialogOptionViewModel
+{
+    public StudioDialogOptionViewModel(string id, string title, string description, StudioIconKind iconKind, string badge, bool isEnabled, ICommand? selectCommand)
+    {
+        Id = id;
+        Title = title;
+        Description = description;
+        IconKind = iconKind;
+        Badge = badge;
+        IsEnabled = isEnabled;
+        SelectCommand = selectCommand;
+    }
+
+    public string Id { get; }
+
+    public string Title { get; }
+
+    public string Description { get; }
+
+    public StudioIconKind IconKind { get; }
+
+    public string Badge { get; }
+
+    public bool HasBadge => !string.IsNullOrWhiteSpace(Badge);
+
+    public bool IsEnabled { get; }
+
+    public ICommand? SelectCommand { get; }
+}
+
+public sealed class TransitionOptionViewModel
+{
+    public TransitionOptionViewModel(string id, string name, int durationMs)
+    {
+        Id = id;
+        Name = name;
+        DurationMs = durationMs;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public int DurationMs { get; }
 }
 
 public sealed class DiagnosticLogItemViewModel
@@ -693,15 +854,13 @@ public sealed class PerformanceMetricViewModel
     public string Detail { get; }
 }
 
-public sealed class OutputMonitorItemViewModel : ViewModelBase
+public sealed class OutputMonitorItemViewModel
 {
-    private readonly StudioOutputState _state;
-
     public OutputMonitorItemViewModel(string id, string name, StudioOutputState state, string sceneName, string destination, string bitrate, string health, string type = "")
     {
         Id = id;
         Name = name;
-        _state = state;
+        State = state;
         SceneName = sceneName;
         Destination = destination;
         Bitrate = bitrate;
@@ -715,7 +874,7 @@ public sealed class OutputMonitorItemViewModel : ViewModelBase
 
     public string Type { get; }
 
-    public StudioOutputState State => _state;
+    public StudioOutputState State { get; }
 
     public string StateText => new WTK.MediaForge.Studio.Localization.StudioDisplayNameService().GetOutputMonitorStateName(State);
 

@@ -314,15 +314,15 @@ public sealed class LayerItemViewModel : ViewModelBase
 
     public string BlendModeDisplayName => new StudioDisplayNameService().GetBlendModeName(BlendMode);
 
-    public string VisibilityGlyph => IsVisible ? "Visivel" : "Oculta";
+    public string VisibilityGlyph => IsVisible ? "Visível" : "Oculta";
 
-    public string VisibilityTip => IsVisible ? "Camada visivel" : "Camada oculta";
+    public string VisibilityTip => IsVisible ? "Camada visível" : "Camada oculta";
 
     public StudioIconKind VisibilityIconKind => IsVisible ? StudioIconKind.Eye : StudioIconKind.EyeOff;
 
-    public string LockGlyph => IsLocked ? "Bloqueada" : "Editavel";
+    public string LockGlyph => IsLocked ? "Bloqueada" : "Editável";
 
-    public string LockTip => IsLocked ? "Camada bloqueada" : "Camada editavel";
+    public string LockTip => IsLocked ? "Camada bloqueada" : "Camada editável";
 
     public StudioIconKind LockIconKind => IsLocked ? StudioIconKind.Lock : StudioIconKind.Unlock;
 

@@ -22,13 +22,13 @@
         <ToggleSwitch Grid.Column="2"
                       IsChecked="{Binding IsLocked, Mode=TwoWay}"
                       OnContent="Bloqueada"
-                      OffContent="Editavel"
+                      OffContent="Editável"
                       VerticalAlignment="Center" />
       </Grid>
 
       <Border Classes="section">
         <StackPanel Spacing="10">
-          <TextBlock Text="TRANSFORMACAO" Classes="panel-title" />
+          <TextBlock Text="TRANSFORMAÇÃO" Classes="panel-title" />
           <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" RowSpacing="8" ColumnSpacing="8">
             <StackPanel Spacing="4">
               <TextBlock Text="X" Classes="muted" />
@@ -49,9 +49,9 @@
           </Grid>
 
           <Grid ColumnDefinitions="90,*,64" ColumnSpacing="8">
-            <TextBlock Text="Rotacao" Classes="secondary" VerticalAlignment="Center" />
+            <TextBlock Text="Rotação" Classes="secondary" VerticalAlignment="Center" />
             <Slider Grid.Column="1" Minimum="-180" Maximum="180" Value="{Binding RotationDegrees, Mode=TwoWay}" />
-            <TextBlock Grid.Column="2" Text="{Binding RotationDegrees, StringFormat='{}{0:0} deg'}" Classes="muted" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="{Binding RotationDegrees, StringFormat='{}{0:0}°'}" Classes="muted" VerticalAlignment="Center" />
           </Grid>
 
           <Grid ColumnDefinitions="90,*,64" ColumnSpacing="8">
@@ -61,7 +61,7 @@
           </Grid>
 
           <StackPanel Spacing="4">
-            <TextBlock Text="Blend" Classes="muted" />
+            <TextBlock Text="Modo de mistura" Classes="muted" />
             <ComboBox ItemsSource="{Binding AvailableBlendModes}" SelectedItem="{Binding BlendMode, Mode=TwoWay}" />
           </StackPanel>
         </StackPanel>
@@ -94,7 +94,7 @@
       <Border Classes="section">
         <StackPanel Spacing="10">
           <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="EFEITOS" Classes="panel-title" />
+            <TextBlock Text="EFEITOS DA CAMADA" Classes="panel-title" />
             <Button Grid.Column="1" Classes="flat" Content="+ Adicionar" IsEnabled="False" />
           </Grid>
           <ItemsControl ItemsSource="{Binding Effects}">
@@ -116,7 +116,7 @@
                       <Border Grid.Column="1" Classes="source-thumb" Height="24">
                         <TextBlock Text="{Binding KeyColor}" Classes="mono accent" VerticalAlignment="Center" HorizontalAlignment="Center" />
                       </Border>
-                      <TextBlock Grid.Row="1" Text="Tolerancia" Classes="muted" VerticalAlignment="Center" />
+                      <TextBlock Grid.Row="1" Text="Similaridade" Classes="muted" VerticalAlignment="Center" />
                       <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Tolerance, Mode=TwoWay}" />
                       <TextBlock Grid.Row="2" Text="Spill" Classes="muted" VerticalAlignment="Center" />
                       <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Spill, Mode=TwoWay}" />

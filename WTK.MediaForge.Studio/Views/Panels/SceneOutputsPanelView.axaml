@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
+             x:Class="WTK.MediaForge.Studio.Views.Panels.SceneOutputsPanelView"
+             x:DataType="vm:BottomWorkbenchViewModel">
+  <Grid RowDefinitions="Auto,*" Margin="12">
+    <Grid ColumnDefinitions="*,Auto" Margin="8,0,8,8">
+      <StackPanel Spacing="2">
+        <TextBlock Text="Saídas da cena selecionada" Classes="panel-title" />
+        <TextBlock Text="Mostra para onde esta cena está sendo enviada." Classes="secondary" />
+      </StackPanel>
+      <Button Grid.Column="1" Classes="primary" Content="Enviar esta cena para..." IsEnabled="False" />
+    </Grid>
+
+    <ListBox Grid.Row="1"
+             ItemsSource="{Binding SceneOutputs}"
+             Background="Transparent"
+             BorderThickness="0"
+             Padding="0">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:SceneOutputRouteViewModel">
+          <Border Classes="layer-row" Margin="0,0,0,6">
+            <Grid ColumnDefinitions="34,*,160,180,160" ColumnSpacing="10">
+              <Border Classes="icon-box" Width="28" Height="28">
+                <components:StudioIcon Kind="{x:Static models:StudioIconKind.Output}"
+                                       IconSize="15"
+                                       Foreground="{StaticResource MfAccentBrush}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding OutputName}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding SceneName}" Classes="secondary" />
+              </StackPanel>
+              <TextBlock Grid.Column="2" Text="{Binding StateText}" Classes="secondary" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="3" Text="{Binding TransitionText}" Classes="muted" VerticalAlignment="Center" />
+              <Button Grid.Column="4" Content="Enviar outra cena" Command="{Binding SendSceneCommand}" />
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </Grid>
+</UserControl>

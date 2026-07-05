@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WTK.MediaForge.Studio.Views.Preview.SelectionAdorner">
+  <Border BorderBrush="{StaticResource MfAccentBrush}"
+          BorderThickness="2"
+          CornerRadius="8"
+          Background="Transparent" />
+</UserControl>

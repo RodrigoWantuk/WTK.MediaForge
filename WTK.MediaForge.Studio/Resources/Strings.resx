@@ -21,18 +21,30 @@
   <data name="Common_Search" xml:space="preserve"><value>Search</value></data>
   <data name="Common_Planned" xml:space="preserve"><value>Planned</value></data>
   <data name="Common_Configure" xml:space="preserve"><value>Configure</value></data>
-  <data name="Action_AddSource" xml:space="preserve"><value>Add source</value></data>
-  <data name="Action_AddScene" xml:space="preserve"><value>Add scene</value></data>
-  <data name="Action_ConfigureOutput" xml:space="preserve"><value>Configure output</value></data>
+  <data name="Action_AddSource" xml:space="preserve"><value>+ Source</value></data>
+  <data name="Action_AddScene" xml:space="preserve"><value>+ Scene</value></data>
+  <data name="Action_ConfigureOutput" xml:space="preserve"><value>Configure outputs</value></data>
   <data name="Action_StartStreaming" xml:space="preserve"><value>Go live</value></data>
   <data name="Action_StopStreaming" xml:space="preserve"><value>Stop live</value></data>
   <data name="Action_StartRecording" xml:space="preserve"><value>Record</value></data>
   <data name="Action_StopRecording" xml:space="preserve"><value>Stop recording</value></data>
-  <data name="Panel_ProjectExplorer" xml:space="preserve"><value>Project</value></data>
+  <data name="Panel_ProjectExplorer" xml:space="preserve"><value>Scenes</value></data>
   <data name="Panel_Properties" xml:space="preserve"><value>Properties</value></data>
   <data name="Panel_Layers" xml:space="preserve"><value>Layers</value></data>
   <data name="Panel_Effects" xml:space="preserve"><value>Effects</value></data>
   <data name="Panel_Outputs" xml:space="preserve"><value>Outputs</value></data>
+  <data name="Panel_Production" xml:space="preserve"><value>Production</value></data>
+  <data name="Panel_SceneOutputs" xml:space="preserve"><value>Scene outputs</value></data>
+  <data name="Preview_Fit" xml:space="preserve"><value>Fit</value></data>
+  <data name="Preview_Grid" xml:space="preserve"><value>Grid</value></data>
+  <data name="Preview_SafeArea" xml:space="preserve"><value>Safe area</value></data>
+  <data name="Term_Settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="Term_Outputs" xml:space="preserve"><value>Outputs</value></data>
+  <data name="Term_Transmission" xml:space="preserve"><value>Transmission</value></data>
+  <data name="Term_Recording" xml:space="preserve"><value>Recording</value></data>
+  <data name="Term_Diagnostics" xml:space="preserve"><value>Diagnostics</value></data>
+  <data name="Term_Preview" xml:space="preserve"><value>Preview</value></data>
+  <data name="Term_SafeArea" xml:space="preserve"><value>Safe area</value></data>
   <data name="Status_Ready" xml:space="preserve"><value>Ready</value></data>
   <data name="Status_DroppedFrames" xml:space="preserve"><value>Dropped frames</value></data>
 </root>

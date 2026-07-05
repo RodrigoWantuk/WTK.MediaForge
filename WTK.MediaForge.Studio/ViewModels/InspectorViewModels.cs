@@ -8,12 +8,12 @@ namespace WTK.MediaForge.Studio.ViewModels;
 
 public abstract class InspectorPageViewModel : ViewModelBase
 {
-    protected InspectorPageViewModel(StudioSelectionKind kind, string title, string subtitle, string icon)
+    protected InspectorPageViewModel(StudioSelectionKind kind, string title, string subtitle, StudioIconKind iconKind)
     {
         Kind = kind;
         Title = title;
         Subtitle = subtitle;
-        Icon = icon;
+        IconKind = iconKind;
     }
 
     public StudioSelectionKind Kind { get; }
@@ -22,13 +22,13 @@ public abstract class InspectorPageViewModel : ViewModelBase
 
     public string Subtitle { get; }
 
-    public string Icon { get; }
+    public StudioIconKind IconKind { get; }
 }
 
 public sealed class EmptyInspectorViewModel : InspectorPageViewModel
 {
     public EmptyInspectorViewModel()
-        : base(StudioSelectionKind.None, "Nada selecionado", "Selecione uma cena, fonte, camada ou saida.", "--")
+        : base(StudioSelectionKind.None, "Nada selecionado", "Selecione uma cena, camada, fonte ou saída.", StudioIconKind.Scene)
     {
     }
 }
@@ -50,7 +50,7 @@ public sealed class LayerInspectorViewModel : InspectorPageViewModel
     }
 
     public LayerInspectorViewModel(LayerItemViewModel layer)
-        : base(StudioSelectionKind.Layer, layer.Name, $"{new StudioDisplayNameService().GetLayerTypeName(layer.Type)} / {layer.Source}", layer.IconKind.ToString())
+        : base(StudioSelectionKind.Layer, layer.Name, $"{new StudioDisplayNameService().GetLayerTypeName(layer.Type)} • {layer.Source}", layer.IconKind)
     {
         _layer = layer;
         _layer.PropertyChanged += (_, e) =>
@@ -234,7 +234,7 @@ public sealed class LayerInspectorViewModel : InspectorPageViewModel
 public sealed class SourceInspectorViewModel : InspectorPageViewModel
 {
     public SourceInspectorViewModel(StudioSource source, string currentSceneName, ICommand? addToSceneCommand, ICommand? reconnectCommand)
-        : base(StudioSelectionKind.Source, source.DisplayName, new StudioDisplayNameService().GetSourceTypeName(source.TypeId), "SRC")
+        : base(StudioSelectionKind.Source, source.DisplayName, new StudioDisplayNameService().GetSourceTypeName(source.TypeId), GetSourceIcon(source.TypeId))
     {
         SourceType = new StudioDisplayNameService().GetSourceTypeName(source.TypeId);
         Endpoint = source.Endpoint;
@@ -245,8 +245,8 @@ public sealed class SourceInspectorViewModel : InspectorPageViewModel
         Status = new StudioDisplayNameService().GetHealthName(source.Health);
         DeviceOptions = source.TypeId.Contains("desktop", StringComparison.OrdinalIgnoreCase)
             ? new ObservableCollection<string> { "Monitor 1", "Monitor 2", "Janela" }
-            : new ObservableCollection<string> { "Logitech BRIO", "USB Camera", "Camera virtual" };
-        ResolutionOptions = new ObservableCollection<string> { "1920 x 1080", "1280 x 720", "2560 x 1440" };
+            : new ObservableCollection<string> { "Logitech BRIO", "USB Camera", "Câmera virtual" };
+        ResolutionOptions = new ObservableCollection<string> { "1920×1080", "1280×720", "2560×1440" };
         FrameRateOptions = new ObservableCollection<string> { "30 fps", "60 fps", "120 fps" };
         SelectedDevice = DeviceOptions[0];
         SelectedResolution = ResolutionOptions[0];
@@ -265,7 +265,7 @@ public sealed class SourceInspectorViewModel : InspectorPageViewModel
 
     public int Height { get; }
 
-    public string ResolutionText => $"{Width} x {Height}";
+    public string ResolutionText => $"{Width}×{Height}";
 
     public double FrameRate { get; }
 
@@ -288,61 +288,158 @@ public sealed class SourceInspectorViewModel : InspectorPageViewModel
     public ICommand? AddToSceneCommand { get; }
 
     public ICommand? ReconnectCommand { get; }
+
+    private static StudioIconKind GetSourceIcon(string typeId)
+    {
+        return typeId switch
+        {
+            "source.webcam" => StudioIconKind.Camera,
+            "source.desktop" => StudioIconKind.Desktop,
+            "source.image" => StudioIconKind.Image,
+            "source.text" => StudioIconKind.Text,
+            "source.media" => StudioIconKind.Video,
+            _ => StudioIconKind.Source
+        };
+    }
 }
 
 public sealed class SceneInspectorViewModel : InspectorPageViewModel
 {
+    private readonly StudioScene _scene;
+
     public SceneInspectorViewModel(StudioScene scene, IEnumerable<StudioOutput> linkedOutputs)
-        : base(StudioSelectionKind.Scene, scene.DisplayName, scene.IsProgram ? "Cena principal" : "Cena em edicao", "SCN")
+        : base(StudioSelectionKind.Scene, scene.DisplayName, scene.IsProgram ? "Cena principal" : "Cena em edição", StudioIconKind.Scene)
     {
-        CanvasSize = $"{scene.Canvas.Width:0} x {scene.Canvas.Height:0}";
-        AspectRatio = scene.Canvas.Width / Math.Max(1, scene.Canvas.Height) > 1.7 ? "16:9" : "Personalizado";
-        LinkedOutputs = string.Join(", ", linkedOutputs.Select(output => output.DisplayName));
-        if (string.IsNullOrWhiteSpace(LinkedOutputs))
+        _scene = scene;
+        LinkedOutputs = new ObservableCollection<string>(linkedOutputs.Select(output => output.DisplayName));
+        if (LinkedOutputs.Count == 0)
         {
-            LinkedOutputs = "Nenhuma saida vinculada";
+            LinkedOutputs.Add("Nenhuma saída vinculada");
         }
 
+        Effects = new ObservableCollection<EffectItemViewModel>(scene.Effects.Select(effect => new EffectItemViewModel(effect)));
         LayerCount = scene.Layers.Count;
-        FrameRateText = $"{scene.Canvas.FrameRate:0.##} fps";
-        BackgroundColor = scene.Canvas.BackgroundColor;
-        IsProgram = scene.IsProgram;
     }
 
-    public string CanvasSize { get; }
+    public string Name
+    {
+        get => _scene.DisplayName;
+        set
+        {
+            if (_scene.DisplayName != value)
+            {
+                _scene.DisplayName = value;
+                OnPropertyChanged();
+            }
+        }
+    }
 
-    public string AspectRatio { get; }
+    public double CanvasWidth
+    {
+        get => _scene.Canvas.Width;
+        set
+        {
+            if (Math.Abs(_scene.Canvas.Width - value) > double.Epsilon)
+            {
+                _scene.Canvas.Width = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanvasSize));
+            }
+        }
+    }
 
-    public string LinkedOutputs { get; }
+    public double CanvasHeight
+    {
+        get => _scene.Canvas.Height;
+        set
+        {
+            if (Math.Abs(_scene.Canvas.Height - value) > double.Epsilon)
+            {
+                _scene.Canvas.Height = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanvasSize));
+            }
+        }
+    }
+
+    public double FrameRate
+    {
+        get => _scene.Canvas.FrameRate;
+        set
+        {
+            if (Math.Abs(_scene.Canvas.FrameRate - value) > double.Epsilon)
+            {
+                _scene.Canvas.FrameRate = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(FrameRateText));
+            }
+        }
+    }
+
+    public string BackgroundColor
+    {
+        get => _scene.Canvas.BackgroundColor;
+        set
+        {
+            if (_scene.Canvas.BackgroundColor != value)
+            {
+                _scene.Canvas.BackgroundColor = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public bool IsProgram
+    {
+        get => _scene.IsProgram;
+        set
+        {
+            if (_scene.IsProgram != value)
+            {
+                _scene.IsProgram = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string CanvasSize => $"{CanvasWidth:0}×{CanvasHeight:0}";
+
+    public string AspectRatio => CanvasWidth / Math.Max(1, CanvasHeight) > 1.7 ? "16:9" : "Personalizado";
 
     public int LayerCount { get; }
 
-    public string FrameRateText { get; }
+    public string FrameRateText => $"{FrameRate:0.##} fps";
 
-    public string BackgroundColor { get; }
+    public ObservableCollection<string> LinkedOutputs { get; }
 
-    public bool IsProgram { get; }
+    public ObservableCollection<EffectItemViewModel> Effects { get; }
 }
 
 public sealed class OutputInspectorViewModel : InspectorPageViewModel
 {
     private readonly StudioOutput _output;
-    private readonly Action _onRouteChanged;
 
-    public OutputInspectorViewModel(StudioOutput output, IEnumerable<StudioScene> scenes, Action onRouteChanged)
-        : base(StudioSelectionKind.Output, output.DisplayName, "Saida roteada para cena", "OUT")
+    public OutputInspectorViewModel(
+        StudioOutput output,
+        string selectedSceneName,
+        IEnumerable<StudioTransition> transitions,
+        ICommand? sendSceneCommand)
+        : base(StudioSelectionKind.Output, output.DisplayName, new StudioDisplayNameService().GetOutputTypeName(output.TypeId), GetOutputIcon(output.TypeId))
     {
         _output = output;
-        _onRouteChanged = onRouteChanged;
-        Scenes = new ObservableCollection<SceneRouteOptionViewModel>(
-            scenes.Select(scene => new SceneRouteOptionViewModel(scene.Id, scene.DisplayName)));
-        OutputTypes = new ObservableCollection<string> { "Preview", "Gravacao MP4", "Transmissao RTMP", "Camera virtual" };
+        CurrentSceneName = selectedSceneName;
+        SendSceneCommand = sendSceneCommand;
+        OutputTypes = new ObservableCollection<string> { "Prévia local", "Gravação MP4", "Transmissão RTMP", "Câmera virtual" };
         CodecOptions = new ObservableCollection<string> { "H.264 (NVENC)", "H.264", "HEVC", "RGBA" };
-        PresetOptions = new ObservableCollection<string> { "Qualidade", "Balanceado", "Baixa latencia" };
+        PresetOptions = new ObservableCollection<string> { "Qualidade", "Balanceado", "Baixa latência" };
+        TransitionOptions = new ObservableCollection<TransitionOptionViewModel>(
+            transitions.Select(transition => new TransitionOptionViewModel(transition.Id, transition.DisplayName, transition.DurationMs)));
         SelectedOutputType = new StudioDisplayNameService().GetOutputTypeName(output.TypeId);
         SelectedCodec = string.IsNullOrWhiteSpace(output.Codec) ? CodecOptions[0] : output.Codec;
         SelectedPreset = PresetOptions[0];
     }
+
+    public string CurrentSceneName { get; }
 
     public string Destination
     {
@@ -394,6 +491,7 @@ public sealed class OutputInspectorViewModel : InspectorPageViewModel
             {
                 _output.IsEnabled = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(Health));
             }
         }
     }
@@ -408,45 +506,37 @@ public sealed class OutputInspectorViewModel : InspectorPageViewModel
                 _output.IsConfigured = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(Health));
-                _onRouteChanged();
             }
         }
     }
 
-    public string SelectedSceneId
+    public string SelectedTransitionId
     {
-        get => _output.AssignedSceneId;
+        get => _output.DefaultTransitionId;
         set
         {
-            if (_output.AssignedSceneId != value)
+            if (_output.DefaultTransitionId != value)
             {
-                _output.AssignedSceneId = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(SelectedSceneName));
-                OnPropertyChanged(nameof(SelectedScene));
-                _onRouteChanged();
-            }
-        }
-    }
-
-    public string SelectedSceneName => Scenes.FirstOrDefault(scene => scene.Id == SelectedSceneId)?.Name ?? "Sem cena";
-
-    public SceneRouteOptionViewModel? SelectedScene
-    {
-        get => Scenes.FirstOrDefault(scene => scene.Id == SelectedSceneId);
-        set
-        {
-            if (value is not null)
-            {
-                SelectedSceneId = value.Id;
+                _output.DefaultTransitionId = value;
                 OnPropertyChanged();
             }
         }
     }
 
-    public string MaskedStreamKey => string.IsNullOrWhiteSpace(_output.Secret) ? "Nao configurada" : "sk_live_************";
+    public int TransitionDurationMs
+    {
+        get => _output.TransitionDurationMs;
+        set
+        {
+            if (_output.TransitionDurationMs != value)
+            {
+                _output.TransitionDurationMs = value;
+                OnPropertyChanged();
+            }
+        }
+    }
 
-    public ObservableCollection<SceneRouteOptionViewModel> Scenes { get; }
+    public string MaskedStreamKey => string.IsNullOrWhiteSpace(_output.Secret) ? "Não configurada" : "sk_live_************";
 
     public ObservableCollection<string> OutputTypes { get; }
 
@@ -454,38 +544,38 @@ public sealed class OutputInspectorViewModel : InspectorPageViewModel
 
     public ObservableCollection<string> PresetOptions { get; }
 
+    public ObservableCollection<TransitionOptionViewModel> TransitionOptions { get; }
+
     public string SelectedOutputType { get; set; }
 
     public string SelectedCodec { get; set; }
 
     public string SelectedPreset { get; set; }
 
-    public int KeyframeSeconds { get; set; } = 2;
+    public ICommand? SendSceneCommand { get; }
 
     internal string RawStreamKeyForTests => _output.Secret;
-}
 
-public sealed class SceneRouteOptionViewModel
-{
-    public SceneRouteOptionViewModel(string id, string name)
+    private static StudioIconKind GetOutputIcon(string typeId)
     {
-        Id = id;
-        Name = name;
+        return typeId switch
+        {
+            "output.preview" => StudioIconKind.Preview,
+            "output.file.mp4" => StudioIconKind.Record,
+            "output.rtmp" => StudioIconKind.Stream,
+            _ => StudioIconKind.Output
+        };
     }
-
-    public string Id { get; }
-
-    public string Name { get; }
 }
 
 public sealed class PresetInspectorViewModel : InspectorPageViewModel
 {
     public PresetInspectorViewModel(string presetName, string description)
-        : base(StudioSelectionKind.Preset, presetName, description, "PRE")
+        : base(StudioSelectionKind.Preset, presetName, description, StudioIconKind.Preset)
     {
-        Canvas = "1920 x 1080";
+        Canvas = "1920×1080";
         FrameRate = "60 fps";
-        OutputProfile = "H.264 high profile";
+        OutputProfile = "H.264 perfil alto";
     }
 
     public string Canvas { get; }
@@ -498,10 +588,10 @@ public sealed class PresetInspectorViewModel : InspectorPageViewModel
 public sealed class PackageInspectorViewModel : InspectorPageViewModel
 {
     public PackageInspectorViewModel(string packageName, string description)
-        : base(StudioSelectionKind.Package, packageName, description, "PKG")
+        : base(StudioSelectionKind.Package, packageName, description, StudioIconKind.Package)
     {
-        Items = "Cenas, presets e definicoes de fonte";
-        ImportMode = "Validacao antes de importar";
+        Items = "Cenas, presets e definições de fonte";
+        ImportMode = "Validação antes de importar";
     }
 
     public string Items { get; }

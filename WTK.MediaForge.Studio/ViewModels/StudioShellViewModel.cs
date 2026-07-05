@@ -3,6 +3,7 @@ using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using WTK.MediaForge.Studio.DesignData;
 using WTK.MediaForge.Studio.DocumentModel;
+using WTK.MediaForge.Studio.Localization;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Services;
 
@@ -60,7 +61,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         AddSourceCommand = new RelayCommand(OpenAddSourceDialog);
         AddSceneCommand = new RelayCommand(OpenAddSceneDialog);
         ConfigureOutputCommand = new RelayCommand(OpenConfigureOutputDialog);
-        SettingsCommand = new RelayCommand(() => ShowDialog("Configuracoes", "Preferencias do Studio ficarao aqui no proximo milestone.", "settings", "Fechar"));
+        SettingsCommand = new RelayCommand(() => ShowDialog("Configurações", "Preferências do Studio ficarão aqui no próximo milestone.", "settings", "Fechar"));
         ToggleStreamingCommand = new AsyncRelayCommand(ToggleStreamingAsync, CanToggleStreaming);
         ToggleRecordingCommand = new AsyncRelayCommand(ToggleRecordingAsync, CanToggleRecording);
         SelectProjectItemCommand = new RelayCommand<ProjectTreeItemViewModel>(SelectProjectItem, item => item is not null);
@@ -71,9 +72,10 @@ public sealed class StudioShellViewModel : ViewModelBase
         MoveLayerDownCommand = new RelayCommand<LayerItemViewModel>(MoveLayerDown, layer => layer is not null);
         ToggleEffectEnabledCommand = new RelayCommand<EffectItemViewModel>(ToggleEffectEnabled, effect => effect is not null);
         AddSelectedSourceToCurrentSceneCommand = new RelayCommand(AddSelectedSourceToCurrentScene, () => _selectedSource is not null && CurrentScene is not null);
-        ReconnectSourceCommand = new RelayCommand(() => SetStatus("Reconexao de fonte agendada no mock."));
+        ReconnectSourceCommand = new RelayCommand(() => SetStatus("Reconexão de fonte agendada."));
         ConfirmDialogCommand = new RelayCommand(ConfirmDialog);
         CancelDialogCommand = new RelayCommand(CloseDialog);
+        ProjectExplorer.AddSceneCommand = AddSceneCommand;
 
         _outputService.StatusChanged += OnOutputStatusChanged;
         _selectionService.SelectionChanged += OnSelectionChanged;
@@ -92,6 +94,8 @@ public sealed class StudioShellViewModel : ViewModelBase
     public ProjectExplorerViewModel ProjectExplorer { get; } = new();
 
     public PreviewCanvasViewModel Preview { get; } = new();
+
+    public ProductionPanelViewModel Production { get; } = new();
 
     public InspectorHostViewModel Inspector { get; } = new();
 
@@ -176,14 +180,13 @@ public sealed class StudioShellViewModel : ViewModelBase
         _document = document;
         Replace(_diagnosticsService.Items, diagnostics);
         InitializeBottomTabs();
-        RebuildProjectExplorer();
-        SelectScene(_document.Scenes.FirstOrDefault(scene => scene.Id == _document.SelectedSceneId) ?? _document.Scenes.First());
-
-        var initialLayer = BottomWorkbench.Layers.FirstOrDefault(layer => layer.Name == "Webcam")
-            ?? BottomWorkbench.Layers.FirstOrDefault();
-        if (initialLayer is not null)
+        RebuildAll();
+        var initialScene = _document.Scenes.FirstOrDefault(scene => scene.Id == _document.SelectedSceneId)
+            ?? _document.Scenes.FirstOrDefault();
+        if (initialScene is not null)
         {
-            SelectLayer(initialLayer);
+            SelectScene(initialScene, updateProjectSelection: true);
+            ClearLayerSelectionAndShowScene();
         }
     }
 
@@ -194,45 +197,17 @@ public sealed class StudioShellViewModel : ViewModelBase
             return;
         }
 
-        ClearLayerSelection();
         ClearProjectSelection();
         item.IsSelected = true;
         SelectedProjectItem = item;
-        SelectedLayer = null;
         ProjectExplorer.SelectFromOwner(item);
-        BottomWorkbench.SelectLayerFromOwner(null);
-        Preview.SelectLayerFromOwner(null);
-        Replace(BottomWorkbench.Effects, Array.Empty<EffectItemViewModel>());
-        BottomWorkbench.EffectsContextTitle = "Selecione uma camada";
-        BottomWorkbench.NotifyEffectsChanged();
 
-        switch (item.Kind)
+        if (item.Kind == StudioProjectItemKind.Scene)
         {
-            case StudioProjectItemKind.Scene:
-                SelectScene(_document.Scenes.First(scene => scene.Id == item.Id));
-                Inspector.SelectedPage = new SceneInspectorViewModel(CurrentScene!, LinkedOutputs(CurrentScene!));
-                _selectionService.Select(CreateSelection(item));
-                break;
-            case StudioProjectItemKind.Source:
-                _selectedSource = _document.Sources.First(source => source.Id == item.Id);
-                _selectedOutput = null;
-                Inspector.SelectedPage = new SourceInspectorViewModel(_selectedSource, CurrentScene?.DisplayName ?? "Cena atual", AddSelectedSourceToCurrentSceneCommand, ReconnectSourceCommand);
-                _selectionService.Select(CreateSelection(item));
-                break;
-            case StudioProjectItemKind.Output:
-                _selectedSource = null;
-                _selectedOutput = _document.Outputs.First(output => output.Id == item.Id);
-                Inspector.SelectedPage = new OutputInspectorViewModel(_selectedOutput, _document.Scenes, SyncOutputRoutes);
-                _selectionService.Select(CreateSelection(item));
-                break;
-            case StudioProjectItemKind.Preset:
-                Inspector.SelectedPage = new PresetInspectorViewModel(item.Name, item.Metadata);
-                _selectionService.Select(CreateSelection(item));
-                break;
-            case StudioProjectItemKind.Package:
-                Inspector.SelectedPage = new PackageInspectorViewModel(item.Name, item.Metadata);
-                _selectionService.Select(CreateSelection(item));
-                break;
+            var scene = _document.Scenes.First(scene => scene.Id == item.Id);
+            SelectScene(scene, updateProjectSelection: false);
+            ClearLayerSelectionAndShowScene();
+            _selectionService.Select(CreateSelection(item));
         }
     }
 
@@ -240,6 +215,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     {
         if (layer is null)
         {
+            ClearLayerSelectionAndShowScene();
             return;
         }
 
@@ -256,10 +232,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         ProjectExplorer.SelectFromOwner(null);
         BottomWorkbench.SelectLayerFromOwner(layer);
         Preview.SelectLayerFromOwner(layer);
-        Replace(BottomWorkbench.Effects, layer.Effects);
         AttachEffectCommands(layer.Effects);
-        BottomWorkbench.EffectsContextTitle = $"Efeitos de {layer.Name}";
-        BottomWorkbench.NotifyEffectsChanged();
         Inspector.SelectedPage = new LayerInspectorViewModel(layer);
         _selectionService.Select(new StudioSelectionState(
             StudioSelectionKind.Layer,
@@ -273,9 +246,28 @@ public sealed class StudioShellViewModel : ViewModelBase
     public void AssignOutputToScene(string outputId, string sceneId)
     {
         var output = _document.Outputs.First(item => item.Id == outputId);
-        output.AssignedSceneId = sceneId;
+        SendSceneToOutput(outputId, sceneId, output.DefaultTransitionId, output.TransitionDurationMs);
+    }
+
+    public void SendSceneToOutput(string outputId, string sceneId, string transitionId, int durationMs)
+    {
+        var output = _document.Outputs.First(item => item.Id == outputId);
+        var scene = _document.Scenes.First(item => item.Id == sceneId);
+        output.AssignedSceneId = scene.Id;
+        output.DefaultTransitionId = transitionId;
+        output.TransitionDurationMs = durationMs;
         output.IsConfigured = true;
-        SyncOutputRoutes();
+        output.IsEnabled = true;
+        if (output.State == StudioOutputState.Planned)
+        {
+            output.State = StudioOutputState.Running;
+        }
+
+        _document.HasUnsavedChanges = true;
+        RebuildAll();
+        SelectOutput(output);
+        ApplyProjectDocument();
+        SetStatus($"{scene.DisplayName} enviada para {output.DisplayName}.");
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> source)
@@ -295,8 +287,7 @@ public sealed class StudioShellViewModel : ViewModelBase
             new[]
             {
                 new BottomTabViewModel(StudioBottomTabKind.Layers, "Camadas"),
-                new BottomTabViewModel(StudioBottomTabKind.Effects, "Efeitos"),
-                new BottomTabViewModel(StudioBottomTabKind.Outputs, "Saidas")
+                new BottomTabViewModel(StudioBottomTabKind.SceneOutputs, "Saídas da cena")
             });
 
         foreach (var tab in BottomWorkbench.Tabs)
@@ -311,11 +302,11 @@ public sealed class StudioShellViewModel : ViewModelBase
     {
         await _projectService.NewAsync(cancellationToken).ConfigureAwait(true);
         _document = StudioMockDocumentFactory.Create();
-        _document.DisplayName = "Projeto sem titulo";
+        _document.DisplayName = "Projeto sem título";
         _document.HasUnsavedChanges = true;
         LoadDesignData(_document, _diagnosticsService.Items);
         ApplyProjectDocument();
-        SetStatus("Novo projeto mock criado.");
+        SetStatus("Novo projeto criado.");
     }
 
     private async Task OpenProjectAsync(CancellationToken cancellationToken)
@@ -333,7 +324,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         await _projectService.SaveAsync(null, cancellationToken).ConfigureAwait(true);
         _document.HasUnsavedChanges = false;
         ApplyProjectDocument();
-        SetStatus("Projeto salvo em pacote mock.");
+        SetStatus("Projeto salvo em pacote visual.");
     }
 
     private bool CanToggleStreaming()
@@ -358,9 +349,11 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         await _outputService.ToggleStreamingAsync(cancellationToken).ConfigureAwait(true);
+        output.IsLive = IsStreaming;
         output.State = IsStreaming ? StudioOutputState.Live : StudioOutputState.Running;
-        SyncOutputRoutes();
-        SetStatus(IsStreaming ? $"Transmitindo {AssignedSceneName(output)}." : "Transmissao encerrada.");
+        RebuildAll();
+        ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
+        SetStatus(IsStreaming ? $"Ao vivo com {AssignedSceneName(output)}." : "Transmissão encerrada.");
     }
 
     private async Task ToggleRecordingAsync(CancellationToken cancellationToken)
@@ -373,9 +366,11 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         await _outputService.ToggleRecordingAsync(cancellationToken).ConfigureAwait(true);
+        output.IsRecording = IsRecording;
         output.State = IsRecording ? StudioOutputState.Recording : StudioOutputState.Running;
-        SyncOutputRoutes();
-        SetStatus(IsRecording ? $"Gravando {AssignedSceneName(output)}." : "Gravacao encerrada.");
+        RebuildAll();
+        ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
+        SetStatus(IsRecording ? $"Gravando {AssignedSceneName(output)}." : "Gravação encerrada.");
     }
 
     private void ToggleLayerVisibility(LayerItemViewModel? layer)
@@ -443,31 +438,92 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void OpenAddSourceDialog()
     {
-        ShowDialog(
-            "Adicionar fonte",
-            $"Cria uma fonte mock e adiciona uma camada na cena {CurrentScene?.DisplayName ?? "atual"}.",
-            "source",
-            "Adicionar");
+        Dialog.Options.Clear();
+        var options = new[]
+        {
+            SourceOption("source.webcam", "Webcam", "Capturar câmera local", StudioIconKind.Camera, "Disponível", true),
+            SourceOption("source.desktop", "Tela", "Capturar monitor ou janela", StudioIconKind.Desktop, "Disponível", true),
+            SourceOption("source.image", "Imagem", "PNG, JPG, WebP", StudioIconKind.Image, "Disponível", true),
+            SourceOption("source.media", "Vídeo", "MP4, MOV, WebM", StudioIconKind.Video, "Disponível", true),
+            SourceOption("source.text", "Texto", "Título, legenda ou tarja", StudioIconKind.Text, "Disponível", true),
+            SourceOption("source.solid", "Cor sólida", "Fundo ou shape simples", StudioIconKind.Source, "Disponível", true),
+            SourceOption("source.ndi", "NDI", "Entrada de rede planejada", StudioIconKind.Stream, "Planejado", false),
+            SourceOption("source.rtsp", "RTSP/IP", "Câmera IP planejada", StudioIconKind.Camera, "Planejado", false)
+        };
+
+        foreach (var option in options)
+        {
+            Dialog.Options.Add(option);
+        }
+
+        Dialog.NotifyOptionsChanged();
+        ShowDialog("Adicionar fonte", $"Escolha uma fonte para adicionar à cena {CurrentScene?.DisplayName ?? "atual"}.", "source-library", "Fechar");
+    }
+
+    private StudioDialogOptionViewModel SourceOption(string typeId, string title, string description, StudioIconKind icon, string badge, bool isEnabled)
+    {
+        return new StudioDialogOptionViewModel(
+            typeId,
+            title,
+            description,
+            icon,
+            badge,
+            isEnabled,
+            isEnabled ? new RelayCommand(() => AddSourceFromLibrary(typeId, title)) : null);
     }
 
     private void OpenAddSceneDialog()
     {
+        Dialog.Options.Clear();
+        Dialog.NotifyOptionsChanged();
         ShowDialog("Adicionar cena", "Cria uma cena vazia pronta para receber fontes.", "scene", "Criar cena");
     }
 
     private void OpenConfigureOutputDialog()
     {
         var output = _selectedOutput ?? _document.Outputs.FirstOrDefault(item => !item.IsConfigured) ?? _document.Outputs.FirstOrDefault();
-        if (output is not null)
+        if (output is null)
         {
-            _selectedOutput = output;
+            ShowDialog("Configurar saídas", "Nenhuma saída disponível no projeto.", "message", "Fechar");
+            return;
         }
 
-        ShowDialog(
-            "Configurar saida",
-            output is null ? "Nenhuma saida disponivel no projeto." : $"Ajusta a saida {output.DisplayName} para usar a cena atual.",
-            "output",
-            "Configurar");
+        SelectOutput(output);
+        SetStatus($"Configure {output.DisplayName} no painel de propriedades.");
+    }
+
+    private void OpenSendSceneDialog(string outputId)
+    {
+        var output = _document.Outputs.First(item => item.Id == outputId);
+        Dialog.Options.Clear();
+        Dialog.TransitionOptions.Clear();
+        foreach (var transition in _document.Transitions)
+        {
+            Dialog.TransitionOptions.Add(new TransitionOptionViewModel(transition.Id, transition.DisplayName, transition.DurationMs));
+        }
+
+        Dialog.TargetOutputId = outputId;
+        Dialog.SelectedTransitionId = output.DefaultTransitionId;
+        Dialog.TransitionDurationMs = output.TransitionDurationMs;
+        Dialog.RequiresLiveConfirmation = output.IsLive;
+        foreach (var scene in _document.Scenes)
+        {
+            Dialog.Options.Add(new StudioDialogOptionViewModel(
+                scene.Id,
+                scene.DisplayName,
+                $"{scene.Canvas.Width:0}×{scene.Canvas.Height:0} • {scene.Canvas.FrameRate:0.##} fps",
+                StudioIconKind.Scene,
+                scene.IsProgram ? "Principal" : string.Empty,
+                true,
+                new RelayCommand(() =>
+                {
+                    SendSceneToOutput(Dialog.TargetOutputId, scene.Id, Dialog.SelectedTransitionId, Dialog.TransitionDurationMs);
+                    CloseDialog();
+                })));
+        }
+
+        Dialog.NotifyOptionsChanged();
+        ShowDialog("Enviar cena para saída", $"Escolha a cena e a transição para {output.DisplayName}.", "route-output", "Cancelar");
     }
 
     private void ShowDialog(string title, string message, string kind, string primaryText)
@@ -484,23 +540,25 @@ public sealed class StudioShellViewModel : ViewModelBase
     {
         switch (Dialog.Kind)
         {
-            case "source":
-                AddMockSourceToCurrentScene();
-                break;
             case "scene":
                 AddMockScene();
+                CloseDialog();
                 break;
-            case "output":
-                ConfigureSelectedOutput();
+            case "settings":
+            case "message":
+            case "source-library":
+            case "route-output":
+                CloseDialog();
                 break;
         }
-
-        CloseDialog();
     }
 
     private void CloseDialog()
     {
         Dialog.IsOpen = false;
+        Dialog.Options.Clear();
+        Dialog.TransitionOptions.Clear();
+        Dialog.NotifyOptionsChanged();
     }
 
     private void AddSelectedSourceToCurrentScene()
@@ -513,20 +571,20 @@ public sealed class StudioShellViewModel : ViewModelBase
         AddSourceLayerToCurrentScene(_selectedSource);
     }
 
-    private void AddMockSourceToCurrentScene()
+    private void AddSourceFromLibrary(string typeId, string displayName)
     {
-        var index = _document.Sources.Count(source => source.TypeId == "source.text") + 1;
+        var index = _document.Sources.Count(source => source.TypeId == typeId) + 1;
         var source = new StudioSource
         {
-            Id = $"source-text-overlay-{index}",
-            DisplayName = $"Texto {index}",
-            TypeId = "source.text",
-            Metadata = "Texto gerado",
-            Endpoint = "Criado no Studio"
+            Id = $"source-{typeId.Replace('.', '-')}-{index}",
+            DisplayName = $"{displayName} {index}",
+            TypeId = typeId,
+            Metadata = SourceMetadata(typeId),
+            Endpoint = SourceEndpoint(typeId)
         };
         _document.Sources.Add(source);
-        RebuildProjectExplorer();
         AddSourceLayerToCurrentScene(source);
+        CloseDialog();
     }
 
     private void AddSourceLayerToCurrentScene(StudioSource source)
@@ -555,7 +613,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         {
             Id = $"{layer.Id}-effect-chroma",
             Name = "Chroma Key",
-            Description = "Disponivel para ajustar fundo verde nesta camada.",
+            Description = "Remove fundo verde com suavidade e controle de spill.",
             IsEnabled = false
         });
 
@@ -564,6 +622,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         RebuildSceneLayers();
         var selected = BottomWorkbench.Layers.First(item => item.Id == layer.Id);
         SelectLayer(selected);
+        RebuildProjectExplorer();
+        RebuildSceneOutputRows();
         ApplyProjectDocument();
         SetStatus($"{source.DisplayName} adicionada a {CurrentScene.DisplayName}.");
     }
@@ -575,58 +635,84 @@ public sealed class StudioShellViewModel : ViewModelBase
         {
             Id = $"scene-{count}",
             DisplayName = $"Cena {count}",
-            Metadata = "1920 x 1080 / 60 fps"
+            Metadata = "1920×1080 • 60 fps"
         };
+        scene.Effects.Add(new StudioEffect
+        {
+            Id = $"{scene.Id}-effect-color",
+            Name = "Correção de cor",
+            Description = "Planejado para ajustes globais da cena.",
+            IsEnabled = false
+        });
         _document.Scenes.Add(scene);
         _document.HasUnsavedChanges = true;
-        RebuildProjectExplorer();
-        SelectScene(scene);
-        var item = FindProjectItem(scene.Id);
-        if (item is not null)
-        {
-            SelectProjectItem(item);
-        }
-
+        RebuildProjectExplorer(scene.Id);
+        SelectScene(scene, updateProjectSelection: true);
+        ClearLayerSelectionAndShowScene();
         ApplyProjectDocument();
         SetStatus($"{scene.DisplayName} criada.");
     }
 
-    private void ConfigureSelectedOutput()
-    {
-        if (_selectedOutput is null || CurrentScene is null)
-        {
-            return;
-        }
-
-        _selectedOutput.AssignedSceneId = CurrentScene.Id;
-        _selectedOutput.IsConfigured = true;
-        _selectedOutput.IsEnabled = true;
-        if (_selectedOutput.State == StudioOutputState.Planned)
-        {
-            _selectedOutput.State = StudioOutputState.Running;
-        }
-
-        SyncOutputRoutes();
-        var item = FindProjectItem(_selectedOutput.Id);
-        if (item is not null)
-        {
-            SelectProjectItem(item);
-        }
-
-        SetStatus($"{_selectedOutput.DisplayName} roteada para {CurrentScene.DisplayName}.");
-    }
-
-    private void SelectScene(StudioScene scene)
+    private void SelectScene(StudioScene scene, bool updateProjectSelection)
     {
         CurrentScene = scene;
         _document.SelectedSceneId = scene.Id;
         Preview.SceneName = scene.DisplayName;
         Preview.SetCanvas(scene.Canvas.Width, scene.Canvas.Height, scene.Canvas.FrameRate, scene.IsProgram);
         RebuildSceneLayers();
-        RebuildProjectExplorer(scene.Id);
+        RebuildProjectExplorer(updateProjectSelection ? scene.Id : SelectedProjectItem?.Id);
+        RebuildSceneOutputRows();
         StatusBar.SceneText = $"Cena {scene.DisplayName}";
         StatusBar.OutputText = OutputSummary();
         AddSelectedSourceToCurrentSceneCommand.NotifyCanExecuteChanged();
+    }
+
+    private void SelectOutput(StudioOutput output)
+    {
+        ClearLayerSelection();
+        ClearProjectSelection();
+        _selectedSource = null;
+        _selectedOutput = output;
+        SelectedLayer = null;
+        SelectedProjectItem = null;
+        BottomWorkbench.SelectLayerFromOwner(null);
+        Preview.SelectLayerFromOwner(null);
+        Inspector.SelectedPage = new OutputInspectorViewModel(
+            output,
+            AssignedSceneName(output),
+            _document.Transitions,
+            new RelayCommand(() => OpenSendSceneDialog(output.Id)));
+        _selectionService.Select(new StudioSelectionState(
+            StudioSelectionKind.Output,
+            output.Id,
+            output.DisplayName,
+            output.TypeId,
+            new StudioDisplayNameService().GetOutputTypeName(output.TypeId),
+            AssignedSceneName(output),
+            output.Destination,
+            output.Codec,
+            output.Bitrate,
+            output.Secret));
+    }
+
+    private void ClearLayerSelectionAndShowScene()
+    {
+        ClearLayerSelection();
+        SelectedLayer = null;
+        BottomWorkbench.SelectLayerFromOwner(null);
+        Preview.SelectLayerFromOwner(null);
+        if (CurrentScene is not null)
+        {
+            Inspector.SelectedPage = new SceneInspectorViewModel(CurrentScene, LinkedOutputs(CurrentScene));
+        }
+    }
+
+    private void RebuildAll()
+    {
+        RebuildProjectExplorer();
+        RebuildSceneLayers();
+        RebuildProductionOutputs();
+        RebuildSceneOutputRows();
     }
 
     private void RebuildSceneLayers()
@@ -650,16 +736,13 @@ public sealed class StudioShellViewModel : ViewModelBase
 
         Replace(BottomWorkbench.Layers, layers);
         Replace(Preview.Layers, layers);
-        Replace(BottomWorkbench.Effects, Array.Empty<EffectItemViewModel>());
-        BottomWorkbench.EffectsContextTitle = "Selecione uma camada";
-        BottomWorkbench.NotifyEffectsChanged();
         BottomWorkbench.SelectLayerFromOwner(null);
         Preview.SelectLayerFromOwner(null);
     }
 
     private void RebuildProjectExplorer(string? selectedId = null)
     {
-        var selected = selectedId ?? SelectedProjectItem?.Id;
+        var selected = selectedId ?? CurrentScene?.Id;
         var groups = BuildProjectGroups();
         foreach (var item in groups.SelectMany(group => group.Items))
         {
@@ -670,34 +753,46 @@ public sealed class StudioShellViewModel : ViewModelBase
         Replace(ProjectExplorer.Groups, groups);
         ProjectExplorer.ApplyFilter();
         ProjectExplorer.SelectFromOwner(FindProjectItem(selected));
-        RebuildOutputRows();
     }
 
-    private void RebuildOutputRows()
+    private void RebuildProductionOutputs()
     {
-        var rows = _document.Outputs.Select(output =>
+        var cards = _document.Outputs.Select(output => new ProductionOutputCardViewModel(
+            output.Id,
+            output.DisplayName,
+            GetOutputIcon(output.TypeId),
+            AssignedSceneName(output),
+            OutputStateText(output),
+            TransitionText(output),
+            output.IsLive || output.State == StudioOutputState.Live,
+            output.IsRecording || output.State == StudioOutputState.Recording,
+            output.IsConfigured,
+            new RelayCommand(() => OpenSendSceneDialog(output.Id)),
+            new RelayCommand(() => SelectOutput(output)))).ToArray();
+
+        Replace(Production.Outputs, cards);
+    }
+
+    private void RebuildSceneOutputRows()
+    {
+        if (CurrentScene is null)
         {
-            var row = new OutputMonitorItemViewModel(
+            Replace(BottomWorkbench.SceneOutputs, Array.Empty<SceneOutputRouteViewModel>());
+            return;
+        }
+
+        var rows = _document.Outputs
+            .Where(output => output.AssignedSceneId == CurrentScene.Id)
+            .Select(output => new SceneOutputRouteViewModel(
                 output.Id,
                 output.DisplayName,
-                output.State,
-                AssignedSceneName(output),
-                output.Destination,
-                output.Bitrate,
-                output.IsConfigured ? "Configurada" : "Falta configurar",
-                output.TypeId);
-            row.SelectCommand = new RelayCommand(() =>
-            {
-                var item = FindProjectItem(output.Id);
-                if (item is not null)
-                {
-                    SelectProjectItem(item);
-                }
-            });
-            return row;
-        }).ToArray();
+                CurrentScene.DisplayName,
+                OutputStateText(output),
+                TransitionText(output),
+                new RelayCommand(() => OpenSendSceneDialog(output.Id))))
+            .ToArray();
 
-        Replace(BottomWorkbench.Outputs, rows);
+        Replace(BottomWorkbench.SceneOutputs, rows);
     }
 
     private IReadOnlyList<ProjectTreeGroupViewModel> BuildProjectGroups()
@@ -706,72 +801,17 @@ public sealed class StudioShellViewModel : ViewModelBase
             .Select(scene => new ProjectTreeItemViewModel(
                 StudioProjectItemKind.Scene,
                 scene.DisplayName,
-                scene.Metadata,
+                $"{scene.Canvas.Width:0}×{scene.Canvas.Height:0} • {scene.Canvas.FrameRate:0.##} fps",
                 StudioIconKind.Scene,
-                scene.IsProgram ? "PRINCIPAL" : string.Empty,
+                scene.IsProgram ? "Principal" : string.Empty,
                 id: scene.Id,
                 typeId: "scene.canvas",
-                detail: string.Join(", ", LinkedOutputs(scene).Select(output => output.DisplayName))) { IsActive = scene.Id == CurrentScene?.Id })
-            .ToArray();
-
-        var sources = _document.Sources
-            .Select(source => new ProjectTreeItemViewModel(
-                StudioProjectItemKind.Source,
-                source.DisplayName,
-                source.Metadata,
-                GetSourceIcon(source.TypeId),
-                SourceBadge(source),
-                source.Health,
-                source.Id,
-                source.TypeId,
-                source.Endpoint))
-            .ToArray();
-
-        var outputs = _document.Outputs
-            .Select(output => new ProjectTreeItemViewModel(
-                StudioProjectItemKind.Output,
-                output.DisplayName,
-                OutputMetadata(output),
-                GetOutputIcon(output.TypeId),
-                output.IsConfigured ? OutputBadge(output) : "CONFIG",
-                output.IsConfigured ? output.State == StudioOutputState.Planned ? StudioHealthState.Planned : StudioHealthState.Healthy : StudioHealthState.Warning,
-                output.Id,
-                output.TypeId,
-                AssignedSceneName(output),
-                output.Destination,
-                output.Codec,
-                output.Bitrate,
-                output.Secret))
-            .ToArray();
-
-        var presets = _document.Presets
-            .Select(preset => new ProjectTreeItemViewModel(
-                StudioProjectItemKind.Preset,
-                preset.DisplayName,
-                preset.Metadata,
-                StudioIconKind.Preset,
-                id: preset.Id,
-                typeId: preset.TypeId))
-            .ToArray();
-
-        var packages = _document.Packages
-            .Select(pkg => new ProjectTreeItemViewModel(
-                StudioProjectItemKind.Package,
-                pkg.DisplayName,
-                pkg.Metadata,
-                StudioIconKind.Package,
-                pkg.Id == "package-brand-kit" ? "v2" : string.Empty,
-                id: pkg.Id,
-                typeId: pkg.TypeId))
+                detail: SceneOutputsLabel(scene)) { IsActive = scene.Id == CurrentScene?.Id })
             .ToArray();
 
         return new[]
         {
-            new ProjectTreeGroupViewModel("Cenas", scenes),
-            new ProjectTreeGroupViewModel("Fontes", sources),
-            new ProjectTreeGroupViewModel("Saidas", outputs),
-            new ProjectTreeGroupViewModel("Presets", presets),
-            new ProjectTreeGroupViewModel("Pacotes", packages)
+            new ProjectTreeGroupViewModel("Cenas", scenes)
         };
     }
 
@@ -793,34 +833,20 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private StudioSelectionState CreateSelection(ProjectTreeItemViewModel item)
     {
-        var kind = item.Kind switch
-        {
-            StudioProjectItemKind.Scene => StudioSelectionKind.Scene,
-            StudioProjectItemKind.Source => StudioSelectionKind.Source,
-            StudioProjectItemKind.Output => StudioSelectionKind.Output,
-            StudioProjectItemKind.Preset => StudioSelectionKind.Preset,
-            StudioProjectItemKind.Package => StudioSelectionKind.Package,
-            _ => StudioSelectionKind.None
-        };
-
         return new StudioSelectionState(
-            kind,
+            StudioSelectionKind.Scene,
             item.Id,
             item.Name,
             item.TypeId,
             item.Metadata,
-            item.Detail,
-            item.Destination,
-            item.Codec,
-            item.Bitrate,
-            item.Secret);
+            item.Detail);
     }
 
     private void ApplyProjectDocument()
     {
         TitleBar.ProjectName = _document.HasUnsavedChanges ? $"{_document.DisplayName} *" : _document.DisplayName;
-        TitleBar.WorkspaceState = "Modo edicao visual";
-        Toolbar.StateBadge = CurrentScene?.IsProgram == true ? "Cena principal" : "Cena em edicao";
+        TitleBar.WorkspaceState = IsStreaming ? "● Ao vivo" : IsRecording ? $"● Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}" : "Prévia pronta";
+        Toolbar.StateBadge = CurrentScene?.IsProgram == true ? "Cena principal" : "Cena em edição";
     }
 
     private void OnUiTimerTick(object? sender, EventArgs e)
@@ -828,6 +854,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         if (_outputService.RecordingState == StudioOutputUiState.Running)
         {
             ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
+            ApplyProjectDocument();
         }
     }
 
@@ -843,22 +870,23 @@ public sealed class StudioShellViewModel : ViewModelBase
         Toolbar.StreamButtonText = Toolbar.StreamingState switch
         {
             StudioOutputUiState.Starting => "Conectando...",
-            StudioOutputUiState.Running => "Ao vivo",
+            StudioOutputUiState.Running => "● Ao vivo",
             StudioOutputUiState.Stopping => "Encerrando...",
-            StudioOutputUiState.Error => "Erro na transmissao",
-            StudioOutputUiState.NotConfigured => "Configurar transmissao",
+            StudioOutputUiState.Error => "Erro na transmissão",
+            StudioOutputUiState.NotConfigured => "Configurar transmissão",
             _ => "Transmitir"
         };
         Toolbar.RecordingButtonText = Toolbar.RecordingState switch
         {
-            StudioOutputUiState.Starting => "Iniciando gravacao...",
-            StudioOutputUiState.Running => $"Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}",
+            StudioOutputUiState.Starting => "Iniciando gravação...",
+            StudioOutputUiState.Running => $"● Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}",
             StudioOutputUiState.Stopping => "Parando...",
-            StudioOutputUiState.Error => "Erro na gravacao",
-            StudioOutputUiState.NotConfigured => "Configurar gravacao",
+            StudioOutputUiState.Error => "Erro na gravação",
+            StudioOutputUiState.NotConfigured => "Configurar gravação",
             _ => "Gravar"
         };
         StatusBar.OutputText = OutputSummary();
+        ApplyProjectDocument();
         OnPropertyChanged(nameof(IsStreaming));
         OnPropertyChanged(nameof(IsRecording));
         ToggleStreamingCommand.NotifyCanExecuteChanged();
@@ -873,22 +901,9 @@ public sealed class StudioShellViewModel : ViewModelBase
             StudioSelectionKind.Layer => $"Camada selecionada: {e.Selection.DisplayName}",
             StudioSelectionKind.Scene => $"Cena selecionada: {e.Selection.DisplayName}",
             StudioSelectionKind.Source => $"Fonte selecionada: {e.Selection.DisplayName}",
-            StudioSelectionKind.Output => $"Saida selecionada: {e.Selection.DisplayName}",
+            StudioSelectionKind.Output => $"Saída selecionada: {e.Selection.DisplayName}",
             _ => $"Selecionado: {e.Selection.DisplayName}"
         };
-    }
-
-    private void SyncOutputRoutes()
-    {
-        RebuildProjectExplorer(_selectedOutput?.Id ?? SelectedProjectItem?.Id);
-        RebuildOutputRows();
-        StatusBar.OutputText = OutputSummary();
-        if (CurrentScene is not null && CurrentSelection.Kind == StudioSelectionKind.Scene)
-        {
-            Inspector.SelectedPage = new SceneInspectorViewModel(CurrentScene, LinkedOutputs(CurrentScene));
-        }
-
-        ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
     }
 
     private void AttachLayerCommands(LayerItemViewModel layer)
@@ -948,7 +963,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private string OutputSummary()
     {
         var configured = _document.Outputs.Count(output => output.IsConfigured);
-        return $"{configured}/{_document.Outputs.Count} saidas configuradas";
+        return $"{configured}/{_document.Outputs.Count} saídas configuradas";
     }
 
     private string AssignedSceneName(StudioOutput output)
@@ -956,35 +971,34 @@ public sealed class StudioShellViewModel : ViewModelBase
         return _document.Scenes.FirstOrDefault(scene => scene.Id == output.AssignedSceneId)?.DisplayName ?? "Sem cena";
     }
 
-    private string OutputMetadata(StudioOutput output)
+    private string SceneOutputsLabel(StudioScene scene)
     {
-        var sceneName = AssignedSceneName(output);
-        return output.IsConfigured
-            ? $"{sceneName} / {output.Codec} / {output.Bitrate}"
-            : $"{sceneName} / falta configurar";
+        var linked = LinkedOutputs(scene).Select(output => output.DisplayName).ToArray();
+        return linked.Length == 0 ? "Saídas: nenhuma" : $"Saídas: {string.Join(", ", linked)}";
     }
 
-    private static string OutputBadge(StudioOutput output)
+    private string TransitionText(StudioOutput output)
     {
+        var transition = _document.Transitions.FirstOrDefault(item => item.Id == output.DefaultTransitionId);
+        var name = transition?.DisplayName ?? "Corte rápido";
+        return output.TransitionDurationMs <= 0 ? name : $"{name} {output.TransitionDurationMs} ms";
+    }
+
+    private static string OutputStateText(StudioOutput output)
+    {
+        if (!output.IsConfigured)
+        {
+            return "Não configurada";
+        }
+
         return output.State switch
         {
-            StudioOutputState.Live => "LIVE",
-            StudioOutputState.Recording => "REC",
-            StudioOutputState.Planned => "PLAN",
-            StudioOutputState.Warning => "ATENCAO",
-            StudioOutputState.Offline => "OFF",
-            _ => "ON"
-        };
-    }
-
-    private static string SourceBadge(StudioSource source)
-    {
-        return source.TypeId switch
-        {
-            "source.webcam" => "LIVE",
-            "source.desktop" => "TELA",
-            _ when source.Health == StudioHealthState.Warning => "BUFFER",
-            _ => string.Empty
+            StudioOutputState.Live => "Ao vivo",
+            StudioOutputState.Recording => "Gravando",
+            StudioOutputState.Warning => "Atenção",
+            StudioOutputState.Offline => "Offline",
+            StudioOutputState.Planned => "Planejada",
+            _ => "Pronta"
         };
     }
 
@@ -998,26 +1012,42 @@ public sealed class StudioShellViewModel : ViewModelBase
         return ProjectExplorer.Groups.SelectMany(group => group.Items).FirstOrDefault(item => item.Id == id);
     }
 
+    private static string SourceMetadata(string typeId)
+    {
+        return typeId switch
+        {
+            "source.webcam" => "Câmera / 1080p60",
+            "source.desktop" => "Tela / 1440p60",
+            "source.image" => "Imagem / arquivo",
+            "source.media" => "Vídeo / arquivo",
+            "source.text" => "Texto editável",
+            "source.solid" => "Cor sólida",
+            _ => "Fonte planejada"
+        };
+    }
+
+    private static string SourceEndpoint(string typeId)
+    {
+        return typeId switch
+        {
+            "source.webcam" => "Logitech BRIO",
+            "source.desktop" => "Monitor 1",
+            "source.image" => "assets/imagem.png",
+            "source.media" => "media/video.mp4",
+            "source.text" => "Texto criado no Studio",
+            "source.solid" => "#101823",
+            _ => "Planejado"
+        };
+    }
+
     private static string SourceTypeToLayerType(string typeId)
     {
         return typeId switch
         {
             "source.text" => "Text",
             "source.image" => "Image",
+            "source.solid" => "Solid",
             _ => "Source"
-        };
-    }
-
-    private static StudioIconKind GetSourceIcon(string typeId)
-    {
-        return typeId switch
-        {
-            "source.webcam" => StudioIconKind.Camera,
-            "source.desktop" => StudioIconKind.Desktop,
-            "source.image" => StudioIconKind.Image,
-            "source.text" => StudioIconKind.Text,
-            "source.media" => StudioIconKind.Video,
-            _ => StudioIconKind.Source
         };
     }
 
@@ -1042,6 +1072,11 @@ public sealed class StudioShellViewModel : ViewModelBase
         if (layerType == "Image")
         {
             return StudioIconKind.Image;
+        }
+
+        if (layerType == "Solid")
+        {
+            return StudioIconKind.Source;
         }
 
         return sourceId.Contains("desktop", StringComparison.OrdinalIgnoreCase)

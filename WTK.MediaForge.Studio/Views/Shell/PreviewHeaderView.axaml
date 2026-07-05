@@ -1,6 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:loc="using:WTK.MediaForge.Studio.Localization"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
              x:Class="WTK.MediaForge.Studio.Views.Shell.PreviewHeaderView"
              x:DataType="vm:PreviewCanvasViewModel">
   <Border Background="{StaticResource MfSurface1Brush}"
@@ -16,9 +19,31 @@
         <TextBlock Text="{Binding FrameRate}" Classes="secondary" />
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-        <Button Content="{Binding ZoomLabel}" Classes="flat" />
-        <Button Content="Grade" Command="{Binding ToggleGridCommand}" />
-        <Button Content="Area segura" Command="{Binding ToggleSafeFrameCommand}" />
+        <Button Command="{Binding FitZoomCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Fit}" IconSize="13" />
+            <TextBlock Text="{loc:Loc Preview_Fit}" />
+          </StackPanel>
+        </Button>
+        <Button Content="{Binding ZoomLabel}" Command="{Binding ActualSizeCommand}" />
+        <Button Command="{Binding ZoomOutCommand}" Padding="7">
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.ZoomOut}" IconSize="14" />
+        </Button>
+        <Button Command="{Binding ZoomInCommand}" Padding="7">
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.ZoomIn}" IconSize="14" />
+        </Button>
+        <Button Command="{Binding ToggleGridCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Grid}" IconSize="13" />
+            <TextBlock Text="{loc:Loc Preview_Grid}" />
+          </StackPanel>
+        </Button>
+        <Button Command="{Binding ToggleSafeFrameCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.SafeArea}" IconSize="13" />
+            <TextBlock Text="{loc:Loc Preview_SafeArea}" />
+          </StackPanel>
+        </Button>
       </StackPanel>
     </Grid>
   </Border>

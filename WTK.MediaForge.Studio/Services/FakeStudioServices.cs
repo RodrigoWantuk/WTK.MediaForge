@@ -9,19 +9,19 @@ namespace WTK.MediaForge.Studio.Services;
 
 public sealed class FakeStudioProjectService : IStudioProjectService
 {
-    public StudioProjectDocument Current { get; } = new("Live Production Workspace");
+    public StudioProjectDocument Current { get; } = new("Produção ao vivo");
 
     public Task NewAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Current.Rename("Untitled MediaForge Project", null, true);
+        Current.Rename("Projeto sem título", null, true);
         return Task.CompletedTask;
     }
 
     public Task OpenAsync(string path, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Current.Rename("Loaded MediaForge Project", path, false);
+        Current.Rename("Projeto carregado", path, false);
         return Task.CompletedTask;
     }
 
@@ -35,7 +35,7 @@ public sealed class FakeStudioProjectService : IStudioProjectService
 
 public sealed class FakeStudioEngineService : IStudioEngineService
 {
-    private StudioEngineStatus _currentStatus = new(StudioEngineUiState.Stopped, "Engine stopped");
+    private StudioEngineStatus _currentStatus = new(StudioEngineUiState.Stopped, "Pronto");
 
     public StudioEngineStatus CurrentStatus => _currentStatus;
 
@@ -48,9 +48,9 @@ public sealed class FakeStudioEngineService : IStudioEngineService
             return;
         }
 
-        Publish(new StudioEngineStatus(StudioEngineUiState.Starting, "Starting engine"));
+        Publish(new StudioEngineStatus(StudioEngineUiState.Starting, "Preparando"));
         await Task.Delay(5, cancellationToken).ConfigureAwait(true);
-        Publish(new StudioEngineStatus(StudioEngineUiState.Running, "Engine running (mock)"));
+        Publish(new StudioEngineStatus(StudioEngineUiState.Running, "Pronto"));
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -60,9 +60,9 @@ public sealed class FakeStudioEngineService : IStudioEngineService
             return;
         }
 
-        Publish(new StudioEngineStatus(StudioEngineUiState.Stopping, "Stopping engine"));
+        Publish(new StudioEngineStatus(StudioEngineUiState.Stopping, "Finalizando"));
         await Task.Delay(5, cancellationToken).ConfigureAwait(true);
-        Publish(new StudioEngineStatus(StudioEngineUiState.Stopped, "Engine stopped"));
+        Publish(new StudioEngineStatus(StudioEngineUiState.Stopped, "Pronto"));
     }
 
     private void Publish(StudioEngineStatus status)
@@ -263,8 +263,9 @@ public sealed class StudioInspectorPageFactory : IInspectorPageFactory
             StudioSelectionKind.Layer => new LayerInspectorViewModel(selection.DisplayName, selection.Detail),
             StudioSelectionKind.Output => new OutputInspectorViewModel(
                 document.Outputs.FirstOrDefault(output => output.Id == selection.EntityId) ?? document.Outputs[0],
-                document.Scenes,
-                static () => { }),
+                document.Scenes[0].DisplayName,
+                document.Transitions,
+                null),
             StudioSelectionKind.Preset => new PresetInspectorViewModel(selection.DisplayName, selection.Metadata),
             StudioSelectionKind.Package => new PackageInspectorViewModel(selection.DisplayName, selection.Metadata),
             _ => new EmptyInspectorViewModel()

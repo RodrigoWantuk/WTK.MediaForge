@@ -3,7 +3,7 @@
   <Style Selector="TextBlock">
     <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI" />
     <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
-    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontSize" Value="13.5" />
   </Style>
 
   <Style Selector="TextBlock.muted">
@@ -20,7 +20,7 @@
   </Style>
 
   <Style Selector="TextBlock.panel-title">
-    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontSize" Value="14" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="Foreground" Value="{StaticResource MfTextSecondaryBrush}" />
   </Style>

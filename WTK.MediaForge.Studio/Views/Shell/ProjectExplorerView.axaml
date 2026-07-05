@@ -8,24 +8,21 @@
              x:Name="ProjectExplorerRoot"
              x:DataType="vm:ProjectExplorerViewModel">
   <Border Classes="panel">
-    <Grid RowDefinitions="Auto,*,34">
+    <Grid RowDefinitions="Auto,*">
       <Border Grid.Row="0"
               BorderBrush="{StaticResource MfBorderBrush}"
               BorderThickness="0,0,0,1"
               Padding="12,10">
         <Grid RowDefinitions="Auto,Auto" RowSpacing="8">
-          <Grid ColumnDefinitions="*,Auto,Auto">
+          <Grid ColumnDefinitions="*,Auto">
             <TextBlock Text="{loc:Loc Panel_ProjectExplorer}" Classes="panel-title" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Classes="flat" Padding="6">
-              <components:StudioIcon Kind="{x:Static models:StudioIconKind.Search}" IconSize="15" />
-            </Button>
-            <Button Grid.Column="2" Classes="flat" Padding="6">
-              <components:StudioIcon Kind="{x:Static models:StudioIconKind.Menu}" IconSize="15" />
+            <Button Grid.Column="1" Classes="primary" Padding="7" ToolTip.Tip="+ Cena" Command="{Binding AddSceneCommand}">
+              <components:StudioIcon Kind="{x:Static models:StudioIconKind.Add}" IconSize="15" />
             </Button>
           </Grid>
           <TextBox Grid.Row="1"
                    Text="{Binding SearchText, Mode=TwoWay}"
-                   PlaceholderText="{loc:Loc Common_Search}" />
+                   PlaceholderText="Buscar cena..." />
         </Grid>
       </Border>
 
@@ -45,31 +42,26 @@
                          Padding="0">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:ProjectTreeItemViewModel">
-                      <Border Classes="project-row"
+                      <Border Classes="scene-card"
                               Classes.selected="{Binding IsSelected}"
                               Classes.active="{Binding IsActive}"
                               HorizontalAlignment="Stretch">
-                        <Grid ColumnDefinitions="12,36,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" MinHeight="46">
-                          <Border Grid.RowSpan="2"
-                                  Classes="health-dot"
-                                  Classes.healthy="{Binding IsHealthy}"
-                                  Classes.warning="{Binding IsWarning}"
-                                  Classes.error="{Binding IsError}"
-                                  Classes.planned="{Binding IsPlanned}"
-                                  Classes.disabled="{Binding IsDisabled}"
-                                  VerticalAlignment="Center" />
-                          <Border Grid.Column="1" Grid.RowSpan="2" Classes="icon-box">
-                            <components:StudioIcon Kind="{Binding IconKind}"
-                                                   IconSize="17"
-                                                   Foreground="{StaticResource MfAccentBrush}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center" />
-                          </Border>
-                          <TextBlock Grid.Column="2" Text="{Binding Name}" FontWeight="SemiBold" />
-                          <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Metadata}" Classes="muted" FontSize="11" />
-                          <Border Grid.Column="3" Grid.RowSpan="2" Classes="badge" IsVisible="{Binding HasBadge}">
-                            <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="10" />
-                          </Border>
+                        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="7">
+                          <Grid ColumnDefinitions="32,*,Auto" ColumnSpacing="8">
+                            <Border Classes="icon-box" Width="30" Height="30">
+                              <components:StudioIcon Kind="{Binding IconKind}"
+                                                     IconSize="16"
+                                                     Foreground="{StaticResource MfAccentBrush}"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Border Grid.Column="2" Classes="badge" IsVisible="{Binding HasBadge}" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="11" />
+                            </Border>
+                          </Grid>
+                          <TextBlock Grid.Row="1" Text="{Binding Metadata}" Classes="secondary" />
+                          <TextBlock Grid.Row="2" Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
                         </Grid>
                       </Border>
                     </DataTemplate>
@@ -81,26 +73,6 @@
         </ItemsControl>
       </ScrollViewer>
 
-      <Border Grid.Row="2"
-              BorderBrush="{StaticResource MfBorderBrush}"
-              BorderThickness="0,1,0,0"
-              Padding="8,0">
-        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
-          <Button Classes="flat" Padding="6">
-            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Add}" IconSize="15" />
-          </Button>
-          <Button Grid.Column="1" Classes="flat" Padding="6">
-            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Open}" IconSize="15" />
-          </Button>
-          <Button Grid.Column="2" Classes="flat" Padding="6">
-            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Error}" IconSize="15" Foreground="{StaticResource MfTextMutedBrush}" />
-          </Button>
-          <TextBlock Grid.Column="4"
-                     Text="{Binding VisibleItemCount, StringFormat='{}{0} itens'}"
-                     Classes="muted"
-                     VerticalAlignment="Center" />
-        </Grid>
-      </Border>
     </Grid>
   </Border>
 </UserControl>
