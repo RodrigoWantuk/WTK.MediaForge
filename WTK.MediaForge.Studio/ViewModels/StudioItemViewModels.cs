@@ -147,6 +147,154 @@ public sealed class ProjectTreeItemViewModel : ViewModelBase
     }
 }
 
+public abstract class ProjectCardViewModel : ViewModelBase
+{
+    private bool _isSelected;
+    private bool _isActive;
+    private bool _isVisible = true;
+
+    protected ProjectCardViewModel(
+        string id,
+        string name,
+        string metadata,
+        StudioIconKind iconKind,
+        string badge = "",
+        string detail = "",
+        StudioHealthState healthState = StudioHealthState.Healthy)
+    {
+        Id = id;
+        Name = name;
+        Metadata = metadata;
+        IconKind = iconKind;
+        Badge = badge;
+        Detail = detail;
+        HealthState = healthState;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public string Metadata { get; }
+
+    public StudioIconKind IconKind { get; }
+
+    public string Badge { get; }
+
+    public string Detail { get; }
+
+    public StudioHealthState HealthState { get; }
+
+    public bool HasBadge => !string.IsNullOrWhiteSpace(Badge);
+
+    public string SearchText => $"{Name} {Metadata} {Badge} {Detail}";
+
+    public ICommand? SelectCommand { get; set; }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
+
+    public bool IsActive
+    {
+        get => _isActive;
+        set => SetProperty(ref _isActive, value);
+    }
+
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set => SetProperty(ref _isVisible, value);
+    }
+
+    public bool Matches(string searchText)
+    {
+        return string.IsNullOrWhiteSpace(searchText)
+            || SearchText.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+public sealed class SceneCardViewModel : ProjectCardViewModel
+{
+    public SceneCardViewModel(
+        string id,
+        string name,
+        string metadata,
+        string badge,
+        string detail,
+        bool isProgram,
+        bool isActive)
+        : base(id, name, metadata, StudioIconKind.Scene, badge, detail)
+    {
+        IsProgram = isProgram;
+        IsActive = isActive;
+    }
+
+    public bool IsProgram { get; }
+}
+
+public sealed class SourceCardViewModel : ProjectCardViewModel
+{
+    public SourceCardViewModel(
+        string id,
+        string name,
+        string metadata,
+        string endpoint,
+        string badge,
+        StudioIconKind iconKind,
+        StudioHealthState healthState)
+        : base(id, name, metadata, iconKind, badge, endpoint, healthState)
+    {
+        Endpoint = endpoint;
+    }
+
+    public string Endpoint { get; }
+}
+
+public sealed class OutputCardViewModel : ProjectCardViewModel
+{
+    public OutputCardViewModel(
+        string id,
+        string name,
+        string metadata,
+        string sceneName,
+        string transitionText,
+        string codecText,
+        string badge,
+        StudioIconKind iconKind,
+        StudioHealthState healthState,
+        bool isConfigured,
+        bool isLive,
+        ICommand? sendSceneCommand,
+        ICommand? configureCommand)
+        : base(id, name, metadata, iconKind, badge, codecText, healthState)
+    {
+        SceneName = sceneName;
+        TransitionText = transitionText;
+        CodecText = codecText;
+        IsConfigured = isConfigured;
+        IsLive = isLive;
+        SendSceneCommand = sendSceneCommand;
+        ConfigureCommand = configureCommand;
+    }
+
+    public string SceneName { get; }
+
+    public string TransitionText { get; }
+
+    public string CodecText { get; }
+
+    public bool IsConfigured { get; }
+
+    public bool IsLive { get; }
+
+    public ICommand? SendSceneCommand { get; }
+
+    public ICommand? ConfigureCommand { get; }
+}
+
 public sealed class LayerItemViewModel : ViewModelBase
 {
     private readonly StudioLayer _layer;

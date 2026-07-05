@@ -120,10 +120,74 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
     private ProjectTreeItemViewModel? _selectedItem;
     private bool _suppressSelectionCommand;
     private string _searchText = string.Empty;
+    private StudioExplorerTabKind _selectedTab = StudioExplorerTabKind.Scenes;
 
     public ObservableCollection<ProjectTreeGroupViewModel> Groups { get; } = new();
 
+    public ObservableCollection<SceneCardViewModel> Scenes { get; } = new();
+
+    public ObservableCollection<SourceCardViewModel> Sources { get; } = new();
+
+    public ObservableCollection<OutputCardViewModel> Outputs { get; } = new();
+
+    public ProjectExplorerViewModel()
+    {
+        SelectTabCommand = new RelayCommand<StudioExplorerTabKind>(SelectTab);
+    }
+
     public ICommand? AddSceneCommand { get; set; }
+
+    public ICommand? AddSourceCommand { get; set; }
+
+    public ICommand? AddOutputCommand { get; set; }
+
+    public IRelayCommand<StudioExplorerTabKind> SelectTabCommand { get; }
+
+    public StudioExplorerTabKind SelectedTab
+    {
+        get => _selectedTab;
+        private set
+        {
+            if (SetProperty(ref _selectedTab, value))
+            {
+                OnPropertyChanged(nameof(IsScenesTabSelected));
+                OnPropertyChanged(nameof(IsSourcesTabSelected));
+                OnPropertyChanged(nameof(IsOutputsTabSelected));
+                OnPropertyChanged(nameof(TabTitle));
+                OnPropertyChanged(nameof(SearchPlaceholder));
+                OnPropertyChanged(nameof(AddButtonTip));
+                OnPropertyChanged(nameof(CurrentVisibleItemCount));
+                OnPropertyChanged(nameof(CurrentTabHasNoResults));
+            }
+        }
+    }
+
+    public bool IsScenesTabSelected => SelectedTab == StudioExplorerTabKind.Scenes;
+
+    public bool IsSourcesTabSelected => SelectedTab == StudioExplorerTabKind.Sources;
+
+    public bool IsOutputsTabSelected => SelectedTab == StudioExplorerTabKind.Outputs;
+
+    public string TabTitle => SelectedTab switch
+    {
+        StudioExplorerTabKind.Sources => "Entradas",
+        StudioExplorerTabKind.Outputs => "Saídas",
+        _ => "Cenas"
+    };
+
+    public string SearchPlaceholder => SelectedTab switch
+    {
+        StudioExplorerTabKind.Sources => "Buscar entrada...",
+        StudioExplorerTabKind.Outputs => "Buscar saída...",
+        _ => "Buscar cena..."
+    };
+
+    public string AddButtonTip => SelectedTab switch
+    {
+        StudioExplorerTabKind.Sources => "Adicionar entrada",
+        StudioExplorerTabKind.Outputs => "Adicionar saída",
+        _ => "Adicionar cena"
+    };
 
     public string SearchText
     {
@@ -139,7 +203,16 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
 
     public int VisibleItemCount => Groups.Sum(group => group.Count);
 
+    public int CurrentVisibleItemCount => SelectedTab switch
+    {
+        StudioExplorerTabKind.Sources => Sources.Count(item => item.IsVisible),
+        StudioExplorerTabKind.Outputs => Outputs.Count(item => item.IsVisible),
+        _ => Scenes.Count(item => item.IsVisible)
+    };
+
     public bool HasNoResults => VisibleItemCount == 0;
+
+    public bool CurrentTabHasNoResults => CurrentVisibleItemCount == 0;
 
     public ProjectTreeItemViewModel? SelectedItem
     {
@@ -178,8 +251,36 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
             group.ApplyFilter(SearchText);
         }
 
+        ApplyCardFilter(Scenes);
+        ApplyCardFilter(Sources);
+        ApplyCardFilter(Outputs);
         OnPropertyChanged(nameof(VisibleItemCount));
         OnPropertyChanged(nameof(HasNoResults));
+        OnPropertyChanged(nameof(CurrentVisibleItemCount));
+        OnPropertyChanged(nameof(CurrentTabHasNoResults));
+    }
+
+    public ICommand? CurrentAddCommand => SelectedTab switch
+    {
+        StudioExplorerTabKind.Sources => AddSourceCommand,
+        StudioExplorerTabKind.Outputs => AddOutputCommand,
+        _ => AddSceneCommand
+    };
+
+    public void SelectTab(StudioExplorerTabKind tab)
+    {
+        SelectedTab = tab;
+        OnPropertyChanged(nameof(CurrentAddCommand));
+        ApplyFilter();
+    }
+
+    private void ApplyCardFilter<T>(IEnumerable<T> cards)
+        where T : ProjectCardViewModel
+    {
+        foreach (var card in cards)
+        {
+            card.IsVisible = card.Matches(SearchText);
+        }
     }
 }
 

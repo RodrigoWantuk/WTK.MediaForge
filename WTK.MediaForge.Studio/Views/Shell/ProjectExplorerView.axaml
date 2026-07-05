@@ -1,78 +1,172 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
-             xmlns:loc="using:WTK.MediaForge.Studio.Localization"
              xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
              xmlns:models="using:WTK.MediaForge.Studio.Models"
              x:Class="WTK.MediaForge.Studio.Views.Shell.ProjectExplorerView"
-             x:Name="ProjectExplorerRoot"
              x:DataType="vm:ProjectExplorerViewModel">
   <Border Classes="panel">
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,Auto,*">
       <Border Grid.Row="0"
               BorderBrush="{StaticResource MfBorderBrush}"
               BorderThickness="0,0,0,1"
-              Padding="12,10">
-        <Grid RowDefinitions="Auto,Auto" RowSpacing="8">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="{loc:Loc Panel_ProjectExplorer}" Classes="panel-title" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Classes="primary" Padding="7" ToolTip.Tip="+ Cena" Command="{Binding AddSceneCommand}">
-              <components:StudioIcon Kind="{x:Static models:StudioIconKind.Add}" IconSize="15" />
-            </Button>
-          </Grid>
-          <TextBox Grid.Row="1"
-                   Text="{Binding SearchText, Mode=TwoWay}"
-                   PlaceholderText="Buscar cena..." />
+              Padding="10,8">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="Navegação" Classes="panel-title" VerticalAlignment="Center" />
+          <Button Grid.Column="1"
+                  Classes="primary"
+                  Padding="7"
+                  ToolTip.Tip="{Binding AddButtonTip}"
+                  Command="{Binding CurrentAddCommand}">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Add}" IconSize="15" />
+          </Button>
         </Grid>
       </Border>
 
-      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-        <ItemsControl ItemsSource="{Binding Groups}" Margin="8,8,8,12">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ProjectTreeGroupViewModel">
-              <StackPanel Spacing="4" Margin="0,0,0,12">
-                <Grid ColumnDefinitions="*,Auto" Margin="4,0,2,2">
-                  <TextBlock Text="{Binding Title}" Classes="secondary" FontWeight="SemiBold" />
-                  <TextBlock Grid.Column="1" Text="{Binding Count}" Classes="muted" />
-                </Grid>
-                <ListBox ItemsSource="{Binding VisibleItems}"
-                         SelectedItem="{Binding #ProjectExplorerRoot.DataContext.SelectedItem, Mode=TwoWay}"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         Padding="0">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ProjectTreeItemViewModel">
-                      <Border Classes="scene-card"
-                              Classes.selected="{Binding IsSelected}"
-                              Classes.active="{Binding IsActive}"
-                              HorizontalAlignment="Stretch">
-                        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="7">
-                          <Grid ColumnDefinitions="32,*,Auto" ColumnSpacing="8">
-                            <Border Classes="icon-box" Width="30" Height="30">
-                              <components:StudioIcon Kind="{Binding IconKind}"
-                                                     IconSize="16"
-                                                     Foreground="{StaticResource MfAccentBrush}"
-                                                     HorizontalAlignment="Center"
-                                                     VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                            <Border Grid.Column="2" Classes="badge" IsVisible="{Binding HasBadge}" VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="11" />
-                            </Border>
-                          </Grid>
-                          <TextBlock Grid.Row="1" Text="{Binding Metadata}" Classes="secondary" />
-                          <TextBlock Grid.Row="2" Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
-                        </Grid>
-                      </Border>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
+      <Grid Grid.Row="1"
+            RowDefinitions="Auto,Auto"
+            RowSpacing="8"
+            Margin="10,8">
+        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+          <Button Classes="flat" Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:StudioExplorerTabKind.Scenes}">
+            <Border Classes="tab-pill" Classes.selected="{Binding IsScenesTabSelected}">
+              <TextBlock Text="Cenas" Classes="secondary" />
+            </Border>
+          </Button>
+          <Button Grid.Column="1" Classes="flat" Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:StudioExplorerTabKind.Sources}">
+            <Border Classes="tab-pill" Classes.selected="{Binding IsSourcesTabSelected}">
+              <TextBlock Text="Entradas" Classes="secondary" />
+            </Border>
+          </Button>
+          <Button Grid.Column="2" Classes="flat" Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:StudioExplorerTabKind.Outputs}">
+            <Border Classes="tab-pill" Classes.selected="{Binding IsOutputsTabSelected}">
+              <TextBlock Text="Saídas" Classes="secondary" />
+            </Border>
+          </Button>
+        </Grid>
+        <TextBox Grid.Row="1"
+                 Text="{Binding SearchText, Mode=TwoWay}"
+                 PlaceholderText="{Binding SearchPlaceholder}" />
+      </Grid>
 
+      <Grid Grid.Row="2">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      IsVisible="{Binding IsScenesTabSelected}">
+          <ItemsControl ItemsSource="{Binding Scenes}" Margin="8,4,8,12">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SceneCardViewModel">
+                <Button Command="{Binding SelectCommand}"
+                        IsVisible="{Binding IsVisible}"
+                        Padding="0"
+                        Margin="0,0,0,8"
+                        HorizontalAlignment="Stretch">
+                  <Border Classes="scene-card"
+                          Classes.selected="{Binding IsSelected}"
+                          Classes.active="{Binding IsActive}"
+                          HorizontalAlignment="Stretch">
+                    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="7">
+                      <Grid ColumnDefinitions="32,*,Auto" ColumnSpacing="8">
+                        <Border Classes="icon-box" Width="30" Height="30">
+                          <components:StudioIcon Kind="{Binding IconKind}"
+                                                 IconSize="16"
+                                                 Foreground="{StaticResource MfAccentBrush}"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Border Grid.Column="2" Classes="badge" IsVisible="{Binding HasBadge}" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="11" />
+                        </Border>
+                      </Grid>
+                      <TextBlock Grid.Row="1" Text="{Binding Metadata}" Classes="secondary" />
+                      <TextBlock Grid.Row="2" Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
+                    </Grid>
+                  </Border>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      IsVisible="{Binding IsSourcesTabSelected}">
+          <ItemsControl ItemsSource="{Binding Sources}" Margin="8,4,8,12">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SourceCardViewModel">
+                <Button Command="{Binding SelectCommand}"
+                        IsVisible="{Binding IsVisible}"
+                        Padding="0"
+                        Margin="0,0,0,8"
+                        HorizontalAlignment="Stretch">
+                  <Border Classes="scene-card"
+                          Classes.selected="{Binding IsSelected}"
+                          HorizontalAlignment="Stretch">
+                    <Grid RowDefinitions="Auto,Auto" RowSpacing="7">
+                      <Grid ColumnDefinitions="32,*,Auto" ColumnSpacing="8">
+                        <Border Classes="icon-box" Width="30" Height="30">
+                          <components:StudioIcon Kind="{Binding IconKind}"
+                                                 IconSize="16"
+                                                 Foreground="{StaticResource MfAccentBrush}"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Border Grid.Column="2" Classes="badge" IsVisible="{Binding HasBadge}" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="11" />
+                        </Border>
+                      </Grid>
+                      <TextBlock Grid.Row="1" Text="{Binding Metadata}" Classes="secondary" TextWrapping="Wrap" />
+                    </Grid>
+                  </Border>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      IsVisible="{Binding IsOutputsTabSelected}">
+          <ItemsControl ItemsSource="{Binding Outputs}" Margin="8,4,8,12">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:OutputCardViewModel">
+                <Border Classes="scene-card"
+                        Classes.selected="{Binding IsSelected}"
+                        IsVisible="{Binding IsVisible}"
+                        Margin="0,0,0,8"
+                        HorizontalAlignment="Stretch">
+                  <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="7">
+                    <Grid ColumnDefinitions="32,*,Auto" ColumnSpacing="8">
+                      <Border Classes="icon-box" Width="30" Height="30">
+                        <components:StudioIcon Kind="{Binding IconKind}"
+                                               IconSize="16"
+                                               Foreground="{StaticResource MfAccentBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                      </Border>
+                      <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                      <Border Grid.Column="2" Classes="badge" IsVisible="{Binding HasBadge}" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Badge}" Classes="accent" FontSize="11" />
+                      </Border>
+                    </Grid>
+                    <TextBlock Grid.Row="1" Text="{Binding SceneName}" Classes="secondary" />
+                    <TextBlock Grid.Row="2" Text="{Binding TransitionText}" Classes="muted" />
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6">
+                      <Button Content="Enviar cena" Classes="primary" Command="{Binding SendSceneCommand}" />
+                      <Button Content="Configurar" Command="{Binding ConfigureCommand}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <TextBlock Text="Nada encontrado"
+                   Classes="muted"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   IsVisible="{Binding CurrentTabHasNoResults}" />
+      </Grid>
     </Grid>
   </Border>
 </UserControl>

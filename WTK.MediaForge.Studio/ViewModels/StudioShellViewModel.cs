@@ -76,6 +76,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         ConfirmDialogCommand = new RelayCommand(ConfirmDialog);
         CancelDialogCommand = new RelayCommand(CloseDialog);
         ProjectExplorer.AddSceneCommand = AddSceneCommand;
+        ProjectExplorer.AddSourceCommand = AddSourceCommand;
+        ProjectExplorer.AddOutputCommand = ConfigureOutputCommand;
 
         _outputService.StatusChanged += OnOutputStatusChanged;
         _selectionService.SelectionChanged += OnSelectionChanged;
@@ -209,6 +211,47 @@ public sealed class StudioShellViewModel : ViewModelBase
             ClearLayerSelectionAndShowScene();
             _selectionService.Select(CreateSelection(item));
         }
+    }
+
+    public void SelectSceneCard(SceneCardViewModel? card)
+    {
+        if (card is null)
+        {
+            return;
+        }
+
+        var scene = _document.Scenes.First(item => item.Id == card.Id);
+        SelectScene(scene, updateProjectSelection: true);
+        ClearLayerSelectionAndShowScene();
+        _selectionService.Select(new StudioSelectionState(
+            StudioSelectionKind.Scene,
+            scene.Id,
+            scene.DisplayName,
+            "scene.canvas",
+            $"{scene.Canvas.Width:0}×{scene.Canvas.Height:0} • {scene.Canvas.FrameRate:0.##} fps",
+            SceneOutputsLabel(scene)));
+    }
+
+    public void SelectSourceCard(SourceCardViewModel? card)
+    {
+        if (card is null)
+        {
+            return;
+        }
+
+        var source = _document.Sources.First(item => item.Id == card.Id);
+        SelectSource(source);
+    }
+
+    public void SelectOutputCard(OutputCardViewModel? card)
+    {
+        if (card is null)
+        {
+            return;
+        }
+
+        var output = _document.Outputs.First(item => item.Id == card.Id);
+        SelectOutput(output);
     }
 
     public void SelectLayer(LayerItemViewModel? layer)
@@ -695,6 +738,32 @@ public sealed class StudioShellViewModel : ViewModelBase
             output.Secret));
     }
 
+    private void SelectSource(StudioSource source)
+    {
+        ClearLayerSelection();
+        ClearProjectSelection();
+        _selectedSource = source;
+        _selectedOutput = null;
+        SelectedLayer = null;
+        SelectedProjectItem = null;
+        BottomWorkbench.SelectLayerFromOwner(null);
+        Preview.SelectLayerFromOwner(null);
+        AddSelectedSourceToCurrentSceneCommand.NotifyCanExecuteChanged();
+        Inspector.SelectedPage = new SourceInspectorViewModel(
+            source,
+            CurrentScene?.DisplayName ?? "cena atual",
+            AddSelectedSourceToCurrentSceneCommand,
+            ReconnectSourceCommand);
+        _selectionService.Select(new StudioSelectionState(
+            StudioSelectionKind.Source,
+            source.Id,
+            source.DisplayName,
+            source.TypeId,
+            new StudioDisplayNameService().GetSourceTypeName(source.TypeId),
+            source.Endpoint));
+        RebuildProjectExplorer(source.Id);
+    }
+
     private void ClearLayerSelectionAndShowScene()
     {
         ClearLayerSelection();
@@ -751,8 +820,73 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         Replace(ProjectExplorer.Groups, groups);
+        RebuildExplorerCards(selected);
         ProjectExplorer.ApplyFilter();
         ProjectExplorer.SelectFromOwner(FindProjectItem(selected));
+    }
+
+    private void RebuildExplorerCards(string? selectedId)
+    {
+        var scenes = _document.Scenes.Select(scene =>
+        {
+            var card = new SceneCardViewModel(
+                scene.Id,
+                scene.DisplayName,
+                $"{scene.Canvas.Width:0}×{scene.Canvas.Height:0} • {scene.Canvas.FrameRate:0.##} fps",
+                scene.IsProgram ? "Principal" : string.Empty,
+                SceneOutputsLabel(scene),
+                scene.IsProgram,
+                scene.Id == CurrentScene?.Id)
+            {
+                IsSelected = scene.Id == selectedId
+            };
+            card.SelectCommand = new RelayCommand(() => SelectSceneCard(card));
+            return card;
+        }).ToArray();
+
+        var sources = _document.Sources.Select(source =>
+        {
+            var card = new SourceCardViewModel(
+                source.Id,
+                source.DisplayName,
+                $"{source.Endpoint} • {source.Metadata}",
+                source.Endpoint,
+                SourceBadge(source),
+                GetSourceIcon(source.TypeId),
+                source.Health)
+            {
+                IsSelected = source.Id == selectedId
+            };
+            card.SelectCommand = new RelayCommand(() => SelectSourceCard(card));
+            return card;
+        }).ToArray();
+
+        var outputs = _document.Outputs.Select(output =>
+        {
+            var card = new OutputCardViewModel(
+                output.Id,
+                output.DisplayName,
+                OutputStateText(output),
+                $"Cena atual: {AssignedSceneName(output)}",
+                $"Transição: {TransitionText(output)}",
+                $"{output.Codec} • {output.Bitrate}",
+                OutputBadge(output),
+                GetOutputIcon(output.TypeId),
+                OutputHealth(output),
+                output.IsConfigured,
+                output.IsLive,
+                new RelayCommand(() => OpenSendSceneDialog(output.Id)),
+                new RelayCommand(() => SelectOutput(output)))
+            {
+                IsSelected = output.Id == selectedId
+            };
+            card.SelectCommand = new RelayCommand(() => SelectOutputCard(card));
+            return card;
+        }).ToArray();
+
+        Replace(ProjectExplorer.Scenes, scenes);
+        Replace(ProjectExplorer.Sources, sources);
+        Replace(ProjectExplorer.Outputs, outputs);
     }
 
     private void RebuildProductionOutputs()
@@ -820,6 +954,13 @@ public sealed class StudioShellViewModel : ViewModelBase
         foreach (var item in ProjectExplorer.Groups.SelectMany(group => group.Items))
         {
             item.IsSelected = false;
+        }
+
+        foreach (var card in ProjectExplorer.Scenes.Cast<ProjectCardViewModel>()
+            .Concat(ProjectExplorer.Sources)
+            .Concat(ProjectExplorer.Outputs))
+        {
+            card.IsSelected = false;
         }
     }
 
@@ -1059,6 +1200,63 @@ public sealed class StudioShellViewModel : ViewModelBase
             "output.file.mp4" => StudioIconKind.Record,
             "output.rtmp" => StudioIconKind.Stream,
             _ => StudioIconKind.Output
+        };
+    }
+
+    private static StudioIconKind GetSourceIcon(string typeId)
+    {
+        return typeId switch
+        {
+            "source.webcam" => StudioIconKind.Camera,
+            "source.desktop" => StudioIconKind.Desktop,
+            "source.image" => StudioIconKind.Image,
+            "source.text" => StudioIconKind.Text,
+            "source.media" => StudioIconKind.Video,
+            _ => StudioIconKind.Source
+        };
+    }
+
+    private static string SourceBadge(StudioSource source)
+    {
+        return source.Health switch
+        {
+            StudioHealthState.Planned => "Planejada",
+            StudioHealthState.Warning => "Atenção",
+            StudioHealthState.Error => "Erro",
+            StudioHealthState.Disabled => "Inativa",
+            _ => source.TypeId is "source.webcam" or "source.desktop" ? "LIVE" : string.Empty
+        };
+    }
+
+    private static string OutputBadge(StudioOutput output)
+    {
+        if (output.IsLive || output.State == StudioOutputState.Live)
+        {
+            return "AO VIVO";
+        }
+
+        if (output.IsRecording || output.State == StudioOutputState.Recording)
+        {
+            return "GRAVANDO";
+        }
+
+        return output.IsConfigured ? "PRONTA" : "CONFIGURAR";
+    }
+
+    private static StudioHealthState OutputHealth(StudioOutput output)
+    {
+        if (!output.IsConfigured)
+        {
+            return StudioHealthState.Warning;
+        }
+
+        return output.State switch
+        {
+            StudioOutputState.Live or StudioOutputState.Recording or StudioOutputState.Running => StudioHealthState.Healthy,
+            StudioOutputState.Warning => StudioHealthState.Warning,
+            StudioOutputState.Offline => StudioHealthState.Error,
+            StudioOutputState.Planned => StudioHealthState.Planned,
+            _ => StudioHealthState.Healthy
         };
     }
 
