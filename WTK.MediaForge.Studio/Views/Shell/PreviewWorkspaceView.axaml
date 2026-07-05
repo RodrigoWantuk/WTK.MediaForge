@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:shell="using:WTK.MediaForge.Studio.Views.Shell"
+             x:Class="WTK.MediaForge.Studio.Views.Shell.PreviewWorkspaceView"
+             x:DataType="vm:PreviewWorkspaceViewModel">
+  <Grid RowDefinitions="44,*">
+    <shell:PreviewHeaderView Grid.Row="0"
+                             DataContext="{Binding Preview}" />
+    <shell:PreviewCanvasView Grid.Row="1"
+                             DataContext="{Binding Preview}" />
+  </Grid>
+</UserControl>

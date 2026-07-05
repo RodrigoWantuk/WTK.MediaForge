@@ -713,6 +713,16 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     }
 }
 
+public sealed class PreviewWorkspaceViewModel : ViewModelBase
+{
+    public PreviewWorkspaceViewModel(PreviewCanvasViewModel preview)
+    {
+        Preview = preview;
+    }
+
+    public PreviewCanvasViewModel Preview { get; }
+}
+
 public sealed class LayerSelectionRequestedEventArgs : EventArgs
 {
     public LayerSelectionRequestedEventArgs(LayerItemViewModel? layer)

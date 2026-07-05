@@ -82,6 +82,11 @@ public partial class PreviewCanvasView : UserControl
     public PreviewCanvasView() => AvaloniaXamlLoader.Load(this);
 }
 
+public partial class PreviewWorkspaceView : UserControl
+{
+    public PreviewWorkspaceView() => AvaloniaXamlLoader.Load(this);
+}
+
 public partial class InspectorView : UserControl
 {
     public InspectorView() => AvaloniaXamlLoader.Load(this);

@@ -26,5 +26,9 @@
 		</PackageReference>
 
 		<PackageReference Include="CommunityToolkit.Mvvm" />
+		<PackageReference Include="Dock.Avalonia" />
+		<PackageReference Include="Dock.Model.Mvvm" />
+		<PackageReference Include="Dock.Controls.DeferredContentControl" />
+		<PackageReference Include="Dock.Avalonia.Themes.Fluent" />
 	</ItemGroup>
 </Project>

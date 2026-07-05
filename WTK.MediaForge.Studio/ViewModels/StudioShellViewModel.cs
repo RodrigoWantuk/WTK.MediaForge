@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
+using Dock.Model.Core;
 using WTK.MediaForge.Studio.DesignData;
 using WTK.MediaForge.Studio.DocumentModel;
+using WTK.MediaForge.Studio.Docking;
 using WTK.MediaForge.Studio.Localization;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Services;
@@ -26,6 +28,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private StudioSource? _selectedSource;
     private StudioOutput? _selectedOutput;
     private StudioSelectionState _currentSelection = StudioSelectionState.None;
+    private IDock? _dockLayout;
 
     public StudioShellViewModel()
         : this(StudioServiceFactory.CreateFake())
@@ -56,6 +59,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         _uiTimer = uiTimer;
 
         BottomWorkbench = new BottomWorkbenchViewModel();
+        PreviewWorkspace = new PreviewWorkspaceViewModel(Preview);
+        DockFactory = new StudioDockFactory(this);
+        DockLayout = DockFactory.CreateDefaultLayout();
         NavigationDock = new StudioDockPanelViewModel("navigation", "Navegação", ProjectExplorer);
         ProductionDock = new StudioDockPanelViewModel("production", "Produção", Production);
         PropertiesDock = new StudioDockPanelViewModel("properties", "Propriedades", Inspector);
@@ -108,6 +114,8 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public PreviewCanvasViewModel Preview { get; } = new();
 
+    public PreviewWorkspaceViewModel PreviewWorkspace { get; }
+
     public ProductionPanelViewModel Production { get; } = new();
 
     public InspectorHostViewModel Inspector { get; } = new();
@@ -117,6 +125,14 @@ public sealed class StudioShellViewModel : ViewModelBase
     public StatusBarViewModel StatusBar { get; } = new();
 
     public StudioDialogViewModel Dialog { get; } = new();
+
+    public StudioDockFactory DockFactory { get; }
+
+    public IDock? DockLayout
+    {
+        get => _dockLayout;
+        private set => SetProperty(ref _dockLayout, value);
+    }
 
     public StudioDockPanelViewModel NavigationDock { get; }
 
@@ -642,6 +658,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private void RestoreDefaultLayout()
     {
         _layoutDocument = new StudioLayoutDocument();
+        DockLayout = DockFactory.CreateDefaultLayout();
         ApplyLayoutDocument(_layoutDocument);
         SaveLayoutDocument();
         SetStatus("Layout padrão restaurado.");
@@ -649,6 +666,7 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void RedockAllPanels()
     {
+        DockLayout = DockFactory.CreateDefaultLayout();
         foreach (var panel in DockPanels())
         {
             panel.IsFloating = false;
