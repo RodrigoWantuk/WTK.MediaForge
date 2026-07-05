@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Avalonia;
+using Avalonia.Input;
 using CommunityToolkit.Mvvm.Input;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
@@ -286,7 +287,7 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
 
 public sealed class PreviewCanvasViewModel : ViewModelBase
 {
-    private readonly SceneViewportState _viewport = new();
+    private readonly StudioSceneEditorState _editorState = new();
     private bool _isGridVisible = true;
     private bool _isSafeFrameVisible = true;
     private LayerItemViewModel? _selectedLayer;
@@ -304,7 +305,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         ActualSizeCommand = new RelayCommand(() =>
         {
             IsFitZoom = false;
-            Viewport.SetZoomAt(ViewportCenter, 1);
+            Transform.SetZoomAt(ViewportCenter, 1);
             NotifyViewportChanged();
         });
         ZoomInCommand = new RelayCommand(() => ZoomAtCenter(1.12));
@@ -316,19 +317,23 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public ObservableCollection<LayerItemViewModel> Layers { get; } = new();
 
-    public SceneViewportState Viewport => _viewport;
+    public StudioSceneEditorState EditorState => _editorState;
 
-    public double CanvasWidth => _viewport.CanvasWidth;
+    public SceneEditorTransform Transform => _editorState.Transform;
 
-    public double CanvasHeight => _viewport.CanvasHeight;
+    public SceneEditorSnapSettings Snap => _editorState.Snap;
 
-    public double Zoom => _viewport.Zoom;
+    public double CanvasWidth => Transform.CanvasWidth;
 
-    public double PanX => _viewport.OffsetX;
+    public double CanvasHeight => Transform.CanvasHeight;
 
-    public double PanY => _viewport.OffsetY;
+    public double Zoom => Transform.Zoom;
 
-    public Point ViewportCenter => new(_viewport.ViewportWidth / 2, _viewport.ViewportHeight / 2);
+    public double PanX => Transform.PanX;
+
+    public double PanY => Transform.PanY;
+
+    public Point ViewportCenter => new(Transform.ViewportWidth / 2, Transform.ViewportHeight / 2);
 
     public string SceneName
     {
@@ -410,8 +415,8 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public void SetCanvas(double width, double height, double frameRate, bool isProgram)
     {
-        _viewport.CanvasWidth = width;
-        _viewport.CanvasHeight = height;
+        Transform.CanvasWidth = width;
+        Transform.CanvasHeight = height;
         CanvasSize = $"{width:0}×{height:0}";
         FrameRate = $"{frameRate:0.##} fps";
         SceneRole = isProgram ? "Cena principal" : "Cena em edição";
@@ -427,8 +432,8 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
             return;
         }
 
-        _viewport.ViewportWidth = width;
-        _viewport.ViewportHeight = height;
+        Transform.ViewportWidth = width;
+        Transform.ViewportHeight = height;
         if (IsFitZoom)
         {
             FitZoom();
@@ -457,24 +462,17 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public Point ScreenToScene(Point screenPoint)
     {
-        return _viewport.ScreenToScene(screenPoint);
+        return Transform.ViewportToScene(screenPoint);
     }
 
     public Point SceneToScreen(Point scenePoint)
     {
-        return _viewport.SceneToScreen(scenePoint);
+        return Transform.SceneToViewport(scenePoint);
     }
 
     public LayerItemViewModel? HitTest(Point scenePoint)
     {
-        return Layers
-            .Where(layer => layer.IsVisible
-                && scenePoint.X >= layer.X
-                && scenePoint.X <= layer.X + layer.Width
-                && scenePoint.Y >= layer.Y
-                && scenePoint.Y <= layer.Y + layer.Height)
-            .OrderByDescending(layer => layer.Order)
-            .FirstOrDefault();
+        return SceneEditorHitTest.HitTestLayer(Layers, scenePoint);
     }
 
     public void MoveLayer(LayerItemViewModel layer, double deltaX, double deltaY, bool constrainAxis)
@@ -495,6 +493,42 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         layer.MoveBy(deltaX, deltaY, CanvasWidth, CanvasHeight);
     }
 
+    public void MoveLayerFromStart(
+        LayerItemViewModel layer,
+        double startX,
+        double startY,
+        Vector sceneDelta,
+        KeyModifiers modifiers)
+    {
+        if (layer.IsLocked)
+        {
+            return;
+        }
+
+        IsFitZoom = false;
+        var deltaX = sceneDelta.X;
+        var deltaY = sceneDelta.Y;
+        if (modifiers.HasFlag(KeyModifiers.Shift))
+        {
+            if (Math.Abs(deltaX) >= Math.Abs(deltaY))
+            {
+                deltaY = 0;
+            }
+            else
+            {
+                deltaX = 0;
+            }
+        }
+
+        var targetX = Math.Clamp(startX + deltaX, 0, Math.Max(0, CanvasWidth - layer.Width));
+        var targetY = Math.Clamp(startY + deltaY, 0, Math.Max(0, CanvasHeight - layer.Height));
+        var snap = Snap.GetMoveSnap(modifiers);
+        targetX = SceneEditorSnapSettings.Snap(targetX, snap);
+        targetY = SceneEditorSnapSettings.Snap(targetY, snap);
+        layer.X = Math.Round(Math.Clamp(targetX, 0, Math.Max(0, CanvasWidth - layer.Width)));
+        layer.Y = Math.Round(Math.Clamp(targetY, 0, Math.Max(0, CanvasHeight - layer.Height)));
+    }
+
     public void NudgeSelectedLayer(double deltaX, double deltaY, bool largeStep)
     {
         if (SelectedLayer is null)
@@ -503,6 +537,17 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         }
 
         var factor = largeStep ? 10 : 1;
+        MoveLayer(SelectedLayer, deltaX * factor, deltaY * factor, constrainAxis: false);
+    }
+
+    public void NudgeSelectedLayer(double deltaX, double deltaY, KeyModifiers modifiers)
+    {
+        if (SelectedLayer is null || SelectedLayer.IsLocked)
+        {
+            return;
+        }
+
+        var factor = Snap.GetNudgeSize(modifiers);
         MoveLayer(SelectedLayer, deltaX * factor, deltaY * factor, constrainAxis: false);
     }
 
@@ -518,16 +563,124 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         layer.Resize(handle, deltaX, deltaY, CanvasWidth, CanvasHeight, keepAspect, fromCenter);
     }
 
+    public void ResizeLayerFromStart(
+        LayerItemViewModel layer,
+        ResizeHandleKind handle,
+        Rect startBounds,
+        Vector sceneDelta,
+        KeyModifiers modifiers)
+    {
+        if (layer.IsLocked || handle == ResizeHandleKind.None)
+        {
+            return;
+        }
+
+        IsFitZoom = false;
+        const double minSize = 16;
+        var left = startBounds.Left;
+        var top = startBounds.Top;
+        var right = startBounds.Right;
+        var bottom = startBounds.Bottom;
+        var changesLeft = handle is ResizeHandleKind.Left or ResizeHandleKind.TopLeft or ResizeHandleKind.BottomLeft;
+        var changesRight = handle is ResizeHandleKind.Right or ResizeHandleKind.TopRight or ResizeHandleKind.BottomRight;
+        var changesTop = handle is ResizeHandleKind.Top or ResizeHandleKind.TopLeft or ResizeHandleKind.TopRight;
+        var changesBottom = handle is ResizeHandleKind.Bottom or ResizeHandleKind.BottomLeft or ResizeHandleKind.BottomRight;
+
+        if (modifiers.HasFlag(KeyModifiers.Alt))
+        {
+            if (changesLeft || changesRight)
+            {
+                left -= sceneDelta.X;
+                right += sceneDelta.X;
+            }
+
+            if (changesTop || changesBottom)
+            {
+                top -= sceneDelta.Y;
+                bottom += sceneDelta.Y;
+            }
+        }
+        else
+        {
+            if (changesLeft)
+            {
+                left += sceneDelta.X;
+            }
+            else if (changesRight)
+            {
+                right += sceneDelta.X;
+            }
+
+            if (changesTop)
+            {
+                top += sceneDelta.Y;
+            }
+            else if (changesBottom)
+            {
+                bottom += sceneDelta.Y;
+            }
+        }
+
+        var width = Math.Max(minSize, right - left);
+        var height = Math.Max(minSize, bottom - top);
+        if (modifiers.HasFlag(KeyModifiers.Shift))
+        {
+            var aspect = startBounds.Height > 0 ? startBounds.Width / startBounds.Height : 1;
+            if (Math.Abs(sceneDelta.X) >= Math.Abs(sceneDelta.Y))
+            {
+                height = width / aspect;
+            }
+            else
+            {
+                width = height * aspect;
+            }
+
+            if (changesLeft && !changesRight)
+            {
+                left = right - width;
+            }
+            else
+            {
+                right = left + width;
+            }
+
+            if (changesTop && !changesBottom)
+            {
+                top = bottom - height;
+            }
+            else
+            {
+                bottom = top + height;
+            }
+        }
+
+        var snap = Snap.GetResizeSnap(modifiers);
+        left = SceneEditorSnapSettings.Snap(left, snap);
+        top = SceneEditorSnapSettings.Snap(top, snap);
+        width = Math.Max(minSize, SceneEditorSnapSettings.Snap(right - left, snap));
+        height = Math.Max(minSize, SceneEditorSnapSettings.Snap(bottom - top, snap));
+
+        left = Math.Clamp(left, 0, Math.Max(0, CanvasWidth - minSize));
+        top = Math.Clamp(top, 0, Math.Max(0, CanvasHeight - minSize));
+        width = Math.Min(width, CanvasWidth - left);
+        height = Math.Min(height, CanvasHeight - top);
+
+        layer.X = Math.Round(left);
+        layer.Y = Math.Round(top);
+        layer.Width = Math.Round(width);
+        layer.Height = Math.Round(height);
+    }
+
     public void PanBy(double deltaX, double deltaY)
     {
         IsFitZoom = false;
-        _viewport.Pan(new Vector(deltaX, deltaY));
+        Transform.PanBy(new Vector(deltaX, deltaY));
         NotifyViewportChanged();
     }
 
     public void FitZoom()
     {
-        _viewport.Fit(48);
+        Transform.Fit(48);
         IsFitZoom = true;
         NotifyViewportChanged();
     }
@@ -535,7 +688,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     public void ZoomAtScreenPoint(Point screenPoint, double factor)
     {
         IsFitZoom = false;
-        _viewport.ZoomAt(screenPoint, factor);
+        Transform.ZoomAt(screenPoint, factor);
         NotifyViewportChanged();
     }
 
@@ -547,7 +700,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     public void SetActualSizeAtCenter()
     {
         IsFitZoom = false;
-        _viewport.SetZoomAt(ViewportCenter, 1);
+        Transform.SetZoomAt(ViewportCenter, 1);
         NotifyViewportChanged();
     }
 

@@ -4,5 +4,5 @@
              xmlns:preview="using:WTK.MediaForge.Studio.Views.Preview"
              x:Class="WTK.MediaForge.Studio.Views.Shell.PreviewCanvasView"
              x:DataType="vm:PreviewCanvasViewModel">
-  <preview:StudioCanvasEditor />
+  <preview:StudioSceneEditorControl />
 </UserControl>
