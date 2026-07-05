@@ -1,0 +1,134 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+        xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+        xmlns:models="using:WTK.MediaForge.Studio.Models"
+        x:Class="WTK.MediaForge.Studio.Views.Settings.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Width="720"
+        Height="520"
+        MinWidth="640"
+        MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource MfBackgroundBrush}"
+        Title="Configurações">
+  <Grid x:Name="settingsRoot" RowDefinitions="Auto,*,Auto">
+    <Border Background="{StaticResource MfSurface2Brush}"
+            BorderBrush="{StaticResource MfBorderBrush}"
+            BorderThickness="0,0,0,1"
+            Padding="18,14">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+        <Border Classes="icon-box" Width="34" Height="34">
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Settings}"
+                                 IconSize="18"
+                                 Foreground="{StaticResource MfAccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock Text="Configurações" Classes="title" FontSize="18" />
+          <TextBlock Text="Preferências do Studio e organização da área de trabalho." Classes="secondary" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1"
+          ColumnDefinitions="160,*"
+          Background="{StaticResource MfSurface1Brush}">
+      <Border BorderBrush="{StaticResource MfBorderBrush}"
+              BorderThickness="0,0,1,0"
+              Padding="10">
+        <ItemsControl ItemsSource="{Binding Tabs}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SettingsTabViewModel">
+              <Button Classes="flat"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch"
+                      Command="{Binding #settingsRoot.DataContext.SelectTabCommand}"
+                      CommandParameter="{Binding Kind}">
+                <Border Classes="tab-pill"
+                        Classes.selected="{Binding IsSelected}"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,0,0,6">
+                  <TextBlock Text="{Binding Title}" Classes="secondary" />
+                </Border>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <ScrollViewer Grid.Column="1"
+                    VerticalScrollBarVisibility="Auto">
+        <Grid Margin="18">
+          <StackPanel Spacing="14" IsVisible="{Binding IsInterfaceSelected}">
+            <TextBlock Text="Interface" Classes="panel-title" />
+            <Border Classes="section">
+              <StackPanel Spacing="10">
+                <TextBlock Text="Painéis da área de trabalho" Classes="secondary" />
+                <CheckBox Content="Navegação" IsChecked="{Binding IsNavigationVisible, Mode=TwoWay}" />
+                <CheckBox Content="Produção" IsChecked="{Binding IsProductionVisible, Mode=TwoWay}" />
+                <CheckBox Content="Propriedades" IsChecked="{Binding IsPropertiesVisible, Mode=TwoWay}" />
+                <CheckBox Content="Camadas e saídas da cena" IsChecked="{Binding IsWorkbenchVisible, Mode=TwoWay}" />
+              </StackPanel>
+            </Border>
+            <Border Classes="section">
+              <StackPanel Spacing="10">
+                <TextBlock Text="Layout" Classes="secondary" />
+                <WrapPanel Orientation="Horizontal">
+                  <Button Content="Restaurar layout padrão"
+                          Margin="0,0,8,8"
+                          Command="{Binding RestoreLayoutCommand}" />
+                  <Button Content="Reencaixar painéis"
+                          Margin="0,0,8,8"
+                          Command="{Binding RedockAllPanelsCommand}" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel Spacing="14" IsVisible="{Binding IsLanguageSelected}">
+            <TextBlock Text="Idioma" Classes="panel-title" />
+            <Border Classes="section">
+              <StackPanel Spacing="10">
+                <TextBlock Text="Idioma da aplicação" Classes="secondary" />
+                <ComboBox SelectedIndex="0" Width="260" HorizontalAlignment="Left">
+                  <ComboBoxItem Content="Português (Brasil)" />
+                  <ComboBoxItem Content="English (US)" />
+                </ComboBox>
+                <TextBlock Text="{Binding LanguageRestartHint}" Classes="muted" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel Spacing="14" IsVisible="{Binding IsAdvancedSelected}">
+            <TextBlock Text="Avançado" Classes="panel-title" />
+            <Border Classes="section">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Diagnósticos e performance" Classes="secondary" />
+                <TextBlock Text="Logs, métricas detalhadas e opções de backend ficam nesta área avançada. A tela principal permanece focada no fluxo de produção." Classes="muted" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            <Border Classes="section">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Recursos planejados" Classes="secondary" />
+                <TextBlock Text="Áudio, captura real, streaming real, encoder e preview GPU serão habilitados somente após os gates técnicos do roadmap." Classes="muted" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+      </ScrollViewer>
+    </Grid>
+
+    <Border Grid.Row="2"
+            Background="{StaticResource MfSurface2Brush}"
+            BorderBrush="{StaticResource MfBorderBrush}"
+            BorderThickness="0,1,0,0"
+            Padding="12">
+      <Button Content="Fechar"
+              HorizontalAlignment="Right"
+              Classes="primary"
+              Command="{Binding CloseCommand}" />
+    </Border>
+  </Grid>
+</Window>

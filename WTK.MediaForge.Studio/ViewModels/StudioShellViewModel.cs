@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Core;
+using Dock.Model.Mvvm.Controls;
 using WTK.MediaForge.Studio.DesignData;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Docking;
@@ -106,6 +107,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
     }
 
+    public event EventHandler? SettingsRequested;
+
     public TitleBarViewModel TitleBar { get; } = new();
 
     public ToolbarViewModel Toolbar { get; } = new();
@@ -191,6 +194,20 @@ public sealed class StudioShellViewModel : ViewModelBase
     public bool IsRecording => _outputService.RecordingState == StudioOutputUiState.Running;
 
     public StudioDocument Document => _document;
+
+    public void SetDockToolVisible(string toolId, bool isVisible)
+    {
+        var tool = EnumerateDockables(DockLayout).OfType<Tool>().FirstOrDefault(item => item.Id == toolId);
+        if (tool is null)
+        {
+            return;
+        }
+
+        tool.IsOpen = isVisible;
+        tool.DockingState = isVisible ? DockingWindowState.Docked : DockingWindowState.Hidden;
+        OnPropertyChanged(nameof(DockLayout));
+        SetStatus(isVisible ? $"{tool.Title} visível." : $"{tool.Title} oculto.");
+    }
 
     public StudioScene? CurrentScene
     {
@@ -576,9 +593,7 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void OpenSettingsDialog()
     {
-        Dialog.Options.Clear();
-        Dialog.NotifyOptionsChanged();
-        ShowDialog("Configurações", "Ajuste idioma, painéis e organização da interface.", "settings", "Salvar");
+        SettingsRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void OpenSendSceneDialog(string outputId)
@@ -1240,6 +1255,28 @@ public sealed class StudioShellViewModel : ViewModelBase
             Collapsed = panel.IsCollapsed,
             Floating = panel.IsFloating
         };
+    }
+
+    private static IEnumerable<IDockable> EnumerateDockables(IDockable? dockable)
+    {
+        if (dockable is null)
+        {
+            yield break;
+        }
+
+        yield return dockable;
+        if (dockable is not IDock dock || dock.VisibleDockables is null)
+        {
+            yield break;
+        }
+
+        foreach (var child in dock.VisibleDockables)
+        {
+            foreach (var descendant in EnumerateDockables(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 
     private string AssignedSceneName(StudioOutput output)
