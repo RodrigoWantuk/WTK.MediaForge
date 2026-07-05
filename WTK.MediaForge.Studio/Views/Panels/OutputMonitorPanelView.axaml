@@ -6,7 +6,7 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
     <StackPanel>
       <Grid ColumnDefinitions="180,160,140,*,110,120,120" Margin="8,0,8,8">
-        <TextBlock Text="Saida" Classes="muted" />
+        <TextBlock Text="Saída" Classes="muted" />
         <TextBlock Grid.Column="1" Text="Cena" Classes="muted" />
         <TextBlock Grid.Column="2" Text="Tipo" Classes="muted" />
         <TextBlock Grid.Column="3" Text="Destino" Classes="muted" />

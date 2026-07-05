@@ -47,4 +47,7 @@
   <data name="Term_SafeArea" xml:space="preserve"><value>Safe area</value></data>
   <data name="Status_Ready" xml:space="preserve"><value>Ready</value></data>
   <data name="Status_DroppedFrames" xml:space="preserve"><value>Dropped frames</value></data>
+  <data name="Window_Minimize" xml:space="preserve"><value>Minimize</value></data>
+  <data name="Window_MaximizeRestore" xml:space="preserve"><value>Maximize or restore</value></data>
+  <data name="Window_Close" xml:space="preserve"><value>Close</value></data>
 </root>
