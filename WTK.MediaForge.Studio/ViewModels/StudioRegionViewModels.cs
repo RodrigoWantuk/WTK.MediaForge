@@ -293,6 +293,13 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
     }
 }
 
+public enum SafeAreaDisplayMode
+{
+    Hidden,
+    Action,
+    Title
+}
+
 public sealed class PreviewCanvasViewModel : ViewModelBase
 {
     private readonly StudioSceneEditorState _editorState = new();
@@ -305,11 +312,16 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     private string _frameRate = "60 fps";
     private bool _isFitZoom = true;
     private bool _hasPendingChanges;
+    private SafeAreaDisplayMode _safeAreaMode = SafeAreaDisplayMode.Title;
+    private double _safeAreaActionMarginPercent = 5;
+    private double _safeAreaTitleMarginPercent = 10;
+    private string _safeAreaProfileLabel = "Perfil da cena";
 
     public PreviewCanvasViewModel()
     {
         ToggleGridCommand = new RelayCommand(() => IsGridVisible = !IsGridVisible);
-        ToggleSafeFrameCommand = new RelayCommand(() => IsSafeFrameVisible = !IsSafeFrameVisible);
+        ToggleSafeFrameCommand = new RelayCommand(() => SafeAreaMode = SafeAreaMode == SafeAreaDisplayMode.Hidden ? SafeAreaDisplayMode.Title : SafeAreaDisplayMode.Hidden);
+        SetSafeAreaModeCommand = new RelayCommand<string>(SetSafeAreaMode);
         FitZoomCommand = new RelayCommand(FitZoom);
         ActualSizeCommand = new RelayCommand(() =>
         {
@@ -376,6 +388,8 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public ICommand ToggleSafeFrameCommand { get; }
 
+    public IRelayCommand<string> SetSafeAreaModeCommand { get; }
+
     public ICommand FitZoomCommand { get; }
 
     public ICommand ActualSizeCommand { get; }
@@ -403,6 +417,61 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         get => _isSafeFrameVisible;
         set => SetProperty(ref _isSafeFrameVisible, value);
     }
+
+    public SafeAreaDisplayMode SafeAreaMode
+    {
+        get => _safeAreaMode;
+        set
+        {
+            if (SetProperty(ref _safeAreaMode, value))
+            {
+                IsSafeFrameVisible = value != SafeAreaDisplayMode.Hidden;
+                OnPropertyChanged(nameof(SafeAreaModeLabel));
+                OnPropertyChanged(nameof(ActiveSafeAreaMarginPercent));
+            }
+        }
+    }
+
+    public double SafeAreaActionMarginPercent
+    {
+        get => _safeAreaActionMarginPercent;
+        private set
+        {
+            if (SetProperty(ref _safeAreaActionMarginPercent, value))
+            {
+                OnPropertyChanged(nameof(ActiveSafeAreaMarginPercent));
+            }
+        }
+    }
+
+    public double SafeAreaTitleMarginPercent
+    {
+        get => _safeAreaTitleMarginPercent;
+        private set
+        {
+            if (SetProperty(ref _safeAreaTitleMarginPercent, value))
+            {
+                OnPropertyChanged(nameof(ActiveSafeAreaMarginPercent));
+            }
+        }
+    }
+
+    public string SafeAreaProfileLabel
+    {
+        get => _safeAreaProfileLabel;
+        private set => SetProperty(ref _safeAreaProfileLabel, value);
+    }
+
+    public double ActiveSafeAreaMarginPercent => SafeAreaMode == SafeAreaDisplayMode.Title
+        ? SafeAreaTitleMarginPercent
+        : SafeAreaActionMarginPercent;
+
+    public string SafeAreaModeLabel => SafeAreaMode switch
+    {
+        SafeAreaDisplayMode.Hidden => "Área segura oculta",
+        SafeAreaDisplayMode.Action => $"Action safe {SafeAreaActionMarginPercent:0.#}%",
+        _ => $"Title safe {SafeAreaTitleMarginPercent:0.#}%"
+    };
 
     public string SelectedLayerName => SelectedLayer?.Name ?? "Nenhuma camada";
 
@@ -454,6 +523,13 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanvasWidth));
         OnPropertyChanged(nameof(CanvasHeight));
         FitZoom();
+    }
+
+    public void SetSafeAreaProfile(double actionMarginPercent, double titleMarginPercent, string label)
+    {
+        SafeAreaActionMarginPercent = actionMarginPercent;
+        SafeAreaTitleMarginPercent = titleMarginPercent;
+        SafeAreaProfileLabel = label;
     }
 
     public void SetViewport(double width, double height)
@@ -797,6 +873,17 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     {
         HasPendingChanges = true;
         SceneEdited?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SetSafeAreaMode(string? mode)
+    {
+        SafeAreaMode = mode switch
+        {
+            "hidden" => SafeAreaDisplayMode.Hidden,
+            "action" => SafeAreaDisplayMode.Action,
+            "title" => SafeAreaDisplayMode.Title,
+            _ => SafeAreaMode
+        };
     }
 }
 

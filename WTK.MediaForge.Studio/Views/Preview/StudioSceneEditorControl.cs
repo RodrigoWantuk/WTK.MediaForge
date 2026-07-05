@@ -473,8 +473,22 @@ public sealed class StudioSceneEditorControl : Control
 
     private void DrawSafeArea(DrawingContext context, PreviewCanvasViewModel vm)
     {
-        var safe = new Rect(vm.CanvasWidth * 0.05, vm.CanvasHeight * 0.05, vm.CanvasWidth * 0.9, vm.CanvasHeight * 0.9);
-        context.DrawRectangle(null, Pen("MfWarningBrush", 1), vm.Transform.SceneToViewport(safe));
+        if (vm.SafeAreaMode == SafeAreaDisplayMode.Hidden)
+        {
+            return;
+        }
+
+        var margin = vm.ActiveSafeAreaMarginPercent / 100d;
+        var safe = new Rect(vm.CanvasWidth * margin, vm.CanvasHeight * margin, vm.CanvasWidth * (1 - margin * 2), vm.CanvasHeight * (1 - margin * 2));
+        var viewportRect = vm.Transform.SceneToViewport(safe);
+        context.DrawRectangle(null, Pen("MfWarningBrush", 1), viewportRect);
+        DrawText(
+            context,
+            $"{vm.SafeAreaModeLabel} • {vm.SafeAreaProfileLabel}",
+            viewportRect.TopLeft + new Vector(8, 8),
+            12,
+            Brush("MfWarningBrush", Brushes.Gold),
+            FontWeight.SemiBold);
     }
 
     private void DrawPreviewBackdrop(DrawingContext context, Rect canvasRect)

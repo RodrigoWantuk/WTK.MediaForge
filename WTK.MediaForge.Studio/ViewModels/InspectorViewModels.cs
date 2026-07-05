@@ -389,6 +389,32 @@ public sealed class SceneInspectorViewModel : InspectorPageViewModel
         }
     }
 
+    public double ActionSafeMarginPercent
+    {
+        get => _scene.SafeArea.ActionMarginPercent;
+        set
+        {
+            if (Math.Abs(_scene.SafeArea.ActionMarginPercent - value) > double.Epsilon)
+            {
+                _scene.SafeArea.ActionMarginPercent = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public double TitleSafeMarginPercent
+    {
+        get => _scene.SafeArea.TitleMarginPercent;
+        set
+        {
+            if (Math.Abs(_scene.SafeArea.TitleMarginPercent - value) > double.Epsilon)
+            {
+                _scene.SafeArea.TitleMarginPercent = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public bool IsProgram
     {
         get => _scene.IsProgram;
@@ -506,6 +532,45 @@ public sealed class OutputInspectorViewModel : InspectorPageViewModel
                 _output.IsConfigured = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(Health));
+            }
+        }
+    }
+
+    public bool UseOwnSafeAreaProfile
+    {
+        get => _output.UseOwnSafeAreaProfile;
+        set
+        {
+            if (_output.UseOwnSafeAreaProfile != value)
+            {
+                _output.UseOwnSafeAreaProfile = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public double ActionSafeMarginPercent
+    {
+        get => _output.SafeArea.ActionMarginPercent;
+        set
+        {
+            if (Math.Abs(_output.SafeArea.ActionMarginPercent - value) > double.Epsilon)
+            {
+                _output.SafeArea.ActionMarginPercent = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public double TitleSafeMarginPercent
+    {
+        get => _output.SafeArea.TitleMarginPercent;
+        set
+        {
+            if (Math.Abs(_output.SafeArea.TitleMarginPercent - value) > double.Epsilon)
+            {
+                _output.SafeArea.TitleMarginPercent = value;
+                OnPropertyChanged();
             }
         }
     }

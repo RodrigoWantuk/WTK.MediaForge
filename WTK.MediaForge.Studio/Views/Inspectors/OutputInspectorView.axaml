@@ -28,9 +28,9 @@
           <Border Classes="metric-card">
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="4">
               <TextBlock Text="{Binding CurrentSceneName, StringFormat='Cena atual: {0}'}" FontWeight="SemiBold" />
-              <Button Grid.Column="1" Content="Enviar outra cena" Command="{Binding SendSceneCommand}" />
+              <Button Grid.Column="1" Content="Alterar cena" Command="{Binding SendSceneCommand}" />
               <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
-                         Text="A troca de cena acontece pelo fluxo explícito de envio para saída."
+                         Text="A troca de cena acontece por uma ação explícita da saída, com transição configurável."
                          Classes="secondary"
                          TextWrapping="Wrap" />
             </Grid>
@@ -55,6 +55,23 @@
           </Grid>
           <CheckBox Content="Saída habilitada" IsChecked="{Binding IsEnabled, Mode=TwoWay}" />
           <CheckBox Content="Configurada" IsChecked="{Binding IsConfigured, Mode=TwoWay}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel Spacing="10">
+          <TextBlock Text="ÁREA SEGURA DA SAÍDA" Classes="panel-title" />
+          <CheckBox Content="Usar perfil próprio nesta saída" IsChecked="{Binding UseOwnSafeAreaProfile, Mode=TwoWay}" />
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Action safe (%)" Classes="muted" />
+              <NumericUpDown Value="{Binding ActionSafeMarginPercent, Mode=TwoWay}" Minimum="0" Maximum="40" Increment="0.5" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="Title safe (%)" Classes="muted" />
+              <NumericUpDown Value="{Binding TitleSafeMarginPercent, Mode=TwoWay}" Minimum="0" Maximum="45" Increment="0.5" />
+            </StackPanel>
+          </Grid>
         </StackPanel>
       </Border>
 

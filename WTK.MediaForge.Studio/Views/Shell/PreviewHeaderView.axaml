@@ -50,10 +50,24 @@
             <TextBlock Text="{loc:Loc Preview_Grid}" />
           </StackPanel>
         </Button>
-        <Button Command="{Binding ToggleSafeFrameCommand}">
+        <Button>
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="Ocultar"
+                        Command="{Binding SetSafeAreaModeCommand}"
+                        CommandParameter="hidden" />
+              <MenuItem Header="Mostrar action safe"
+                        Command="{Binding SetSafeAreaModeCommand}"
+                        CommandParameter="action" />
+              <MenuItem Header="Mostrar title safe"
+                        Command="{Binding SetSafeAreaModeCommand}"
+                        CommandParameter="title" />
+              <MenuItem Header="{Binding SafeAreaProfileLabel}" IsEnabled="False" />
+            </MenuFlyout>
+          </Button.Flyout>
           <StackPanel Orientation="Horizontal" Spacing="5">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.SafeArea}" IconSize="13" />
-            <TextBlock Text="{loc:Loc Preview_SafeArea}" />
+            <TextBlock Text="{Binding SafeAreaModeLabel}" />
           </StackPanel>
         </Button>
       </StackPanel>

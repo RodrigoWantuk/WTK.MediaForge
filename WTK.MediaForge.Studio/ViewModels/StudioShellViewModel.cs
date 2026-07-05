@@ -947,6 +947,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         Preview.SceneName = CurrentScene.DisplayName;
         Preview.HasPendingChanges = false;
         Preview.SetCanvas(CurrentScene.Canvas.Width, CurrentScene.Canvas.Height, CurrentScene.Canvas.FrameRate, CurrentScene.IsProgram);
+        Preview.SetSafeAreaProfile(CurrentScene.SafeArea.ActionMarginPercent, CurrentScene.SafeArea.TitleMarginPercent, "Perfil da cena");
         RebuildSceneLayers();
         RebuildProjectExplorer(updateProjectSelection ? scene.Id : SelectedProjectItem?.Id);
         RebuildSceneOutputRows();
@@ -967,6 +968,15 @@ public sealed class StudioShellViewModel : ViewModelBase
         SelectedProjectItem = null;
         BottomWorkbench.SelectLayerFromOwner(null);
         Preview.SelectLayerFromOwner(null);
+        if (output.UseOwnSafeAreaProfile)
+        {
+            Preview.SetSafeAreaProfile(output.SafeArea.ActionMarginPercent, output.SafeArea.TitleMarginPercent, "Perfil da saída selecionada");
+        }
+        else if (CurrentScene is not null)
+        {
+            Preview.SetSafeAreaProfile(CurrentScene.SafeArea.ActionMarginPercent, CurrentScene.SafeArea.TitleMarginPercent, "Perfil da cena");
+        }
+
         Inspector.SelectedPage = new OutputInspectorViewModel(
             output,
             AssignedSceneName(output),

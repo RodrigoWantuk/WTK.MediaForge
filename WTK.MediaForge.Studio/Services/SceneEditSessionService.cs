@@ -59,6 +59,7 @@ public sealed class SceneEditSessionService
             IsProgram = source.IsProgram
         };
         CopyCanvas(source.Canvas, clone.Canvas);
+        CopySafeArea(source.SafeArea, clone.SafeArea);
         foreach (var layer in source.Layers)
         {
             clone.Layers.Add(CloneLayer(layer));
@@ -83,6 +84,7 @@ public sealed class SceneEditSessionService
         target.Metadata = source.Metadata;
         target.IsProgram = source.IsProgram;
         CopyCanvas(source.Canvas, target.Canvas);
+        CopySafeArea(source.SafeArea, target.SafeArea);
 
         target.Layers.Clear();
         foreach (var layer in source.Layers)
@@ -149,6 +151,12 @@ public sealed class SceneEditSessionService
         target.Height = source.Height;
         target.FrameRate = source.FrameRate;
         target.BackgroundColor = source.BackgroundColor;
+    }
+
+    private static void CopySafeArea(SafeAreaProfile source, SafeAreaProfile target)
+    {
+        target.ActionMarginPercent = source.ActionMarginPercent;
+        target.TitleMarginPercent = source.TitleMarginPercent;
     }
 
     private static void CopyTransform(StudioTransform source, StudioTransform target)
