@@ -916,6 +916,9 @@ public sealed class StatusBarViewModel : ViewModelBase
     private string _sceneText = "Cena principal";
     private string _outputText = "3 saídas configuradas";
     private string _framesText = "0 quadros descartados";
+    private string _centerText = "Cena: Cena principal | Saídas: 3/4 configuradas | Prévia: 60 fps | 0 quadros descartados";
+    private string _liveText = string.Empty;
+    private string _recordingText = string.Empty;
 
     public string StatusText
     {
@@ -940,6 +943,42 @@ public sealed class StatusBarViewModel : ViewModelBase
         get => _framesText;
         set => SetProperty(ref _framesText, value);
     }
+
+    public string CenterText
+    {
+        get => _centerText;
+        set => SetProperty(ref _centerText, value);
+    }
+
+    public string LiveText
+    {
+        get => _liveText;
+        set
+        {
+            if (SetProperty(ref _liveText, value))
+            {
+                OnPropertyChanged(nameof(HasRightStatus));
+                OnPropertyChanged(nameof(RightText));
+            }
+        }
+    }
+
+    public string RecordingText
+    {
+        get => _recordingText;
+        set
+        {
+            if (SetProperty(ref _recordingText, value))
+            {
+                OnPropertyChanged(nameof(HasRightStatus));
+                OnPropertyChanged(nameof(RightText));
+            }
+        }
+    }
+
+    public bool HasRightStatus => !string.IsNullOrWhiteSpace(RightText);
+
+    public string RightText => string.Join("  ", new[] { LiveText, RecordingText }.Where(item => !string.IsNullOrWhiteSpace(item)));
 }
 
 public sealed class StudioDialogViewModel : ViewModelBase
@@ -999,6 +1038,7 @@ public sealed class StudioDialogViewModel : ViewModelBase
                 OnPropertyChanged(nameof(HasOptions));
                 OnPropertyChanged(nameof(IsRoutingDialog));
                 OnPropertyChanged(nameof(IsSourceDialog));
+                OnPropertyChanged(nameof(IsSettingsDialog));
             }
         }
     }
@@ -1032,6 +1072,8 @@ public sealed class StudioDialogViewModel : ViewModelBase
     public bool IsRoutingDialog => Kind == "route-output";
 
     public bool IsSourceDialog => Kind == "source-library";
+
+    public bool IsSettingsDialog => Kind == "settings";
 
     public void NotifyOptionsChanged()
     {

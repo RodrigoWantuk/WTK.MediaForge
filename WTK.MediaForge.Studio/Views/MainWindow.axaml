@@ -93,6 +93,55 @@
                      Text="{Binding Dialog.Message}"
                      Classes="secondary"
                      TextWrapping="Wrap" />
+          <Grid Grid.Row="2"
+                ColumnDefinitions="130,*"
+                ColumnSpacing="14"
+                IsVisible="{Binding Dialog.IsSettingsDialog}">
+            <StackPanel Spacing="6">
+              <Border Classes="tab-pill selected">
+                <TextBlock Text="Interface" Classes="secondary" />
+              </Border>
+              <Border Classes="tab-pill">
+                <TextBlock Text="Idioma" Classes="secondary" />
+              </Border>
+              <Border Classes="tab-pill">
+                <TextBlock Text="Avançado" Classes="secondary" />
+              </Border>
+            </StackPanel>
+            <ScrollViewer Grid.Column="1" MaxHeight="360">
+              <StackPanel Spacing="14">
+                <Border Classes="section">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="Painéis visíveis" Classes="panel-title" />
+                    <CheckBox Content="Navegação" IsChecked="{Binding NavigationDock.IsVisible, Mode=TwoWay}" />
+                    <CheckBox Content="Produção" IsChecked="{Binding ProductionDock.IsVisible, Mode=TwoWay}" />
+                    <CheckBox Content="Propriedades" IsChecked="{Binding PropertiesDock.IsVisible, Mode=TwoWay}" />
+                    <CheckBox Content="Camadas e saídas da cena" IsChecked="{Binding WorkbenchDock.IsVisible, Mode=TwoWay}" />
+                    <CheckBox Content="Diagnóstico" IsChecked="False" IsEnabled="False" />
+                    <CheckBox Content="Performance" IsChecked="False" IsEnabled="False" />
+                    <CheckBox Content="Monitor de saídas" IsChecked="False" IsEnabled="False" />
+                    <CheckBox Content="Mixer de áudio (futuro)" IsChecked="False" IsEnabled="False" />
+                  </StackPanel>
+                </Border>
+                <Border Classes="section">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="Layout" Classes="panel-title" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Content="Restaurar layout padrão" Command="{Binding RestoreLayoutCommand}" />
+                      <Button Content="Reencaixar todos os painéis" Command="{Binding RedockAllPanelsCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+                <Border Classes="section">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="Idioma da aplicação" Classes="panel-title" />
+                    <TextBlock Text="Português (Brasil)" Classes="secondary" />
+                    <TextBlock Text="English (US) estará disponível após reiniciar o Studio." Classes="muted" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
           <StackPanel Grid.Row="2" Spacing="10" IsVisible="{Binding Dialog.HasOptions}">
             <Border Classes="section" IsVisible="{Binding Dialog.IsRoutingDialog}">
               <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,120" RowSpacing="8" ColumnSpacing="8">

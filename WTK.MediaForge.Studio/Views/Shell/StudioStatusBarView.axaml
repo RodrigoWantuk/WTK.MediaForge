@@ -1,21 +1,26 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
-             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
-             xmlns:models="using:WTK.MediaForge.Studio.Models"
              x:Class="WTK.MediaForge.Studio.Views.Shell.StudioStatusBarView"
              x:DataType="vm:StatusBarViewModel">
   <Border Background="{StaticResource MfSurface1Brush}"
           BorderBrush="{StaticResource MfBorderBrush}"
           BorderThickness="0,1,0,0">
-    <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="10,0">
-      <TextBlock Text="{Binding StatusText}" Classes="secondary" VerticalAlignment="Center" />
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="16,0,0,0" VerticalAlignment="Center">
-        <components:StudioIcon Kind="{x:Static models:StudioIconKind.Success}" IconSize="13" Foreground="{StaticResource MfSuccessBrush}" />
-        <TextBlock Text="{Binding SceneText}" Classes="success" VerticalAlignment="Center" />
-      </StackPanel>
-      <TextBlock Grid.Column="2" Text="{Binding OutputText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
-      <TextBlock Grid.Column="3" Text="{Binding FramesText}" Classes="muted" VerticalAlignment="Center" Margin="16,0,0,0" />
+    <Grid ColumnDefinitions="*,2*,Auto" Margin="10,0">
+      <TextBlock Text="{Binding StatusText}"
+                 Classes="secondary"
+                 VerticalAlignment="Center" />
+      <TextBlock Grid.Column="1"
+                 Text="{Binding CenterText}"
+                 Classes="muted"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center" />
+      <Border Grid.Column="2"
+              Classes="badge"
+              IsVisible="{Binding HasRightStatus}"
+              VerticalAlignment="Center">
+        <TextBlock Text="{Binding RightText}" Classes="accent" FontSize="11" />
+      </Border>
     </Grid>
   </Border>
 </UserControl>

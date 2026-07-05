@@ -17,6 +17,8 @@ public sealed class StudioShellViewModel : ViewModelBase
     private readonly IStudioDiagnosticsService _diagnosticsService;
     private readonly IStudioSelectionService _selectionService;
     private readonly IStudioUiTimer _uiTimer;
+    private readonly StudioLayoutService _layoutService = new();
+    private StudioLayoutDocument _layoutDocument = new();
     private StudioDocument _document = StudioMockDocumentFactory.Create();
     private ProjectTreeItemViewModel? _selectedProjectItem;
     private LayerItemViewModel? _selectedLayer;
@@ -66,7 +68,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         AddSourceCommand = new RelayCommand(OpenAddSourceDialog);
         AddSceneCommand = new RelayCommand(OpenAddSceneDialog);
         ConfigureOutputCommand = new RelayCommand(OpenConfigureOutputDialog);
-        SettingsCommand = new RelayCommand(() => ShowDialog("Configurações", "Preferências do Studio ficarão aqui no próximo milestone.", "settings", "Fechar"));
+        SettingsCommand = new RelayCommand(OpenSettingsDialog);
+        RestoreLayoutCommand = new RelayCommand(RestoreDefaultLayout);
+        RedockAllPanelsCommand = new RelayCommand(RedockAllPanels);
         ToggleStreamingCommand = new AsyncRelayCommand(ToggleStreamingAsync, CanToggleStreaming);
         ToggleRecordingCommand = new AsyncRelayCommand(ToggleRecordingAsync, CanToggleRecording);
         SelectProjectItemCommand = new RelayCommand<ProjectTreeItemViewModel>(SelectProjectItem, item => item is not null);
@@ -89,6 +93,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         _uiTimer.Tick += OnUiTimerTick;
         _uiTimer.Start();
 
+        _layoutDocument = _layoutService.Load();
+        ApplyLayoutDocument(_layoutDocument);
         LoadDesignData(_document, _diagnosticsService.Items);
         ApplyProjectDocument();
         ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
@@ -133,6 +139,10 @@ public sealed class StudioShellViewModel : ViewModelBase
     public ICommand ConfigureOutputCommand { get; }
 
     public ICommand SettingsCommand { get; }
+
+    public ICommand RestoreLayoutCommand { get; }
+
+    public ICommand RedockAllPanelsCommand { get; }
 
     public IAsyncRelayCommand ToggleStreamingCommand { get; }
 
@@ -548,6 +558,13 @@ public sealed class StudioShellViewModel : ViewModelBase
         SetStatus($"Configure {output.DisplayName} no painel de propriedades.");
     }
 
+    private void OpenSettingsDialog()
+    {
+        Dialog.Options.Clear();
+        Dialog.NotifyOptionsChanged();
+        ShowDialog("Configurações", "Ajuste idioma, painéis e organização da interface.", "settings", "Salvar");
+    }
+
     private void OpenSendSceneDialog(string outputId)
     {
         var output = _document.Outputs.First(item => item.Id == outputId);
@@ -611,10 +628,36 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void CloseDialog()
     {
+        if (Dialog.Kind == "settings")
+        {
+            SaveLayoutDocument();
+        }
+
         Dialog.IsOpen = false;
         Dialog.Options.Clear();
         Dialog.TransitionOptions.Clear();
         Dialog.NotifyOptionsChanged();
+    }
+
+    private void RestoreDefaultLayout()
+    {
+        _layoutDocument = new StudioLayoutDocument();
+        ApplyLayoutDocument(_layoutDocument);
+        SaveLayoutDocument();
+        SetStatus("Layout padrão restaurado.");
+    }
+
+    private void RedockAllPanels()
+    {
+        foreach (var panel in DockPanels())
+        {
+            panel.IsFloating = false;
+            panel.IsCollapsed = false;
+            panel.IsVisible = true;
+        }
+
+        SaveLayoutDocument();
+        SetStatus("Painéis reencaixados.");
     }
 
     private void AddSelectedSourceToCurrentScene()
@@ -999,8 +1042,9 @@ public sealed class StudioShellViewModel : ViewModelBase
     private void ApplyProjectDocument()
     {
         TitleBar.ProjectName = _document.HasUnsavedChanges ? $"{_document.DisplayName} *" : _document.DisplayName;
-        TitleBar.WorkspaceState = IsStreaming ? "● Ao vivo" : IsRecording ? $"● Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}" : "Prévia pronta";
+        TitleBar.WorkspaceState = IsStreaming ? "Ao vivo" : IsRecording ? $"Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}" : "Prévia pronta";
         Toolbar.StateBadge = CurrentScene?.IsProgram == true ? "Cena principal" : "Cena em edição";
+        UpdateStatusBarSummary();
     }
 
     private void OnUiTimerTick(object? sender, EventArgs e)
@@ -1040,6 +1084,9 @@ public sealed class StudioShellViewModel : ViewModelBase
             _ => "Gravar"
         };
         StatusBar.OutputText = OutputSummary();
+        StatusBar.LiveText = IsStreaming ? "Ao vivo" : string.Empty;
+        StatusBar.RecordingText = IsRecording ? $"Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}" : string.Empty;
+        UpdateStatusBarSummary();
         ApplyProjectDocument();
         OnPropertyChanged(nameof(IsStreaming));
         OnPropertyChanged(nameof(IsRecording));
@@ -1097,6 +1144,13 @@ public sealed class StudioShellViewModel : ViewModelBase
         StatusBar.StatusText = message;
         StatusBar.SceneText = CurrentScene is null ? "Sem cena" : $"Cena {CurrentScene.DisplayName}";
         StatusBar.OutputText = OutputSummary();
+        UpdateStatusBarSummary();
+    }
+
+    private void UpdateStatusBarSummary()
+    {
+        var scene = CurrentScene?.DisplayName ?? "Sem cena";
+        StatusBar.CenterText = $"Cena: {scene} | Saídas: {OutputSummary()} | Prévia: {Preview.FrameRate} | 0 quadros descartados";
     }
 
     private IEnumerable<StudioOutput> LinkedOutputs(StudioScene scene)
@@ -1118,6 +1172,56 @@ public sealed class StudioShellViewModel : ViewModelBase
     {
         var configured = _document.Outputs.Count(output => output.IsConfigured);
         return $"{configured}/{_document.Outputs.Count} saídas configuradas";
+    }
+
+    private IEnumerable<StudioDockPanelViewModel> DockPanels()
+    {
+        yield return NavigationDock;
+        yield return ProductionDock;
+        yield return PropertiesDock;
+        yield return WorkbenchDock;
+    }
+
+    private void ApplyLayoutDocument(StudioLayoutDocument document)
+    {
+        ApplyPanelLayout(NavigationDock, document.Layout.Panels, "navigation");
+        ApplyPanelLayout(ProductionDock, document.Layout.Panels, "production");
+        ApplyPanelLayout(PropertiesDock, document.Layout.Panels, "properties");
+        ApplyPanelLayout(WorkbenchDock, document.Layout.Panels, "layers");
+    }
+
+    private static void ApplyPanelLayout(
+        StudioDockPanelViewModel panel,
+        IReadOnlyDictionary<string, StudioPanelLayoutState> panels,
+        string key)
+    {
+        if (!panels.TryGetValue(key, out var state))
+        {
+            return;
+        }
+
+        panel.IsVisible = state.Visible;
+        panel.IsCollapsed = state.Collapsed;
+        panel.IsFloating = state.Floating;
+    }
+
+    private void SaveLayoutDocument()
+    {
+        _layoutDocument.Layout.Panels["navigation"] = CapturePanelLayout(NavigationDock);
+        _layoutDocument.Layout.Panels["production"] = CapturePanelLayout(ProductionDock);
+        _layoutDocument.Layout.Panels["properties"] = CapturePanelLayout(PropertiesDock);
+        _layoutDocument.Layout.Panels["layers"] = CapturePanelLayout(WorkbenchDock);
+        _layoutService.Save(_layoutDocument);
+    }
+
+    private static StudioPanelLayoutState CapturePanelLayout(StudioDockPanelViewModel panel)
+    {
+        return new StudioPanelLayoutState
+        {
+            Visible = panel.IsVisible,
+            Collapsed = panel.IsCollapsed,
+            Floating = panel.IsFloating
+        };
     }
 
     private string AssignedSceneName(StudioOutput output)
