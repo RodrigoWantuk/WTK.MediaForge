@@ -11,20 +11,11 @@
               BorderBrush="{StaticResource MfBorderBrush}"
               BorderThickness="0,0,0,1"
               Padding="10,8">
-        <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Text="Navegação" Classes="panel-title" VerticalAlignment="Center" />
-          <Button Grid.Column="1"
-                  Classes="primary"
-                  Padding="7"
-                  ToolTip.Tip="{Binding AddButtonTip}"
-                  Command="{Binding CurrentAddCommand}">
-            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Add}" IconSize="15" />
-          </Button>
-        </Grid>
+        <TextBlock Text="Navegação" Classes="panel-title" VerticalAlignment="Center" />
       </Border>
 
       <Grid Grid.Row="1"
-            RowDefinitions="Auto,Auto"
+            RowDefinitions="Auto,Auto,Auto"
             RowSpacing="8"
             Margin="10,8">
         <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
@@ -47,6 +38,18 @@
         <TextBox Grid.Row="1"
                  Text="{Binding SearchText, Mode=TwoWay}"
                  PlaceholderText="{Binding SearchPlaceholder}" />
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <TextBlock Text="{Binding TabTitle}" Classes="panel-title" VerticalAlignment="Center" />
+          <Button Grid.Column="1"
+                  Classes="primary"
+                  ToolTip.Tip="{Binding AddButtonTip}"
+                  Command="{Binding CurrentAddCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <components:StudioIcon Kind="{x:Static models:StudioIconKind.Add}" IconSize="13" />
+              <TextBlock Text="{Binding AddButtonText}" />
+            </StackPanel>
+          </Button>
+        </Grid>
       </Grid>
 
       <Grid Grid.Row="2">

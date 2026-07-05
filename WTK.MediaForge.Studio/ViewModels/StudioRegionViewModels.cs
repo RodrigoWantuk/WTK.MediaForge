@@ -157,6 +157,7 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
                 OnPropertyChanged(nameof(TabTitle));
                 OnPropertyChanged(nameof(SearchPlaceholder));
                 OnPropertyChanged(nameof(AddButtonTip));
+                OnPropertyChanged(nameof(AddButtonText));
                 OnPropertyChanged(nameof(CurrentVisibleItemCount));
                 OnPropertyChanged(nameof(CurrentTabHasNoResults));
             }
@@ -188,6 +189,13 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
         StudioExplorerTabKind.Sources => "Adicionar entrada",
         StudioExplorerTabKind.Outputs => "Adicionar saída",
         _ => "Adicionar cena"
+    };
+
+    public string AddButtonText => SelectedTab switch
+    {
+        StudioExplorerTabKind.Sources => "+ Entrada",
+        StudioExplorerTabKind.Outputs => "+ Saída",
+        _ => "+ Cena"
     };
 
     public string SearchText
