@@ -8,7 +8,7 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="16" Spacing="12">
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-        <Border Classes="icon-box" Width="38" Height="38">
+        <Border Classes="icon-box" Width="40" Height="40">
           <components:StudioIcon Kind="{x:Static models:StudioIconKind.Source}"
                                  IconSize="22"
                                  Foreground="{StaticResource MfAccentBrush}"
@@ -23,17 +23,17 @@
 
       <Border Classes="section">
         <StackPanel Spacing="10">
-          <TextBlock Text="DEVICE" Classes="panel-title" />
+          <TextBlock Text="FONTE" Classes="panel-title" />
           <StackPanel Spacing="4">
-            <TextBlock Text="Type" Classes="muted" />
+            <TextBlock Text="Dispositivo ou origem" Classes="muted" />
             <ComboBox ItemsSource="{Binding DeviceOptions}" SelectedItem="{Binding SelectedDevice, Mode=TwoWay}" />
           </StackPanel>
           <StackPanel Spacing="4">
-            <TextBlock Text="Resolution" Classes="muted" />
+            <TextBlock Text="Resolucao" Classes="muted" />
             <ComboBox ItemsSource="{Binding ResolutionOptions}" SelectedItem="{Binding SelectedResolution, Mode=TwoWay}" />
           </StackPanel>
           <StackPanel Spacing="4">
-            <TextBlock Text="Frame rate" Classes="muted" />
+            <TextBlock Text="FPS" Classes="muted" />
             <ComboBox ItemsSource="{Binding FrameRateOptions}" SelectedItem="{Binding SelectedFrameRate, Mode=TwoWay}" />
           </StackPanel>
         </StackPanel>
@@ -41,13 +41,13 @@
 
       <Border Classes="section">
         <StackPanel Spacing="8">
-          <TextBlock Text="STATUS" Classes="panel-title" />
+          <TextBlock Text="ESTADO" Classes="panel-title" />
           <Border Classes="metric-card">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
               <Border Classes="health-dot" Classes.healthy="True" VerticalAlignment="Center" />
               <StackPanel Grid.Column="1" Spacing="2">
-                <TextBlock Text="{Binding Status, StringFormat='Healthy / {0}'}" Classes="success" />
-                <TextBlock Text="{Binding FrameRateText, StringFormat='Streaming {0} - buffer 2 frames - 0 dropped'}" Classes="secondary" />
+                <TextBlock Text="{Binding Status}" Classes="success" />
+                <TextBlock Text="{Binding FrameRateText, StringFormat='Mock {0} - sem captura real neste milestone'}" Classes="secondary" />
               </StackPanel>
             </Grid>
           </Border>
@@ -56,18 +56,20 @@
 
       <Border Classes="section">
         <StackPanel Spacing="8">
-          <TextBlock Text="ACTIONS" Classes="panel-title" />
+          <TextBlock Text="ACOES" Classes="panel-title" />
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="Reconnect" Command="{Binding ReconnectCommand}" Classes="primary" />
-            <Button Content="Configure device" IsEnabled="False" />
+            <Button Content="Adicionar a cena atual" Command="{Binding AddToSceneCommand}" Classes="primary" />
+            <Button Content="Reconectar" Command="{Binding ReconnectCommand}" />
           </StackPanel>
+          <TextBlock Text="{Binding CurrentSceneName, StringFormat='Destino: {0}'}"
+                     Classes="secondary" />
         </StackPanel>
       </Border>
 
-      <Expander Header="Advanced details">
+      <Expander Header="Detalhes avancados">
         <StackPanel Spacing="6" Margin="0,8,0,0">
-          <TextBlock Text="{Binding SourceType, StringFormat='Type: {0}'}" Classes="mono muted" />
-          <TextBlock Text="{Binding Endpoint, StringFormat='Endpoint: {0}'}" Classes="mono muted" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding SourceType, StringFormat='Tipo: {0}'}" Classes="mono muted" />
+          <TextBlock Text="{Binding Endpoint, StringFormat='Origem: {0}'}" Classes="mono muted" TextWrapping="Wrap" />
         </StackPanel>
       </Expander>
     </StackPanel>

@@ -8,7 +8,7 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="16" Spacing="12">
       <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-        <Border Classes="icon-box" Width="38" Height="38">
+        <Border Classes="icon-box" Width="40" Height="40">
           <components:StudioIcon Kind="{x:Static models:StudioIconKind.Layer}"
                                  IconSize="22"
                                  Foreground="{StaticResource MfAccentBrush}"
@@ -21,14 +21,14 @@
         </StackPanel>
         <ToggleSwitch Grid.Column="2"
                       IsChecked="{Binding IsLocked, Mode=TwoWay}"
-                      OnContent="Locked"
-                      OffContent="Editable"
+                      OnContent="Bloqueada"
+                      OffContent="Editavel"
                       VerticalAlignment="Center" />
       </Grid>
 
       <Border Classes="section">
         <StackPanel Spacing="10">
-          <TextBlock Text="TRANSFORM" Classes="panel-title" />
+          <TextBlock Text="TRANSFORMACAO" Classes="panel-title" />
           <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" RowSpacing="8" ColumnSpacing="8">
             <StackPanel Spacing="4">
               <TextBlock Text="X" Classes="muted" />
@@ -39,23 +39,23 @@
               <NumericUpDown Value="{Binding Y, Mode=TwoWay}" Minimum="0" Maximum="1080" Increment="1" />
             </StackPanel>
             <StackPanel Grid.Row="1" Spacing="4">
-              <TextBlock Text="W" Classes="muted" />
+              <TextBlock Text="Largura" Classes="muted" />
               <NumericUpDown Value="{Binding Width, Mode=TwoWay}" Minimum="16" Maximum="1920" Increment="1" />
             </StackPanel>
             <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
-              <TextBlock Text="H" Classes="muted" />
+              <TextBlock Text="Altura" Classes="muted" />
               <NumericUpDown Value="{Binding Height, Mode=TwoWay}" Minimum="16" Maximum="1080" Increment="1" />
             </StackPanel>
           </Grid>
 
-          <Grid ColumnDefinitions="80,*,56" ColumnSpacing="8">
-            <TextBlock Text="Rotation" Classes="secondary" VerticalAlignment="Center" />
+          <Grid ColumnDefinitions="90,*,64" ColumnSpacing="8">
+            <TextBlock Text="Rotacao" Classes="secondary" VerticalAlignment="Center" />
             <Slider Grid.Column="1" Minimum="-180" Maximum="180" Value="{Binding RotationDegrees, Mode=TwoWay}" />
             <TextBlock Grid.Column="2" Text="{Binding RotationDegrees, StringFormat='{}{0:0} deg'}" Classes="muted" VerticalAlignment="Center" />
           </Grid>
 
-          <Grid ColumnDefinitions="80,*,56" ColumnSpacing="8">
-            <TextBlock Text="Opacity" Classes="secondary" VerticalAlignment="Center" />
+          <Grid ColumnDefinitions="90,*,64" ColumnSpacing="8">
+            <TextBlock Text="Opacidade" Classes="secondary" VerticalAlignment="Center" />
             <Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Opacity, Mode=TwoWay}" />
             <TextBlock Grid.Column="2" Text="{Binding Opacity, StringFormat='{}{0:0}%'}" Classes="muted" VerticalAlignment="Center" />
           </Grid>
@@ -69,22 +69,22 @@
 
       <Border Classes="section">
         <StackPanel Spacing="10">
-          <TextBlock Text="CROP" Classes="panel-title" />
+          <TextBlock Text="CORTE" Classes="panel-title" />
           <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" RowSpacing="8" ColumnSpacing="8">
             <StackPanel Spacing="4">
-              <TextBlock Text="Left" Classes="muted" />
+              <TextBlock Text="Esquerda" Classes="muted" />
               <NumericUpDown Value="{Binding CropLeft, Mode=TwoWay}" Minimum="0" Maximum="4096" Increment="1" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="4">
-              <TextBlock Text="Top" Classes="muted" />
+              <TextBlock Text="Topo" Classes="muted" />
               <NumericUpDown Value="{Binding CropTop, Mode=TwoWay}" Minimum="0" Maximum="4096" Increment="1" />
             </StackPanel>
             <StackPanel Grid.Row="1" Spacing="4">
-              <TextBlock Text="Right" Classes="muted" />
+              <TextBlock Text="Direita" Classes="muted" />
               <NumericUpDown Value="{Binding CropRight, Mode=TwoWay}" Minimum="0" Maximum="4096" Increment="1" />
             </StackPanel>
             <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
-              <TextBlock Text="Bottom" Classes="muted" />
+              <TextBlock Text="Base" Classes="muted" />
               <NumericUpDown Value="{Binding CropBottom, Mode=TwoWay}" Minimum="0" Maximum="4096" Increment="1" />
             </StackPanel>
           </Grid>
@@ -94,42 +94,42 @@
       <Border Classes="section">
         <StackPanel Spacing="10">
           <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="EFFECTS" Classes="panel-title" />
-            <Button Grid.Column="1" Classes="flat" Content="+ Add" IsEnabled="False" />
+            <TextBlock Text="EFEITOS" Classes="panel-title" />
+            <Button Grid.Column="1" Classes="flat" Content="+ Adicionar" IsEnabled="False" />
           </Grid>
-        <ItemsControl ItemsSource="{Binding Effects}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:EffectItemViewModel">
-              <Border Classes="metric-card" Margin="0,0,0,8">
-                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="8">
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Border Classes="health-dot" Classes.healthy="{Binding IsEnabled}" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                  </StackPanel>
-                  <ToggleSwitch Grid.Column="1"
-                                IsChecked="{Binding IsEnabled, Mode=TwoWay}"
-                                OnContent="On"
-                                OffContent="Off" />
-                  <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" />
-                  <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8" IsVisible="{Binding IsExpanded}">
-                    <TextBlock Text="Key color" Classes="muted" VerticalAlignment="Center" />
-                    <Border Grid.Column="1" Classes="source-thumb" Height="24">
-                      <TextBlock Text="{Binding KeyColor}" Classes="mono accent" VerticalAlignment="Center" HorizontalAlignment="Center" />
-                    </Border>
-                    <TextBlock Grid.Row="1" Text="Tolerance" Classes="muted" VerticalAlignment="Center" />
-                    <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Tolerance, Mode=TwoWay}" />
-                    <TextBlock Grid.Row="2" Text="Spill" Classes="muted" VerticalAlignment="Center" />
-                    <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Spill, Mode=TwoWay}" />
-                    <TextBlock Grid.Row="3" Text="Edge" Classes="muted" VerticalAlignment="Center" />
-                    <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding EdgeSmooth, Mode=TwoWay}" />
+          <ItemsControl ItemsSource="{Binding Effects}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:EffectItemViewModel">
+                <Border Classes="metric-card" Margin="0,0,0,8">
+                  <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Classes="health-dot" Classes.healthy="{Binding IsEnabled}" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1"
+                                  IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                  OnContent="Ativo"
+                                  OffContent="Inativo" />
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" />
+                    <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8" IsVisible="{Binding IsExpanded}">
+                      <TextBlock Text="Cor chave" Classes="muted" VerticalAlignment="Center" />
+                      <Border Grid.Column="1" Classes="source-thumb" Height="24">
+                        <TextBlock Text="{Binding KeyColor}" Classes="mono accent" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                      </Border>
+                      <TextBlock Grid.Row="1" Text="Tolerancia" Classes="muted" VerticalAlignment="Center" />
+                      <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Tolerance, Mode=TwoWay}" />
+                      <TextBlock Grid.Row="2" Text="Spill" Classes="muted" VerticalAlignment="Center" />
+                      <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Spill, Mode=TwoWay}" />
+                      <TextBlock Grid.Row="3" Text="Borda" Classes="muted" VerticalAlignment="Center" />
+                      <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding EdgeSmooth, Mode=TwoWay}" />
+                    </Grid>
                   </Grid>
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </StackPanel>
       </Border>
-      </StackPanel>
+    </StackPanel>
   </ScrollViewer>
 </UserControl>

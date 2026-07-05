@@ -20,6 +20,7 @@
   <Color x:Key="MfDanger">#F05252</Color>
   <Color x:Key="MfRecording">#F43F5E</Color>
   <Color x:Key="MfDangerSoft">#351A22</Color>
+  <Color x:Key="MfWarningSoft">#3A2A10</Color>
   <Color x:Key="MfOverlay">#AA05080D</Color>
   <Color x:Key="MfCanvasFrame">#0B1017</Color>
 
@@ -43,6 +44,7 @@
   <SolidColorBrush x:Key="MfErrorBrush" Color="{StaticResource MfDanger}" />
   <SolidColorBrush x:Key="MfRecordBrush" Color="{StaticResource MfRecording}" />
   <SolidColorBrush x:Key="MfDangerSoftBrush" Color="{StaticResource MfDangerSoft}" />
+  <SolidColorBrush x:Key="MfWarningSoftBrush" Color="{StaticResource MfWarningSoft}" />
   <SolidColorBrush x:Key="MfOverlayBrush" Color="{StaticResource MfOverlay}" />
   <SolidColorBrush x:Key="MfCanvasFrameBrush" Color="{StaticResource MfCanvasFrame}" />
   <SolidColorBrush x:Key="MfCheckerA" Color="#141922" />

@@ -3,7 +3,7 @@
   <Style Selector="TextBlock">
     <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI" />
     <Setter Property="Foreground" Value="{StaticResource MfTextPrimaryBrush}" />
-    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontSize" Value="13" />
   </Style>
 
   <Style Selector="TextBlock.muted">
@@ -15,12 +15,12 @@
   </Style>
 
   <Style Selector="TextBlock.title">
-    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontSize" Value="15" />
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
 
   <Style Selector="TextBlock.panel-title">
-    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontSize" Value="13" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="Foreground" Value="{StaticResource MfTextSecondaryBrush}" />
   </Style>
@@ -32,7 +32,7 @@
 
   <Style Selector="TextBlock.mono">
     <Setter Property="FontFamily" Value="Consolas, Cascadia Mono, Segoe UI Mono" />
-    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontSize" Value="12" />
   </Style>
 
   <Style Selector="TextBlock.accent">

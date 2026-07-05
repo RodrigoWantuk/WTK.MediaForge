@@ -105,12 +105,15 @@ Current Studio state:
 - `WTK.MediaForge.Studio` contains the first Avalonia mock shell.
 - Studio ViewModel tests are included in `./scripts/test.ps1 -Tier Fast`.
 - The current UI milestone is Studio UI recovery/productization: shared mock
-  document state, native vector icons, searchable Project Explorer, editable
-  preview canvas, rich inspectors, bottom workbench polish, localization
-  foundation, and ViewModel coverage.
-- Fake Studio services own mock project, engine, output, diagnostics, selection, and inspector behavior.
+  document state, native vector icons, searchable Project Explorer,
+  scene-scoped editable canvas, contextual Propriedades panel, bottom
+  Camadas/Efeitos/Saidas workbench, output routing, localization foundation,
+  and ViewModel coverage.
+- Fake Studio services own mock project, output, diagnostics, selection, and
+  contextual properties behavior. Engine service types may exist internally for
+  future bridge work, but the main UI must not expose Start/Stop Engine.
 - `StudioSelectionState` is the single selection contract for explorer/layer/canvas/output selection.
-- Engine/output UI states are typed enums, not only booleans.
+- Output UI states are typed enums, not only booleans.
 - The internal Studio header is an app header; native OS chrome remains active for now.
 
 The downloaded React/Lovable prototype is a visual/component-behavior reference only. Do not embed React, Tailwind, WebView, Vite, Electron, or browser runtime dependencies into the Studio app. Translate the prototype into Avalonia controls, styles, resources, view models, commands, and data templates.
@@ -119,8 +122,11 @@ Allowed in the UI track before runtime gates open:
 
 - Avalonia shell layout;
 - centralized dark theme;
-- mock Project Explorer, canvas, inspector, bottom workbench, output monitor, diagnostics, performance, and future audio placeholder;
-- fake Start/Stop/Stream/Record UI state;
+- mock Project Explorer, canvas editor, contextual properties panel, bottom
+  Camadas/Efeitos/Saidas workbench, output routing, and advanced
+  diagnostics/performance placeholders outside the main workbench;
+- fake Stream/Record UI state driven by configured outputs, not by a visible
+  engine toggle;
 - fake Studio service boundaries and unified selection state;
 - Studio-only mock document state and editable mock preview overlays;
 - ViewModel tests for selection, command state, inspector resolution, and mock status.

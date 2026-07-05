@@ -5,7 +5,7 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <data name="App_Title" xml:space="preserve"><value>WTK MediaForge Studio</value></data>
-  <data name="App_Subtitle" xml:space="preserve"><value>Workspace de producao ao vivo</value></data>
+  <data name="App_Subtitle" xml:space="preserve"><value>Editor visual de producao ao vivo</value></data>
   <data name="Menu_File" xml:space="preserve"><value>Arquivo</value></data>
   <data name="Menu_Edit" xml:space="preserve"><value>Editar</value></data>
   <data name="Menu_View" xml:space="preserve"><value>Visualizar</value></data>
@@ -20,26 +20,19 @@
   <data name="Common_Settings" xml:space="preserve"><value>Configuracoes</value></data>
   <data name="Common_Search" xml:space="preserve"><value>Buscar</value></data>
   <data name="Common_Planned" xml:space="preserve"><value>Planejado</value></data>
+  <data name="Common_Configure" xml:space="preserve"><value>Configurar</value></data>
   <data name="Action_AddSource" xml:space="preserve"><value>Adicionar fonte</value></data>
   <data name="Action_AddScene" xml:space="preserve"><value>Adicionar cena</value></data>
-  <data name="Action_StartEngine" xml:space="preserve"><value>Iniciar engine</value></data>
-  <data name="Action_StopEngine" xml:space="preserve"><value>Parar engine</value></data>
-  <data name="Action_StartStreaming" xml:space="preserve"><value>Iniciar stream</value></data>
-  <data name="Action_StopStreaming" xml:space="preserve"><value>Parar stream</value></data>
-  <data name="Action_StartRecording" xml:space="preserve"><value>Iniciar gravacao</value></data>
+  <data name="Action_ConfigureOutput" xml:space="preserve"><value>Configurar saida</value></data>
+  <data name="Action_StartStreaming" xml:space="preserve"><value>Transmitir</value></data>
+  <data name="Action_StopStreaming" xml:space="preserve"><value>Encerrar transmissao</value></data>
+  <data name="Action_StartRecording" xml:space="preserve"><value>Gravar</value></data>
   <data name="Action_StopRecording" xml:space="preserve"><value>Parar gravacao</value></data>
-  <data name="Panel_ProjectExplorer" xml:space="preserve"><value>Explorador do projeto</value></data>
-  <data name="Panel_Inspector" xml:space="preserve"><value>Inspector</value></data>
+  <data name="Panel_ProjectExplorer" xml:space="preserve"><value>Projeto</value></data>
+  <data name="Panel_Properties" xml:space="preserve"><value>Propriedades</value></data>
   <data name="Panel_Layers" xml:space="preserve"><value>Camadas</value></data>
   <data name="Panel_Effects" xml:space="preserve"><value>Efeitos</value></data>
-  <data name="Panel_Timeline" xml:space="preserve"><value>Linha do tempo</value></data>
-  <data name="Panel_Diagnostics" xml:space="preserve"><value>Diagnosticos</value></data>
-  <data name="Panel_Performance" xml:space="preserve"><value>Performance</value></data>
-  <data name="Panel_OutputMonitor" xml:space="preserve"><value>Monitor de saida</value></data>
-  <data name="Panel_AudioMixer" xml:space="preserve"><value>Mixer de audio</value></data>
-  <data name="Status_Engine" xml:space="preserve"><value>Engine</value></data>
-  <data name="Status_Running" xml:space="preserve"><value>Rodando</value></data>
-  <data name="Status_Stopped" xml:space="preserve"><value>Parada</value></data>
-  <data name="Status_PreviewIdle" xml:space="preserve"><value>Preview ocioso</value></data>
-  <data name="Status_DroppedFrames" xml:space="preserve"><value>Frames perdidos</value></data>
+  <data name="Panel_Outputs" xml:space="preserve"><value>Saidas</value></data>
+  <data name="Status_Ready" xml:space="preserve"><value>Pronto</value></data>
+  <data name="Status_DroppedFrames" xml:space="preserve"><value>Quadros descartados</value></data>
 </root>

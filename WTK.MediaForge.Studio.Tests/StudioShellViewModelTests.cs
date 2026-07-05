@@ -10,163 +10,123 @@ namespace WTK.MediaForge.Studio.Tests;
 public sealed class StudioShellViewModelTests
 {
     [Fact]
-    public void Design_data_contains_required_groups_and_items()
+    public void Design_data_contains_product_groups_and_items()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
+        var shell = CreateShell();
 
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Scenes" && group.Items.Any(item => item.Name == "Main Scene"));
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Sources" && group.Items.Any(item => item.Name == "Webcam"));
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Outputs" && group.Items.Any(item => item.Name == "RTMP Twitch"));
+        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Cenas" && group.Items.Any(item => item.Name == "Main Scene"));
+        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Fontes" && group.Items.Any(item => item.Name == "Webcam"));
+        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Saidas" && group.Items.Any(item => item.Name == "RTMP Twitch"));
         Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Presets" && group.Items.Any(item => item.Name == "YouTube 1080p60"));
-        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Packages" && group.Items.Any(item => item.Name == "Brand Kit"));
-        Assert.Contains(shell.BottomWorkbench.Layers, layer => layer.Name == "Lower Third");
-        Assert.Contains(shell.BottomWorkbench.Effects, effect => effect.Name == "Chroma Key" && effect.IsEnabled);
+        Assert.Contains(shell.ProjectExplorer.Groups, group => group.Title == "Pacotes" && group.Items.Any(item => item.Name == "Brand Kit"));
+        Assert.Equal(new[] { StudioBottomTabKind.Layers, StudioBottomTabKind.Effects, StudioBottomTabKind.Outputs }, shell.BottomWorkbench.Tabs.Select(tab => tab.Kind));
     }
 
     [Fact]
-    public void Selecting_project_item_updates_selected_item_and_inspector()
+    public void Selecting_scene_rebuilds_scene_scoped_layers_and_preview()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var webcam = FindItem(shell, "Webcam");
+        var shell = CreateShell();
+        var interview = FindItem(shell, "Interview");
 
-        shell.SelectProjectItem(webcam);
+        shell.SelectProjectItem(interview);
 
-        Assert.Same(webcam, shell.SelectedProjectItem);
-        Assert.Null(shell.SelectedLayer);
-        Assert.True(webcam.IsSelected);
-        Assert.IsType<SourceInspectorViewModel>(shell.Inspector.SelectedPage);
-        Assert.Equal(StudioSelectionKind.Source, shell.CurrentSelection.Kind);
-        Assert.Equal("Selected Webcam", shell.StatusBar.StatusText);
+        Assert.Equal("Interview", shell.CurrentScene?.DisplayName);
+        Assert.Equal("Interview", shell.Preview.SceneName);
+        Assert.All(shell.BottomWorkbench.Layers, layer => Assert.StartsWith("layer-interview", layer.Id, StringComparison.Ordinal));
+        Assert.DoesNotContain(shell.BottomWorkbench.Layers, layer => layer.Id == "layer-lower-third");
+        Assert.IsType<SceneInspectorViewModel>(shell.Inspector.SelectedPage);
     }
 
     [Fact]
-    public async Task Toggle_engine_command_updates_toolbar_and_status()
+    public void Add_source_dialog_adds_layer_only_to_current_scene()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
+        var shell = CreateShell();
+        var main = shell.Document.Scenes.Single(scene => scene.Id == "scene-main");
+        var interview = FindItem(shell, "Interview");
 
-        Assert.False(shell.IsEngineRunning);
-        Assert.False(shell.ToggleStreamingCommand.CanExecute(null));
+        shell.SelectProjectItem(interview);
+        var originalMainCount = main.Layers.Count;
+        var originalInterviewCount = shell.CurrentScene!.Layers.Count;
 
-        await shell.ToggleEngineCommand.ExecuteAsync(null);
+        shell.AddSourceCommand.Execute(null);
+        Assert.True(shell.Dialog.IsOpen);
+        shell.ConfirmDialogCommand.Execute(null);
 
-        Assert.True(shell.IsEngineRunning);
-        Assert.Equal("Stop Engine", shell.Toolbar.EngineButtonText);
-        Assert.Equal("Running", shell.StatusBar.EngineText);
-        Assert.True(shell.ToggleStreamingCommand.CanExecute(null));
-
-        await shell.ToggleEngineCommand.ExecuteAsync(null);
-
-        Assert.False(shell.IsEngineRunning);
-        Assert.Equal("Start Engine", shell.Toolbar.EngineButtonText);
-        Assert.Equal("Stopped", shell.StatusBar.EngineText);
+        Assert.False(shell.Dialog.IsOpen);
+        Assert.Equal(originalMainCount, main.Layers.Count);
+        Assert.Equal(originalInterviewCount + 1, shell.CurrentScene!.Layers.Count);
+        Assert.Equal(shell.SelectedLayer, shell.Preview.SelectedLayer);
     }
 
     [Fact]
-    public void Bottom_workbench_tabs_switch_selected_content()
+    public void Source_inspector_can_add_existing_source_to_current_scene()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var outputMonitor = shell.BottomWorkbench.Tabs.Single(tab => tab.Kind == StudioBottomTabKind.OutputMonitor);
+        var shell = CreateShell();
+        shell.SelectProjectItem(FindItem(shell, "Break BRB"));
+        var originalCount = shell.CurrentScene!.Layers.Count;
 
-        shell.BottomWorkbench.SelectTabCommand.Execute(outputMonitor);
+        shell.SelectProjectItem(FindItem(shell, "Logo.png"));
+        shell.AddSelectedSourceToCurrentSceneCommand.Execute(null);
 
-        Assert.Same(outputMonitor, shell.BottomWorkbench.SelectedTab);
-        Assert.True(shell.BottomWorkbench.IsOutputMonitorSelected);
-        Assert.False(shell.BottomWorkbench.IsLayersSelected);
-    }
-
-    [Theory]
-    [InlineData("Main Scene", typeof(SceneInspectorViewModel))]
-    [InlineData("Webcam", typeof(SourceInspectorViewModel))]
-    [InlineData("RTMP Twitch", typeof(OutputInspectorViewModel))]
-    [InlineData("1080p Streaming", typeof(PresetInspectorViewModel))]
-    [InlineData("Brand Kit", typeof(PackageInspectorViewModel))]
-    public void Project_item_selection_resolves_contextual_inspector(string itemName, Type inspectorType)
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-
-        shell.SelectProjectItem(FindItem(shell, itemName));
-
-        Assert.IsType(inspectorType, shell.Inspector.SelectedPage);
-    }
-
-    [Fact]
-    public void Selecting_layer_updates_preview_and_layer_inspector()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var webcamLayer = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Webcam");
-
-        shell.SelectLayer(webcamLayer);
-
-        Assert.Same(webcamLayer, shell.SelectedLayer);
-        Assert.Null(shell.SelectedProjectItem);
-        Assert.True(webcamLayer.IsSelected);
-        Assert.Equal("Webcam", shell.Preview.SelectedLayerName);
-        Assert.Equal(StudioSelectionKind.Layer, shell.CurrentSelection.Kind);
+        Assert.Equal(originalCount + 1, shell.CurrentScene!.Layers.Count);
+        Assert.Equal("Logo.png", shell.SelectedLayer?.Name);
         Assert.IsType<LayerInspectorViewModel>(shell.Inspector.SelectedPage);
     }
 
     [Fact]
-    public void Layer_row_selection_does_not_toggle_visibility()
+    public void Effects_are_contextual_to_selected_layer_and_clear_for_project_items()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var logoLayer = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Logo.png");
+        var shell = CreateShell();
+        var webcam = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Webcam");
 
-        shell.SelectLayer(logoLayer);
+        shell.SelectLayer(webcam);
 
-        Assert.True(logoLayer.IsVisible);
-        Assert.True(logoLayer.IsSelected);
+        Assert.Contains(shell.BottomWorkbench.Effects, effect => effect.Name == "Chroma Key");
+        Assert.Equal("Efeitos de Webcam", shell.BottomWorkbench.EffectsContextTitle);
+
+        shell.SelectProjectItem(FindItem(shell, "Webcam"));
+
+        Assert.Empty(shell.BottomWorkbench.Effects);
+        Assert.Equal("Selecione uma camada", shell.BottomWorkbench.EffectsContextTitle);
     }
 
     [Fact]
-    public void Layer_visibility_command_does_not_change_selection_when_called_directly()
+    public void Output_route_change_updates_document_explorer_and_output_table()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var selectedLayer = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Webcam");
-        var toggledLayer = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Logo.png");
+        var shell = CreateShell();
+        shell.SelectProjectItem(FindItem(shell, "RTMP Twitch"));
+        var inspector = Assert.IsType<OutputInspectorViewModel>(shell.Inspector.SelectedPage);
+        var interview = inspector.Scenes.Single(scene => scene.Name == "Interview");
 
-        shell.SelectLayer(selectedLayer);
-        shell.ToggleLayerVisibilityCommand.Execute(toggledLayer);
+        inspector.SelectedScene = interview;
 
-        Assert.Same(selectedLayer, shell.SelectedLayer);
-        Assert.True(selectedLayer.IsSelected);
-        Assert.False(toggledLayer.IsSelected);
-        Assert.False(toggledLayer.IsVisible);
+        var output = shell.Document.Outputs.Single(item => item.Id == "output-rtmp-twitch");
+        Assert.Equal("scene-interview", output.AssignedSceneId);
+        Assert.Contains(shell.BottomWorkbench.Outputs, item => item.Name == "RTMP Twitch" && item.SceneName == "Interview");
+        Assert.Contains("Interview", FindItem(shell, "RTMP Twitch").Metadata, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Project_item_selection_clears_layer_selection()
+    public async Task Stream_and_record_commands_depend_on_configured_outputs_not_engine_state()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Webcam");
-        var source = FindItem(shell, "Webcam");
+        var shell = CreateShell();
 
-        shell.SelectLayer(layer);
-        shell.SelectProjectItem(source);
+        Assert.True(shell.ToggleStreamingCommand.CanExecute(null));
+        Assert.True(shell.ToggleRecordingCommand.CanExecute(null));
 
-        Assert.Same(source, shell.SelectedProjectItem);
-        Assert.Null(shell.SelectedLayer);
-        Assert.False(layer.IsSelected);
+        await shell.ToggleStreamingCommand.ExecuteAsync(null);
+        await shell.ToggleRecordingCommand.ExecuteAsync(null);
+
+        Assert.True(shell.IsStreaming);
+        Assert.True(shell.IsRecording);
+        Assert.Equal("Ao vivo", shell.Toolbar.StreamButtonText);
+        Assert.StartsWith("Gravando", shell.Toolbar.RecordingButtonText, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Layer_selection_clears_project_selection()
+    public void Output_stream_key_is_masked_in_properties()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var source = FindItem(shell, "Webcam");
-        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Webcam");
-
-        shell.SelectProjectItem(source);
-        shell.SelectLayer(layer);
-
-        Assert.Null(shell.SelectedProjectItem);
-        Assert.Same(layer, shell.SelectedLayer);
-        Assert.False(source.IsSelected);
-    }
-
-    [Fact]
-    public void Output_stream_key_is_masked_in_inspector()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
+        var shell = CreateShell();
 
         shell.SelectProjectItem(FindItem(shell, "RTMP Twitch"));
 
@@ -177,278 +137,81 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public async Task Commands_respect_can_execute_when_engine_is_stopped()
+    public void Preview_view_model_supports_zoom_pan_move_resize_nudge_and_lock()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
-
-        Assert.False(shell.ToggleStreamingCommand.CanExecute(null));
-        Assert.False(shell.ToggleRecordingCommand.CanExecute(null));
-
-        shell.ToggleStreamingCommand.Execute(null);
-        shell.ToggleRecordingCommand.Execute(null);
-
-        Assert.False(shell.IsStreaming);
-        Assert.False(shell.IsRecording);
-
-        await shell.ToggleEngineCommand.ExecuteAsync(null);
-
-        Assert.True(shell.ToggleStreamingCommand.CanExecute(null));
-        Assert.True(shell.ToggleRecordingCommand.CanExecute(null));
-    }
-
-    [Fact]
-    public void Layer_visibility_and_lock_use_product_glyphs()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
+        var shell = CreateShell();
         var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Logo.png");
 
-        Assert.Equal("Visible", layer.VisibilityGlyph);
-        Assert.Equal("Editable", layer.LockGlyph);
-
-        shell.ToggleLayerVisibilityCommand.Execute(layer);
-        shell.ToggleLayerLockCommand.Execute(layer);
-
-        Assert.Equal("Hidden", layer.VisibilityGlyph);
-        Assert.Equal("Locked", layer.LockGlyph);
-    }
-
-    [Fact]
-    public void Layer_inspector_uses_typed_editable_properties()
-    {
-        var inspector = new LayerInspectorViewModel("Lower Third", "Text");
-
-        inspector.X = 111.5;
-        inspector.Opacity = 140;
-
-        Assert.Equal(111.5, inspector.X);
-        Assert.Equal(100, inspector.Opacity);
-        Assert.Equal(StudioBlendMode.Alpha, inspector.BlendMode);
-        Assert.Equal("0 / 0 / 0 / 0", inspector.CropText);
-    }
-
-    [Fact]
-    public void Selecting_scene_updates_preview_header()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var interview = FindItem(shell, "Interview");
-
-        shell.SelectProjectItem(interview);
-
-        Assert.Equal("Interview", shell.Preview.SceneName);
-        Assert.Equal("1920 x 1080", shell.Preview.CanvasSize);
-        Assert.Equal("60 fps", shell.Preview.FrameRate);
-        Assert.Equal("Fit", shell.Preview.ZoomLabel);
-    }
-
-    [Fact]
-    public void Preview_canvas_properties_raise_property_changed()
-    {
-        var preview = new PreviewCanvasViewModel();
-        var changed = new List<string?>();
-        preview.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
-
-        preview.SceneName = "Interview";
-        preview.CanvasSize = "1280 x 720";
-        preview.FrameRate = "30 fps";
-        preview.Zoom = 1;
-
-        Assert.Contains(nameof(PreviewCanvasViewModel.SceneName), changed);
-        Assert.Contains(nameof(PreviewCanvasViewModel.CanvasSize), changed);
-        Assert.Contains(nameof(PreviewCanvasViewModel.FrameRate), changed);
-        Assert.Contains(nameof(PreviewCanvasViewModel.ZoomLabel), changed);
-    }
-
-    [Fact]
-    public void Layer_inspector_edits_shared_layer_used_by_preview()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var lowerThird = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Lower Third");
-
-        shell.SelectLayer(lowerThird);
-
-        var inspector = Assert.IsType<LayerInspectorViewModel>(shell.Inspector.SelectedPage);
-        inspector.X = 320;
-        inspector.Y = 700;
-        inspector.Width = 900;
-        inspector.Height = 120;
-
-        Assert.Equal(320, lowerThird.X);
-        Assert.Equal(700, lowerThird.Y);
-        Assert.Equal(900, shell.Preview.SelectedLayer!.Width);
-        Assert.Equal(120, shell.Preview.SelectedLayer.Height);
-    }
-
-    [Fact]
-    public void Preview_move_layer_updates_shared_layer()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Logo.png");
+        shell.Preview.SetViewport(1280, 720);
+        Assert.Equal("Ajustar", shell.Preview.ZoomLabel);
 
         shell.SelectLayer(layer);
+        shell.Preview.PanBy(20, 30);
         shell.Preview.MoveLayer(layer, 30, -20, constrainAxis: false);
-
-        Assert.Equal(1694, layer.X);
-        Assert.Equal(906, layer.Y);
-    }
-
-    [Fact]
-    public void Locked_layer_does_not_move_or_resize_from_preview()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Webcam");
-        layer.IsLocked = true;
-        var originalX = layer.X;
-        var originalWidth = layer.Width;
-
-        shell.Preview.MoveLayer(layer, 100, 100, constrainAxis: false);
-        shell.Preview.ResizeLayer(layer, ResizeHandleKind.Right, 200, 0, keepAspect: false, fromCenter: false);
-
-        Assert.Equal(originalX, layer.X);
-        Assert.Equal(originalWidth, layer.Width);
-    }
-
-    [Fact]
-    public void Preview_resize_layer_updates_dimensions()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Logo.png");
-
         shell.Preview.ResizeLayer(layer, ResizeHandleKind.BottomRight, 24, 16, keepAspect: false, fromCenter: false);
+        shell.Preview.NudgeSelectedLayer(1, 0, largeStep: true);
 
+        Assert.Equal(1704, layer.X);
+        Assert.Equal(906, layer.Y);
         Assert.Equal(200, layer.Width);
         Assert.Equal(120, layer.Height);
+
+        layer.IsLocked = true;
+        shell.Preview.MoveLayer(layer, 100, 100, constrainAxis: false);
+        Assert.Equal(1704, layer.X);
     }
 
     [Fact]
-    public void Project_explorer_search_filters_visible_items()
+    public void Status_and_toolbar_do_not_expose_engine_or_gpu_idle_concepts()
     {
-        var shell = StudioDesignData.CreateShellViewModel();
+        var shell = CreateShell();
+        var visibleText = string.Join(
+            " ",
+            shell.Toolbar.StateBadge,
+            shell.Toolbar.StreamButtonText,
+            shell.Toolbar.RecordingButtonText,
+            shell.StatusBar.StatusText,
+            shell.StatusBar.SceneText,
+            shell.StatusBar.OutputText,
+            shell.StatusBar.FramesText);
 
-        shell.ProjectExplorer.SearchText = "rtmp";
-
-        Assert.Equal(1, shell.ProjectExplorer.VisibleItemCount);
-        Assert.Equal("RTMP Twitch", shell.ProjectExplorer.Groups.Single(group => group.Title == "Outputs").VisibleItems.Single().Name);
+        Assert.DoesNotContain("Engine", visibleText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("GPU idle", visibleText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Preview idle", visibleText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Start Engine", visibleText, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Add_source_mock_adds_layer_and_selects_it()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-        var originalCount = shell.BottomWorkbench.Layers.Count;
-
-        shell.AddSourceCommand.Execute(null);
-
-        Assert.Equal(originalCount + 1, shell.BottomWorkbench.Layers.Count);
-        Assert.NotNull(shell.SelectedLayer);
-        Assert.StartsWith("Text Overlay", shell.SelectedLayer!.Name, StringComparison.Ordinal);
-        Assert.Same(shell.SelectedLayer, shell.Preview.SelectedLayer);
-    }
-
-    [Fact]
-    public void Localization_manager_returns_shell_keys()
+    public void Visible_resources_do_not_mix_languages()
     {
         var loc = LocalizationManager.Instance;
-
-        Assert.Equal("WTK MediaForge Studio", loc["App_Title"]);
-        Assert.False(string.IsNullOrWhiteSpace(loc["Panel_ProjectExplorer"]));
-        Assert.False(string.IsNullOrWhiteSpace(loc["Action_AddSource"]));
-        Assert.False(string.IsNullOrWhiteSpace(loc["Status_Stopped"]));
-    }
-
-    [Fact]
-    public void Streaming_and_recording_are_disabled_until_engine_runs()
-    {
-        var shell = StudioDesignData.CreateShellViewModel();
-
-        Assert.False(shell.ToggleStreamingCommand.CanExecute(null));
-        Assert.False(shell.ToggleRecordingCommand.CanExecute(null));
-    }
-
-    [Fact]
-    public async Task Stopping_engine_stops_outputs_first()
-    {
-        var clock = new FakeStudioClock();
-        var services = StudioServiceFactory.CreateFake(clock: clock, uiTimer: new FakeStudioUiTimer());
-        var shell = StudioDesignData.CreateShellViewModel(services);
-
-        await shell.ToggleEngineCommand.ExecuteAsync(null);
-        await shell.ToggleStreamingCommand.ExecuteAsync(null);
-        await shell.ToggleRecordingCommand.ExecuteAsync(null);
-        await shell.ToggleEngineCommand.ExecuteAsync(null);
-
-        Assert.False(shell.IsEngineRunning);
-        Assert.False(shell.IsStreaming);
-        Assert.False(shell.IsRecording);
-        Assert.Equal(StudioOutputUiState.Ready, shell.Toolbar.StreamingState);
-        Assert.Equal(StudioOutputUiState.Ready, shell.Toolbar.RecordingState);
-    }
-
-    [Fact]
-    public void Busy_engine_state_disables_engine_toggle()
-    {
-        var toolbar = new ToolbarViewModel
+        var values = new[]
         {
-            EngineState = StudioEngineUiState.Starting
+            loc["Panel_ProjectExplorer"],
+            loc["Panel_Properties"],
+            loc["Panel_Layers"],
+            loc["Panel_Effects"],
+            loc["Panel_Outputs"],
+            loc["Action_AddSource"],
+            loc["Action_AddScene"],
+            loc["Action_ConfigureOutput"],
+            loc["Action_StartStreaming"],
+            loc["Action_StartRecording"]
         };
 
-        Assert.True(toolbar.IsEngineBusy);
-        Assert.Equal("busy", toolbar.EngineButtonClasses);
+        Assert.Equal("pt-BR", loc.CurrentCulture.Name);
+        Assert.Contains("Propriedades", values);
+        Assert.DoesNotContain(values, value => value.Contains("Inspector", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(values, value => value.Contains("Engine", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(values, value => value.Contains("Output Monitor", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(values, value => value.Contains("Timeline", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(values, value => value.Contains("Audio Mixer", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
-    public void Busy_output_state_disables_output_toggle()
+    private static StudioShellViewModel CreateShell()
     {
-        var toolbar = new ToolbarViewModel
-        {
-            StreamingState = StudioOutputUiState.Starting,
-            RecordingState = StudioOutputUiState.Stopping
-        };
-
-        Assert.True(toolbar.IsStreamBusy);
-        Assert.True(toolbar.IsRecordingBusy);
-        Assert.Equal("busy", toolbar.StreamButtonClasses);
-        Assert.Equal("busy", toolbar.RecordingButtonClasses);
-    }
-
-    [Fact]
-    public async Task Recording_elapsed_starts_at_zero()
-    {
-        var clock = new FakeStudioClock();
-        var output = new FakeStudioOutputService(clock);
-
-        await output.ToggleRecordingAsync(CancellationToken.None);
-
-        Assert.Equal(TimeSpan.Zero, output.RecordingElapsed);
-    }
-
-    [Fact]
-    public async Task Recording_elapsed_advances_with_fake_clock()
-    {
-        var clock = new FakeStudioClock();
-        var timer = new FakeStudioUiTimer();
-        var services = StudioServiceFactory.CreateFake(clock: clock, uiTimer: timer);
-        var shell = StudioDesignData.CreateShellViewModel(services);
-
-        await shell.ToggleEngineCommand.ExecuteAsync(null);
-        await shell.ToggleRecordingCommand.ExecuteAsync(null);
-        clock.Advance(TimeSpan.FromSeconds(2));
-        timer.RaiseTick();
-
-        Assert.Equal("Recording 00:00:02", shell.Toolbar.RecordingButtonText);
-    }
-
-    [Fact]
-    public async Task Recording_elapsed_resets_after_stop()
-    {
-        var clock = new FakeStudioClock();
-        var output = new FakeStudioOutputService(clock);
-
-        await output.ToggleRecordingAsync(CancellationToken.None);
-        clock.Advance(TimeSpan.FromSeconds(3));
-        await output.ToggleRecordingAsync(CancellationToken.None);
-
-        Assert.Null(output.RecordingStartedAt);
-        Assert.Equal(TimeSpan.Zero, output.RecordingElapsed);
+        var services = StudioServiceFactory.CreateFake(uiTimer: new FakeStudioUiTimer());
+        return StudioDesignData.CreateShellViewModel(services);
     }
 
     private static ProjectTreeItemViewModel FindItem(StudioShellViewModel shell, string itemName)

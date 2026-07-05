@@ -5,27 +5,32 @@
              x:DataType="vm:BottomWorkbenchViewModel">
   <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
     <StackPanel>
-      <Grid ColumnDefinitions="180,140,*,110,120,120" Margin="8,0,8,8">
-        <TextBlock Text="Output" Classes="muted" />
-        <TextBlock Grid.Column="1" Text="Type" Classes="muted" />
-        <TextBlock Grid.Column="2" Text="Destination" Classes="muted" />
-        <TextBlock Grid.Column="3" Text="Bitrate" Classes="muted" />
-        <TextBlock Grid.Column="4" Text="Status" Classes="muted" />
-        <TextBlock Grid.Column="5" Text="Actions" Classes="muted" />
+      <Grid ColumnDefinitions="180,160,140,*,110,120,120" Margin="8,0,8,8">
+        <TextBlock Text="Saida" Classes="muted" />
+        <TextBlock Grid.Column="1" Text="Cena" Classes="muted" />
+        <TextBlock Grid.Column="2" Text="Tipo" Classes="muted" />
+        <TextBlock Grid.Column="3" Text="Destino" Classes="muted" />
+        <TextBlock Grid.Column="4" Text="Bitrate" Classes="muted" />
+        <TextBlock Grid.Column="5" Text="Estado" Classes="muted" />
+        <TextBlock Grid.Column="6" Text="Acao" Classes="muted" />
       </Grid>
       <ItemsControl ItemsSource="{Binding Outputs}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:OutputMonitorItemViewModel">
             <Border Classes="metric-card" Margin="0,0,0,8">
-              <Grid ColumnDefinitions="180,140,*,110,120,120">
+              <Grid ColumnDefinitions="180,160,140,*,110,120,120">
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="{Binding Type}" Classes="secondary" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="2" Text="{Binding Destination}" Classes="secondary" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="3" Text="{Binding Bitrate}" Classes="secondary" VerticalAlignment="Center" />
-                <Border Grid.Column="4" Classes="status-pill" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <TextBlock Grid.Column="1" Text="{Binding SceneName}" Classes="secondary" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding Type}" Classes="secondary" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding Destination}" Classes="secondary" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="4" Text="{Binding Bitrate}" Classes="secondary" VerticalAlignment="Center" />
+                <Border Grid.Column="5" Classes="status-pill" HorizontalAlignment="Left" VerticalAlignment="Center">
                   <TextBlock Text="{Binding StateText}" Classes="accent" />
                 </Border>
-                <Button Grid.Column="5" Content="Details" Classes="flat" IsEnabled="False" />
+                <Button Grid.Column="6"
+                        Content="Editar"
+                        Classes="flat"
+                        Command="{Binding SelectCommand}" />
               </Grid>
             </Border>
           </DataTemplate>

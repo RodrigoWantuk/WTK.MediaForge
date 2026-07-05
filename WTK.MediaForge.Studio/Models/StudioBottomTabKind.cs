@@ -4,9 +4,5 @@ public enum StudioBottomTabKind
 {
     Layers,
     Effects,
-    Timeline,
-    Diagnostics,
-    Performance,
-    OutputMonitor,
-    AudioMixer
+    Outputs
 }

@@ -8,15 +8,14 @@
   <Border Background="{StaticResource MfSurface1Brush}"
           BorderBrush="{StaticResource MfBorderBrush}"
           BorderThickness="0,1,0,0">
-    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="10,0">
+    <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="10,0">
       <TextBlock Text="{Binding StatusText}" Classes="secondary" VerticalAlignment="Center" />
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="16,0,0,0" VerticalAlignment="Center">
         <components:StudioIcon Kind="{x:Static models:StudioIconKind.Success}" IconSize="13" Foreground="{StaticResource MfSuccessBrush}" />
-        <TextBlock Text="{Binding EngineText}" Classes="success" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding SceneText}" Classes="success" VerticalAlignment="Center" />
       </StackPanel>
-      <TextBlock Grid.Column="2" Text="{Binding GpuText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
-      <TextBlock Grid.Column="3" Text="{Binding OutputText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
-      <TextBlock Grid.Column="4" Text="{Binding FramesText}" Classes="muted" VerticalAlignment="Center" Margin="16,0,0,0" />
+      <TextBlock Grid.Column="2" Text="{Binding OutputText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
+      <TextBlock Grid.Column="3" Text="{Binding FramesText}" Classes="muted" VerticalAlignment="Center" Margin="16,0,0,0" />
     </Grid>
   </Border>
 </UserControl>

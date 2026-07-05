@@ -5,7 +5,7 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <data name="App_Title" xml:space="preserve"><value>WTK MediaForge Studio</value></data>
-  <data name="App_Subtitle" xml:space="preserve"><value>Live production workspace</value></data>
+  <data name="App_Subtitle" xml:space="preserve"><value>Live production visual editor</value></data>
   <data name="Menu_File" xml:space="preserve"><value>File</value></data>
   <data name="Menu_Edit" xml:space="preserve"><value>Edit</value></data>
   <data name="Menu_View" xml:space="preserve"><value>View</value></data>
@@ -20,26 +20,19 @@
   <data name="Common_Settings" xml:space="preserve"><value>Settings</value></data>
   <data name="Common_Search" xml:space="preserve"><value>Search</value></data>
   <data name="Common_Planned" xml:space="preserve"><value>Planned</value></data>
-  <data name="Action_AddSource" xml:space="preserve"><value>Add Source</value></data>
-  <data name="Action_AddScene" xml:space="preserve"><value>Add Scene</value></data>
-  <data name="Action_StartEngine" xml:space="preserve"><value>Start Engine</value></data>
-  <data name="Action_StopEngine" xml:space="preserve"><value>Stop Engine</value></data>
-  <data name="Action_StartStreaming" xml:space="preserve"><value>Start Streaming</value></data>
-  <data name="Action_StopStreaming" xml:space="preserve"><value>Stop Streaming</value></data>
-  <data name="Action_StartRecording" xml:space="preserve"><value>Start Recording</value></data>
-  <data name="Action_StopRecording" xml:space="preserve"><value>Stop Recording</value></data>
-  <data name="Panel_ProjectExplorer" xml:space="preserve"><value>Project Explorer</value></data>
-  <data name="Panel_Inspector" xml:space="preserve"><value>Inspector</value></data>
+  <data name="Common_Configure" xml:space="preserve"><value>Configure</value></data>
+  <data name="Action_AddSource" xml:space="preserve"><value>Add source</value></data>
+  <data name="Action_AddScene" xml:space="preserve"><value>Add scene</value></data>
+  <data name="Action_ConfigureOutput" xml:space="preserve"><value>Configure output</value></data>
+  <data name="Action_StartStreaming" xml:space="preserve"><value>Go live</value></data>
+  <data name="Action_StopStreaming" xml:space="preserve"><value>Stop live</value></data>
+  <data name="Action_StartRecording" xml:space="preserve"><value>Record</value></data>
+  <data name="Action_StopRecording" xml:space="preserve"><value>Stop recording</value></data>
+  <data name="Panel_ProjectExplorer" xml:space="preserve"><value>Project</value></data>
+  <data name="Panel_Properties" xml:space="preserve"><value>Properties</value></data>
   <data name="Panel_Layers" xml:space="preserve"><value>Layers</value></data>
   <data name="Panel_Effects" xml:space="preserve"><value>Effects</value></data>
-  <data name="Panel_Timeline" xml:space="preserve"><value>Timeline</value></data>
-  <data name="Panel_Diagnostics" xml:space="preserve"><value>Diagnostics</value></data>
-  <data name="Panel_Performance" xml:space="preserve"><value>Performance</value></data>
-  <data name="Panel_OutputMonitor" xml:space="preserve"><value>Output Monitor</value></data>
-  <data name="Panel_AudioMixer" xml:space="preserve"><value>Audio Mixer</value></data>
-  <data name="Status_Engine" xml:space="preserve"><value>Engine</value></data>
-  <data name="Status_Running" xml:space="preserve"><value>Running</value></data>
-  <data name="Status_Stopped" xml:space="preserve"><value>Stopped</value></data>
-  <data name="Status_PreviewIdle" xml:space="preserve"><value>Preview idle</value></data>
+  <data name="Panel_Outputs" xml:space="preserve"><value>Outputs</value></data>
+  <data name="Status_Ready" xml:space="preserve"><value>Ready</value></data>
   <data name="Status_DroppedFrames" xml:space="preserve"><value>Dropped frames</value></data>
 </root>

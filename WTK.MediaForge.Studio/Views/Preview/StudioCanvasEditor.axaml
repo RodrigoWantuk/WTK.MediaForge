@@ -1,0 +1,178 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
+             xmlns:controls="using:WTK.MediaForge.Studio.Views.Controls"
+             xmlns:preview="using:WTK.MediaForge.Studio.Views.Preview"
+             x:Class="WTK.MediaForge.Studio.Views.Preview.StudioCanvasEditor"
+             x:DataType="vm:PreviewCanvasViewModel"
+             Focusable="True"
+             SizeChanged="OnEditorSizeChanged"
+             PointerPressed="OnEditorPointerPressed"
+             PointerMoved="OnEditorPointerMoved"
+             PointerReleased="OnEditorPointerReleased"
+             PointerWheelChanged="OnEditorPointerWheelChanged"
+             KeyDown="OnEditorKeyDown"
+             KeyUp="OnEditorKeyUp">
+  <Grid x:Name="EditorRoot"
+        Background="{StaticResource MfBackgroundBrush}"
+        ClipToBounds="True">
+    <controls:CheckerboardControl Opacity="0.34" />
+
+    <Canvas x:Name="SceneCanvas"
+            Width="{Binding CanvasWidth}"
+            Height="{Binding CanvasHeight}"
+            Background="{StaticResource MfCanvasFrameBrush}"
+            ClipToBounds="True">
+      <Canvas.RenderTransform>
+        <TransformGroup>
+          <ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" />
+          <TranslateTransform X="{Binding PanX}" Y="{Binding PanY}" />
+        </TransformGroup>
+      </Canvas.RenderTransform>
+
+      <preview:PreviewFrameHost Width="{Binding CanvasWidth}"
+                                Height="{Binding CanvasHeight}" />
+
+      <ItemsControl ItemsSource="{Binding Layers}"
+                    Width="{Binding CanvasWidth}"
+                    Height="{Binding CanvasHeight}"
+                    IsHitTestVisible="False">
+        <ItemsControl.Styles>
+          <Style Selector="ItemsControl > ContentPresenter"
+                 x:CompileBindings="False">
+            <Setter Property="Canvas.Left" Value="{Binding X}" />
+            <Setter Property="Canvas.Top" Value="{Binding Y}" />
+            <Setter Property="Panel.ZIndex" Value="{Binding Order}" />
+          </Style>
+        </ItemsControl.Styles>
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <Canvas />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:LayerItemViewModel">
+            <Border Classes="canvas-layer"
+                    Classes.selected="{Binding IsSelected}"
+                    IsVisible="{Binding IsVisible}"
+                    Width="{Binding Width}"
+                    Height="{Binding Height}"
+                    Opacity="{Binding LayerOpacity}"
+                    Panel.ZIndex="{Binding Order}">
+              <Border.RenderTransform>
+                <RotateTransform Angle="{Binding RotationDegrees}" />
+              </Border.RenderTransform>
+              <Grid>
+                <Border CornerRadius="7"
+                        Background="{StaticResource MfOverlayBrush}" />
+                <Grid ColumnDefinitions="Auto,*"
+                      Margin="18"
+                      VerticalAlignment="Center">
+                  <Border Classes="icon-box"
+                          Width="42"
+                          Height="42"
+                          VerticalAlignment="Center">
+                    <components:StudioIcon Kind="{Binding IconKind}"
+                                           IconSize="22"
+                                           Foreground="{StaticResource MfAccentBrush}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                  </Border>
+                  <StackPanel Grid.Column="1"
+                              Margin="12,0,0,0"
+                              VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}"
+                               FontSize="22"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Source}"
+                               Classes="secondary" />
+                  </StackPanel>
+                </Grid>
+
+                <Grid IsVisible="{Binding IsSelected}">
+                  <Border Classes="resize-handle"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Top"
+                          Margin="-7" />
+                  <Border Classes="resize-handle"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Top"
+                          Margin="0,-7,0,0" />
+                  <Border Classes="resize-handle"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Top"
+                          Margin="0,-7,-7,0" />
+                  <Border Classes="resize-handle"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Center"
+                          Margin="0,0,-7,0" />
+                  <Border Classes="resize-handle"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Bottom"
+                          Margin="0,0,-7,-7" />
+                  <Border Classes="resize-handle"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Bottom"
+                          Margin="0,0,0,-7" />
+                  <Border Classes="resize-handle"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Bottom"
+                          Margin="-7,0,0,-7" />
+                  <Border Classes="resize-handle"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Center"
+                          Margin="-7,0,0,0" />
+                </Grid>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Grid Width="{Binding CanvasWidth}"
+            Height="{Binding CanvasHeight}"
+            IsHitTestVisible="False"
+            IsVisible="{Binding IsGridVisible}"
+            Opacity="0.34">
+        <Grid ColumnDefinitions="*,*,*,*,*,*" RowDefinitions="*,*,*,*,*">
+          <Border Grid.Column="1" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+          <Border Grid.Column="2" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+          <Border Grid.Column="3" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+          <Border Grid.Column="4" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+          <Border Grid.Column="5" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+          <Border Grid.Row="1" Grid.ColumnSpan="6" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="0,1,0,0" />
+          <Border Grid.Row="2" Grid.ColumnSpan="6" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="0,1,0,0" />
+          <Border Grid.Row="3" Grid.ColumnSpan="6" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="0,1,0,0" />
+          <Border Grid.Row="4" Grid.ColumnSpan="6" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="0,1,0,0" />
+        </Grid>
+      </Grid>
+
+      <Border Width="{Binding CanvasWidth}"
+              Height="{Binding CanvasHeight}"
+              Margin="96,54"
+              BorderBrush="{StaticResource MfWarningBrush}"
+              BorderThickness="1"
+              Opacity="0.52"
+              IsHitTestVisible="False"
+              IsVisible="{Binding IsSafeFrameVisible}" />
+    </Canvas>
+
+    <StackPanel HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="18"
+                Orientation="Horizontal"
+                Spacing="8">
+      <Border Classes="status-pill">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Layer}" IconSize="14" Foreground="{StaticResource MfAccentBrush}" />
+          <TextBlock Text="{Binding SelectedLayerName}" Classes="accent" />
+        </StackPanel>
+      </Border>
+      <Border Classes="status-pill">
+        <TextBlock Text="{Binding ZoomLabel}" Classes="secondary" />
+      </Border>
+    </StackPanel>
+  </Grid>
+</UserControl>

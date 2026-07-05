@@ -284,6 +284,9 @@ public sealed partial class StudioOutput : ObservableObject
     private string _codec = string.Empty;
     private string _bitrate = string.Empty;
     private string _secret = string.Empty;
+    private string _assignedSceneId = string.Empty;
+    private bool _isEnabled = true;
+    private bool _isConfigured = true;
     private StudioOutputState _state = StudioOutputState.Running;
 
     public string Id
@@ -326,6 +329,24 @@ public sealed partial class StudioOutput : ObservableObject
     {
         get => _secret;
         set => SetProperty(ref _secret, value);
+    }
+
+    public string AssignedSceneId
+    {
+        get => _assignedSceneId;
+        set => SetProperty(ref _assignedSceneId, value);
+    }
+
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        set => SetProperty(ref _isEnabled, value);
+    }
+
+    public bool IsConfigured
+    {
+        get => _isConfigured;
+        set => SetProperty(ref _isConfigured, value);
     }
 
     public StudioOutputState State

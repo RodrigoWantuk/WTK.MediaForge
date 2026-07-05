@@ -29,42 +29,42 @@
 
       <Menu Grid.Column="1" Margin="18,0,0,0" Background="Transparent" VerticalAlignment="Center">
         <MenuItem Header="{loc:Loc Menu_File}">
-          <MenuItem Header="New Project" Command="{Binding NewProjectCommand}" />
-          <MenuItem Header="Open Project" Command="{Binding OpenProjectCommand}" />
-          <MenuItem Header="Save" Command="{Binding SaveProjectCommand}" />
-          <MenuItem Header="Save As" IsEnabled="False" />
+          <MenuItem Header="Novo projeto" Command="{Binding NewProjectCommand}" />
+          <MenuItem Header="Abrir projeto" Command="{Binding OpenProjectCommand}" />
+          <MenuItem Header="Salvar" Command="{Binding SaveProjectCommand}" />
+          <MenuItem Header="Salvar como" IsEnabled="False" />
           <Separator />
-          <MenuItem Header="Exit" IsEnabled="False" />
+          <MenuItem Header="Sair" IsEnabled="False" />
         </MenuItem>
         <MenuItem Header="{loc:Loc Menu_Edit}">
-          <MenuItem Header="Undo" IsEnabled="False" />
-          <MenuItem Header="Redo" IsEnabled="False" />
+          <MenuItem Header="Desfazer" IsEnabled="False" />
+          <MenuItem Header="Refazer" IsEnabled="False" />
         </MenuItem>
         <MenuItem Header="{loc:Loc Menu_View}">
-          <MenuItem Header="Diagnostics" />
-          <MenuItem Header="Performance" />
+          <MenuItem Header="Diagnosticos avancados" IsEnabled="False" />
+          <MenuItem Header="Metricas avancadas" IsEnabled="False" />
         </MenuItem>
         <MenuItem Header="{loc:Loc Menu_Scene}">
-          <MenuItem Header="Add Scene" Command="{Binding AddSceneCommand}" />
-          <MenuItem Header="Duplicate Scene" IsEnabled="False" />
-          <MenuItem Header="Delete Scene" IsEnabled="False" />
+          <MenuItem Header="Adicionar cena" Command="{Binding AddSceneCommand}" />
+          <MenuItem Header="Duplicar cena" IsEnabled="False" />
+          <MenuItem Header="Excluir cena" IsEnabled="False" />
         </MenuItem>
         <MenuItem Header="{loc:Loc Menu_Source}">
-          <MenuItem Header="Add Source" Command="{Binding AddSourceCommand}" />
-          <MenuItem Header="Configure Source" IsEnabled="False" />
-          <MenuItem Header="Remove Source" IsEnabled="False" />
+          <MenuItem Header="Adicionar fonte" Command="{Binding AddSourceCommand}" />
+          <MenuItem Header="Configurar fonte" IsEnabled="False" />
+          <MenuItem Header="Remover fonte" IsEnabled="False" />
         </MenuItem>
         <MenuItem Header="{loc:Loc Menu_Output}">
-          <MenuItem Header="Start Streaming" Command="{Binding ToggleStreamingCommand}" />
-          <MenuItem Header="Start Recording" Command="{Binding ToggleRecordingCommand}" />
-          <MenuItem Header="Output Manager" IsEnabled="False" />
+          <MenuItem Header="Transmitir" Command="{Binding ToggleStreamingCommand}" />
+          <MenuItem Header="Gravar" Command="{Binding ToggleRecordingCommand}" />
+          <MenuItem Header="Configurar saidas" Command="{Binding ConfigureOutputCommand}" />
         </MenuItem>
         <MenuItem Header="{loc:Loc Menu_Tools}">
-          <MenuItem Header="Settings" Command="{Binding SettingsCommand}" />
+          <MenuItem Header="Configuracoes" Command="{Binding SettingsCommand}" />
         </MenuItem>
         <MenuItem Header="{loc:Loc Menu_Help}">
-          <MenuItem Header="Documentation" IsEnabled="False" />
-          <MenuItem Header="About" IsEnabled="False" />
+          <MenuItem Header="Documentacao" IsEnabled="False" />
+          <MenuItem Header="Sobre" IsEnabled="False" />
         </MenuItem>
       </Menu>
 
@@ -72,7 +72,7 @@
         <Border Classes="badge">
           <TextBlock Text="{Binding Toolbar.StateBadge}" Classes="accent" FontSize="11" />
         </Border>
-        <TextBlock Text="{Binding TitleBar.EngineState}" Classes="secondary" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding TitleBar.WorkspaceState}" Classes="secondary" VerticalAlignment="Center" />
       </StackPanel>
     </Grid>
   </Border>

@@ -8,8 +8,6 @@ public interface IStudioDisplayNameService
 
     string GetOutputTypeName(string typeId);
 
-    string GetEngineStateName(StudioEngineUiState state);
-
     string GetOutputStateName(StudioOutputUiState state);
 
     string GetOutputMonitorStateName(StudioOutputState state);
@@ -28,14 +26,14 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
         return typeId switch
         {
             "source.webcam" => "Webcam",
-            "source.desktop" => "Desktop Capture",
-            "source.window" => "Window Capture",
-            "source.image" => "Image",
-            "source.media" => "Media File",
-            "source.text" => "Text",
-            "source.solid" => "Solid Color",
+            "source.desktop" => "Captura de tela",
+            "source.window" => "Janela",
+            "source.image" => "Imagem",
+            "source.media" => "Arquivo de midia",
+            "source.text" => "Texto",
+            "source.solid" => "Cor solida",
             "source.ndi" => "NDI",
-            "source.rtsp" => "RTSP / IP Camera",
+            "source.rtsp" => "RTSP / Camera IP",
             _ => HumanizeTypeId(typeId)
         };
     }
@@ -45,24 +43,12 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
         return typeId switch
         {
             "output.preview" => "Preview",
-            "output.file.mp4" => "Recording MP4",
-            "output.rtmp" => "RTMP Streaming",
-            "output.srt" => "SRT Streaming",
+            "output.file.mp4" => "Gravacao MP4",
+            "output.rtmp" => "Transmissao RTMP",
+            "output.srt" => "Transmissao SRT",
             "output.ndi" => "NDI",
-            "output.virtual-camera" => "Virtual Camera",
+            "output.virtual-camera" => "Camera virtual",
             _ => HumanizeTypeId(typeId)
-        };
-    }
-
-    public string GetEngineStateName(StudioEngineUiState state)
-    {
-        return state switch
-        {
-            StudioEngineUiState.Starting => "Starting",
-            StudioEngineUiState.Running => "Running",
-            StudioEngineUiState.Stopping => "Stopping",
-            StudioEngineUiState.Failed => "Needs attention",
-            _ => "Stopped"
         };
     }
 
@@ -70,13 +56,13 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
     {
         return state switch
         {
-            StudioOutputUiState.NotConfigured => "Not configured",
-            StudioOutputUiState.Ready => "Ready",
-            StudioOutputUiState.Starting => "Starting",
-            StudioOutputUiState.Running => "Running",
-            StudioOutputUiState.Stopping => "Stopping",
-            StudioOutputUiState.Error => "Error",
-            StudioOutputUiState.Planned => "Planned",
+            StudioOutputUiState.NotConfigured => "Nao configurada",
+            StudioOutputUiState.Ready => "Pronta",
+            StudioOutputUiState.Starting => "Iniciando",
+            StudioOutputUiState.Running => "Ativa",
+            StudioOutputUiState.Stopping => "Parando",
+            StudioOutputUiState.Error => "Erro",
+            StudioOutputUiState.Planned => "Planejada",
             _ => state.ToString()
         };
     }
@@ -85,11 +71,11 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
     {
         return state switch
         {
-            StudioOutputState.Planned => "Planned",
-            StudioOutputState.Running => "Running",
-            StudioOutputState.Recording => "Recording",
-            StudioOutputState.Live => "Live",
-            StudioOutputState.Warning => "Warning",
+            StudioOutputState.Planned => "Planejada",
+            StudioOutputState.Running => "Ativa",
+            StudioOutputState.Recording => "Gravando",
+            StudioOutputState.Live => "Ao vivo",
+            StudioOutputState.Warning => "Atencao",
             StudioOutputState.Offline => "Offline",
             _ => state.ToString()
         };
@@ -99,11 +85,11 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
     {
         return state switch
         {
-            StudioHealthState.Healthy => "Healthy",
-            StudioHealthState.Warning => "Warning",
-            StudioHealthState.Error => "Error",
-            StudioHealthState.Planned => "Planned",
-            StudioHealthState.Disabled => "Disabled",
+            StudioHealthState.Healthy => "Saudavel",
+            StudioHealthState.Warning => "Atencao",
+            StudioHealthState.Error => "Erro",
+            StudioHealthState.Planned => "Planejado",
+            StudioHealthState.Disabled => "Desabilitado",
             _ => state.ToString()
         };
     }
@@ -112,10 +98,10 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
     {
         return layerType switch
         {
-            "Text" => "Text",
-            "Image" => "Image",
-            "Source" => "Source",
-            "Solid" => "Solid Color",
+            "Text" => "Texto",
+            "Image" => "Imagem",
+            "Source" => "Fonte",
+            "Solid" => "Cor solida",
             _ => layerType
         };
     }
@@ -125,9 +111,9 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
         return mode switch
         {
             StudioBlendMode.Alpha => "Normal",
-            StudioBlendMode.Additive => "Add",
-            StudioBlendMode.Multiply => "Multiply",
-            StudioBlendMode.Screen => "Screen",
+            StudioBlendMode.Additive => "Adicionar",
+            StudioBlendMode.Multiply => "Multiplicar",
+            StudioBlendMode.Screen => "Tela",
             _ => mode.ToString()
         };
     }
@@ -136,7 +122,7 @@ public sealed class StudioDisplayNameService : IStudioDisplayNameService
     {
         if (string.IsNullOrWhiteSpace(typeId))
         {
-            return "Unknown";
+            return "Desconhecido";
         }
 
         var last = typeId.Split('.', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? typeId;

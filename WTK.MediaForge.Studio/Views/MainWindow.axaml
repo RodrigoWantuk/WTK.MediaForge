@@ -22,7 +22,7 @@
       <RowDefinition Height="44" />
       <RowDefinition Height="*" />
       <RowDefinition Height="5" />
-      <RowDefinition Height="300" MinHeight="220" MaxHeight="480" />
+      <RowDefinition Height="260" MinHeight="210" MaxHeight="420" />
       <RowDefinition Height="27" />
     </Grid.RowDefinitions>
     <shell:StudioTitleBarView Grid.Row="0" />
@@ -30,11 +30,11 @@
 
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="280" MinWidth="240" MaxWidth="420" />
+        <ColumnDefinition Width="276" MinWidth="240" MaxWidth="420" />
         <ColumnDefinition Width="5" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="5" />
-        <ColumnDefinition Width="360" MinWidth="320" MaxWidth="520" />
+        <ColumnDefinition Width="380" MinWidth="340" MaxWidth="520" />
       </Grid.ColumnDefinitions>
 
       <shell:ProjectExplorerView Grid.Column="0"
@@ -67,5 +67,32 @@
                                DataContext="{Binding BottomWorkbench}" />
     <shell:StudioStatusBarView Grid.Row="5"
                                DataContext="{Binding StatusBar}" />
+
+    <Border Grid.RowSpan="6"
+            Background="#99000000"
+            IsVisible="{Binding Dialog.IsOpen}">
+      <Border Width="440"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Classes="dialog-card">
+        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="14">
+          <TextBlock Text="{Binding Dialog.Title}" Classes="title" FontSize="18" />
+          <TextBlock Grid.Row="1"
+                     Text="{Binding Dialog.Message}"
+                     Classes="secondary"
+                     TextWrapping="Wrap" />
+          <StackPanel Grid.Row="2"
+                      Orientation="Horizontal"
+                      Spacing="8"
+                      HorizontalAlignment="Right">
+            <Button Content="{Binding Dialog.SecondaryText}"
+                    Command="{Binding CancelDialogCommand}" />
+            <Button Content="{Binding Dialog.PrimaryText}"
+                    Classes="primary"
+                    Command="{Binding ConfirmDialogCommand}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Border>
   </Grid>
 </Window>

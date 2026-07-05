@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Avalonia.Threading;
+using WTK.MediaForge.Studio.DesignData;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.ViewModels;
 
@@ -248,20 +249,22 @@ public sealed class StudioInspectorPageFactory : IInspectorPageFactory
 {
     public InspectorPageViewModel Create(StudioSelectionState selection, ICommand? reconnectCommand)
     {
+        var document = StudioMockDocumentFactory.Create();
         return selection.Kind switch
         {
-            StudioSelectionKind.Scene => new SceneInspectorViewModel(selection.DisplayName, selection.Detail),
-            StudioSelectionKind.Source => new SourceInspectorViewModel(selection.DisplayName, selection.TypeId, selection.Detail)
-            {
-                ReconnectCommand = reconnectCommand
-            },
+            StudioSelectionKind.Scene => new SceneInspectorViewModel(
+                document.Scenes.FirstOrDefault(scene => scene.Id == selection.EntityId) ?? document.Scenes[0],
+                document.Outputs),
+            StudioSelectionKind.Source => new SourceInspectorViewModel(
+                document.Sources.FirstOrDefault(source => source.Id == selection.EntityId) ?? document.Sources[0],
+                document.Scenes[0].DisplayName,
+                null,
+                reconnectCommand),
             StudioSelectionKind.Layer => new LayerInspectorViewModel(selection.DisplayName, selection.Detail),
             StudioSelectionKind.Output => new OutputInspectorViewModel(
-                selection.DisplayName,
-                selection.Destination,
-                selection.Codec,
-                selection.Bitrate,
-                selection.Secret),
+                document.Outputs.FirstOrDefault(output => output.Id == selection.EntityId) ?? document.Outputs[0],
+                document.Scenes,
+                static () => { }),
             StudioSelectionKind.Preset => new PresetInspectorViewModel(selection.DisplayName, selection.Metadata),
             StudioSelectionKind.Package => new PackageInspectorViewModel(selection.DisplayName, selection.Metadata),
             _ => new EmptyInspectorViewModel()

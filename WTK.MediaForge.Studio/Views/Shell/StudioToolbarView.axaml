@@ -42,16 +42,16 @@
             <TextBlock Text="{loc:Loc Action_AddScene}" />
           </StackPanel>
         </Button>
+        <Button Command="{Binding ConfigureOutputCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Output}" IconSize="14" />
+            <TextBlock Text="{loc:Loc Action_ConfigureOutput}" />
+          </StackPanel>
+        </Button>
       </StackPanel>
 
       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-        <Button Command="{Binding ToggleEngineCommand}" Classes="primary">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Success}" IconSize="14" />
-            <TextBlock Text="{Binding Toolbar.EngineButtonText}" />
-          </StackPanel>
-        </Button>
-        <Button Command="{Binding ToggleStreamingCommand}">
+        <Button Command="{Binding ToggleStreamingCommand}" Classes="primary">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Stream}" IconSize="14" />
             <TextBlock Text="{Binding Toolbar.StreamButtonText}" />

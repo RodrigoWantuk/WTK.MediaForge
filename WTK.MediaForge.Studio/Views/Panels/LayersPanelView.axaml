@@ -11,11 +11,11 @@
       <TextBlock Grid.Column="1" Text="" />
       <TextBlock Grid.Column="2" Text="" />
       <TextBlock Grid.Column="3" Text="#" Classes="muted" />
-      <TextBlock Grid.Column="4" Text="Layer" Classes="muted" />
-      <TextBlock Grid.Column="5" Text="Type" Classes="muted" />
-      <TextBlock Grid.Column="6" Text="Source" Classes="muted" />
-      <TextBlock Grid.Column="7" Text="Status" Classes="muted" />
-      <TextBlock Grid.Column="8" Text="Order" Classes="muted" />
+      <TextBlock Grid.Column="4" Text="Camada" Classes="muted" />
+      <TextBlock Grid.Column="5" Text="Tipo" Classes="muted" />
+      <TextBlock Grid.Column="6" Text="Fonte" Classes="muted" />
+      <TextBlock Grid.Column="7" Text="Estado" Classes="muted" />
+      <TextBlock Grid.Column="8" Text="Ordem" Classes="muted" />
     </Grid>
 
     <ListBox Grid.Row="1"
@@ -56,8 +56,8 @@
                   <TextBlock Text="{Binding VisibilityGlyph}" Classes="secondary" FontSize="11" />
                 </Border>
                 <StackPanel Grid.Column="8" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-                  <Button Classes="flat" Command="{Binding MoveUpCommand}" CommandParameter="{Binding}" Content="Up" />
-                  <Button Classes="flat" Command="{Binding MoveDownCommand}" CommandParameter="{Binding}" Content="Down" />
+                  <Button Classes="flat" Command="{Binding MoveUpCommand}" CommandParameter="{Binding}" Content="Subir" />
+                  <Button Classes="flat" Command="{Binding MoveDownCommand}" CommandParameter="{Binding}" Content="Descer" />
                 </StackPanel>
               </Grid>
             </Border>

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Localization;
 using WTK.MediaForge.Studio.Models;
 
@@ -27,7 +28,7 @@ public abstract class InspectorPageViewModel : ViewModelBase
 public sealed class EmptyInspectorViewModel : InspectorPageViewModel
 {
     public EmptyInspectorViewModel()
-        : base(StudioSelectionKind.None, "Nothing selected", "Select a scene, source, layer, or output.", "--")
+        : base(StudioSelectionKind.None, "Nada selecionado", "Selecione uma cena, fonte, camada ou saida.", "--")
     {
     }
 }
@@ -49,7 +50,7 @@ public sealed class LayerInspectorViewModel : InspectorPageViewModel
     }
 
     public LayerInspectorViewModel(LayerItemViewModel layer)
-        : base(StudioSelectionKind.Layer, layer.Name, $"{layer.Type} / {layer.Source}", layer.IconKind.ToString())
+        : base(StudioSelectionKind.Layer, layer.Name, $"{new StudioDisplayNameService().GetLayerTypeName(layer.Type)} / {layer.Source}", layer.IconKind.ToString())
     {
         _layer = layer;
         _layer.PropertyChanged += (_, e) =>
@@ -232,28 +233,33 @@ public sealed class LayerInspectorViewModel : InspectorPageViewModel
 
 public sealed class SourceInspectorViewModel : InspectorPageViewModel
 {
-    public SourceInspectorViewModel(string sourceName, string sourceType, string endpoint)
-        : base(StudioSelectionKind.Source, sourceName, new StudioDisplayNameService().GetSourceTypeName(sourceType), "SRC")
+    public SourceInspectorViewModel(StudioSource source, string currentSceneName, ICommand? addToSceneCommand, ICommand? reconnectCommand)
+        : base(StudioSelectionKind.Source, source.DisplayName, new StudioDisplayNameService().GetSourceTypeName(source.TypeId), "SRC")
     {
-        SourceType = new StudioDisplayNameService().GetSourceTypeName(sourceType);
-        Endpoint = endpoint;
-        Width = sourceType.Contains("desktop", StringComparison.OrdinalIgnoreCase) ? 2560 : 1920;
-        Height = sourceType.Contains("desktop", StringComparison.OrdinalIgnoreCase) ? 1440 : 1080;
-        FrameRate = sourceType.Contains("media", StringComparison.OrdinalIgnoreCase) ? 29.97 : 60;
-        Status = "Healthy";
-        DeviceOptions = sourceType.Contains("desktop", StringComparison.OrdinalIgnoreCase)
-            ? new ObservableCollection<string> { "Display 1", "Display 2", "Window Capture" }
-            : new ObservableCollection<string> { "Logitech BRIO", "USB Camera", "Virtual Camera" };
+        SourceType = new StudioDisplayNameService().GetSourceTypeName(source.TypeId);
+        Endpoint = source.Endpoint;
+        CurrentSceneName = currentSceneName;
+        Width = source.TypeId.Contains("desktop", StringComparison.OrdinalIgnoreCase) ? 2560 : 1920;
+        Height = source.TypeId.Contains("desktop", StringComparison.OrdinalIgnoreCase) ? 1440 : 1080;
+        FrameRate = source.TypeId.Contains("media", StringComparison.OrdinalIgnoreCase) ? 29.97 : 60;
+        Status = new StudioDisplayNameService().GetHealthName(source.Health);
+        DeviceOptions = source.TypeId.Contains("desktop", StringComparison.OrdinalIgnoreCase)
+            ? new ObservableCollection<string> { "Monitor 1", "Monitor 2", "Janela" }
+            : new ObservableCollection<string> { "Logitech BRIO", "USB Camera", "Camera virtual" };
         ResolutionOptions = new ObservableCollection<string> { "1920 x 1080", "1280 x 720", "2560 x 1440" };
         FrameRateOptions = new ObservableCollection<string> { "30 fps", "60 fps", "120 fps" };
         SelectedDevice = DeviceOptions[0];
         SelectedResolution = ResolutionOptions[0];
         SelectedFrameRate = FrameRateOptions[1];
+        AddToSceneCommand = addToSceneCommand;
+        ReconnectCommand = reconnectCommand;
     }
 
     public string SourceType { get; }
 
     public string Endpoint { get; }
+
+    public string CurrentSceneName { get; }
 
     public int Width { get; }
 
@@ -279,19 +285,28 @@ public sealed class SourceInspectorViewModel : InspectorPageViewModel
 
     public string SelectedFrameRate { get; set; }
 
-    public ICommand? ReconnectCommand { get; init; }
+    public ICommand? AddToSceneCommand { get; }
+
+    public ICommand? ReconnectCommand { get; }
 }
 
 public sealed class SceneInspectorViewModel : InspectorPageViewModel
 {
-    public SceneInspectorViewModel(string sceneName, string linkedOutputs)
-        : base(StudioSelectionKind.Scene, sceneName, "Canvas scene", "SCN")
+    public SceneInspectorViewModel(StudioScene scene, IEnumerable<StudioOutput> linkedOutputs)
+        : base(StudioSelectionKind.Scene, scene.DisplayName, scene.IsProgram ? "Cena principal" : "Cena em edicao", "SCN")
     {
-        CanvasSize = "1920 x 1080";
-        AspectRatio = "16:9";
-        LinkedOutputs = linkedOutputs;
-        LayerCount = 4;
-        CompositionMode = "GPU render graph planned";
+        CanvasSize = $"{scene.Canvas.Width:0} x {scene.Canvas.Height:0}";
+        AspectRatio = scene.Canvas.Width / Math.Max(1, scene.Canvas.Height) > 1.7 ? "16:9" : "Personalizado";
+        LinkedOutputs = string.Join(", ", linkedOutputs.Select(output => output.DisplayName));
+        if (string.IsNullOrWhiteSpace(LinkedOutputs))
+        {
+            LinkedOutputs = "Nenhuma saida vinculada";
+        }
+
+        LayerCount = scene.Layers.Count;
+        FrameRateText = $"{scene.Canvas.FrameRate:0.##} fps";
+        BackgroundColor = scene.Canvas.BackgroundColor;
+        IsProgram = scene.IsProgram;
     }
 
     public string CanvasSize { get; }
@@ -302,62 +317,136 @@ public sealed class SceneInspectorViewModel : InspectorPageViewModel
 
     public int LayerCount { get; }
 
-    public string CompositionMode { get; }
+    public string FrameRateText { get; }
+
+    public string BackgroundColor { get; }
+
+    public bool IsProgram { get; }
 }
 
 public sealed class OutputInspectorViewModel : InspectorPageViewModel
 {
-    private readonly string _streamKey;
-    private string _destination;
-    private string _codec;
-    private string _bitrate;
-    private string _health;
-    private string _selectedOutputType;
-    private string _selectedCodec;
-    private string _selectedPreset;
-    private int _keyframeSeconds = 2;
+    private readonly StudioOutput _output;
+    private readonly Action _onRouteChanged;
 
-    public OutputInspectorViewModel(string outputName, string destination, string codec, string bitrate, string streamKey)
-        : base(StudioSelectionKind.Output, outputName, "Render output route", "OUT")
+    public OutputInspectorViewModel(StudioOutput output, IEnumerable<StudioScene> scenes, Action onRouteChanged)
+        : base(StudioSelectionKind.Output, output.DisplayName, "Saida roteada para cena", "OUT")
     {
-        _destination = destination;
-        _codec = codec;
-        _bitrate = bitrate;
-        _health = "Ready";
-        _streamKey = streamKey;
-        OutputTypes = new ObservableCollection<string> { "Preview", "Recording MP4", "RTMP Streaming", "Virtual Camera" };
+        _output = output;
+        _onRouteChanged = onRouteChanged;
+        Scenes = new ObservableCollection<SceneRouteOptionViewModel>(
+            scenes.Select(scene => new SceneRouteOptionViewModel(scene.Id, scene.DisplayName)));
+        OutputTypes = new ObservableCollection<string> { "Preview", "Gravacao MP4", "Transmissao RTMP", "Camera virtual" };
         CodecOptions = new ObservableCollection<string> { "H.264 (NVENC)", "H.264", "HEVC", "RGBA" };
-        PresetOptions = new ObservableCollection<string> { "Quality", "Balanced", "Low Latency" };
-        _selectedOutputType = new StudioDisplayNameService().GetOutputTypeName(string.IsNullOrWhiteSpace(streamKey) ? "output.file.mp4" : "output.rtmp");
-        _selectedCodec = string.IsNullOrWhiteSpace(codec) ? CodecOptions[0] : codec;
-        _selectedPreset = PresetOptions[0];
+        PresetOptions = new ObservableCollection<string> { "Qualidade", "Balanceado", "Baixa latencia" };
+        SelectedOutputType = new StudioDisplayNameService().GetOutputTypeName(output.TypeId);
+        SelectedCodec = string.IsNullOrWhiteSpace(output.Codec) ? CodecOptions[0] : output.Codec;
+        SelectedPreset = PresetOptions[0];
     }
 
     public string Destination
     {
-        get => _destination;
-        set => SetProperty(ref _destination, value);
+        get => _output.Destination;
+        set
+        {
+            if (_output.Destination != value)
+            {
+                _output.Destination = value;
+                OnPropertyChanged();
+            }
+        }
     }
 
     public string Codec
     {
-        get => _codec;
-        set => SetProperty(ref _codec, value);
+        get => _output.Codec;
+        set
+        {
+            if (_output.Codec != value)
+            {
+                _output.Codec = value;
+                OnPropertyChanged();
+            }
+        }
     }
 
     public string Bitrate
     {
-        get => _bitrate;
-        set => SetProperty(ref _bitrate, value);
+        get => _output.Bitrate;
+        set
+        {
+            if (_output.Bitrate != value)
+            {
+                _output.Bitrate = value;
+                OnPropertyChanged();
+            }
+        }
     }
 
-    public string Health
+    public string Health => _output.IsConfigured ? "Configurada" : "Falta configurar";
+
+    public bool IsEnabled
     {
-        get => _health;
-        set => SetProperty(ref _health, value);
+        get => _output.IsEnabled;
+        set
+        {
+            if (_output.IsEnabled != value)
+            {
+                _output.IsEnabled = value;
+                OnPropertyChanged();
+            }
+        }
     }
 
-    public string MaskedStreamKey => string.IsNullOrWhiteSpace(_streamKey) ? "Not configured" : "sk_live_************";
+    public bool IsConfigured
+    {
+        get => _output.IsConfigured;
+        set
+        {
+            if (_output.IsConfigured != value)
+            {
+                _output.IsConfigured = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Health));
+                _onRouteChanged();
+            }
+        }
+    }
+
+    public string SelectedSceneId
+    {
+        get => _output.AssignedSceneId;
+        set
+        {
+            if (_output.AssignedSceneId != value)
+            {
+                _output.AssignedSceneId = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(SelectedSceneName));
+                OnPropertyChanged(nameof(SelectedScene));
+                _onRouteChanged();
+            }
+        }
+    }
+
+    public string SelectedSceneName => Scenes.FirstOrDefault(scene => scene.Id == SelectedSceneId)?.Name ?? "Sem cena";
+
+    public SceneRouteOptionViewModel? SelectedScene
+    {
+        get => Scenes.FirstOrDefault(scene => scene.Id == SelectedSceneId);
+        set
+        {
+            if (value is not null)
+            {
+                SelectedSceneId = value.Id;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string MaskedStreamKey => string.IsNullOrWhiteSpace(_output.Secret) ? "Nao configurada" : "sk_live_************";
+
+    public ObservableCollection<SceneRouteOptionViewModel> Scenes { get; }
 
     public ObservableCollection<string> OutputTypes { get; }
 
@@ -365,31 +454,28 @@ public sealed class OutputInspectorViewModel : InspectorPageViewModel
 
     public ObservableCollection<string> PresetOptions { get; }
 
-    public string SelectedOutputType
+    public string SelectedOutputType { get; set; }
+
+    public string SelectedCodec { get; set; }
+
+    public string SelectedPreset { get; set; }
+
+    public int KeyframeSeconds { get; set; } = 2;
+
+    internal string RawStreamKeyForTests => _output.Secret;
+}
+
+public sealed class SceneRouteOptionViewModel
+{
+    public SceneRouteOptionViewModel(string id, string name)
     {
-        get => _selectedOutputType;
-        set => SetProperty(ref _selectedOutputType, value);
+        Id = id;
+        Name = name;
     }
 
-    public string SelectedCodec
-    {
-        get => _selectedCodec;
-        set => SetProperty(ref _selectedCodec, value);
-    }
+    public string Id { get; }
 
-    public string SelectedPreset
-    {
-        get => _selectedPreset;
-        set => SetProperty(ref _selectedPreset, value);
-    }
-
-    public int KeyframeSeconds
-    {
-        get => _keyframeSeconds;
-        set => SetProperty(ref _keyframeSeconds, Math.Clamp(value, 1, 10));
-    }
-
-    internal string RawStreamKeyForTests => _streamKey;
+    public string Name { get; }
 }
 
 public sealed class PresetInspectorViewModel : InspectorPageViewModel
@@ -414,8 +500,8 @@ public sealed class PackageInspectorViewModel : InspectorPageViewModel
     public PackageInspectorViewModel(string packageName, string description)
         : base(StudioSelectionKind.Package, packageName, description, "PKG")
     {
-        Items = "Scenes, presets, source definitions";
-        ImportMode = "Dry-run validation available";
+        Items = "Cenas, presets e definicoes de fonte";
+        ImportMode = "Validacao antes de importar";
     }
 
     public string Items { get; }

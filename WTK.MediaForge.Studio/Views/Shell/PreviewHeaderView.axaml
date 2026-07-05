@@ -9,16 +9,16 @@
     <Grid ColumnDefinitions="*,Auto" Margin="12,0">
       <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
         <TextBlock Text="{Binding SceneName}" Classes="title" />
+        <Border Classes="badge">
+          <TextBlock Text="{Binding SceneRole}" Classes="accent" FontSize="11" />
+        </Border>
         <TextBlock Text="{Binding CanvasSize}" Classes="secondary" />
         <TextBlock Text="{Binding FrameRate}" Classes="secondary" />
-        <Border Classes="badge">
-          <TextBlock Text="{Binding TimingLabel}" Classes="success" FontSize="11" />
-        </Border>
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
         <Button Content="{Binding ZoomLabel}" Classes="flat" />
-        <Button Content="Grid" Command="{Binding ToggleGridCommand}" />
-        <Button Content="Safe" Command="{Binding ToggleSafeFrameCommand}" />
+        <Button Content="Grade" Command="{Binding ToggleGridCommand}" />
+        <Button Content="Area segura" Command="{Binding ToggleSafeFrameCommand}" />
       </StackPanel>
     </Grid>
   </Border>

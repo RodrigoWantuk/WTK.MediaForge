@@ -10,7 +10,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         "WTK.MediaForge.Studio.Resources.Strings",
         typeof(LocalizationManager).Assembly);
 
-    private CultureInfo _currentCulture = CultureInfo.CurrentUICulture;
+    private CultureInfo _currentCulture = CultureInfo.GetCultureInfo("pt-BR");
 
     private LocalizationManager()
     {

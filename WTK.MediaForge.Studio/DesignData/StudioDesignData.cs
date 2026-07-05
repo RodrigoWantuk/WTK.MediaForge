@@ -13,13 +13,8 @@ public static class StudioDesignData
         var shell = services is null ? new StudioShellViewModel() : new StudioShellViewModel(services);
 
         shell.LoadDesignData(
-            CreateProjectGroups(document),
-            CreateLayers(document),
-            CreateEffects(document),
-            CreateDiagnostics(),
-            CreatePerformanceMetrics(),
-            CreateOutputs(document),
-            CreateAudioStrips());
+            document,
+            CreateDiagnostics());
 
         return shell;
     }
@@ -40,8 +35,9 @@ public static class StudioDesignData
                 scene.IsProgram ? "PROGRAM" : string.Empty,
                 id: scene.Id,
                 typeId: "scene.canvas",
-                detail: string.Join(", ", scene.OutputIds
-                    .Select(id => document.Outputs.FirstOrDefault(output => output.Id == id)?.DisplayName)
+                detail: string.Join(", ", document.Outputs
+                    .Where(output => output.AssignedSceneId == scene.Id)
+                    .Select(output => output.DisplayName)
                     .Where(name => !string.IsNullOrWhiteSpace(name)))) { IsActive = scene.IsProgram })
             .ToArray();
 
@@ -62,12 +58,13 @@ public static class StudioDesignData
             .Select(output => new ProjectTreeItemViewModel(
                 StudioProjectItemKind.Output,
                 output.DisplayName,
-                output.TypeId == "output.preview" ? "Local preview panel" : $"{output.Codec} / {output.Bitrate}",
+                OutputMetadata(document, output),
                 GetOutputIcon(output.TypeId),
-                output.State == StudioOutputState.Planned ? "PLAN" : output.State.ToString().ToUpperInvariant(),
-                output.State == StudioOutputState.Planned ? StudioHealthState.Planned : StudioHealthState.Healthy,
+                output.IsConfigured ? output.State.ToString().ToUpperInvariant() : "CONFIG",
+                output.IsConfigured ? output.State == StudioOutputState.Planned ? StudioHealthState.Planned : StudioHealthState.Healthy : StudioHealthState.Warning,
                 output.Id,
                 output.TypeId,
+                detail: AssignedSceneName(document, output),
                 destination: output.Destination,
                 codec: output.Codec,
                 bitrate: output.Bitrate,
@@ -97,11 +94,11 @@ public static class StudioDesignData
 
         return new[]
         {
-            new ProjectTreeGroupViewModel("Scenes", scenes),
-            new ProjectTreeGroupViewModel("Sources", sources),
-            new ProjectTreeGroupViewModel("Outputs", outputs),
+            new ProjectTreeGroupViewModel("Cenas", scenes),
+            new ProjectTreeGroupViewModel("Fontes", sources),
+            new ProjectTreeGroupViewModel("Saidas", outputs),
             new ProjectTreeGroupViewModel("Presets", presets),
-            new ProjectTreeGroupViewModel("Packages", packages)
+            new ProjectTreeGroupViewModel("Pacotes", packages)
         };
     }
 
@@ -139,11 +136,11 @@ public static class StudioDesignData
     {
         return new[]
         {
-            new DiagnosticLogItemViewModel("12:16:01", "INFO", "Studio shell booted in UI mock mode."),
-            new DiagnosticLogItemViewModel("12:16:03", "INFO", "Project package validation completed."),
-            new DiagnosticLogItemViewModel("12:16:07", "WARN", "RTMP credentials are masked in the mock inspector."),
-            new DiagnosticLogItemViewModel("12:16:12", "INFO", "Preview canvas overlay selected Lower Third."),
-            new DiagnosticLogItemViewModel("12:16:19", "INFO", "Render graph preview is represented as design data only.")
+            new DiagnosticLogItemViewModel("12:16:01", "INFO", "Studio aberto em modo de mock visual."),
+            new DiagnosticLogItemViewModel("12:16:03", "INFO", "Projeto de exemplo carregado."),
+            new DiagnosticLogItemViewModel("12:16:07", "WARN", "Segredos de transmissao aparecem mascarados."),
+            new DiagnosticLogItemViewModel("12:16:12", "INFO", "Camada Lower Third selecionada no canvas."),
+            new DiagnosticLogItemViewModel("12:16:19", "INFO", "Preview real sera conectado somente depois do gate de runtime.")
         };
     }
 
@@ -167,13 +164,31 @@ public static class StudioDesignData
     {
         return document.Outputs
             .Select(output => new OutputMonitorItemViewModel(
+                output.Id,
                 output.DisplayName,
                 output.State,
+                AssignedSceneName(document, output),
                 output.Destination,
                 output.Bitrate,
-                output.State == StudioOutputState.Planned ? "Planned" : "Healthy",
+                output.IsConfigured ? "Configurada" : "Falta configurar",
                 output.TypeId))
             .ToArray();
+    }
+
+    private static string OutputMetadata(StudioDocument document, StudioOutput output)
+    {
+        var sceneName = AssignedSceneName(document, output);
+        if (!output.IsConfigured)
+        {
+            return $"{sceneName} / falta configurar";
+        }
+
+        return $"{sceneName} / {output.Codec} / {output.Bitrate}";
+    }
+
+    private static string AssignedSceneName(StudioDocument document, StudioOutput output)
+    {
+        return document.Scenes.FirstOrDefault(scene => scene.Id == output.AssignedSceneId)?.DisplayName ?? "Sem cena";
     }
 
     public static IReadOnlyList<AudioStripViewModel> CreateAudioStrips()

@@ -6,34 +6,40 @@
              x:Class="WTK.MediaForge.Studio.Views.Panels.EffectsPanelView"
              x:DataType="vm:BottomWorkbenchViewModel">
   <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <ItemsControl ItemsSource="{Binding Effects}" Margin="12">
-      <ItemsControl.ItemTemplate>
-        <DataTemplate x:DataType="vm:EffectItemViewModel">
-          <Border Classes="metric-card" Margin="0,0,0,8">
+    <StackPanel Margin="12" Spacing="8">
+      <TextBlock Text="{Binding EffectsContextTitle}" Classes="title" />
+      <TextBlock Text="Os efeitos aparecem apenas para a camada selecionada."
+                 Classes="secondary"
+                 TextWrapping="Wrap" />
+      <ItemsControl ItemsSource="{Binding Effects}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:EffectItemViewModel">
+            <Border Classes="metric-card" Margin="0,0,0,8">
             <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto" RowSpacing="8" ColumnSpacing="10">
               <components:StudioIcon Kind="{x:Static models:StudioIconKind.Effect}" IconSize="18" Foreground="{StaticResource MfAccentBrush}" VerticalAlignment="Center" />
               <StackPanel Grid.Column="1" Spacing="2">
                 <TextBlock Text="{Binding Name}" Classes="title" />
                 <TextBlock Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" />
               </StackPanel>
-              <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsEnabled, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+              <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsEnabled, Mode=TwoWay}" OnContent="Ativo" OffContent="Inativo" />
 
               <Grid Grid.Row="2" Grid.ColumnSpan="3" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
-                <TextBlock Text="Key color" Classes="muted" VerticalAlignment="Center" />
+                <TextBlock Text="Cor chave" Classes="muted" VerticalAlignment="Center" />
                 <Border Grid.Column="1" Classes="source-thumb" Height="26">
                   <TextBlock Text="{Binding KeyColor}" Classes="mono accent" VerticalAlignment="Center" HorizontalAlignment="Center" />
                 </Border>
-                <TextBlock Grid.Row="1" Text="Tolerance" Classes="muted" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Text="Tolerancia" Classes="muted" VerticalAlignment="Center" />
                 <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Tolerance, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" />
                 <TextBlock Grid.Row="2" Text="Spill" Classes="muted" VerticalAlignment="Center" />
                 <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Spill, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" />
-                <TextBlock Grid.Row="3" Text="Edge" Classes="muted" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="3" Text="Borda" Classes="muted" VerticalAlignment="Center" />
                 <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding EdgeSmooth, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" />
               </Grid>
             </Grid>
-          </Border>
-        </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
   </ScrollViewer>
 </UserControl>

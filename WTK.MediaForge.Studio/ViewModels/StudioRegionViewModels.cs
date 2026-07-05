@@ -7,8 +7,8 @@ namespace WTK.MediaForge.Studio.ViewModels;
 
 public sealed class TitleBarViewModel : ViewModelBase
 {
-    private string _engineState = "Engine stopped";
     private string _projectName = "Live Production Workspace";
+    private string _workspaceState = "Modo edicao";
 
     public string ProductName { get; } = "WTK MediaForge Studio";
 
@@ -18,28 +18,20 @@ public sealed class TitleBarViewModel : ViewModelBase
         set => SetProperty(ref _projectName, value);
     }
 
-    public string EngineState
+    public string WorkspaceState
     {
-        get => _engineState;
-        set => SetProperty(ref _engineState, value);
+        get => _workspaceState;
+        set => SetProperty(ref _workspaceState, value);
     }
 }
 
 public sealed class ToolbarViewModel : ViewModelBase
 {
-    private string _engineButtonText = "Start Engine";
-    private string _streamButtonText = "Start Stream";
-    private string _recordingButtonText = "Start Recording";
-    private string _stateBadge = "Preview mode";
-    private StudioEngineUiState _engineState = StudioEngineUiState.Stopped;
+    private string _streamButtonText = "Transmitir";
+    private string _recordingButtonText = "Gravar";
+    private string _stateBadge = "Modo edicao";
     private StudioOutputUiState _streamingState = StudioOutputUiState.Ready;
     private StudioOutputUiState _recordingState = StudioOutputUiState.Ready;
-
-    public string EngineButtonText
-    {
-        get => _engineButtonText;
-        set => SetProperty(ref _engineButtonText, value);
-    }
 
     public string StreamButtonText
     {
@@ -57,19 +49,6 @@ public sealed class ToolbarViewModel : ViewModelBase
     {
         get => _stateBadge;
         set => SetProperty(ref _stateBadge, value);
-    }
-
-    public StudioEngineUiState EngineState
-    {
-        get => _engineState;
-        set
-        {
-            if (SetProperty(ref _engineState, value))
-            {
-                OnPropertyChanged(nameof(IsEngineBusy));
-                OnPropertyChanged(nameof(EngineButtonClasses));
-            }
-        }
     }
 
     public StudioOutputUiState StreamingState
@@ -98,25 +77,16 @@ public sealed class ToolbarViewModel : ViewModelBase
         }
     }
 
-    public bool IsEngineBusy => EngineState is StudioEngineUiState.Starting or StudioEngineUiState.Stopping;
-
     public bool IsStreamBusy => StreamingState is StudioOutputUiState.Starting or StudioOutputUiState.Stopping;
 
     public bool IsRecordingBusy => RecordingState is StudioOutputUiState.Starting or StudioOutputUiState.Stopping;
-
-    public string EngineButtonClasses => EngineState switch
-    {
-        StudioEngineUiState.Running => "danger",
-        StudioEngineUiState.Failed => "danger",
-        StudioEngineUiState.Starting or StudioEngineUiState.Stopping => "busy",
-        _ => "primary"
-    };
 
     public string StreamButtonClasses => StreamingState switch
     {
         StudioOutputUiState.Running => "primary live",
         StudioOutputUiState.Error => "danger",
         StudioOutputUiState.Starting or StudioOutputUiState.Stopping => "busy",
+        StudioOutputUiState.NotConfigured => "warning",
         _ => "primary"
     };
 
@@ -125,6 +95,7 @@ public sealed class ToolbarViewModel : ViewModelBase
         StudioOutputUiState.Running => "danger recording",
         StudioOutputUiState.Error => "danger",
         StudioOutputUiState.Starting or StudioOutputUiState.Stopping => "busy",
+        StudioOutputUiState.NotConfigured => "warning",
         _ => "danger"
     };
 }
@@ -200,11 +171,15 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     private bool _isGridVisible = true;
     private bool _isSafeFrameVisible = true;
     private LayerItemViewModel? _selectedLayer;
-    private string _timingLabel = "16.6 ms";
     private string _sceneName = "Main Scene";
+    private string _sceneRole = "Cena em edicao";
     private string _canvasSize = "1920 x 1080";
     private string _frameRate = "60 fps";
     private double _zoom = 0.82;
+    private double _panX;
+    private double _panY;
+    private double _viewportWidth;
+    private double _viewportHeight;
     private bool _isFitZoom = true;
 
     public PreviewCanvasViewModel()
@@ -212,9 +187,14 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         ToggleGridCommand = new RelayCommand(() => IsGridVisible = !IsGridVisible);
         ToggleSafeFrameCommand = new RelayCommand(() => IsSafeFrameVisible = !IsSafeFrameVisible);
         FitZoomCommand = new RelayCommand(FitZoom);
-        ActualSizeCommand = new RelayCommand(() => Zoom = 1);
-        ZoomInCommand = new RelayCommand(() => Zoom = Math.Min(2.5, Zoom + 0.1));
-        ZoomOutCommand = new RelayCommand(() => Zoom = Math.Max(0.25, Zoom - 0.1));
+        ActualSizeCommand = new RelayCommand(() =>
+        {
+            IsFitZoom = false;
+            Zoom = 1;
+            CenterCanvas();
+        });
+        ZoomInCommand = new RelayCommand(() => ZoomAtCenter(0.1));
+        ZoomOutCommand = new RelayCommand(() => ZoomAtCenter(-0.1));
         SelectLayerCommand = new RelayCommand<LayerItemViewModel>(RequestLayerSelection, layer => layer is not null);
     }
 
@@ -232,6 +212,12 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         set => SetProperty(ref _sceneName, value);
     }
 
+    public string SceneRole
+    {
+        get => _sceneRole;
+        set => SetProperty(ref _sceneRole, value);
+    }
+
     public string CanvasSize
     {
         get => _canvasSize;
@@ -244,10 +230,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         set => SetProperty(ref _frameRate, value);
     }
 
-    public string ZoomLabel
-    {
-        get => _isFitZoom ? "Fit" : Zoom >= 0.995 && Zoom <= 1.005 ? "100%" : $"{Zoom * 100:0}%";
-    }
+    public string ZoomLabel => IsFitZoom ? "Ajustar" : Zoom >= 0.995 && Zoom <= 1.005 ? "100%" : $"{Zoom * 100:0}%";
 
     public ICommand ToggleGridCommand { get; }
 
@@ -275,10 +258,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         set => SetProperty(ref _isSafeFrameVisible, value);
     }
 
-    public string SelectedLayerName
-    {
-        get => SelectedLayer?.Name ?? "No layer selected";
-    }
+    public string SelectedLayerName => SelectedLayer?.Name ?? "Nenhuma camada selecionada";
 
     public LayerItemViewModel? SelectedLayer
     {
@@ -292,33 +272,70 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         }
     }
 
-    public string TimingLabel
-    {
-        get => _timingLabel;
-        set => SetProperty(ref _timingLabel, value);
-    }
-
     public double Zoom
     {
         get => _zoom;
         set
         {
-            if (SetProperty(ref _zoom, Math.Clamp(value, 0.25, 2.5)))
+            if (SetProperty(ref _zoom, Math.Clamp(value, 0.1, 4)))
             {
-                _isFitZoom = false;
+                if (!_isFitZoom)
+                {
+                    OnPropertyChanged(nameof(ZoomLabel));
+                }
+            }
+        }
+    }
+
+    public double PanX
+    {
+        get => _panX;
+        set => SetProperty(ref _panX, value);
+    }
+
+    public double PanY
+    {
+        get => _panY;
+        set => SetProperty(ref _panY, value);
+    }
+
+    public bool IsFitZoom
+    {
+        get => _isFitZoom;
+        private set
+        {
+            if (SetProperty(ref _isFitZoom, value))
+            {
                 OnPropertyChanged(nameof(ZoomLabel));
             }
         }
     }
 
-    public void SetCanvas(double width, double height, double frameRate)
+    public void SetCanvas(double width, double height, double frameRate, bool isProgram)
     {
         CanvasWidth = width;
         CanvasHeight = height;
         CanvasSize = $"{width:0} x {height:0}";
         FrameRate = $"{frameRate:0.##} fps";
+        SceneRole = isProgram ? "Cena principal" : "Cena em edicao";
         OnPropertyChanged(nameof(CanvasWidth));
         OnPropertyChanged(nameof(CanvasHeight));
+        FitZoom();
+    }
+
+    public void SetViewport(double width, double height)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        _viewportWidth = width;
+        _viewportHeight = height;
+        if (IsFitZoom)
+        {
+            FitZoom();
+        }
     }
 
     public void SelectLayerFromOwner(LayerItemViewModel? layer)
@@ -342,8 +359,21 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         LayerSelectionRequested?.Invoke(this, new LayerSelectionRequestedEventArgs(layer));
     }
 
+    public LayerItemViewModel? HitTest(double canvasX, double canvasY)
+    {
+        return Layers
+            .Where(layer => layer.IsVisible
+                && canvasX >= layer.X
+                && canvasX <= layer.X + layer.Width
+                && canvasY >= layer.Y
+                && canvasY <= layer.Y + layer.Height)
+            .OrderByDescending(layer => layer.Order)
+            .FirstOrDefault();
+    }
+
     public void MoveLayer(LayerItemViewModel layer, double deltaX, double deltaY, bool constrainAxis)
     {
+        IsFitZoom = false;
         if (constrainAxis)
         {
             if (Math.Abs(deltaX) >= Math.Abs(deltaY))
@@ -359,6 +389,17 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         layer.MoveBy(deltaX, deltaY, CanvasWidth, CanvasHeight);
     }
 
+    public void NudgeSelectedLayer(double deltaX, double deltaY, bool largeStep)
+    {
+        if (SelectedLayer is null)
+        {
+            return;
+        }
+
+        var factor = largeStep ? 10 : 1;
+        MoveLayer(SelectedLayer, deltaX * factor, deltaY * factor, constrainAxis: false);
+    }
+
     public void ResizeLayer(
         LayerItemViewModel layer,
         ResizeHandleKind handle,
@@ -367,15 +408,48 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         bool keepAspect,
         bool fromCenter)
     {
+        IsFitZoom = false;
         layer.Resize(handle, deltaX, deltaY, CanvasWidth, CanvasHeight, keepAspect, fromCenter);
+    }
+
+    public void PanBy(double deltaX, double deltaY)
+    {
+        IsFitZoom = false;
+        PanX += deltaX;
+        PanY += deltaY;
     }
 
     public void FitZoom()
     {
-        _zoom = 0.82;
-        _isFitZoom = true;
+        var availableWidth = _viewportWidth > 0 ? Math.Max(320, _viewportWidth - 72) : 1600;
+        var availableHeight = _viewportHeight > 0 ? Math.Max(220, _viewportHeight - 72) : 900;
+        var zoomX = availableWidth / CanvasWidth;
+        var zoomY = availableHeight / CanvasHeight;
+        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.1, 4);
+        IsFitZoom = true;
+        CenterCanvas();
         OnPropertyChanged(nameof(Zoom));
         OnPropertyChanged(nameof(ZoomLabel));
+    }
+
+    public void ZoomAtCenter(double delta)
+    {
+        IsFitZoom = false;
+        Zoom = Math.Clamp(Zoom + delta, 0.1, 4);
+        CenterCanvas();
+    }
+
+    private void CenterCanvas()
+    {
+        if (_viewportWidth <= 0 || _viewportHeight <= 0)
+        {
+            PanX = 0;
+            PanY = 0;
+            return;
+        }
+
+        PanX = (_viewportWidth - CanvasWidth * Zoom) / 2;
+        PanY = (_viewportHeight - CanvasHeight * Zoom) / 2;
     }
 }
 
@@ -396,15 +470,11 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
     private bool _suppressLayerSelectionCommand;
     private bool _isLayersSelected;
     private bool _isEffectsSelected;
-    private bool _isTimelineSelected;
-    private bool _isDiagnosticsSelected;
-    private bool _isPerformanceSelected;
-    private bool _isOutputMonitorSelected;
-    private bool _isAudioMixerSelected;
+    private bool _isOutputsSelected;
+    private string _effectsContextTitle = "Selecione uma camada";
 
-    public BottomWorkbenchViewModel(ObservableCollection<DiagnosticLogItemViewModel>? diagnostics = null)
+    public BottomWorkbenchViewModel()
     {
-        Diagnostics = diagnostics ?? new ObservableCollection<DiagnosticLogItemViewModel>();
         SelectTabCommand = new RelayCommand<BottomTabViewModel>(SelectTab, tab => tab is not null);
     }
 
@@ -414,11 +484,11 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
 
     public ObservableCollection<EffectItemViewModel> Effects { get; } = new();
 
-    public ObservableCollection<DiagnosticLogItemViewModel> Diagnostics { get; }
+    public ObservableCollection<OutputMonitorItemViewModel> Outputs { get; } = new();
+
+    public ObservableCollection<DiagnosticLogItemViewModel> Diagnostics { get; } = new();
 
     public ObservableCollection<PerformanceMetricViewModel> PerformanceMetrics { get; } = new();
-
-    public ObservableCollection<OutputMonitorItemViewModel> Outputs { get; } = new();
 
     public ObservableCollection<AudioStripViewModel> AudioStrips { get; } = new();
 
@@ -447,6 +517,19 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
         }
     }
 
+    public string EffectsContextTitle
+    {
+        get => _effectsContextTitle;
+        set => SetProperty(ref _effectsContextTitle, value);
+    }
+
+    public bool HasEffectsContext => Effects.Count > 0;
+
+    public void NotifyEffectsChanged()
+    {
+        OnPropertyChanged(nameof(HasEffectsContext));
+    }
+
     public void SelectLayerFromOwner(LayerItemViewModel? layer)
     {
         _suppressLayerSelectionCommand = true;
@@ -472,34 +555,10 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
         private set => SetProperty(ref _isEffectsSelected, value);
     }
 
-    public bool IsTimelineSelected
+    public bool IsOutputsSelected
     {
-        get => _isTimelineSelected;
-        private set => SetProperty(ref _isTimelineSelected, value);
-    }
-
-    public bool IsDiagnosticsSelected
-    {
-        get => _isDiagnosticsSelected;
-        private set => SetProperty(ref _isDiagnosticsSelected, value);
-    }
-
-    public bool IsPerformanceSelected
-    {
-        get => _isPerformanceSelected;
-        private set => SetProperty(ref _isPerformanceSelected, value);
-    }
-
-    public bool IsOutputMonitorSelected
-    {
-        get => _isOutputMonitorSelected;
-        private set => SetProperty(ref _isOutputMonitorSelected, value);
-    }
-
-    public bool IsAudioMixerSelected
-    {
-        get => _isAudioMixerSelected;
-        private set => SetProperty(ref _isAudioMixerSelected, value);
+        get => _isOutputsSelected;
+        private set => SetProperty(ref _isOutputsSelected, value);
     }
 
     public void SelectTab(BottomTabViewModel? tab)
@@ -517,31 +576,16 @@ public sealed class BottomWorkbenchViewModel : ViewModelBase
         SelectedTab = tab;
         IsLayersSelected = tab.Kind == StudioBottomTabKind.Layers;
         IsEffectsSelected = tab.Kind == StudioBottomTabKind.Effects;
-        IsTimelineSelected = tab.Kind == StudioBottomTabKind.Timeline;
-        IsDiagnosticsSelected = tab.Kind == StudioBottomTabKind.Diagnostics;
-        IsPerformanceSelected = tab.Kind == StudioBottomTabKind.Performance;
-        IsOutputMonitorSelected = tab.Kind == StudioBottomTabKind.OutputMonitor;
-        IsAudioMixerSelected = tab.Kind == StudioBottomTabKind.AudioMixer;
-    }
-
-    public void AddDiagnostic(string level, string message)
-    {
-        Diagnostics.Insert(0, new DiagnosticLogItemViewModel(DateTime.Now.ToString("HH:mm:ss"), level, message));
-
-        while (Diagnostics.Count > 80)
-        {
-            Diagnostics.RemoveAt(Diagnostics.Count - 1);
-        }
+        IsOutputsSelected = tab.Kind == StudioBottomTabKind.Outputs;
     }
 }
 
 public sealed class StatusBarViewModel : ViewModelBase
 {
-    private string _statusText = "Ready";
-    private string _engineText = "Stopped";
-    private string _framesText = "0 dropped";
-    private string _gpuText = "GPU idle";
-    private string _outputText = "Preview idle";
+    private string _statusText = "Pronto";
+    private string _sceneText = "Cena Main Scene";
+    private string _outputText = "3 saidas configuradas";
+    private string _framesText = "0 quadros descartados";
 
     public string StatusText
     {
@@ -549,10 +593,16 @@ public sealed class StatusBarViewModel : ViewModelBase
         set => SetProperty(ref _statusText, value);
     }
 
-    public string EngineText
+    public string SceneText
     {
-        get => _engineText;
-        set => SetProperty(ref _engineText, value);
+        get => _sceneText;
+        set => SetProperty(ref _sceneText, value);
+    }
+
+    public string OutputText
+    {
+        get => _outputText;
+        set => SetProperty(ref _outputText, value);
     }
 
     public string FramesText
@@ -560,16 +610,168 @@ public sealed class StatusBarViewModel : ViewModelBase
         get => _framesText;
         set => SetProperty(ref _framesText, value);
     }
+}
 
-    public string GpuText
+public sealed class StudioDialogViewModel : ViewModelBase
+{
+    private bool _isOpen;
+    private string _title = string.Empty;
+    private string _message = string.Empty;
+    private string _primaryText = "Confirmar";
+    private string _secondaryText = "Cancelar";
+    private string _kind = string.Empty;
+
+    public bool IsOpen
     {
-        get => _gpuText;
-        set => SetProperty(ref _gpuText, value);
+        get => _isOpen;
+        set => SetProperty(ref _isOpen, value);
     }
 
-    public string OutputText
+    public string Title
     {
-        get => _outputText;
-        set => SetProperty(ref _outputText, value);
+        get => _title;
+        set => SetProperty(ref _title, value);
+    }
+
+    public string Message
+    {
+        get => _message;
+        set => SetProperty(ref _message, value);
+    }
+
+    public string PrimaryText
+    {
+        get => _primaryText;
+        set => SetProperty(ref _primaryText, value);
+    }
+
+    public string SecondaryText
+    {
+        get => _secondaryText;
+        set => SetProperty(ref _secondaryText, value);
+    }
+
+    public string Kind
+    {
+        get => _kind;
+        set => SetProperty(ref _kind, value);
+    }
+}
+
+public sealed class DiagnosticLogItemViewModel
+{
+    public DiagnosticLogItemViewModel(string time, string level, string message, string category = "Studio")
+    {
+        Time = time;
+        Level = level;
+        Message = message;
+        Category = category;
+    }
+
+    public string Time { get; }
+
+    public string Level { get; }
+
+    public string Category { get; }
+
+    public string Message { get; }
+}
+
+public sealed class PerformanceMetricViewModel
+{
+    public PerformanceMetricViewModel(string name, string value, string detail)
+    {
+        Name = name;
+        Value = value;
+        Detail = detail;
+    }
+
+    public string Name { get; }
+
+    public string Value { get; }
+
+    public string Detail { get; }
+}
+
+public sealed class OutputMonitorItemViewModel : ViewModelBase
+{
+    private readonly StudioOutputState _state;
+
+    public OutputMonitorItemViewModel(string id, string name, StudioOutputState state, string sceneName, string destination, string bitrate, string health, string type = "")
+    {
+        Id = id;
+        Name = name;
+        _state = state;
+        SceneName = sceneName;
+        Destination = destination;
+        Bitrate = bitrate;
+        Health = health;
+        Type = type;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public string Type { get; }
+
+    public StudioOutputState State => _state;
+
+    public string StateText => new WTK.MediaForge.Studio.Localization.StudioDisplayNameService().GetOutputMonitorStateName(State);
+
+    public string SceneName { get; }
+
+    public string Destination { get; }
+
+    public string Bitrate { get; }
+
+    public string Health { get; }
+
+    public ICommand? SelectCommand { get; set; }
+}
+
+public sealed class AudioStripViewModel
+{
+    public AudioStripViewModel(string name, string peak, bool isMuted)
+    {
+        Name = name;
+        Peak = peak;
+        IsMuted = isMuted;
+    }
+
+    public string Name { get; }
+
+    public string Peak { get; }
+
+    public bool IsMuted { get; }
+
+    public string MuteText => IsMuted ? "Mutado" : "Ativo";
+}
+
+public sealed class BottomTabViewModel : ViewModelBase
+{
+    private bool _isSelected;
+
+    public BottomTabViewModel(StudioBottomTabKind kind, string title, string badge = "")
+    {
+        Kind = kind;
+        Title = title;
+        Badge = badge;
+    }
+
+    public StudioBottomTabKind Kind { get; }
+
+    public string Title { get; }
+
+    public string Badge { get; }
+
+    public bool HasBadge => !string.IsNullOrWhiteSpace(Badge);
+
+    public ICommand? SelectCommand { get; set; }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
     }
 }

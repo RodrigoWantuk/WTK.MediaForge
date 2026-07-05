@@ -96,7 +96,7 @@
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Error}" IconSize="15" Foreground="{StaticResource MfTextMutedBrush}" />
           </Button>
           <TextBlock Grid.Column="4"
-                     Text="{Binding VisibleItemCount, StringFormat='{}{0} items'}"
+                     Text="{Binding VisibleItemCount, StringFormat='{}{0} itens'}"
                      Classes="muted"
                      VerticalAlignment="Center" />
         </Grid>

@@ -13,11 +13,6 @@ public partial class EffectsPanelView : UserControl
     public EffectsPanelView() => AvaloniaXamlLoader.Load(this);
 }
 
-public partial class TimelinePlaceholderView : UserControl
-{
-    public TimelinePlaceholderView() => AvaloniaXamlLoader.Load(this);
-}
-
 public partial class DiagnosticsPanelView : UserControl
 {
     public DiagnosticsPanelView() => AvaloniaXamlLoader.Load(this);
@@ -31,9 +26,4 @@ public partial class PerformancePanelView : UserControl
 public partial class OutputMonitorPanelView : UserControl
 {
     public OutputMonitorPanelView() => AvaloniaXamlLoader.Load(this);
-}
-
-public partial class AudioMixerPlaceholderView : UserControl
-{
-    public AudioMixerPlaceholderView() => AvaloniaXamlLoader.Load(this);
 }

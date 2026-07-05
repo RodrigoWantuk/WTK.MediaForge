@@ -41,11 +41,7 @@
       <Grid Grid.Row="1">
         <panels:LayersPanelView IsVisible="{Binding IsLayersSelected}" />
         <panels:EffectsPanelView IsVisible="{Binding IsEffectsSelected}" />
-        <panels:TimelinePlaceholderView IsVisible="{Binding IsTimelineSelected}" />
-        <panels:DiagnosticsPanelView IsVisible="{Binding IsDiagnosticsSelected}" />
-        <panels:PerformancePanelView IsVisible="{Binding IsPerformanceSelected}" />
-        <panels:OutputMonitorPanelView IsVisible="{Binding IsOutputMonitorSelected}" />
-        <panels:AudioMixerPlaceholderView IsVisible="{Binding IsAudioMixerSelected}" />
+        <panels:OutputMonitorPanelView IsVisible="{Binding IsOutputsSelected}" />
       </Grid>
     </Grid>
   </Border>

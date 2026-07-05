@@ -78,6 +78,7 @@ public static class StudioMockDocumentFactory
             Destination = "Panel A",
             Codec = "RGBA",
             Bitrate = "GPU surface",
+            AssignedSceneId = "scene-main",
             State = StudioOutputState.Running
         });
         document.Outputs.Add(new StudioOutput
@@ -88,6 +89,7 @@ public static class StudioMockDocumentFactory
             Destination = "D:/captures/session.mp4",
             Codec = "H.264",
             Bitrate = "18 Mb/s",
+            AssignedSceneId = "scene-main",
             State = StudioOutputState.Recording
         });
         document.Outputs.Add(new StudioOutput
@@ -99,6 +101,7 @@ public static class StudioMockDocumentFactory
             Codec = "H.264",
             Bitrate = "6 Mb/s",
             Secret = "sk_live_2d97c8a6_raw_secret",
+            AssignedSceneId = "scene-main",
             State = StudioOutputState.Live
         });
         document.Outputs.Add(new StudioOutput
@@ -109,6 +112,8 @@ public static class StudioMockDocumentFactory
             Destination = "Virtual camera device",
             Codec = "NV12",
             Bitrate = "60 fps",
+            AssignedSceneId = "scene-interview",
+            IsConfigured = false,
             State = StudioOutputState.Planned
         });
     }
@@ -131,18 +136,28 @@ public static class StudioMockDocumentFactory
         main.Layers.Add(CreateLayer("layer-lower-third", "Lower Third", "source-lower-third", "Lower Third", "Text", 4, 192, 820, 1280, 148, 92));
         document.Scenes.Add(main);
 
-        document.Scenes.Add(new StudioScene
+        var interview = new StudioScene
         {
             Id = "scene-interview",
             DisplayName = "Interview",
             Metadata = "Two camera layout"
-        });
-        document.Scenes.Add(new StudioScene
+        };
+        interview.OutputIds.Add("output-virtual-camera");
+        interview.Layers.Add(CreateLayer("layer-interview-desktop", "Desktop Capture", "source-desktop-1", "Desktop Capture", "Source", 1, 80, 82, 1120, 630, 100));
+        interview.Layers.Add(CreateLayer("layer-interview-webcam", "Webcam", "source-webcam", "Webcam", "Source", 2, 1230, 102, 560, 315, 100));
+        interview.Layers.Add(CreateLayer("layer-interview-logo", "Logo.png", "source-logo", "Logo.png", "Image", 3, 1540, 870, 220, 130, 92));
+        document.Scenes.Add(interview);
+
+        var brb = new StudioScene
         {
             Id = "scene-brb",
             DisplayName = "Break BRB",
             Metadata = "Holding screen"
-        });
+        };
+        brb.Layers.Add(CreateLayer("layer-brb-background", "Intro.mp4", "source-intro", "Intro.mp4", "Source", 1, 0, 0, 1920, 1080, 100));
+        brb.Layers.Add(CreateLayer("layer-brb-logo", "Logo.png", "source-logo", "Logo.png", "Image", 2, 760, 280, 400, 240, 100));
+        brb.Layers.Add(CreateLayer("layer-brb-text", "Lower Third", "source-lower-third", "Lower Third", "Text", 3, 520, 660, 880, 160, 95));
+        document.Scenes.Add(brb);
     }
 
     private static StudioLayer CreateLayer(

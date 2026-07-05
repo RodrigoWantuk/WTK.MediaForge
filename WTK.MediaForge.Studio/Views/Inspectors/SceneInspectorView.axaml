@@ -3,20 +3,30 @@
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
              x:Class="WTK.MediaForge.Studio.Views.Inspectors.SceneInspectorView"
              x:DataType="vm:SceneInspectorViewModel">
-  <StackPanel Margin="14" Spacing="14">
-    <StackPanel Spacing="3">
-      <TextBlock Text="{Binding Title}" Classes="title" />
-      <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
-    </StackPanel>
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16" Spacing="12">
+      <StackPanel Spacing="3">
+        <TextBlock Text="{Binding Title}" Classes="title" />
+        <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
+      </StackPanel>
 
-    <Border Classes="metric-card">
-      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
-        <TextBlock Text="{Binding CanvasSize, StringFormat='Canvas: {0}'}" Classes="secondary" />
-        <TextBlock Grid.Row="1" Text="{Binding AspectRatio, StringFormat='Aspect: {0}'}" Classes="secondary" />
-        <TextBlock Grid.Row="2" Text="{Binding LayerCount, StringFormat='Layers: {0}'}" Classes="secondary" />
-        <TextBlock Grid.Row="3" Text="{Binding LinkedOutputs, StringFormat='Routes: {0}'}" Classes="secondary" TextWrapping="Wrap" />
-        <TextBlock Grid.Row="4" Text="{Binding CompositionMode}" Classes="accent" />
-      </Grid>
-    </Border>
-  </StackPanel>
+      <Border Classes="section">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+          <TextBlock Text="CANVAS" Classes="panel-title" />
+          <TextBlock Grid.Row="1" Text="{Binding CanvasSize, StringFormat='Tamanho: {0}'}" Classes="secondary" />
+          <TextBlock Grid.Row="2" Text="{Binding AspectRatio, StringFormat='Proporcao: {0}'}" Classes="secondary" />
+          <TextBlock Grid.Row="3" Text="{Binding FrameRateText, StringFormat='FPS: {0}'}" Classes="secondary" />
+          <TextBlock Grid.Row="4" Text="{Binding BackgroundColor, StringFormat='Fundo: {0}'}" Classes="secondary" />
+          <TextBlock Grid.Row="5" Text="{Binding LayerCount, StringFormat='Camadas: {0}'}" Classes="secondary" />
+        </Grid>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel Spacing="8">
+          <TextBlock Text="ROTAS" Classes="panel-title" />
+          <TextBlock Text="{Binding LinkedOutputs}" Classes="secondary" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

@@ -314,15 +314,15 @@ public sealed class LayerItemViewModel : ViewModelBase
 
     public string BlendModeDisplayName => new StudioDisplayNameService().GetBlendModeName(BlendMode);
 
-    public string VisibilityGlyph => IsVisible ? "Visible" : "Hidden";
+    public string VisibilityGlyph => IsVisible ? "Visivel" : "Oculta";
 
-    public string VisibilityTip => IsVisible ? "Layer visible" : "Layer hidden";
+    public string VisibilityTip => IsVisible ? "Camada visivel" : "Camada oculta";
 
     public StudioIconKind VisibilityIconKind => IsVisible ? StudioIconKind.Eye : StudioIconKind.EyeOff;
 
-    public string LockGlyph => IsLocked ? "Locked" : "Editable";
+    public string LockGlyph => IsLocked ? "Bloqueada" : "Editavel";
 
-    public string LockTip => IsLocked ? "Layer locked" : "Layer editable";
+    public string LockTip => IsLocked ? "Camada bloqueada" : "Camada editavel";
 
     public StudioIconKind LockIconKind => IsLocked ? StudioIconKind.Lock : StudioIconKind.Unlock;
 
@@ -508,7 +508,7 @@ public sealed class EffectItemViewModel : ViewModelBase
         }
     }
 
-    public string EnabledText => IsEnabled ? "Enabled" : "Disabled";
+    public string EnabledText => IsEnabled ? "Ativo" : "Desativado";
 
     public bool IsExpanded
     {
@@ -538,113 +538,5 @@ public sealed class EffectItemViewModel : ViewModelBase
     {
         get => _effect.EdgeSmooth;
         set => _effect.EdgeSmooth = value;
-    }
-}
-
-public sealed class DiagnosticLogItemViewModel
-{
-    public DiagnosticLogItemViewModel(string time, string level, string message, string category = "Studio")
-    {
-        Time = time;
-        Level = level;
-        Message = message;
-        Category = category;
-    }
-
-    public string Time { get; }
-
-    public string Level { get; }
-
-    public string Category { get; }
-
-    public string Message { get; }
-}
-
-public sealed class PerformanceMetricViewModel
-{
-    public PerformanceMetricViewModel(string name, string value, string detail)
-    {
-        Name = name;
-        Value = value;
-        Detail = detail;
-    }
-
-    public string Name { get; }
-
-    public string Value { get; }
-
-    public string Detail { get; }
-}
-
-public sealed class OutputMonitorItemViewModel
-{
-    public OutputMonitorItemViewModel(string name, StudioOutputState state, string destination, string bitrate, string health, string type = "")
-    {
-        Name = name;
-        State = state;
-        Destination = destination;
-        Bitrate = bitrate;
-        Health = health;
-        Type = type;
-    }
-
-    public string Name { get; }
-
-    public string Type { get; }
-
-    public StudioOutputState State { get; }
-
-    public string StateText => new StudioDisplayNameService().GetOutputMonitorStateName(State);
-
-    public string Destination { get; }
-
-    public string Bitrate { get; }
-
-    public string Health { get; }
-}
-
-public sealed class AudioStripViewModel
-{
-    public AudioStripViewModel(string name, string peak, bool isMuted)
-    {
-        Name = name;
-        Peak = peak;
-        IsMuted = isMuted;
-    }
-
-    public string Name { get; }
-
-    public string Peak { get; }
-
-    public bool IsMuted { get; }
-
-    public string MuteText => IsMuted ? "Muted" : "Active";
-}
-
-public sealed class BottomTabViewModel : ViewModelBase
-{
-    private bool _isSelected;
-
-    public BottomTabViewModel(StudioBottomTabKind kind, string title, string badge = "")
-    {
-        Kind = kind;
-        Title = title;
-        Badge = badge;
-    }
-
-    public StudioBottomTabKind Kind { get; }
-
-    public string Title { get; }
-
-    public string Badge { get; }
-
-    public bool HasBadge => !string.IsNullOrWhiteSpace(Badge);
-
-    public ICommand? SelectCommand { get; set; }
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set => SetProperty(ref _isSelected, value);
     }
 }
