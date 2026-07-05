@@ -40,6 +40,7 @@
   <Style Selector="Border.scene-card.selected">
     <Setter Property="Background" Value="{StaticResource MfAccentSoftBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
+    <Setter Property="BorderThickness" Value="2" />
   </Style>
 
   <Style Selector="Border.output-card">
@@ -48,6 +49,10 @@
     <Setter Property="Background" Value="{StaticResource MfCardBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource MfBorderNormalBrush}" />
     <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.output-card:pointerover">
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
   </Style>
 
   <Style Selector="Border.canvas-layer.selected">

@@ -32,19 +32,19 @@
           <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" RowSpacing="8" ColumnSpacing="8">
             <StackPanel Spacing="4">
               <TextBlock Text="X" Classes="muted" />
-              <NumericUpDown Value="{Binding X, Mode=TwoWay}" Minimum="0" Maximum="1920" Increment="1" />
+              <NumericUpDown Value="{Binding X, Mode=TwoWay}" Minimum="0" Maximum="1920" Increment="10" FormatString="0" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="4">
               <TextBlock Text="Y" Classes="muted" />
-              <NumericUpDown Value="{Binding Y, Mode=TwoWay}" Minimum="0" Maximum="1080" Increment="1" />
+              <NumericUpDown Value="{Binding Y, Mode=TwoWay}" Minimum="0" Maximum="1080" Increment="10" FormatString="0" />
             </StackPanel>
             <StackPanel Grid.Row="1" Spacing="4">
               <TextBlock Text="Largura" Classes="muted" />
-              <NumericUpDown Value="{Binding Width, Mode=TwoWay}" Minimum="16" Maximum="1920" Increment="1" />
+              <NumericUpDown Value="{Binding Width, Mode=TwoWay}" Minimum="16" Maximum="1920" Increment="10" FormatString="0" />
             </StackPanel>
             <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
               <TextBlock Text="Altura" Classes="muted" />
-              <NumericUpDown Value="{Binding Height, Mode=TwoWay}" Minimum="16" Maximum="1080" Increment="1" />
+              <NumericUpDown Value="{Binding Height, Mode=TwoWay}" Minimum="16" Maximum="1080" Increment="10" FormatString="0" />
             </StackPanel>
           </Grid>
 
