@@ -1,4 +1,5 @@
 using WTK.MediaForge.Studio.DesignData;
+using WTK.MediaForge.Studio.Localization;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Services;
 using WTK.MediaForge.Studio.ViewModels;
@@ -249,12 +250,109 @@ public sealed class StudioShellViewModelTests
         preview.SceneName = "Interview";
         preview.CanvasSize = "1280 x 720";
         preview.FrameRate = "30 fps";
-        preview.ZoomLabel = "Fit";
+        preview.Zoom = 1;
 
         Assert.Contains(nameof(PreviewCanvasViewModel.SceneName), changed);
         Assert.Contains(nameof(PreviewCanvasViewModel.CanvasSize), changed);
         Assert.Contains(nameof(PreviewCanvasViewModel.FrameRate), changed);
         Assert.Contains(nameof(PreviewCanvasViewModel.ZoomLabel), changed);
+    }
+
+    [Fact]
+    public void Layer_inspector_edits_shared_layer_used_by_preview()
+    {
+        var shell = StudioDesignData.CreateShellViewModel();
+        var lowerThird = shell.BottomWorkbench.Layers.Single(layer => layer.Name == "Lower Third");
+
+        shell.SelectLayer(lowerThird);
+
+        var inspector = Assert.IsType<LayerInspectorViewModel>(shell.Inspector.SelectedPage);
+        inspector.X = 320;
+        inspector.Y = 700;
+        inspector.Width = 900;
+        inspector.Height = 120;
+
+        Assert.Equal(320, lowerThird.X);
+        Assert.Equal(700, lowerThird.Y);
+        Assert.Equal(900, shell.Preview.SelectedLayer!.Width);
+        Assert.Equal(120, shell.Preview.SelectedLayer.Height);
+    }
+
+    [Fact]
+    public void Preview_move_layer_updates_shared_layer()
+    {
+        var shell = StudioDesignData.CreateShellViewModel();
+        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Logo.png");
+
+        shell.SelectLayer(layer);
+        shell.Preview.MoveLayer(layer, 30, -20, constrainAxis: false);
+
+        Assert.Equal(1694, layer.X);
+        Assert.Equal(906, layer.Y);
+    }
+
+    [Fact]
+    public void Locked_layer_does_not_move_or_resize_from_preview()
+    {
+        var shell = StudioDesignData.CreateShellViewModel();
+        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Webcam");
+        layer.IsLocked = true;
+        var originalX = layer.X;
+        var originalWidth = layer.Width;
+
+        shell.Preview.MoveLayer(layer, 100, 100, constrainAxis: false);
+        shell.Preview.ResizeLayer(layer, ResizeHandleKind.Right, 200, 0, keepAspect: false, fromCenter: false);
+
+        Assert.Equal(originalX, layer.X);
+        Assert.Equal(originalWidth, layer.Width);
+    }
+
+    [Fact]
+    public void Preview_resize_layer_updates_dimensions()
+    {
+        var shell = StudioDesignData.CreateShellViewModel();
+        var layer = shell.BottomWorkbench.Layers.Single(item => item.Name == "Logo.png");
+
+        shell.Preview.ResizeLayer(layer, ResizeHandleKind.BottomRight, 24, 16, keepAspect: false, fromCenter: false);
+
+        Assert.Equal(200, layer.Width);
+        Assert.Equal(120, layer.Height);
+    }
+
+    [Fact]
+    public void Project_explorer_search_filters_visible_items()
+    {
+        var shell = StudioDesignData.CreateShellViewModel();
+
+        shell.ProjectExplorer.SearchText = "rtmp";
+
+        Assert.Equal(1, shell.ProjectExplorer.VisibleItemCount);
+        Assert.Equal("RTMP Twitch", shell.ProjectExplorer.Groups.Single(group => group.Title == "Outputs").VisibleItems.Single().Name);
+    }
+
+    [Fact]
+    public void Add_source_mock_adds_layer_and_selects_it()
+    {
+        var shell = StudioDesignData.CreateShellViewModel();
+        var originalCount = shell.BottomWorkbench.Layers.Count;
+
+        shell.AddSourceCommand.Execute(null);
+
+        Assert.Equal(originalCount + 1, shell.BottomWorkbench.Layers.Count);
+        Assert.NotNull(shell.SelectedLayer);
+        Assert.StartsWith("Text Overlay", shell.SelectedLayer!.Name, StringComparison.Ordinal);
+        Assert.Same(shell.SelectedLayer, shell.Preview.SelectedLayer);
+    }
+
+    [Fact]
+    public void Localization_manager_returns_shell_keys()
+    {
+        var loc = LocalizationManager.Instance;
+
+        Assert.Equal("WTK MediaForge Studio", loc["App_Title"]);
+        Assert.False(string.IsNullOrWhiteSpace(loc["Panel_ProjectExplorer"]));
+        Assert.False(string.IsNullOrWhiteSpace(loc["Action_AddSource"]));
+        Assert.False(string.IsNullOrWhiteSpace(loc["Status_Stopped"]));
     }
 
     [Fact]

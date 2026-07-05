@@ -3,17 +3,42 @@
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
              x:Class="WTK.MediaForge.Studio.Views.Panels.DiagnosticsPanelView"
              x:DataType="vm:BottomWorkbenchViewModel">
-  <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
-    <ItemsControl ItemsSource="{Binding Diagnostics}">
-      <ItemsControl.ItemTemplate>
-        <DataTemplate x:DataType="vm:DiagnosticLogItemViewModel">
-          <Grid ColumnDefinitions="72,58,*" Margin="0,0,0,5">
-            <TextBlock Text="{Binding Time}" Classes="mono muted" />
-            <TextBlock Grid.Column="1" Text="{Binding Level}" Classes="mono accent" />
-            <TextBlock Grid.Column="2" Text="{Binding Message}" Classes="mono secondary" />
-          </Grid>
-        </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
-  </ScrollViewer>
+  <Grid RowDefinitions="Auto,*" Margin="12">
+    <Grid ColumnDefinitions="240,120,*,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,8">
+      <TextBox PlaceholderText="Filter diagnostics" />
+      <ComboBox Grid.Column="1" SelectedIndex="0">
+        <ComboBoxItem Content="All levels" />
+        <ComboBoxItem Content="Info" />
+        <ComboBoxItem Content="Warning" />
+        <ComboBoxItem Content="Error" />
+      </ComboBox>
+      <TextBlock Grid.Column="2" Text="Technical details stay here, away from the main product surface." Classes="muted" VerticalAlignment="Center" />
+      <Button Grid.Column="3" Content="Clear" IsEnabled="False" />
+      <Button Grid.Column="4" Content="Copy" IsEnabled="False" />
+    </Grid>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel>
+        <Grid ColumnDefinitions="72,72,110,*" Margin="0,0,0,6">
+          <TextBlock Text="Time" Classes="muted" />
+          <TextBlock Grid.Column="1" Text="Level" Classes="muted" />
+          <TextBlock Grid.Column="2" Text="Area" Classes="muted" />
+          <TextBlock Grid.Column="3" Text="Message" Classes="muted" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Diagnostics}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:DiagnosticLogItemViewModel">
+              <Border Classes="metric-card" Padding="8" Margin="0,0,0,5">
+                <Grid ColumnDefinitions="72,72,110,*">
+                  <TextBlock Text="{Binding Time}" Classes="mono muted" />
+                  <TextBlock Grid.Column="1" Text="{Binding Level}" Classes="mono accent" />
+                  <TextBlock Grid.Column="2" Text="{Binding Category}" Classes="mono secondary" />
+                  <TextBlock Grid.Column="3" Text="{Binding Message}" Classes="mono secondary" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
 </UserControl>

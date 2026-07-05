@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WTK.MediaForge.Studio.Views.Preview.PreviewFrameHost">
+  <Grid ClipToBounds="True">
+    <Border Background="{StaticResource MfCanvasFrameBrush}" />
+    <Grid RowDefinitions="*,*,*" ColumnDefinitions="*,*,*">
+      <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Background="{StaticResource MfSurface2Brush}" Opacity="0.55" />
+      <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource MfSurface3Brush}" Opacity="0.45" />
+      <Border Grid.Row="1" Grid.Column="1" Background="{StaticResource MfAccentSoftBrush}" Opacity="0.32" />
+      <Border Grid.Row="1" Grid.Column="2" Background="{StaticResource MfSurface3Brush}" Opacity="0.45" />
+      <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Background="{StaticResource MfSurface1Brush}" Opacity="0.72" />
+    </Grid>
+
+    <StackPanel HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="26"
+                Spacing="6">
+      <Border Classes="status-pill" HorizontalAlignment="Left">
+        <TextBlock Text="Preview mock" Classes="accent" FontSize="12" />
+      </Border>
+      <TextBlock Text="Frame host boundary" Classes="secondary" />
+    </StackPanel>
+  </Grid>
+</UserControl>

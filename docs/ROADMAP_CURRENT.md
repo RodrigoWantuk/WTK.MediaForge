@@ -71,11 +71,20 @@ Acceptance records:
 
 A limited Avalonia Studio UI track may run in parallel with the active runtime roadmap when it stays strictly inside the UI/mock scope. This is allowed because it does not change engine contracts or open blocked media/runtime work.
 
+### Studio UI Recovery Gate
+
+The Studio shell is now in the UI recovery and productization cycle documented in
+`docs/STUDIO_UI_RECOVERY_PLAN.md`. Do not implement real Studio sources, real
+outputs, real audio, or productive GPU preview wiring while the recovery gate is
+open. The next UI work must improve the native Avalonia mock editor: shared
+document state, Project Explorer, editable preview canvas, rich inspectors,
+bottom workbench, localization, command state, and tests.
+
 Current Studio UI status:
 
 - first Avalonia mock shell is implemented;
 - Studio tests run in the Fast tier;
-- current UI milestone is shell stabilization, fake service boundaries, typed UI state, and model-backed project workflow preparation;
+- current UI milestone is UI recovery/productization, fake service boundaries, typed UI state, and model-backed project workflow preparation;
 - runtime preview remains blocked until `PreviewPanelSink` reliability criteria are complete.
 
 Allowed UI work before runtime gates open:

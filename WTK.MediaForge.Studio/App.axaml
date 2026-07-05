@@ -13,6 +13,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://WTK.MediaForge.Studio/Styles/Theme.axaml" />
                 <ResourceInclude Source="avares://WTK.MediaForge.Studio/Styles/Icons.axaml" />
+                <ResourceInclude Source="avares://WTK.MediaForge.Studio/Styles/Spacing.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
@@ -21,5 +22,6 @@
         <FluentTheme />
         <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Typography.axaml" />
         <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Controls.axaml" />
+        <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Components.axaml" />
     </Application.Styles>
 </Application>

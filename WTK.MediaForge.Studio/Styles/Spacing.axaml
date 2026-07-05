@@ -1,0 +1,12 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+  <sys:Double x:Key="MfSpaceXs">4</sys:Double>
+  <sys:Double x:Key="MfSpaceSm">8</sys:Double>
+  <sys:Double x:Key="MfSpaceMd">12</sys:Double>
+  <sys:Double x:Key="MfSpaceLg">16</sys:Double>
+  <sys:Double x:Key="MfSpaceXl">24</sys:Double>
+  <CornerRadius x:Key="MfRadiusSm">4</CornerRadius>
+  <CornerRadius x:Key="MfRadiusMd">6</CornerRadius>
+  <CornerRadius x:Key="MfRadiusLg">8</CornerRadius>
+</ResourceDictionary>

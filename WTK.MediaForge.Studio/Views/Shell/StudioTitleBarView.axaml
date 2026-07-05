@@ -1,12 +1,15 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:loc="using:WTK.MediaForge.Studio.Localization"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
              x:Class="WTK.MediaForge.Studio.Views.Shell.StudioTitleBarView"
              x:DataType="vm:StudioShellViewModel">
   <Border Background="{StaticResource MfSurface1Brush}"
           BorderBrush="{StaticResource MfBorderBrush}"
           BorderThickness="0,0,0,1">
-    <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,0">
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="12,0">
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
         <Border Width="22"
                 Height="22"
@@ -14,18 +17,58 @@
                 Background="{StaticResource MfAccentSoftBrush}"
                 BorderBrush="{StaticResource MfAccentBrush}"
                 BorderThickness="1">
-          <TextBlock Text="MF"
-                     HorizontalAlignment="Center"
-                     VerticalAlignment="Center"
-                     FontSize="10"
-                     FontWeight="SemiBold"
-                     Foreground="{StaticResource MfAccentBrush}" />
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Scene}"
+                                 IconSize="14"
+                                 Foreground="{StaticResource MfAccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
         </Border>
         <TextBlock Text="{Binding TitleBar.ProductName}" Classes="title" VerticalAlignment="Center" />
         <TextBlock Text="{Binding TitleBar.ProjectName}" Classes="secondary" VerticalAlignment="Center" />
       </StackPanel>
 
-      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+      <Menu Grid.Column="1" Margin="18,0,0,0" Background="Transparent" VerticalAlignment="Center">
+        <MenuItem Header="{loc:Loc Menu_File}">
+          <MenuItem Header="New Project" Command="{Binding NewProjectCommand}" />
+          <MenuItem Header="Open Project" Command="{Binding OpenProjectCommand}" />
+          <MenuItem Header="Save" Command="{Binding SaveProjectCommand}" />
+          <MenuItem Header="Save As" IsEnabled="False" />
+          <Separator />
+          <MenuItem Header="Exit" IsEnabled="False" />
+        </MenuItem>
+        <MenuItem Header="{loc:Loc Menu_Edit}">
+          <MenuItem Header="Undo" IsEnabled="False" />
+          <MenuItem Header="Redo" IsEnabled="False" />
+        </MenuItem>
+        <MenuItem Header="{loc:Loc Menu_View}">
+          <MenuItem Header="Diagnostics" />
+          <MenuItem Header="Performance" />
+        </MenuItem>
+        <MenuItem Header="{loc:Loc Menu_Scene}">
+          <MenuItem Header="Add Scene" Command="{Binding AddSceneCommand}" />
+          <MenuItem Header="Duplicate Scene" IsEnabled="False" />
+          <MenuItem Header="Delete Scene" IsEnabled="False" />
+        </MenuItem>
+        <MenuItem Header="{loc:Loc Menu_Source}">
+          <MenuItem Header="Add Source" Command="{Binding AddSourceCommand}" />
+          <MenuItem Header="Configure Source" IsEnabled="False" />
+          <MenuItem Header="Remove Source" IsEnabled="False" />
+        </MenuItem>
+        <MenuItem Header="{loc:Loc Menu_Output}">
+          <MenuItem Header="Start Streaming" Command="{Binding ToggleStreamingCommand}" />
+          <MenuItem Header="Start Recording" Command="{Binding ToggleRecordingCommand}" />
+          <MenuItem Header="Output Manager" IsEnabled="False" />
+        </MenuItem>
+        <MenuItem Header="{loc:Loc Menu_Tools}">
+          <MenuItem Header="Settings" Command="{Binding SettingsCommand}" />
+        </MenuItem>
+        <MenuItem Header="{loc:Loc Menu_Help}">
+          <MenuItem Header="Documentation" IsEnabled="False" />
+          <MenuItem Header="About" IsEnabled="False" />
+        </MenuItem>
+      </Menu>
+
+      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
         <Border Classes="badge">
           <TextBlock Text="{Binding Toolbar.StateBadge}" Classes="accent" FontSize="11" />
         </Border>

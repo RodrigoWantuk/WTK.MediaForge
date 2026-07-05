@@ -95,6 +95,8 @@ WTK MediaForge Studio is the planned Avalonia desktop application for users who 
 - `docs/UI_REACT_TO_AVALONIA_MAPPING.md`
 - `docs/UI_IMPLEMENTATION_PLAN.md`
 - `docs/UI_ACCEPTANCE_CHECKLIST.md`
+- `docs/STUDIO_UI_RECOVERY_PLAN.md`
+- `docs/STUDIO_UI_VISUAL_ACCEPTANCE.md`
 
 The Studio shell must be built with Avalonia UI, C#, MVVM, CommunityToolkit.Mvvm, compiled bindings, centralized dark theme resources, and mock/design data for the first milestone.
 
@@ -102,7 +104,10 @@ Current Studio state:
 
 - `WTK.MediaForge.Studio` contains the first Avalonia mock shell.
 - Studio ViewModel tests are included in `./scripts/test.ps1 -Tier Fast`.
-- The current UI milestone is shell stabilization and service-boundary cleanup.
+- The current UI milestone is Studio UI recovery/productization: shared mock
+  document state, native vector icons, searchable Project Explorer, editable
+  preview canvas, rich inspectors, bottom workbench polish, localization
+  foundation, and ViewModel coverage.
 - Fake Studio services own mock project, engine, output, diagnostics, selection, and inspector behavior.
 - `StudioSelectionState` is the single selection contract for explorer/layer/canvas/output selection.
 - Engine/output UI states are typed enums, not only booleans.
@@ -117,6 +122,7 @@ Allowed in the UI track before runtime gates open:
 - mock Project Explorer, canvas, inspector, bottom workbench, output monitor, diagnostics, performance, and future audio placeholder;
 - fake Start/Stop/Stream/Record UI state;
 - fake Studio service boundaries and unified selection state;
+- Studio-only mock document state and editable mock preview overlays;
 - ViewModel tests for selection, command state, inspector resolution, and mock status.
 
 Not allowed in the UI track before runtime gates open:

@@ -1,6 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
              x:Class="WTK.MediaForge.Studio.Views.Shell.StudioStatusBarView"
              x:DataType="vm:StatusBarViewModel">
   <Border Background="{StaticResource MfSurface1Brush}"
@@ -8,7 +10,10 @@
           BorderThickness="0,1,0,0">
     <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="10,0">
       <TextBlock Text="{Binding StatusText}" Classes="secondary" VerticalAlignment="Center" />
-      <TextBlock Grid.Column="1" Text="{Binding EngineText}" Classes="success" VerticalAlignment="Center" Margin="16,0,0,0" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="16,0,0,0" VerticalAlignment="Center">
+        <components:StudioIcon Kind="{x:Static models:StudioIconKind.Success}" IconSize="13" Foreground="{StaticResource MfSuccessBrush}" />
+        <TextBlock Text="{Binding EngineText}" Classes="success" VerticalAlignment="Center" />
+      </StackPanel>
       <TextBlock Grid.Column="2" Text="{Binding GpuText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
       <TextBlock Grid.Column="3" Text="{Binding OutputText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
       <TextBlock Grid.Column="4" Text="{Binding FramesText}" Classes="muted" VerticalAlignment="Center" Margin="16,0,0,0" />

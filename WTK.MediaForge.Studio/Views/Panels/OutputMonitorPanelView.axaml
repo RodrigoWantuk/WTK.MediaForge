@@ -4,22 +4,33 @@
              x:Class="WTK.MediaForge.Studio.Views.Panels.OutputMonitorPanelView"
              x:DataType="vm:BottomWorkbenchViewModel">
   <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
-    <ItemsControl ItemsSource="{Binding Outputs}">
-      <ItemsControl.ItemTemplate>
-        <DataTemplate x:DataType="vm:OutputMonitorItemViewModel">
-          <Border Classes="metric-card" Margin="0,0,0,8">
-            <Grid ColumnDefinitions="180,130,*,110,120">
-              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-              <Border Grid.Column="1" Classes="badge" HorizontalAlignment="Left">
-                <TextBlock Text="{Binding StateText}" Classes="accent" />
-              </Border>
-              <TextBlock Grid.Column="2" Text="{Binding Destination}" Classes="secondary" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="3" Text="{Binding Bitrate}" Classes="secondary" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="4" Text="{Binding Health}" Classes="success" VerticalAlignment="Center" />
-            </Grid>
-          </Border>
-        </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
+    <StackPanel>
+      <Grid ColumnDefinitions="180,140,*,110,120,120" Margin="8,0,8,8">
+        <TextBlock Text="Output" Classes="muted" />
+        <TextBlock Grid.Column="1" Text="Type" Classes="muted" />
+        <TextBlock Grid.Column="2" Text="Destination" Classes="muted" />
+        <TextBlock Grid.Column="3" Text="Bitrate" Classes="muted" />
+        <TextBlock Grid.Column="4" Text="Status" Classes="muted" />
+        <TextBlock Grid.Column="5" Text="Actions" Classes="muted" />
+      </Grid>
+      <ItemsControl ItemsSource="{Binding Outputs}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:OutputMonitorItemViewModel">
+            <Border Classes="metric-card" Margin="0,0,0,8">
+              <Grid ColumnDefinitions="180,140,*,110,120,120">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Type}" Classes="secondary" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding Destination}" Classes="secondary" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding Bitrate}" Classes="secondary" VerticalAlignment="Center" />
+                <Border Grid.Column="4" Classes="status-pill" HorizontalAlignment="Left" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding StateText}" Classes="accent" />
+                </Border>
+                <Button Grid.Column="5" Content="Details" Classes="flat" IsEnabled="False" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
   </ScrollViewer>
 </UserControl>

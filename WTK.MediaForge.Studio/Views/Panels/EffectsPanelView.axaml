@@ -1,6 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
              x:Class="WTK.MediaForge.Studio.Views.Panels.EffectsPanelView"
              x:DataType="vm:BottomWorkbenchViewModel">
   <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -8,14 +10,25 @@
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:EffectItemViewModel">
           <Border Classes="metric-card" Margin="0,0,0,8">
-            <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto">
-              <TextBlock Text="{Binding Name}" Classes="title" />
-              <Button Grid.Column="1" Content="{Binding EnabledText}" Command="{Binding ToggleEnabledCommand}" CommandParameter="{Binding}" />
-              <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" Margin="0,6,0,0" />
-              <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,*,*" ColumnSpacing="8" Margin="0,12,0,0" IsVisible="{Binding IsExpanded}">
-                <TextBox Text="Tolerance 0.32" IsReadOnly="True" />
-                <TextBox Grid.Column="1" Text="Spill 0.18" IsReadOnly="True" />
-                <TextBox Grid.Column="2" Text="Edge 0.24" IsReadOnly="True" />
+            <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto" RowSpacing="8" ColumnSpacing="10">
+              <components:StudioIcon Kind="{x:Static models:StudioIconKind.Effect}" IconSize="18" Foreground="{StaticResource MfAccentBrush}" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock Text="{Binding Name}" Classes="title" />
+                <TextBlock Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" />
+              </StackPanel>
+              <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsEnabled, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+
+              <Grid Grid.Row="2" Grid.ColumnSpan="3" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                <TextBlock Text="Key color" Classes="muted" VerticalAlignment="Center" />
+                <Border Grid.Column="1" Classes="source-thumb" Height="26">
+                  <TextBlock Text="{Binding KeyColor}" Classes="mono accent" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                </Border>
+                <TextBlock Grid.Row="1" Text="Tolerance" Classes="muted" VerticalAlignment="Center" />
+                <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Tolerance, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" />
+                <TextBlock Grid.Row="2" Text="Spill" Classes="muted" VerticalAlignment="Center" />
+                <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Spill, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" />
+                <TextBlock Grid.Row="3" Text="Edge" Classes="muted" VerticalAlignment="Center" />
+                <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding EdgeSmooth, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" />
               </Grid>
             </Grid>
           </Border>

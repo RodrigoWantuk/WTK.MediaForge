@@ -13,7 +13,7 @@
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:PerformanceMetricViewModel">
-          <Border Classes="metric-card" Width="160" Height="86" Margin="0,0,10,10">
+          <Border Classes="metric-card" Width="160" Height="92" Margin="0,0,10,10">
             <StackPanel Spacing="4">
               <TextBlock Text="{Binding Name}" Classes="secondary" />
               <TextBlock Text="{Binding Value}" Classes="metric" />
@@ -26,7 +26,10 @@
 
     <Border Grid.Column="1" Classes="metric-card">
       <Grid RowDefinitions="Auto,*">
-        <TextBlock Text="Frame time history" Classes="panel-title" />
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="Frame time history" Classes="panel-title" />
+          <TextBlock Grid.Column="1" Text="last 120 frames" Classes="muted" />
+        </Grid>
         <controls:SparklineControl Grid.Row="1"
                                    Stroke="{StaticResource MfAccentBrush}"
                                    StrokeThickness="2"

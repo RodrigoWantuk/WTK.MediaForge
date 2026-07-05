@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
+using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Services;
 
@@ -54,12 +55,13 @@ public sealed class StudioShellViewModel : ViewModelBase
         _uiTimer = uiTimer;
 
         BottomWorkbench = new BottomWorkbenchViewModel(_diagnosticsService.Items);
+        Preview.LayerSelectionRequested += OnPreviewLayerSelectionRequested;
 
         NewProjectCommand = new AsyncRelayCommand(NewProjectAsync);
         OpenProjectCommand = new AsyncRelayCommand(OpenProjectAsync);
         SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
-        AddSourceCommand = new RelayCommand(() => LogAction("INFO", "Project", "Prepared Add Source dialog state."));
-        AddSceneCommand = new RelayCommand(() => LogAction("INFO", "Project", "Added empty scene placeholder."));
+        AddSourceCommand = new RelayCommand(AddMockTextSource);
+        AddSceneCommand = new RelayCommand(AddMockScene);
         SettingsCommand = new RelayCommand(() => LogAction("INFO", "Studio", "Opened settings placeholder."));
         ToggleEngineCommand = new AsyncRelayCommand(ToggleEngineAsync, CanToggleEngine);
         ToggleStreamingCommand = new AsyncRelayCommand(ToggleStreamingAsync, CanToggleStreaming);
@@ -68,6 +70,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         SelectLayerCommand = new RelayCommand<LayerItemViewModel>(SelectLayer, layer => layer is not null);
         ToggleLayerVisibilityCommand = new RelayCommand<LayerItemViewModel>(ToggleLayerVisibility, layer => layer is not null);
         ToggleLayerLockCommand = new RelayCommand<LayerItemViewModel>(ToggleLayerLock, layer => layer is not null);
+        MoveLayerUpCommand = new RelayCommand<LayerItemViewModel>(MoveLayerUp, layer => layer is not null);
+        MoveLayerDownCommand = new RelayCommand<LayerItemViewModel>(MoveLayerDown, layer => layer is not null);
         ToggleEffectEnabledCommand = new RelayCommand<EffectItemViewModel>(ToggleEffectEnabled, effect => effect is not null);
         ReconnectSourceCommand = new RelayCommand(() => LogAction("INFO", "Source", "Queued mock source reconnect."));
 
@@ -122,6 +126,10 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public IRelayCommand<LayerItemViewModel> ToggleLayerLockCommand { get; }
 
+    public IRelayCommand<LayerItemViewModel> MoveLayerUpCommand { get; }
+
+    public IRelayCommand<LayerItemViewModel> MoveLayerDownCommand { get; }
+
     public IRelayCommand<EffectItemViewModel> ToggleEffectEnabledCommand { get; }
 
     public ICommand ReconnectSourceCommand { get; }
@@ -161,6 +169,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     {
         Replace(ProjectExplorer.Groups, projectGroups);
         Replace(BottomWorkbench.Layers, layers);
+        Replace(Preview.Layers, BottomWorkbench.Layers);
         Replace(BottomWorkbench.Effects, effects);
         Replace(_diagnosticsService.Items, diagnostics);
         Replace(BottomWorkbench.PerformanceMetrics, performanceMetrics);
@@ -181,6 +190,7 @@ public sealed class StudioShellViewModel : ViewModelBase
             });
 
         AttachCommands();
+        ProjectExplorer.ApplyFilter();
         BottomWorkbench.SelectTab(BottomWorkbench.Tabs[0]);
 
         var mainScene = ProjectExplorer.Groups
@@ -192,7 +202,7 @@ public sealed class StudioShellViewModel : ViewModelBase
             SelectProjectItem(mainScene);
         }
 
-        var selectedLayer = BottomWorkbench.Layers.FirstOrDefault(layer => layer.Name == "Lower Third")
+        var selectedLayer = BottomWorkbench.Layers.FirstOrDefault(layer => layer.Name == "Webcam")
             ?? BottomWorkbench.Layers.FirstOrDefault();
 
         if (selectedLayer is not null)
@@ -235,7 +245,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         SelectedLayer = layer;
         ProjectExplorer.SelectFromOwner(null);
         BottomWorkbench.SelectLayerFromOwner(layer);
-        Preview.SelectedLayerName = layer.Name;
+        Preview.SelectLayerFromOwner(layer);
+        Replace(BottomWorkbench.Effects, layer.Effects);
+        AttachEffectCommands(layer.Effects);
         _selectionService.Select(new StudioSelectionState(
             StudioSelectionKind.Layer,
             layer.Id,
@@ -267,12 +279,11 @@ public sealed class StudioShellViewModel : ViewModelBase
             layer.SelectCommand = SelectLayerCommand;
             layer.ToggleVisibilityCommand = ToggleLayerVisibilityCommand;
             layer.ToggleLockCommand = ToggleLayerLockCommand;
+            layer.MoveUpCommand = MoveLayerUpCommand;
+            layer.MoveDownCommand = MoveLayerDownCommand;
         }
 
-        foreach (var effect in BottomWorkbench.Effects)
-        {
-            effect.ToggleEnabledCommand = ToggleEffectEnabledCommand;
-        }
+        AttachEffectCommands(BottomWorkbench.Effects);
 
         foreach (var tab in BottomWorkbench.Tabs)
         {
@@ -383,6 +394,41 @@ public sealed class StudioShellViewModel : ViewModelBase
         LogAction("INFO", "Layer", $"{layer.Name} lock set to {layer.LockGlyph}.");
     }
 
+    private void MoveLayerUp(LayerItemViewModel? layer)
+    {
+        MoveLayer(layer, -1);
+    }
+
+    private void MoveLayerDown(LayerItemViewModel? layer)
+    {
+        MoveLayer(layer, 1);
+    }
+
+    private void MoveLayer(LayerItemViewModel? layer, int direction)
+    {
+        if (layer is null)
+        {
+            return;
+        }
+
+        var index = BottomWorkbench.Layers.IndexOf(layer);
+        var targetIndex = Math.Clamp(index + direction, 0, BottomWorkbench.Layers.Count - 1);
+        if (index == targetIndex)
+        {
+            return;
+        }
+
+        BottomWorkbench.Layers.Move(index, targetIndex);
+        var previewIndex = Preview.Layers.IndexOf(layer);
+        if (previewIndex >= 0)
+        {
+            Preview.Layers.Move(previewIndex, Math.Clamp(previewIndex + direction, 0, Preview.Layers.Count - 1));
+        }
+
+        RefreshLayerOrder();
+        LogAction("INFO", "Layer", $"{layer.Name} order updated.");
+    }
+
     private void ToggleEffectEnabled(EffectItemViewModel? effect)
     {
         if (effect is null)
@@ -392,6 +438,64 @@ public sealed class StudioShellViewModel : ViewModelBase
 
         effect.IsEnabled = !effect.IsEnabled;
         LogAction("INFO", "Effect", $"{effect.Name} set to {effect.EnabledText}.");
+    }
+
+    private void AddMockTextSource()
+    {
+        var index = BottomWorkbench.Layers.Count + 1;
+        var layer = new LayerItemViewModel($"Text Overlay {index}", "Text Overlay", "Text", StudioIconKind.Text, index)
+        {
+            X = 240,
+            Y = 260 + index * 18,
+            Width = 620,
+            Height = 120,
+            Opacity = 96
+        };
+
+        layer.Layer.SourceId = $"source-text-overlay-{index}";
+        layer.Layer.Effects.Add(new StudioEffect
+        {
+            Id = $"{layer.Id}-effect-blur",
+            Name = "Blur",
+            Description = "Disabled for this text overlay",
+            IsEnabled = false
+        });
+        foreach (var effect in layer.Layer.Effects)
+        {
+            layer.Effects.Add(new EffectItemViewModel(effect));
+        }
+
+        layer.SelectCommand = SelectLayerCommand;
+        layer.ToggleVisibilityCommand = ToggleLayerVisibilityCommand;
+        layer.ToggleLockCommand = ToggleLayerLockCommand;
+        layer.MoveUpCommand = MoveLayerUpCommand;
+        layer.MoveDownCommand = MoveLayerDownCommand;
+        BottomWorkbench.Layers.Insert(0, layer);
+        Preview.Layers.Insert(0, layer);
+        RefreshLayerOrder();
+        SelectLayer(layer);
+        LogAction("INFO", "Source", "Added mock text source and linked layer.");
+    }
+
+    private void AddMockScene()
+    {
+        var count = ProjectExplorer.Groups.First(group => group.Title == "Scenes").Items.Count + 1;
+        var item = new ProjectTreeItemViewModel(
+            StudioProjectItemKind.Scene,
+            $"Scene {count}",
+            "1920 x 1080 / 60 fps",
+            StudioIconKind.Scene,
+            id: $"scene-{count}",
+            typeId: "scene.canvas",
+            detail: "Preview");
+        item.SelectCommand = SelectProjectItemCommand;
+
+        var scenes = ProjectExplorer.Groups.First(group => group.Title == "Scenes");
+        scenes.Items.Add(item);
+        scenes.ApplyFilter(ProjectExplorer.SearchText);
+        ProjectExplorer.ApplyFilter();
+        SelectProjectItem(item);
+        LogAction("INFO", "Project", "Added mock scene.");
     }
 
     private void ClearProjectSelection()
@@ -528,7 +632,9 @@ public sealed class StudioShellViewModel : ViewModelBase
     private void OnSelectionChanged(object? sender, StudioSelectionChangedEventArgs e)
     {
         CurrentSelection = e.Selection;
-        Inspector.SelectedPage = _inspectorPageFactory.Create(e.Selection, ReconnectSourceCommand);
+        Inspector.SelectedPage = e.Selection.Kind == StudioSelectionKind.Layer && SelectedLayer is not null && SelectedLayer.Id == e.Selection.EntityId
+            ? new LayerInspectorViewModel(SelectedLayer)
+            : _inspectorPageFactory.Create(e.Selection, ReconnectSourceCommand);
         StatusBar.StatusText = e.Selection.Kind == StudioSelectionKind.Layer
             ? $"Selected layer {e.Selection.DisplayName}"
             : $"Selected {e.Selection.DisplayName}";
@@ -538,8 +644,32 @@ public sealed class StudioShellViewModel : ViewModelBase
             Preview.SceneName = e.Selection.DisplayName;
             Preview.CanvasSize = "1920 x 1080";
             Preview.FrameRate = "60 fps";
-            Preview.ZoomLabel = e.Selection.DisplayName == "Main Scene" ? "82%" : "Fit";
+            if (e.Selection.DisplayName != "Main Scene")
+            {
+                Preview.FitZoom();
+            }
         }
+    }
+
+    private void AttachEffectCommands(IEnumerable<EffectItemViewModel> effects)
+    {
+        foreach (var effect in effects)
+        {
+            effect.ToggleEnabledCommand = ToggleEffectEnabledCommand;
+        }
+    }
+
+    private void RefreshLayerOrder()
+    {
+        for (var i = 0; i < BottomWorkbench.Layers.Count; i++)
+        {
+            BottomWorkbench.Layers[i].Order = BottomWorkbench.Layers.Count - i;
+        }
+    }
+
+    private void OnPreviewLayerSelectionRequested(object? sender, LayerSelectionRequestedEventArgs e)
+    {
+        SelectLayer(e.Layer);
     }
 
     private void LogAction(string level, string category, string message)

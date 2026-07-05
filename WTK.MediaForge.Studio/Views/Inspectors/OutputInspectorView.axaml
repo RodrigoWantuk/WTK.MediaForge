@@ -1,20 +1,85 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
              x:Class="WTK.MediaForge.Studio.Views.Inspectors.OutputInspectorView"
              x:DataType="vm:OutputInspectorViewModel">
-  <StackPanel Margin="14" Spacing="14">
-    <StackPanel Spacing="3">
-      <TextBlock Text="{Binding Title}" Classes="title" />
-      <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
-    </StackPanel>
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16" Spacing="12">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <Border Classes="icon-box" Width="38" Height="38">
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Output}"
+                                 IconSize="22"
+                                 Foreground="{StaticResource MfAccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock Text="{Binding Title}" Classes="title" />
+          <TextBlock Text="{Binding Subtitle}" Classes="secondary" />
+        </StackPanel>
+      </Grid>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
-      <TextBlock Text="{Binding Destination, StringFormat='Destination: {0}'}" Classes="secondary" TextWrapping="Wrap" />
-      <TextBlock Grid.Row="1" Text="{Binding Codec, StringFormat='Codec: {0}'}" Classes="secondary" />
-      <TextBlock Grid.Row="2" Text="{Binding Bitrate, StringFormat='Bitrate: {0}'}" Classes="secondary" />
-      <TextBlock Grid.Row="3" Text="{Binding Health, StringFormat='Health: {0}'}" Classes="success" />
-      <TextBlock Grid.Row="4" Text="{Binding MaskedStreamKey, StringFormat='Stream key: {0}'}" Classes="mono" />
-    </Grid>
-  </StackPanel>
+      <Border Classes="section">
+        <StackPanel Spacing="10">
+          <TextBlock Text="DESTINATION" Classes="panel-title" />
+          <StackPanel Spacing="4">
+            <TextBlock Text="Type" Classes="muted" />
+            <ComboBox ItemsSource="{Binding OutputTypes}" SelectedItem="{Binding SelectedOutputType, Mode=TwoWay}" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Server / path" Classes="muted" />
+            <TextBox Text="{Binding Destination}" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Stream key" Classes="muted" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox Text="{Binding MaskedStreamKey}" Classes="mono" IsReadOnly="True" />
+              <Button Grid.Column="1" Classes="flat" IsEnabled="False">
+                <components:StudioIcon Kind="{x:Static models:StudioIconKind.Eye}" IconSize="14" />
+              </Button>
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel Spacing="10">
+          <TextBlock Text="ENCODER" Classes="panel-title" />
+          <StackPanel Spacing="4">
+            <TextBlock Text="Codec" Classes="muted" />
+            <ComboBox ItemsSource="{Binding CodecOptions}" SelectedItem="{Binding SelectedCodec, Mode=TwoWay}" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Bitrate" Classes="muted" />
+            <TextBox Text="{Binding Bitrate}" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Keyframe" Classes="muted" />
+            <NumericUpDown Value="{Binding KeyframeSeconds, Mode=TwoWay}" Minimum="1" Maximum="10" Increment="1" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Preset" Classes="muted" />
+            <ComboBox ItemsSource="{Binding PresetOptions}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel Spacing="8">
+          <TextBlock Text="HEALTH" Classes="panel-title" />
+          <Border Classes="metric-card">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+              <Border Classes="health-dot" Classes.healthy="True" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock Text="{Binding Health, StringFormat='Live - {0}'}" Classes="success" />
+                <TextBlock Text="rtt 42 ms - 0 dropped - 12 min uptime" Classes="secondary" />
+              </StackPanel>
+            </Grid>
+          </Border>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

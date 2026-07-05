@@ -1,0 +1,229 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:models="using:WTK.MediaForge.Studio.Models"
+             xmlns:preview="using:WTK.MediaForge.Studio.Views.Preview"
+             x:Class="WTK.MediaForge.Studio.Views.Preview.PreviewEditorControl"
+             x:DataType="vm:PreviewCanvasViewModel">
+  <Grid Background="{StaticResource MfBackgroundBrush}">
+    <Grid RowDefinitions="*,Auto">
+      <Border Margin="18"
+              CornerRadius="8"
+              Background="{StaticResource MfSurface1Brush}"
+              BorderBrush="{StaticResource MfBorderBrush}"
+              BorderThickness="1"
+              ClipToBounds="True">
+        <Grid>
+          <Viewbox Stretch="Uniform"
+                   Margin="42">
+            <Canvas x:Name="SceneCanvas"
+                    Width="{Binding CanvasWidth}"
+                    Height="{Binding CanvasHeight}"
+                    Background="{StaticResource MfCanvasFrameBrush}"
+                    ClipToBounds="True">
+              <preview:PreviewFrameHost Width="{Binding CanvasWidth}"
+                                        Height="{Binding CanvasHeight}" />
+
+              <ItemsControl ItemsSource="{Binding Layers}"
+                            Classes="layer-host"
+                            Width="{Binding CanvasWidth}"
+                            Height="{Binding CanvasHeight}">
+                <ItemsControl.Styles>
+                  <Style Selector="ItemsControl.layer-host > ContentPresenter"
+                         x:CompileBindings="False">
+                    <Setter Property="Canvas.Left" Value="{Binding X}" />
+                    <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                    <Setter Property="Panel.ZIndex" Value="{Binding Order}" />
+                  </Style>
+                </ItemsControl.Styles>
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <Canvas />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:LayerItemViewModel">
+                    <Border Classes="canvas-layer"
+                            Classes.selected="{Binding IsSelected}"
+                            IsVisible="{Binding IsVisible}"
+                            Width="{Binding Width}"
+                            Height="{Binding Height}"
+                            Canvas.Left="{Binding X}"
+                            Canvas.Top="{Binding Y}"
+                            Opacity="{Binding LayerOpacity}"
+                            Panel.ZIndex="{Binding Order}"
+                            PointerPressed="OnLayerPointerPressed"
+                            PointerMoved="OnCanvasPointerMoved"
+                            PointerReleased="OnCanvasPointerReleased">
+                      <Border.RenderTransform>
+                        <RotateTransform Angle="{Binding RotationDegrees}" />
+                      </Border.RenderTransform>
+                      <Grid>
+                        <Border CornerRadius="7"
+                                Background="{StaticResource MfOverlayBrush}" />
+                        <Grid ColumnDefinitions="Auto,*"
+                              Margin="18"
+                              VerticalAlignment="Center">
+                          <Border Classes="icon-box"
+                                  Width="42"
+                                  Height="42"
+                                  VerticalAlignment="Center">
+                            <components:StudioIcon Kind="{Binding IconKind}"
+                                                   IconSize="22"
+                                                   Foreground="{StaticResource MfAccentBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                          </Border>
+                          <StackPanel Grid.Column="1"
+                                      Margin="12,0,0,0"
+                                      VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}"
+                                       FontSize="24"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Source}"
+                                       Classes="secondary" />
+                          </StackPanel>
+                        </Grid>
+
+                        <Grid IsVisible="{Binding IsSelected}">
+                          <Border Classes="resize-handle"
+                                  Tag="{x:Static models:ResizeHandleKind.TopLeft}"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Top"
+                                  Margin="-7"
+                                  PointerPressed="OnResizeHandlePressed" />
+                          <Border Classes="resize-handle"
+                                  Tag="{x:Static models:ResizeHandleKind.Top}"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Top"
+                                  Margin="0,-7,0,0"
+                                  PointerPressed="OnResizeHandlePressed" />
+                          <Border Classes="resize-handle"
+                                  Tag="{x:Static models:ResizeHandleKind.TopRight}"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Top"
+                                  Margin="0,-7,-7,0"
+                                  PointerPressed="OnResizeHandlePressed" />
+                          <Border Classes="resize-handle"
+                                  Tag="{x:Static models:ResizeHandleKind.Right}"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,-7,0"
+                                  PointerPressed="OnResizeHandlePressed" />
+                          <Border Classes="resize-handle"
+                                  Tag="{x:Static models:ResizeHandleKind.BottomRight}"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Bottom"
+                                  Margin="0,0,-7,-7"
+                                  PointerPressed="OnResizeHandlePressed" />
+                          <Border Classes="resize-handle"
+                                  Tag="{x:Static models:ResizeHandleKind.Bottom}"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Bottom"
+                                  Margin="0,0,0,-7"
+                                  PointerPressed="OnResizeHandlePressed" />
+                          <Border Classes="resize-handle"
+                                  Tag="{x:Static models:ResizeHandleKind.BottomLeft}"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Bottom"
+                                  Margin="-7,0,0,-7"
+                                  PointerPressed="OnResizeHandlePressed" />
+                          <Border Classes="resize-handle"
+                                  Tag="{x:Static models:ResizeHandleKind.Left}"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Center"
+                                  Margin="-7,0,0,0"
+                                  PointerPressed="OnResizeHandlePressed" />
+                        </Grid>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <Grid Width="{Binding CanvasWidth}"
+                    Height="{Binding CanvasHeight}"
+                    IsHitTestVisible="False"
+                    IsVisible="{Binding IsGridVisible}"
+                    Opacity="0.38">
+                <Grid ColumnDefinitions="*,*,*,*,*,*" RowDefinitions="*,*,*,*,*">
+                  <Border Grid.Column="1" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+                  <Border Grid.Column="2" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+                  <Border Grid.Column="3" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+                  <Border Grid.Column="4" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+                  <Border Grid.Column="5" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="1,0,0,0" />
+                  <Border Grid.Row="1" Grid.ColumnSpan="6" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="0,1,0,0" />
+                  <Border Grid.Row="2" Grid.ColumnSpan="6" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="0,1,0,0" />
+                  <Border Grid.Row="3" Grid.ColumnSpan="6" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="0,1,0,0" />
+                  <Border Grid.Row="4" Grid.ColumnSpan="6" BorderBrush="{StaticResource MfBorderNormalBrush}" BorderThickness="0,1,0,0" />
+                </Grid>
+              </Grid>
+
+              <Border Width="{Binding CanvasWidth}"
+                      Height="{Binding CanvasHeight}"
+                      Margin="96,54"
+                      BorderBrush="{StaticResource MfWarningBrush}"
+                      BorderThickness="1"
+                      Opacity="0.52"
+                      IsHitTestVisible="False"
+                      IsVisible="{Binding IsSafeFrameVisible}" />
+            </Canvas>
+          </Viewbox>
+
+          <StackPanel HorizontalAlignment="Left"
+                      VerticalAlignment="Top"
+                      Margin="28"
+                      Orientation="Horizontal"
+                      Spacing="8">
+            <Border Classes="status-pill">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <components:StudioIcon Kind="{x:Static models:StudioIconKind.Layer}" IconSize="14" Foreground="{StaticResource MfAccentBrush}" />
+                <TextBlock Text="{Binding SelectedLayerName}" Classes="accent" />
+              </StackPanel>
+            </Border>
+            <Border Classes="status-pill">
+              <TextBlock Text="{Binding ZoomLabel}" Classes="secondary" />
+            </Border>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="1"
+              Background="{StaticResource MfSurface1Brush}"
+              BorderBrush="{StaticResource MfBorderBrush}"
+              BorderThickness="0,1,0,0"
+              Padding="12,8">
+        <StackPanel Orientation="Horizontal"
+                    Spacing="8"
+                    HorizontalAlignment="Center">
+          <Button Command="{Binding FitZoomCommand}" Classes="flat">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <components:StudioIcon Kind="{x:Static models:StudioIconKind.Fit}" IconSize="14" />
+              <TextBlock Text="Fit" />
+            </StackPanel>
+          </Button>
+          <Button Command="{Binding ActualSizeCommand}" Classes="flat" Content="100%" />
+          <Button Command="{Binding ZoomOutCommand}" Classes="flat">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.ZoomOut}" IconSize="14" />
+          </Button>
+          <Button Command="{Binding ZoomInCommand}" Classes="flat">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.ZoomIn}" IconSize="14" />
+          </Button>
+          <Button Command="{Binding ToggleGridCommand}" Classes="flat">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <components:StudioIcon Kind="{x:Static models:StudioIconKind.Grid}" IconSize="14" />
+              <TextBlock Text="Grid" />
+            </StackPanel>
+          </Button>
+          <Button Command="{Binding ToggleSafeFrameCommand}" Classes="flat">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <components:StudioIcon Kind="{x:Static models:StudioIconKind.SafeArea}" IconSize="14" />
+              <TextBlock Text="Safe" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

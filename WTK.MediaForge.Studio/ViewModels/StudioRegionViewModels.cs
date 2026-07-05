@@ -133,8 +133,25 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
 {
     private ProjectTreeItemViewModel? _selectedItem;
     private bool _suppressSelectionCommand;
+    private string _searchText = string.Empty;
 
     public ObservableCollection<ProjectTreeGroupViewModel> Groups { get; } = new();
+
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (SetProperty(ref _searchText, value))
+            {
+                ApplyFilter();
+            }
+        }
+    }
+
+    public int VisibleItemCount => Groups.Sum(group => group.Count);
+
+    public bool HasNoResults => VisibleItemCount == 0;
 
     public ProjectTreeItemViewModel? SelectedItem
     {
@@ -165,18 +182,49 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
             _suppressSelectionCommand = false;
         }
     }
+
+    public void ApplyFilter()
+    {
+        foreach (var group in Groups)
+        {
+            group.ApplyFilter(SearchText);
+        }
+
+        OnPropertyChanged(nameof(VisibleItemCount));
+        OnPropertyChanged(nameof(HasNoResults));
+    }
 }
 
 public sealed class PreviewCanvasViewModel : ViewModelBase
 {
     private bool _isGridVisible = true;
     private bool _isSafeFrameVisible = true;
-    private string _selectedLayerName = "Lower Third";
+    private LayerItemViewModel? _selectedLayer;
     private string _timingLabel = "16.6 ms";
     private string _sceneName = "Main Scene";
     private string _canvasSize = "1920 x 1080";
     private string _frameRate = "60 fps";
-    private string _zoomLabel = "82%";
+    private double _zoom = 0.82;
+    private bool _isFitZoom = true;
+
+    public PreviewCanvasViewModel()
+    {
+        ToggleGridCommand = new RelayCommand(() => IsGridVisible = !IsGridVisible);
+        ToggleSafeFrameCommand = new RelayCommand(() => IsSafeFrameVisible = !IsSafeFrameVisible);
+        FitZoomCommand = new RelayCommand(FitZoom);
+        ActualSizeCommand = new RelayCommand(() => Zoom = 1);
+        ZoomInCommand = new RelayCommand(() => Zoom = Math.Min(2.5, Zoom + 0.1));
+        ZoomOutCommand = new RelayCommand(() => Zoom = Math.Max(0.25, Zoom - 0.1));
+        SelectLayerCommand = new RelayCommand<LayerItemViewModel>(RequestLayerSelection, layer => layer is not null);
+    }
+
+    public event EventHandler<LayerSelectionRequestedEventArgs>? LayerSelectionRequested;
+
+    public ObservableCollection<LayerItemViewModel> Layers { get; } = new();
+
+    public double CanvasWidth { get; private set; } = 1920;
+
+    public double CanvasHeight { get; private set; } = 1080;
 
     public string SceneName
     {
@@ -198,19 +246,22 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public string ZoomLabel
     {
-        get => _zoomLabel;
-        set => SetProperty(ref _zoomLabel, value);
+        get => _isFitZoom ? "Fit" : Zoom >= 0.995 && Zoom <= 1.005 ? "100%" : $"{Zoom * 100:0}%";
     }
 
     public ICommand ToggleGridCommand { get; }
 
     public ICommand ToggleSafeFrameCommand { get; }
 
-    public PreviewCanvasViewModel()
-    {
-        ToggleGridCommand = new RelayCommand(() => IsGridVisible = !IsGridVisible);
-        ToggleSafeFrameCommand = new RelayCommand(() => IsSafeFrameVisible = !IsSafeFrameVisible);
-    }
+    public ICommand FitZoomCommand { get; }
+
+    public ICommand ActualSizeCommand { get; }
+
+    public ICommand ZoomInCommand { get; }
+
+    public ICommand ZoomOutCommand { get; }
+
+    public IRelayCommand<LayerItemViewModel> SelectLayerCommand { get; }
 
     public bool IsGridVisible
     {
@@ -226,8 +277,19 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public string SelectedLayerName
     {
-        get => _selectedLayerName;
-        set => SetProperty(ref _selectedLayerName, value);
+        get => SelectedLayer?.Name ?? "No layer selected";
+    }
+
+    public LayerItemViewModel? SelectedLayer
+    {
+        get => _selectedLayer;
+        private set
+        {
+            if (SetProperty(ref _selectedLayer, value))
+            {
+                OnPropertyChanged(nameof(SelectedLayerName));
+            }
+        }
     }
 
     public string TimingLabel
@@ -235,6 +297,96 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         get => _timingLabel;
         set => SetProperty(ref _timingLabel, value);
     }
+
+    public double Zoom
+    {
+        get => _zoom;
+        set
+        {
+            if (SetProperty(ref _zoom, Math.Clamp(value, 0.25, 2.5)))
+            {
+                _isFitZoom = false;
+                OnPropertyChanged(nameof(ZoomLabel));
+            }
+        }
+    }
+
+    public void SetCanvas(double width, double height, double frameRate)
+    {
+        CanvasWidth = width;
+        CanvasHeight = height;
+        CanvasSize = $"{width:0} x {height:0}";
+        FrameRate = $"{frameRate:0.##} fps";
+        OnPropertyChanged(nameof(CanvasWidth));
+        OnPropertyChanged(nameof(CanvasHeight));
+    }
+
+    public void SelectLayerFromOwner(LayerItemViewModel? layer)
+    {
+        foreach (var item in Layers)
+        {
+            item.IsSelected = ReferenceEquals(item, layer);
+        }
+
+        SelectedLayer = layer;
+    }
+
+    public void RequestLayerSelection(LayerItemViewModel? layer)
+    {
+        if (layer is null)
+        {
+            return;
+        }
+
+        SelectLayerFromOwner(layer);
+        LayerSelectionRequested?.Invoke(this, new LayerSelectionRequestedEventArgs(layer));
+    }
+
+    public void MoveLayer(LayerItemViewModel layer, double deltaX, double deltaY, bool constrainAxis)
+    {
+        if (constrainAxis)
+        {
+            if (Math.Abs(deltaX) >= Math.Abs(deltaY))
+            {
+                deltaY = 0;
+            }
+            else
+            {
+                deltaX = 0;
+            }
+        }
+
+        layer.MoveBy(deltaX, deltaY, CanvasWidth, CanvasHeight);
+    }
+
+    public void ResizeLayer(
+        LayerItemViewModel layer,
+        ResizeHandleKind handle,
+        double deltaX,
+        double deltaY,
+        bool keepAspect,
+        bool fromCenter)
+    {
+        layer.Resize(handle, deltaX, deltaY, CanvasWidth, CanvasHeight, keepAspect, fromCenter);
+    }
+
+    public void FitZoom()
+    {
+        _zoom = 0.82;
+        _isFitZoom = true;
+        OnPropertyChanged(nameof(Zoom));
+        OnPropertyChanged(nameof(ZoomLabel));
+    }
+}
+
+public sealed class LayerSelectionRequestedEventArgs : EventArgs
+{
+    public LayerSelectionRequestedEventArgs(LayerItemViewModel layer)
+    {
+        Layer = layer;
+    }
+
+    public LayerItemViewModel Layer { get; }
 }
 
 public sealed class BottomWorkbenchViewModel : ViewModelBase

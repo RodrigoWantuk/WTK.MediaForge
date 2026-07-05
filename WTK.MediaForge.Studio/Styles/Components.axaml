@@ -1,0 +1,52 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="Border.section">
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="Background" Value="{StaticResource MfSurface2Brush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.status-pill">
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="Padding" Value="8,3" />
+    <Setter Property="Background" Value="{StaticResource MfSurface3Brush}" />
+  </Style>
+
+  <Style Selector="Border.icon-box">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="Background" Value="{StaticResource MfSurface3Brush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.canvas-layer">
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderNormalBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.canvas-layer.selected">
+    <Setter Property="BorderBrush" Value="{StaticResource MfAccentBrush}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+
+  <Style Selector="Border.resize-handle">
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Height" Value="14" />
+    <Setter Property="Background" Value="{StaticResource MfAccentBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBackgroundBrush}" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="CornerRadius" Value="7" />
+  </Style>
+
+  <Style Selector="Border.source-thumb">
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="Background" Value="{StaticResource MfSurface3Brush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource MfBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+</Styles>
