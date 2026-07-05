@@ -304,6 +304,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     private string _canvasSize = "1920×1080";
     private string _frameRate = "60 fps";
     private bool _isFitZoom = true;
+    private bool _hasPendingChanges;
 
     public PreviewCanvasViewModel()
     {
@@ -322,6 +323,8 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     }
 
     public event EventHandler<LayerSelectionRequestedEventArgs>? LayerSelectionRequested;
+
+    public event EventHandler? SceneEdited;
 
     public ObservableCollection<LayerItemViewModel> Layers { get; } = new();
 
@@ -385,6 +388,10 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public ICommand? AddSourceCommand { get; set; }
 
+    public ICommand? ApplySceneDraftCommand { get; set; }
+
+    public ICommand? DiscardSceneDraftCommand { get; set; }
+
     public bool IsGridVisible
     {
         get => _isGridVisible;
@@ -422,6 +429,20 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
             }
         }
     }
+
+    public bool HasPendingChanges
+    {
+        get => _hasPendingChanges;
+        set
+        {
+            if (SetProperty(ref _hasPendingChanges, value))
+            {
+                OnPropertyChanged(nameof(DraftStateText));
+            }
+        }
+    }
+
+    public string DraftStateText => HasPendingChanges ? "Alterações não aplicadas" : "Cena aplicada";
 
     public void SetCanvas(double width, double height, double frameRate, bool isProgram)
     {
@@ -501,6 +522,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         }
 
         layer.MoveBy(deltaX, deltaY, CanvasWidth, CanvasHeight);
+        MarkSceneEdited();
     }
 
     public void MoveLayerFromStart(
@@ -537,6 +559,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         targetY = SceneEditorSnapSettings.Snap(targetY, snap);
         layer.X = Math.Round(Math.Clamp(targetX, 0, Math.Max(0, CanvasWidth - layer.Width)));
         layer.Y = Math.Round(Math.Clamp(targetY, 0, Math.Max(0, CanvasHeight - layer.Height)));
+        MarkSceneEdited();
     }
 
     public void NudgeSelectedLayer(double deltaX, double deltaY, bool largeStep)
@@ -564,23 +587,27 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     public void ToggleLayerVisibility(LayerItemViewModel layer)
     {
         layer.IsVisible = !layer.IsVisible;
+        MarkSceneEdited();
     }
 
     public void ToggleLayerLock(LayerItemViewModel layer)
     {
         layer.IsLocked = !layer.IsLocked;
+        MarkSceneEdited();
     }
 
     public void BringLayerToFront(LayerItemViewModel layer)
     {
         layer.Order = Layers.Count == 0 ? 1 : Layers.Max(item => item.Order) + 1;
         NormalizeLayerOrder();
+        MarkSceneEdited();
     }
 
     public void SendLayerToBack(LayerItemViewModel layer)
     {
         layer.Order = Layers.Count == 0 ? 1 : Layers.Min(item => item.Order) - 1;
         NormalizeLayerOrder();
+        MarkSceneEdited();
     }
 
     public void ResetLayerTransform(LayerItemViewModel layer)
@@ -591,6 +618,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         layer.Height = Math.Round(CanvasHeight * 0.4);
         layer.RotationDegrees = 0;
         layer.Opacity = 100;
+        MarkSceneEdited();
     }
 
     public void ResizeLayer(
@@ -603,6 +631,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     {
         IsFitZoom = false;
         layer.Resize(handle, deltaX, deltaY, CanvasWidth, CanvasHeight, keepAspect, fromCenter);
+        MarkSceneEdited();
     }
 
     public void ResizeLayerFromStart(
@@ -711,6 +740,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         layer.Y = Math.Round(top);
         layer.Width = Math.Round(width);
         layer.Height = Math.Round(height);
+        MarkSceneEdited();
     }
 
     public void PanBy(double deltaX, double deltaY)
@@ -761,6 +791,12 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         {
             ordered[i].Order = i + 1;
         }
+    }
+
+    private void MarkSceneEdited()
+    {
+        HasPendingChanges = true;
+        SceneEdited?.Invoke(this, EventArgs.Empty);
     }
 }
 

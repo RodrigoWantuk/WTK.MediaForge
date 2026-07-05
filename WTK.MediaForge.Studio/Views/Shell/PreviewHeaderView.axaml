@@ -15,10 +15,22 @@
         <Border Classes="badge">
           <TextBlock Text="{Binding SceneRole}" Classes="accent" FontSize="11" />
         </Border>
+        <Border Classes="badge" IsVisible="{Binding HasPendingChanges}" Background="{StaticResource MfWarningSoftBrush}">
+          <TextBlock Text="{Binding DraftStateText}" Classes="warning" FontSize="11" />
+        </Border>
         <TextBlock Text="{Binding CanvasSize}" Classes="secondary" />
         <TextBlock Text="{Binding FrameRate}" Classes="secondary" />
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Command="{Binding ApplySceneDraftCommand}"
+                IsVisible="{Binding HasPendingChanges}"
+                Classes="primary">
+          <TextBlock Text="Aplicar na cena" />
+        </Button>
+        <Button Command="{Binding DiscardSceneDraftCommand}"
+                IsVisible="{Binding HasPendingChanges}">
+          <TextBlock Text="Descartar" />
+        </Button>
         <Button Command="{Binding FitZoomCommand}">
           <StackPanel Orientation="Horizontal" Spacing="5">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Fit}" IconSize="13" />

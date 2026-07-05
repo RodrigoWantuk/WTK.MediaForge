@@ -296,6 +296,8 @@ public sealed partial class StudioOutput : ObservableObject
     private bool _isLive;
     private bool _isRecording;
     private StudioOutputState _state = StudioOutputState.Running;
+    private bool _hasPendingSceneUpdate;
+    private StudioScene? _appliedSceneSnapshot;
 
     public string Id
     {
@@ -385,6 +387,18 @@ public sealed partial class StudioOutput : ObservableObject
     {
         get => _state;
         set => SetProperty(ref _state, value);
+    }
+
+    public bool HasPendingSceneUpdate
+    {
+        get => _hasPendingSceneUpdate;
+        set => SetProperty(ref _hasPendingSceneUpdate, value);
+    }
+
+    public StudioScene? AppliedSceneSnapshot
+    {
+        get => _appliedSceneSnapshot;
+        set => SetProperty(ref _appliedSceneSnapshot, value);
     }
 }
 

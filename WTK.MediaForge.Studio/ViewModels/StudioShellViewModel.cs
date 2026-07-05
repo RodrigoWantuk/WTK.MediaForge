@@ -21,6 +21,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private readonly IStudioSelectionService _selectionService;
     private readonly IStudioUiTimer _uiTimer;
     private readonly StudioLayoutService _layoutService = new();
+    private readonly SceneEditSessionService _sceneEditSessionService = new();
     private StudioLayoutDocument _layoutDocument = new();
     private StudioDocument _document = StudioMockDocumentFactory.Create();
     private ProjectTreeItemViewModel? _selectedProjectItem;
@@ -30,6 +31,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private StudioOutput? _selectedOutput;
     private StudioSelectionState _currentSelection = StudioSelectionState.None;
     private IDock? _dockLayout;
+    private SceneEditSession? _editSession;
 
     public StudioShellViewModel()
         : this(StudioServiceFactory.CreateFake())
@@ -78,6 +80,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         SettingsCommand = new RelayCommand(OpenSettingsDialog);
         RestoreLayoutCommand = new RelayCommand(RestoreDefaultLayout);
         RedockAllPanelsCommand = new RelayCommand(RedockAllPanels);
+        ApplySceneDraftCommand = new RelayCommand(ApplySceneDraft, () => _editSession?.HasChanges == true);
+        DiscardSceneDraftCommand = new RelayCommand(DiscardSceneDraft, () => _editSession?.HasChanges == true);
         ToggleStreamingCommand = new AsyncRelayCommand(ToggleStreamingAsync, CanToggleStreaming);
         ToggleRecordingCommand = new AsyncRelayCommand(ToggleRecordingAsync, CanToggleRecording);
         SelectProjectItemCommand = new RelayCommand<ProjectTreeItemViewModel>(SelectProjectItem, item => item is not null);
@@ -95,6 +99,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         ProjectExplorer.AddSourceCommand = AddSourceCommand;
         ProjectExplorer.AddOutputCommand = ConfigureOutputCommand;
         Preview.AddSourceCommand = AddSourceCommand;
+        Preview.ApplySceneDraftCommand = ApplySceneDraftCommand;
+        Preview.DiscardSceneDraftCommand = DiscardSceneDraftCommand;
+        Preview.SceneEdited += OnPreviewSceneEdited;
 
         _outputService.StatusChanged += OnOutputStatusChanged;
         _selectionService.SelectionChanged += OnSelectionChanged;
@@ -163,6 +170,10 @@ public sealed class StudioShellViewModel : ViewModelBase
     public ICommand RestoreLayoutCommand { get; }
 
     public ICommand RedockAllPanelsCommand { get; }
+
+    public IRelayCommand ApplySceneDraftCommand { get; }
+
+    public IRelayCommand DiscardSceneDraftCommand { get; }
 
     public IAsyncRelayCommand ToggleStreamingCommand { get; }
 
@@ -239,6 +250,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         _document = document;
         Replace(_diagnosticsService.Items, diagnostics);
         InitializeBottomTabs();
+        EnsureAppliedOutputSnapshots();
         RebuildAll();
         var initialScene = _document.Scenes.FirstOrDefault(scene => scene.Id == _document.SelectedSceneId)
             ?? _document.Scenes.FirstOrDefault();
@@ -263,6 +275,13 @@ public sealed class StudioShellViewModel : ViewModelBase
 
         if (item.Kind == StudioProjectItemKind.Scene)
         {
+            if (!CanLeaveCurrentScene())
+            {
+                item.IsSelected = false;
+                ProjectExplorer.SelectFromOwner(FindProjectItem(CurrentScene?.Id));
+                return;
+            }
+
             var scene = _document.Scenes.First(scene => scene.Id == item.Id);
             SelectScene(scene, updateProjectSelection: false);
             ClearLayerSelectionAndShowScene();
@@ -278,6 +297,12 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         var scene = _document.Scenes.First(item => item.Id == card.Id);
+        if (!CanLeaveCurrentScene())
+        {
+            RebuildProjectExplorer(CurrentScene?.Id);
+            return;
+        }
+
         SelectScene(scene, updateProjectSelection: true);
         ClearLayerSelectionAndShowScene();
         _selectionService.Select(new StudioSelectionState(
@@ -355,6 +380,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         var scene = _document.Scenes.First(item => item.Id == sceneId);
         var wasLive = output.IsLive || output.State == StudioOutputState.Live;
         output.AssignedSceneId = scene.Id;
+        output.AppliedSceneSnapshot = SceneEditSessionService.CloneScene(scene);
+        output.HasPendingSceneUpdate = false;
         output.DefaultTransitionId = transitionId;
         output.TransitionDurationMs = durationMs;
         output.IsConfigured = true;
@@ -726,6 +753,95 @@ public sealed class StudioShellViewModel : ViewModelBase
         SetStatus("Painéis reencaixados.");
     }
 
+    private void ApplySceneDraft()
+    {
+        if (_editSession is null || !_editSession.HasChanges)
+        {
+            return;
+        }
+
+        var sceneId = _editSession.SceneId;
+        var sceneName = _editSession.Draft.DisplayName;
+        _sceneEditSessionService.Apply(_editSession);
+        foreach (var output in _document.Outputs.Where(item => item.AssignedSceneId == sceneId))
+        {
+            output.HasPendingSceneUpdate = true;
+        }
+
+        _document.HasUnsavedChanges = true;
+        _editSession = _sceneEditSessionService.Create(_editSession.Original);
+        CurrentScene = _editSession.Draft;
+        Preview.HasPendingChanges = false;
+        RebuildAll();
+        ClearLayerSelectionAndShowScene();
+        ApplyProjectDocument();
+        ApplySceneDraftCommand.NotifyCanExecuteChanged();
+        DiscardSceneDraftCommand.NotifyCanExecuteChanged();
+        SetStatus($"{sceneName} aplicada à cena salva. Saídas vinculadas têm atualização disponível.");
+    }
+
+    private void DiscardSceneDraft()
+    {
+        if (_editSession is null)
+        {
+            return;
+        }
+
+        var sceneName = _editSession.Original.DisplayName;
+        _editSession = _sceneEditSessionService.Create(_editSession.Original);
+        CurrentScene = _editSession.Draft;
+        Preview.HasPendingChanges = false;
+        RebuildAll();
+        ClearLayerSelectionAndShowScene();
+        ApplyProjectDocument();
+        ApplySceneDraftCommand.NotifyCanExecuteChanged();
+        DiscardSceneDraftCommand.NotifyCanExecuteChanged();
+        SetStatus($"Alterações em {sceneName} descartadas.");
+    }
+
+    private void OnPreviewSceneEdited(object? sender, EventArgs e)
+    {
+        MarkSceneDraftChanged();
+    }
+
+    private void MarkSceneDraftChanged()
+    {
+        _editSession?.MarkChanged();
+        Preview.HasPendingChanges = _editSession?.HasChanges == true;
+        _document.HasUnsavedChanges = true;
+        ApplySceneDraftCommand.NotifyCanExecuteChanged();
+        DiscardSceneDraftCommand.NotifyCanExecuteChanged();
+        ApplyProjectDocument();
+    }
+
+    private bool CanLeaveCurrentScene()
+    {
+        if (_editSession?.HasChanges != true)
+        {
+            return true;
+        }
+
+        SetStatus("Há alterações não aplicadas. Aplique ou descarte antes de trocar de cena.");
+        return false;
+    }
+
+    private void EnsureAppliedOutputSnapshots()
+    {
+        foreach (var output in _document.Outputs)
+        {
+            if (output.AppliedSceneSnapshot is not null)
+            {
+                continue;
+            }
+
+            var scene = _document.Scenes.FirstOrDefault(item => item.Id == output.AssignedSceneId);
+            if (scene is not null)
+            {
+                output.AppliedSceneSnapshot = SceneEditSessionService.CloneScene(scene);
+            }
+        }
+    }
+
     private void AddSelectedSourceToCurrentScene()
     {
         if (_selectedSource is null)
@@ -783,7 +899,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         });
 
         CurrentScene.Layers.Add(layer);
-        _document.HasUnsavedChanges = true;
+        MarkSceneDraftChanged();
         RebuildSceneLayers();
         var selected = BottomWorkbench.Layers.First(item => item.Id == layer.Id);
         SelectLayer(selected);
@@ -795,6 +911,11 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void AddMockScene()
     {
+        if (!CanLeaveCurrentScene())
+        {
+            return;
+        }
+
         var count = _document.Scenes.Count + 1;
         var scene = new StudioScene
         {
@@ -820,16 +941,20 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void SelectScene(StudioScene scene, bool updateProjectSelection)
     {
-        CurrentScene = scene;
+        _editSession = _sceneEditSessionService.Create(scene);
+        CurrentScene = _editSession.Draft;
         _document.SelectedSceneId = scene.Id;
-        Preview.SceneName = scene.DisplayName;
-        Preview.SetCanvas(scene.Canvas.Width, scene.Canvas.Height, scene.Canvas.FrameRate, scene.IsProgram);
+        Preview.SceneName = CurrentScene.DisplayName;
+        Preview.HasPendingChanges = false;
+        Preview.SetCanvas(CurrentScene.Canvas.Width, CurrentScene.Canvas.Height, CurrentScene.Canvas.FrameRate, CurrentScene.IsProgram);
         RebuildSceneLayers();
         RebuildProjectExplorer(updateProjectSelection ? scene.Id : SelectedProjectItem?.Id);
         RebuildSceneOutputRows();
         StatusBar.SceneText = $"Cena {scene.DisplayName}";
         StatusBar.OutputText = OutputSummary();
         AddSelectedSourceToCurrentSceneCommand.NotifyCanExecuteChanged();
+        ApplySceneDraftCommand.NotifyCanExecuteChanged();
+        DiscardSceneDraftCommand.NotifyCanExecuteChanged();
     }
 
     private void SelectOutput(StudioOutput output)
@@ -1341,6 +1466,11 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private static string OutputStateText(StudioOutput output)
     {
+        if (output.HasPendingSceneUpdate)
+        {
+            return "Atualização disponível";
+        }
+
         if (!output.IsConfigured)
         {
             return "Não configurada";
@@ -1444,6 +1574,11 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private static string OutputBadge(StudioOutput output)
     {
+        if (output.HasPendingSceneUpdate)
+        {
+            return "ATUALIZAR";
+        }
+
         if (output.IsLive || output.State == StudioOutputState.Live)
         {
             return "AO VIVO";
