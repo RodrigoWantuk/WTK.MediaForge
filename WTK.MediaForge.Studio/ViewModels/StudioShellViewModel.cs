@@ -64,7 +64,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         BottomWorkbench = new BottomWorkbenchViewModel();
         PreviewWorkspace = new PreviewWorkspaceViewModel(Preview);
         DockFactory = new StudioDockFactory(this);
-        DockLayout = DockFactory.CreateDefaultLayout();
+        DockLayout = DockFactory.CreateLayout();
+        DockFactory.InitLayout(DockLayout);
         NavigationDock = new StudioDockPanelViewModel("navigation", "Navegação", ProjectExplorer);
         ProductionDock = new StudioDockPanelViewModel("production", "Produção", Production);
         PropertiesDock = new StudioDockPanelViewModel("properties", "Propriedades", Inspector);
@@ -733,7 +734,8 @@ public sealed class StudioShellViewModel : ViewModelBase
     private void RestoreDefaultLayout()
     {
         _layoutDocument = new StudioLayoutDocument();
-        DockLayout = DockFactory.CreateDefaultLayout();
+        DockLayout = DockFactory.CreateLayout();
+        DockFactory.InitLayout(DockLayout);
         ApplyLayoutDocument(_layoutDocument);
         SaveLayoutDocument();
         SetStatus("Layout padrão restaurado.");
@@ -741,7 +743,8 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void RedockAllPanels()
     {
-        DockLayout = DockFactory.CreateDefaultLayout();
+        DockLayout = DockFactory.CreateLayout();
+        DockFactory.InitLayout(DockLayout);
         foreach (var panel in DockPanels())
         {
             panel.IsFloating = false;
@@ -947,7 +950,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         Preview.SceneName = CurrentScene.DisplayName;
         Preview.HasPendingChanges = false;
         Preview.SetCanvas(CurrentScene.Canvas.Width, CurrentScene.Canvas.Height, CurrentScene.Canvas.FrameRate, CurrentScene.IsProgram);
-        Preview.SetSafeAreaProfile(CurrentScene.SafeArea.ActionMarginPercent, CurrentScene.SafeArea.TitleMarginPercent, "Perfil da cena");
+        ApplyPreviewSafeAreaForScene(scene);
         RebuildSceneLayers();
         RebuildProjectExplorer(updateProjectSelection ? scene.Id : SelectedProjectItem?.Id);
         RebuildSceneOutputRows();
@@ -968,20 +971,14 @@ public sealed class StudioShellViewModel : ViewModelBase
         SelectedProjectItem = null;
         BottomWorkbench.SelectLayerFromOwner(null);
         Preview.SelectLayerFromOwner(null);
-        if (output.UseOwnSafeAreaProfile)
-        {
-            Preview.SetSafeAreaProfile(output.SafeArea.ActionMarginPercent, output.SafeArea.TitleMarginPercent, "Perfil da saída selecionada");
-        }
-        else if (CurrentScene is not null)
-        {
-            Preview.SetSafeAreaProfile(CurrentScene.SafeArea.ActionMarginPercent, CurrentScene.SafeArea.TitleMarginPercent, "Perfil da cena");
-        }
+        ApplyPreviewSafeAreaFromOutput(output);
 
         Inspector.SelectedPage = new OutputInspectorViewModel(
             output,
             AssignedSceneName(output),
             _document.Transitions,
-            new RelayCommand(() => OpenSendSceneDialog(output.Id)));
+            new RelayCommand(() => OpenSendSceneDialog(output.Id)),
+            () => ApplyPreviewSafeAreaFromOutput(output));
         _selectionService.Select(new StudioSelectionState(
             StudioSelectionKind.Output,
             output.Id,
@@ -1359,6 +1356,29 @@ public sealed class StudioShellViewModel : ViewModelBase
     private IEnumerable<StudioOutput> LinkedOutputs(StudioScene scene)
     {
         return _document.Outputs.Where(output => output.AssignedSceneId == scene.Id);
+    }
+
+    private void ApplyPreviewSafeAreaForScene(StudioScene scene)
+    {
+        var output = ResolvePreviewOutputForScene(scene);
+        if (output is not null)
+        {
+            ApplyPreviewSafeAreaFromOutput(output);
+            return;
+        }
+
+        Preview.SetSafeAreaProfile(5, LocalizationManager.Instance["Preview_SafeArea_NoOutput"]);
+    }
+
+    private void ApplyPreviewSafeAreaFromOutput(StudioOutput output)
+    {
+        Preview.SetSafeAreaProfile(output.SafeArea.MarginPercent, output.DisplayName);
+    }
+
+    private StudioOutput? ResolvePreviewOutputForScene(StudioScene scene)
+    {
+        return LinkedOutputs(scene).FirstOrDefault(output => output.TypeId == "output.preview")
+            ?? LinkedOutputs(scene).FirstOrDefault();
     }
 
     private StudioOutput? GetStreamingOutput()

@@ -389,32 +389,6 @@ public sealed class SceneInspectorViewModel : InspectorPageViewModel
         }
     }
 
-    public double ActionSafeMarginPercent
-    {
-        get => _scene.SafeArea.ActionMarginPercent;
-        set
-        {
-            if (Math.Abs(_scene.SafeArea.ActionMarginPercent - value) > double.Epsilon)
-            {
-                _scene.SafeArea.ActionMarginPercent = value;
-                OnPropertyChanged();
-            }
-        }
-    }
-
-    public double TitleSafeMarginPercent
-    {
-        get => _scene.SafeArea.TitleMarginPercent;
-        set
-        {
-            if (Math.Abs(_scene.SafeArea.TitleMarginPercent - value) > double.Epsilon)
-            {
-                _scene.SafeArea.TitleMarginPercent = value;
-                OnPropertyChanged();
-            }
-        }
-    }
-
     public bool IsProgram
     {
         get => _scene.IsProgram;
@@ -444,15 +418,18 @@ public sealed class SceneInspectorViewModel : InspectorPageViewModel
 public sealed class OutputInspectorViewModel : InspectorPageViewModel
 {
     private readonly StudioOutput _output;
+    private readonly Action? _onSafeMarginChanged;
 
     public OutputInspectorViewModel(
         StudioOutput output,
         string selectedSceneName,
         IEnumerable<StudioTransition> transitions,
-        ICommand? sendSceneCommand)
+        ICommand? sendSceneCommand,
+        Action? onSafeMarginChanged = null)
         : base(StudioSelectionKind.Output, output.DisplayName, new StudioDisplayNameService().GetOutputTypeName(output.TypeId), GetOutputIcon(output.TypeId))
     {
         _output = output;
+        _onSafeMarginChanged = onSafeMarginChanged;
         CurrentSceneName = selectedSceneName;
         SendSceneCommand = sendSceneCommand;
         OutputTypes = new ObservableCollection<string> { "Prévia local", "Gravação MP4", "Transmissão RTMP", "Câmera virtual" };
@@ -536,41 +513,16 @@ public sealed class OutputInspectorViewModel : InspectorPageViewModel
         }
     }
 
-    public bool UseOwnSafeAreaProfile
+    public double SafeMarginPercent
     {
-        get => _output.UseOwnSafeAreaProfile;
+        get => _output.SafeArea.MarginPercent;
         set
         {
-            if (_output.UseOwnSafeAreaProfile != value)
+            if (Math.Abs(_output.SafeArea.MarginPercent - value) > double.Epsilon)
             {
-                _output.UseOwnSafeAreaProfile = value;
+                _output.SafeArea.MarginPercent = value;
                 OnPropertyChanged();
-            }
-        }
-    }
-
-    public double ActionSafeMarginPercent
-    {
-        get => _output.SafeArea.ActionMarginPercent;
-        set
-        {
-            if (Math.Abs(_output.SafeArea.ActionMarginPercent - value) > double.Epsilon)
-            {
-                _output.SafeArea.ActionMarginPercent = value;
-                OnPropertyChanged();
-            }
-        }
-    }
-
-    public double TitleSafeMarginPercent
-    {
-        get => _output.SafeArea.TitleMarginPercent;
-        set
-        {
-            if (Math.Abs(_output.SafeArea.TitleMarginPercent - value) > double.Epsilon)
-            {
-                _output.SafeArea.TitleMarginPercent = value;
-                OnPropertyChanged();
+                _onSafeMarginChanged?.Invoke();
             }
         }
     }

@@ -5,21 +5,31 @@
              x:DataType="vm:StatusBarViewModel">
   <Border Background="{StaticResource MfSurface1Brush}"
           BorderBrush="{StaticResource MfBorderBrush}"
-          BorderThickness="0,1,0,0">
-    <Grid ColumnDefinitions="*,2*,Auto" Margin="10,0">
+          BorderThickness="0,1,0,0"
+          MinHeight="26"
+          Padding="10,0">
+    <Grid ColumnDefinitions="*,2*,Auto"
+          VerticalAlignment="Center">
       <TextBlock Text="{Binding StatusText}"
                  Classes="secondary"
+                 FontSize="12"
                  VerticalAlignment="Center" />
       <TextBlock Grid.Column="1"
                  Text="{Binding CenterText}"
                  Classes="muted"
+                 FontSize="12"
                  HorizontalAlignment="Center"
-                 VerticalAlignment="Center" />
+                 VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis" />
       <Border Grid.Column="2"
               Classes="badge"
               IsVisible="{Binding HasRightStatus}"
-              VerticalAlignment="Center">
-        <TextBlock Text="{Binding RightText}" Classes="accent" FontSize="11" />
+              VerticalAlignment="Center"
+              Padding="6,2">
+        <TextBlock Text="{Binding RightText}"
+                   Classes="accent"
+                   FontSize="11"
+                   VerticalAlignment="Center" />
       </Border>
     </Grid>
   </Border>

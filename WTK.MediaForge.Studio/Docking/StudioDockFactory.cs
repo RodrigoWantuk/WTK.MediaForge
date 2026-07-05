@@ -1,6 +1,9 @@
+using Dock.Avalonia.Controls;
+using Dock.Model.Controls;
 using Dock.Model.Core;
 using Dock.Model.Mvvm;
 using Dock.Model.Mvvm.Controls;
+using Dock.Settings;
 using WTK.MediaForge.Studio.ViewModels;
 using Alignment = Dock.Model.Core.Alignment;
 using Orientation = Dock.Model.Core.Orientation;
@@ -16,7 +19,7 @@ public sealed class StudioDockFactory : Factory
         _shell = shell;
     }
 
-    public IDock CreateDefaultLayout()
+    public override IRootDock CreateLayout()
     {
         var navigationDock = CreateToolDock(
             "dock.navigation",
@@ -99,17 +102,27 @@ public sealed class StudioDockFactory : Factory
             ActiveDockable = centerDock
         };
 
-        var root = new RootDock
+        var root = CreateRootDock();
+
+        root.Id = "dock.root";
+        root.Title = "WTK MediaForge Studio";
+        root.VisibleDockables = CreateList<IDockable>(mainDock);
+        root.ActiveDockable = mainDock;
+        root.DefaultDockable = mainDock;
+
+        return root;
+    }
+
+    public override void InitLayout(IDockable layout)
+    {
+        HostWindowLocator = new Dictionary<string, Func<IHostWindow?>>
         {
-            Id = "dock.root",
-            Title = "WTK MediaForge Studio",
-            VisibleDockables = CreateList<IDockable>(mainDock),
-            ActiveDockable = mainDock,
-            DefaultDockable = mainDock
+            [nameof(IDockWindow)] = () => DockSettings.UseManagedWindows
+                ? new ManagedHostWindow()
+                : new HostWindow()
         };
 
-        InitLayout(root);
-        return root;
+        base.InitLayout(layout);
     }
 
     private ToolDock CreateToolDock(string id, Alignment alignment, double proportion, Tool tool)
@@ -138,7 +151,7 @@ public sealed class StudioDockFactory : Factory
             Id = id,
             Title = title,
             Context = context,
-            CanClose = true,
+            CanClose = false,
             CanFloat = true,
             CanPin = true,
             CanDrag = true,

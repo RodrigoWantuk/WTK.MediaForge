@@ -3,9 +3,33 @@
              x:Class="WTK.MediaForge.Studio.App"
              xmlns:local="using:WTK.MediaForge.Studio"
              xmlns:dockFluent="using:Dock.Avalonia.Themes.Fluent"
+             xmlns:dockModel="using:Dock.Model.Mvvm.Controls"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:shell="using:WTK.MediaForge.Studio.Views.Shell"
              RequestedThemeVariant="Dark">
 
     <Application.DataTemplates>
+        <DataTemplate DataType="{x:Type dockModel:Tool}">
+            <ContentControl Content="{Binding Context}" />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type dockModel:Document}">
+            <ContentControl Content="{Binding Context}" />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ProjectExplorerViewModel}">
+            <shell:ProjectExplorerView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PreviewWorkspaceViewModel}">
+            <shell:PreviewWorkspaceView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ProductionPanelViewModel}">
+            <shell:ProductionPanelView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:InspectorHostViewModel}">
+            <shell:InspectorView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:BottomWorkbenchViewModel}">
+            <shell:BottomWorkbenchView />
+        </DataTemplate>
         <local:ViewLocator/>
     </Application.DataTemplates>
 
@@ -16,6 +40,17 @@
                 <ResourceInclude Source="avares://WTK.MediaForge.Studio/Styles/Icons.axaml" />
                 <ResourceInclude Source="avares://WTK.MediaForge.Studio/Styles/Spacing.axaml" />
             </ResourceDictionary.MergedDictionaries>
+            <x:String x:Key="ToolChromeControlFloatString">Flutuar</x:String>
+            <x:String x:Key="ToolChromeControlDockString">Fixar</x:String>
+            <x:String x:Key="ToolChromeControlAutoHideString">Ocultar automaticamente</x:String>
+            <x:String x:Key="ToolChromeControlDockAsDocumentString">Acoplar como documento</x:String>
+            <x:String x:Key="ToolTabStripItemFloatString">Flutuar</x:String>
+            <x:String x:Key="ToolTabStripItemDockString">Fixar</x:String>
+            <x:String x:Key="ToolTabStripItemAutoHideString">Ocultar automaticamente</x:String>
+            <x:String x:Key="ToolTabStripItemDockAsDocumentString">Acoplar como documento</x:String>
+            <x:String x:Key="Dock_ToolMenuTip">Opções do painel</x:String>
+            <x:String x:Key="Dock_ToolPinTip">Ocultar automaticamente</x:String>
+            <x:String x:Key="Dock_ToolFloatTip">Flutuar painel</x:String>
         </ResourceDictionary>
     </Application.Resources>
   
@@ -25,5 +60,6 @@
         <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Typography.axaml" />
         <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Controls.axaml" />
         <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Components.axaml" />
+        <StyleInclude Source="avares://WTK.MediaForge.Studio/Styles/Dock.axaml" />
     </Application.Styles>
 </Application>

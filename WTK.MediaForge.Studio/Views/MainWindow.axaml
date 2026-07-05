@@ -19,25 +19,8 @@
         Background="{StaticResource MfBackgroundBrush}"
         Title="WTK MediaForge Studio"
         ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="36"
         WindowDecorations="None">
-
-  <Window.DataTemplates>
-    <DataTemplate DataType="{x:Type vm:ProjectExplorerViewModel}">
-      <shell:ProjectExplorerView />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:PreviewWorkspaceViewModel}">
-      <shell:PreviewWorkspaceView />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:ProductionPanelViewModel}">
-      <shell:ProductionPanelView />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:InspectorHostViewModel}">
-      <shell:InspectorView />
-    </DataTemplate>
-    <DataTemplate DataType="{x:Type vm:BottomWorkbenchViewModel}">
-      <shell:BottomWorkbenchView />
-    </DataTemplate>
-  </Window.DataTemplates>
 
   <Grid Background="{StaticResource MfBackgroundBrush}">
     <Grid.RowDefinitions>
@@ -55,8 +38,6 @@
                       Factory="{Binding DockFactory}"
                       DefaultContext="{Binding}"
                       InitializeFactory="True"
-                      InitializeLayout="True"
-                      AutoCreateDataTemplates="False"
                       EnableManagedWindowLayer="True"
                       IsDockingEnabled="True" />
 

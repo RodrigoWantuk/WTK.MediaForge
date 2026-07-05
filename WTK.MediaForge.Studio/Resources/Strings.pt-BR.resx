@@ -21,8 +21,8 @@
   <data name="Common_Search" xml:space="preserve"><value>Buscar</value></data>
   <data name="Common_Planned" xml:space="preserve"><value>Planejado</value></data>
   <data name="Common_Configure" xml:space="preserve"><value>Configurar</value></data>
-  <data name="Action_AddSource" xml:space="preserve"><value>+ Fonte</value></data>
-  <data name="Action_AddScene" xml:space="preserve"><value>+ Cena</value></data>
+  <data name="Action_AddSource" xml:space="preserve"><value>Entrada</value></data>
+  <data name="Action_AddScene" xml:space="preserve"><value>Cena</value></data>
   <data name="Action_ConfigureOutput" xml:space="preserve"><value>Configurar saídas</value></data>
   <data name="Action_StartStreaming" xml:space="preserve"><value>Transmitir</value></data>
   <data name="Action_StopStreaming" xml:space="preserve"><value>Encerrar transmissão</value></data>
@@ -35,9 +35,22 @@
   <data name="Panel_Outputs" xml:space="preserve"><value>Saídas</value></data>
   <data name="Panel_Production" xml:space="preserve"><value>Produção</value></data>
   <data name="Panel_SceneOutputs" xml:space="preserve"><value>Saídas da cena</value></data>
-  <data name="Preview_Fit" xml:space="preserve"><value>Fit</value></data>
+  <data name="Preview_Fit" xml:space="preserve"><value>Ajustar</value></data>
   <data name="Preview_Grid" xml:space="preserve"><value>Grade</value></data>
   <data name="Preview_SafeArea" xml:space="preserve"><value>Área segura</value></data>
+  <data name="Preview_ZoomActualSize" xml:space="preserve"><value>100%</value></data>
+  <data name="Preview_SafeArea_Hidden" xml:space="preserve"><value>Oculta</value></data>
+  <data name="Preview_SafeArea_Visible" xml:space="preserve"><value>Margem {0:0.#}%</value></data>
+  <data name="Preview_SafeArea_Menu_Hidden" xml:space="preserve"><value>Ocultar margem de segurança</value></data>
+  <data name="Preview_SafeArea_Menu_Visible" xml:space="preserve"><value>Mostrar margem de segurança</value></data>
+  <data name="Preview_SafeArea_OutputProfile" xml:space="preserve"><value>Saída: {0}</value></data>
+  <data name="Preview_SafeArea_NoOutput" xml:space="preserve"><value>Sem saída vinculada</value></data>
+  <data name="SafeArea_MarginLabel" xml:space="preserve"><value>Margem de segurança (%)</value></data>
+  <data name="SafeArea_MarginHint" xml:space="preserve"><value>Área onde o conteúdo permanece visível no destino desta saída (overscan de TV, etc.).</value></data>
+  <data name="SafeArea_OutputHint" xml:space="preserve"><value>A margem de segurança é definida por saída, pois cada destino (TV, stream, gravação) pode ter recortes diferentes.</value></data>
+  <data name="Dock_ToolMenuTip" xml:space="preserve"><value>Opções do painel</value></data>
+  <data name="Dock_ToolPinTip" xml:space="preserve"><value>Ocultar automaticamente</value></data>
+  <data name="Dock_ToolFloatTip" xml:space="preserve"><value>Flutuar painel</value></data>
   <data name="Term_Settings" xml:space="preserve"><value>Configurações</value></data>
   <data name="Term_Outputs" xml:space="preserve"><value>Saídas</value></data>
   <data name="Term_Transmission" xml:space="preserve"><value>Transmissão</value></data>

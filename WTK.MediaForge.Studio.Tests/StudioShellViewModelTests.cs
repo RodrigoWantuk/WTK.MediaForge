@@ -236,13 +236,13 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public void SafeArea_DefaultComesFromSceneProfile()
+    public void SafeArea_DefaultComesFromLinkedOutputProfile()
     {
         var shell = CreateShell();
 
-        Assert.Equal(5, shell.Preview.SafeAreaActionMarginPercent);
-        Assert.Equal(10, shell.Preview.SafeAreaTitleMarginPercent);
-        Assert.Equal(SafeAreaDisplayMode.Title, shell.Preview.SafeAreaMode);
+        Assert.Equal(5, shell.Preview.SafeAreaMarginPercent);
+        Assert.Equal(SafeAreaDisplayMode.Visible, shell.Preview.SafeAreaMode);
+        Assert.Contains("Prévia local", shell.Preview.SafeAreaProfileLabel, StringComparison.Ordinal);
     }
 
     [Fact]

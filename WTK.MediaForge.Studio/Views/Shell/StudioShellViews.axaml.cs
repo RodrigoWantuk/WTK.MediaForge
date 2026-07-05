@@ -1,6 +1,9 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.VisualTree;
 
 namespace WTK.MediaForge.Studio.Views.Shell;
 
@@ -17,7 +20,12 @@ public partial class StudioTitleBarView : UserControl
             return;
         }
 
-        var point = e.GetCurrentPoint(this);
+        if (IsInteractiveControl(e.Source))
+        {
+            return;
+        }
+
+        var point = e.GetCurrentPoint(window);
         if (!point.Properties.IsLeftButtonPressed)
         {
             return;
@@ -31,6 +39,17 @@ public partial class StudioTitleBarView : UserControl
         }
 
         window.BeginMoveDrag(e);
+        e.Handled = true;
+    }
+
+    private void OnWindowControlsPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        e.Handled = true;
+    }
+
+    private static bool IsInteractiveControl(object? source)
+    {
+        return source is Visual visual && visual.FindAncestorOfType<Button>() is not null;
     }
 
     private void OnMinimizeClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

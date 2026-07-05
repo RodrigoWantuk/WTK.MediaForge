@@ -81,8 +81,6 @@ public sealed partial class StudioScene : ObservableObject
 
     public StudioCanvasSettings Canvas { get; } = new();
 
-    public SafeAreaProfile SafeArea { get; } = new();
-
     public ObservableCollection<StudioLayer> Layers { get; } = new();
 
     public ObservableCollection<StudioEffect> Effects { get; } = new();
@@ -300,8 +298,6 @@ public sealed partial class StudioOutput : ObservableObject
     private StudioOutputState _state = StudioOutputState.Running;
     private bool _hasPendingSceneUpdate;
     private StudioScene? _appliedSceneSnapshot;
-    private bool _useOwnSafeAreaProfile;
-
     public string Id
     {
         get => _id;
@@ -402,12 +398,6 @@ public sealed partial class StudioOutput : ObservableObject
     {
         get => _appliedSceneSnapshot;
         set => SetProperty(ref _appliedSceneSnapshot, value);
-    }
-
-    public bool UseOwnSafeAreaProfile
-    {
-        get => _useOwnSafeAreaProfile;
-        set => SetProperty(ref _useOwnSafeAreaProfile, value);
     }
 
     public SafeAreaProfile SafeArea { get; } = new();
@@ -547,18 +537,11 @@ public sealed partial class StudioCanvasSettings : ObservableObject
 
 public sealed partial class SafeAreaProfile : ObservableObject
 {
-    private double _actionMarginPercent = 5;
-    private double _titleMarginPercent = 10;
+    private double _marginPercent = 5;
 
-    public double ActionMarginPercent
+    public double MarginPercent
     {
-        get => _actionMarginPercent;
-        set => SetProperty(ref _actionMarginPercent, Math.Clamp(value, 0, 40));
-    }
-
-    public double TitleMarginPercent
-    {
-        get => _titleMarginPercent;
-        set => SetProperty(ref _titleMarginPercent, Math.Clamp(value, 0, 45));
+        get => _marginPercent;
+        set => SetProperty(ref _marginPercent, Math.Clamp(value, 0, 40));
     }
 }

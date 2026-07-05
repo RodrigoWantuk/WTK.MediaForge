@@ -1,0 +1,10 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dockControls="using:Dock.Avalonia.Controls">
+  <Style Selector="dockControls|ToolChromeControl /template/ Button#PART_MenuButton">
+    <Setter Property="ToolTip.Tip" Value="{DynamicResource Dock_ToolMenuTip}" />
+  </Style>
+  <Style Selector="dockControls|ToolChromeControl /template/ Button#PART_PinButton">
+    <Setter Property="ToolTip.Tip" Value="{DynamicResource Dock_ToolPinTip}" />
+  </Style>
+</Styles>

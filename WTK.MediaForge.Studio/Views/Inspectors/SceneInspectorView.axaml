@@ -3,6 +3,7 @@
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
              xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
              xmlns:models="using:WTK.MediaForge.Studio.Models"
+             xmlns:loc="using:WTK.MediaForge.Studio.Localization"
              x:Class="WTK.MediaForge.Studio.Views.Inspectors.SceneInspectorView"
              x:DataType="vm:SceneInspectorViewModel">
   <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -48,22 +49,6 @@
             </StackPanel>
           </Grid>
           <CheckBox Content="Cena principal" IsChecked="{Binding IsProgram, Mode=TwoWay}" />
-        </StackPanel>
-      </Border>
-
-      <Border Classes="section">
-        <StackPanel Spacing="10">
-          <TextBlock Text="ÁREA SEGURA" Classes="panel-title" />
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-            <StackPanel Spacing="4">
-              <TextBlock Text="Action safe (%)" Classes="muted" />
-              <NumericUpDown Value="{Binding ActionSafeMarginPercent, Mode=TwoWay}" Minimum="0" Maximum="40" Increment="0.5" />
-            </StackPanel>
-            <StackPanel Grid.Column="1" Spacing="4">
-              <TextBlock Text="Title safe (%)" Classes="muted" />
-              <NumericUpDown Value="{Binding TitleSafeMarginPercent, Mode=TwoWay}" Minimum="0" Maximum="45" Increment="0.5" />
-            </StackPanel>
-          </Grid>
         </StackPanel>
       </Border>
 

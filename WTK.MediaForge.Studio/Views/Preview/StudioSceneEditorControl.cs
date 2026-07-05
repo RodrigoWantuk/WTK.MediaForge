@@ -478,7 +478,7 @@ public sealed class StudioSceneEditorControl : Control
             return;
         }
 
-        var margin = vm.ActiveSafeAreaMarginPercent / 100d;
+        var margin = vm.SafeAreaMarginPercent / 100d;
         var safe = new Rect(vm.CanvasWidth * margin, vm.CanvasHeight * margin, vm.CanvasWidth * (1 - margin * 2), vm.CanvasHeight * (1 - margin * 2));
         var viewportRect = vm.Transform.SceneToViewport(safe);
         context.DrawRectangle(null, Pen("MfWarningBrush", 1), viewportRect);

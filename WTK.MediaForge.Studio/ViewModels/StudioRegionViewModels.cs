@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Input;
 using CommunityToolkit.Mvvm.Input;
 using WTK.MediaForge.Studio.DocumentModel;
+using WTK.MediaForge.Studio.Localization;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Views.Preview;
 
@@ -193,9 +195,9 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
 
     public string AddButtonText => SelectedTab switch
     {
-        StudioExplorerTabKind.Sources => "+ Entrada",
-        StudioExplorerTabKind.Outputs => "+ Saída",
-        _ => "+ Cena"
+        StudioExplorerTabKind.Sources => "Entrada",
+        StudioExplorerTabKind.Outputs => "Saída",
+        _ => "Cena"
     };
 
     public string SearchText
@@ -296,8 +298,7 @@ public sealed class ProjectExplorerViewModel : ViewModelBase
 public enum SafeAreaDisplayMode
 {
     Hidden,
-    Action,
-    Title
+    Visible
 }
 
 public sealed class PreviewCanvasViewModel : ViewModelBase
@@ -312,15 +313,14 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     private string _frameRate = "60 fps";
     private bool _isFitZoom = true;
     private bool _hasPendingChanges;
-    private SafeAreaDisplayMode _safeAreaMode = SafeAreaDisplayMode.Title;
-    private double _safeAreaActionMarginPercent = 5;
-    private double _safeAreaTitleMarginPercent = 10;
-    private string _safeAreaProfileLabel = "Perfil da cena";
+    private SafeAreaDisplayMode _safeAreaMode = SafeAreaDisplayMode.Visible;
+    private double _safeAreaMarginPercent = 5;
+    private string _safeAreaProfileLabel = string.Empty;
 
     public PreviewCanvasViewModel()
     {
         ToggleGridCommand = new RelayCommand(() => IsGridVisible = !IsGridVisible);
-        ToggleSafeFrameCommand = new RelayCommand(() => SafeAreaMode = SafeAreaMode == SafeAreaDisplayMode.Hidden ? SafeAreaDisplayMode.Title : SafeAreaDisplayMode.Hidden);
+        ToggleSafeFrameCommand = new RelayCommand(() => SafeAreaMode = SafeAreaMode == SafeAreaDisplayMode.Hidden ? SafeAreaDisplayMode.Visible : SafeAreaDisplayMode.Hidden);
         SetSafeAreaModeCommand = new RelayCommand<string>(SetSafeAreaMode);
         FitZoomCommand = new RelayCommand(FitZoom);
         ActualSizeCommand = new RelayCommand(() =>
@@ -382,7 +382,11 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         set => SetProperty(ref _frameRate, value);
     }
 
-    public string ZoomLabel => IsFitZoom ? "Fit" : Zoom >= 0.995 && Zoom <= 1.005 ? "100%" : $"{Zoom * 100:0}%";
+    public string ZoomLabel => IsFitZoom
+        ? LocalizationManager.Instance["Preview_Fit"]
+        : Zoom >= 0.995 && Zoom <= 1.005
+            ? LocalizationManager.Instance["Preview_ZoomActualSize"]
+            : $"{Zoom * 100:0}%";
 
     public ICommand ToggleGridCommand { get; }
 
@@ -427,31 +431,18 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
             {
                 IsSafeFrameVisible = value != SafeAreaDisplayMode.Hidden;
                 OnPropertyChanged(nameof(SafeAreaModeLabel));
-                OnPropertyChanged(nameof(ActiveSafeAreaMarginPercent));
             }
         }
     }
 
-    public double SafeAreaActionMarginPercent
+    public double SafeAreaMarginPercent
     {
-        get => _safeAreaActionMarginPercent;
+        get => _safeAreaMarginPercent;
         private set
         {
-            if (SetProperty(ref _safeAreaActionMarginPercent, value))
+            if (SetProperty(ref _safeAreaMarginPercent, value))
             {
-                OnPropertyChanged(nameof(ActiveSafeAreaMarginPercent));
-            }
-        }
-    }
-
-    public double SafeAreaTitleMarginPercent
-    {
-        get => _safeAreaTitleMarginPercent;
-        private set
-        {
-            if (SetProperty(ref _safeAreaTitleMarginPercent, value))
-            {
-                OnPropertyChanged(nameof(ActiveSafeAreaMarginPercent));
+                OnPropertyChanged(nameof(SafeAreaModeLabel));
             }
         }
     }
@@ -462,15 +453,13 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         private set => SetProperty(ref _safeAreaProfileLabel, value);
     }
 
-    public double ActiveSafeAreaMarginPercent => SafeAreaMode == SafeAreaDisplayMode.Title
-        ? SafeAreaTitleMarginPercent
-        : SafeAreaActionMarginPercent;
-
     public string SafeAreaModeLabel => SafeAreaMode switch
     {
-        SafeAreaDisplayMode.Hidden => "Área segura oculta",
-        SafeAreaDisplayMode.Action => $"Action safe {SafeAreaActionMarginPercent:0.#}%",
-        _ => $"Title safe {SafeAreaTitleMarginPercent:0.#}%"
+        SafeAreaDisplayMode.Hidden => LocalizationManager.Instance["Preview_SafeArea_Hidden"],
+        _ => string.Format(
+            CultureInfo.CurrentCulture,
+            LocalizationManager.Instance["Preview_SafeArea_Visible"],
+            SafeAreaMarginPercent)
     };
 
     public string SelectedLayerName => SelectedLayer?.Name ?? "Nenhuma camada";
@@ -525,11 +514,13 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         FitZoom();
     }
 
-    public void SetSafeAreaProfile(double actionMarginPercent, double titleMarginPercent, string label)
+    public void SetSafeAreaProfile(double marginPercent, string outputLabel)
     {
-        SafeAreaActionMarginPercent = actionMarginPercent;
-        SafeAreaTitleMarginPercent = titleMarginPercent;
-        SafeAreaProfileLabel = label;
+        SafeAreaMarginPercent = marginPercent;
+        SafeAreaProfileLabel = string.Format(
+            CultureInfo.CurrentCulture,
+            LocalizationManager.Instance["Preview_SafeArea_OutputProfile"],
+            outputLabel);
     }
 
     public void SetViewport(double width, double height)
@@ -880,8 +871,7 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         SafeAreaMode = mode switch
         {
             "hidden" => SafeAreaDisplayMode.Hidden,
-            "action" => SafeAreaDisplayMode.Action,
-            "title" => SafeAreaDisplayMode.Title,
+            "visible" => SafeAreaDisplayMode.Visible,
             _ => SafeAreaMode
         };
     }

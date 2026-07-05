@@ -3,6 +3,7 @@
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
              xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
              xmlns:models="using:WTK.MediaForge.Studio.Models"
+             xmlns:loc="using:WTK.MediaForge.Studio.Localization"
              x:Class="WTK.MediaForge.Studio.Views.Inspectors.OutputInspectorView"
              x:DataType="vm:OutputInspectorViewModel">
   <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -61,17 +62,12 @@
       <Border Classes="section">
         <StackPanel Spacing="10">
           <TextBlock Text="ÁREA SEGURA DA SAÍDA" Classes="panel-title" />
-          <CheckBox Content="Usar perfil próprio nesta saída" IsChecked="{Binding UseOwnSafeAreaProfile, Mode=TwoWay}" />
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-            <StackPanel Spacing="4">
-              <TextBlock Text="Action safe (%)" Classes="muted" />
-              <NumericUpDown Value="{Binding ActionSafeMarginPercent, Mode=TwoWay}" Minimum="0" Maximum="40" Increment="0.5" />
-            </StackPanel>
-            <StackPanel Grid.Column="1" Spacing="4">
-              <TextBlock Text="Title safe (%)" Classes="muted" />
-              <NumericUpDown Value="{Binding TitleSafeMarginPercent, Mode=TwoWay}" Minimum="0" Maximum="45" Increment="0.5" />
-            </StackPanel>
-          </Grid>
+          <TextBlock Text="{loc:Loc SafeArea_OutputHint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+          <StackPanel Spacing="4">
+            <TextBlock Text="{loc:Loc SafeArea_MarginLabel}" Classes="muted" />
+            <NumericUpDown Value="{Binding SafeMarginPercent, Mode=TwoWay}" Minimum="0" Maximum="40" Increment="0.5" />
+            <TextBlock Text="{loc:Loc SafeArea_MarginHint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+          </StackPanel>
         </StackPanel>
       </Border>
 

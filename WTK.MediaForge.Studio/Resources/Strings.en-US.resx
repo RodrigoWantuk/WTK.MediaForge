@@ -38,6 +38,19 @@
   <data name="Preview_Fit" xml:space="preserve"><value>Fit</value></data>
   <data name="Preview_Grid" xml:space="preserve"><value>Grid</value></data>
   <data name="Preview_SafeArea" xml:space="preserve"><value>Safe area</value></data>
+  <data name="Preview_ZoomActualSize" xml:space="preserve"><value>100%</value></data>
+  <data name="Preview_SafeArea_Hidden" xml:space="preserve"><value>Hidden</value></data>
+  <data name="Preview_SafeArea_Visible" xml:space="preserve"><value>Margin {0:0.#}%</value></data>
+  <data name="Preview_SafeArea_Menu_Hidden" xml:space="preserve"><value>Hide safe margin</value></data>
+  <data name="Preview_SafeArea_Menu_Visible" xml:space="preserve"><value>Show safe margin</value></data>
+  <data name="Preview_SafeArea_OutputProfile" xml:space="preserve"><value>Output: {0}</value></data>
+  <data name="Preview_SafeArea_NoOutput" xml:space="preserve"><value>No linked output</value></data>
+  <data name="SafeArea_MarginLabel" xml:space="preserve"><value>Safe margin (%)</value></data>
+  <data name="SafeArea_MarginHint" xml:space="preserve"><value>Area where content stays visible on this output destination (TV overscan, etc.).</value></data>
+  <data name="SafeArea_OutputHint" xml:space="preserve"><value>Safe margin is defined per output because each destination (TV, stream, recording) may crop differently.</value></data>
+  <data name="Dock_ToolMenuTip" xml:space="preserve"><value>Panel options</value></data>
+  <data name="Dock_ToolPinTip" xml:space="preserve"><value>Auto hide</value></data>
+  <data name="Dock_ToolFloatTip" xml:space="preserve"><value>Float panel</value></data>
   <data name="Term_Settings" xml:space="preserve"><value>Settings</value></data>
   <data name="Term_Outputs" xml:space="preserve"><value>Outputs</value></data>
   <data name="Term_Transmission" xml:space="preserve"><value>Transmission</value></data>

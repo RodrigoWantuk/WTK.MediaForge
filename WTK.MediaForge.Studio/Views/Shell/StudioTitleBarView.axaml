@@ -8,30 +8,33 @@
              x:DataType="vm:StudioShellViewModel">
   <Border Background="{StaticResource MfSurface1Brush}"
           BorderBrush="{StaticResource MfBorderBrush}"
-          BorderThickness="0,0,0,1">
+          BorderThickness="0,0,0,1"
+          PointerPressed="OnTitleBarPointerPressed">
     <Grid ColumnDefinitions="*,Auto" Margin="10,0,0,0">
-      <StackPanel Orientation="Horizontal"
-                  Spacing="10"
-                  VerticalAlignment="Center"
-                  PointerPressed="OnTitleBarPointerPressed">
-        <Border Width="22"
-                Height="22"
-                CornerRadius="5"
-                Background="{StaticResource MfAccentSoftBrush}"
-                BorderBrush="{StaticResource MfAccentBrush}"
-                BorderThickness="1">
-          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Scene}"
-                                 IconSize="14"
-                                 Foreground="{StaticResource MfAccentBrush}"
-                                 HorizontalAlignment="Center"
-                                 VerticalAlignment="Center" />
-        </Border>
-        <TextBlock Text="{Binding TitleBar.ProductName}" Classes="title" VerticalAlignment="Center" />
-        <TextBlock Text="{Binding TitleBar.ProjectName}" Classes="secondary" VerticalAlignment="Center" />
-      </StackPanel>
+      <Panel Grid.Column="0" Background="Transparent">
+        <StackPanel Orientation="Horizontal"
+                    Spacing="10"
+                    VerticalAlignment="Center">
+          <Border Width="22"
+                  Height="22"
+                  CornerRadius="5"
+                  Background="{StaticResource MfAccentSoftBrush}"
+                  BorderBrush="{StaticResource MfAccentBrush}"
+                  BorderThickness="1">
+            <components:StudioIcon Kind="{x:Static models:StudioIconKind.Scene}"
+                                   IconSize="14"
+                                   Foreground="{StaticResource MfAccentBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+          </Border>
+          <TextBlock Text="{Binding TitleBar.ProductName}" Classes="title" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding TitleBar.ProjectName}" Classes="secondary" VerticalAlignment="Center" />
+        </StackPanel>
+      </Panel>
       <StackPanel Grid.Column="1"
                   Orientation="Horizontal"
-                  VerticalAlignment="Stretch">
+                  VerticalAlignment="Stretch"
+                  PointerPressed="OnWindowControlsPointerPressed">
         <Button Classes="window-control"
                 Click="OnMinimizeClick"
                 ToolTip.Tip="{loc:Loc Window_Minimize}">
