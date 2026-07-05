@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:docking="using:WTK.MediaForge.Studio.ViewModels.Docking"
+        xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+        xmlns:shell="using:WTK.MediaForge.Studio.Views.Shell"
+        x:Class="WTK.MediaForge.Studio.Views.Docking.StudioFloatingPanelWindow"
+        x:DataType="docking:StudioDockPanelViewModel"
+        Width="420"
+        Height="520"
+        MinWidth="280"
+        MinHeight="220"
+        Background="{StaticResource MfBackgroundBrush}"
+        Title="{Binding Title}">
+  <Window.DataTemplates>
+    <DataTemplate DataType="vm:ProjectExplorerViewModel">
+      <shell:ProjectExplorerView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:ProductionPanelViewModel">
+      <shell:ProductionPanelView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:InspectorHostViewModel">
+      <shell:InspectorView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:BottomWorkbenchViewModel">
+      <shell:BottomWorkbenchView />
+    </DataTemplate>
+  </Window.DataTemplates>
+
+  <Grid RowDefinitions="34,*">
+    <Border Background="{StaticResource MfSurface2Brush}"
+            BorderBrush="{StaticResource MfBorderBrush}"
+            BorderThickness="0,0,0,1"
+            Padding="10,0">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="{Binding Title}" Classes="panel-title" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Command="{Binding ToggleFloatingCommand}" Padding="8,3">
+          <TextBlock Text="Reencaixar" />
+        </Button>
+      </Grid>
+    </Border>
+    <ContentControl Grid.Row="1" Content="{Binding Content}" />
+  </Grid>
+</Window>

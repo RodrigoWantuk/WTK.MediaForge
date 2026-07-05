@@ -6,6 +6,7 @@ using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Localization;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Services;
+using WTK.MediaForge.Studio.ViewModels.Docking;
 
 namespace WTK.MediaForge.Studio.ViewModels;
 
@@ -53,6 +54,10 @@ public sealed class StudioShellViewModel : ViewModelBase
         _uiTimer = uiTimer;
 
         BottomWorkbench = new BottomWorkbenchViewModel();
+        NavigationDock = new StudioDockPanelViewModel("navigation", "Navegação", ProjectExplorer);
+        ProductionDock = new StudioDockPanelViewModel("production", "Produção", Production);
+        PropertiesDock = new StudioDockPanelViewModel("properties", "Propriedades", Inspector);
+        WorkbenchDock = new StudioDockPanelViewModel("workbench", "Camadas e saídas", BottomWorkbench);
         Preview.LayerSelectionRequested += OnPreviewLayerSelectionRequested;
 
         NewProjectCommand = new AsyncRelayCommand(NewProjectAsync);
@@ -106,6 +111,14 @@ public sealed class StudioShellViewModel : ViewModelBase
     public StatusBarViewModel StatusBar { get; } = new();
 
     public StudioDialogViewModel Dialog { get; } = new();
+
+    public StudioDockPanelViewModel NavigationDock { get; }
+
+    public StudioDockPanelViewModel ProductionDock { get; }
+
+    public StudioDockPanelViewModel PropertiesDock { get; }
+
+    public StudioDockPanelViewModel WorkbenchDock { get; }
 
     public IAsyncRelayCommand NewProjectCommand { get; }
 

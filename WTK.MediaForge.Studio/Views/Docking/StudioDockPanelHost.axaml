@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:docking="using:WTK.MediaForge.Studio.ViewModels.Docking"
+             xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
+             xmlns:shell="using:WTK.MediaForge.Studio.Views.Shell"
+             x:Class="WTK.MediaForge.Studio.Views.Docking.StudioDockPanelHost"
+             x:DataType="docking:StudioDockPanelViewModel"
+             IsVisible="{Binding IsDockedVisible}">
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="vm:ProjectExplorerViewModel">
+      <shell:ProjectExplorerView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:ProductionPanelViewModel">
+      <shell:ProductionPanelView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:InspectorHostViewModel">
+      <shell:InspectorView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:BottomWorkbenchViewModel">
+      <shell:BottomWorkbenchView />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Border Background="{StaticResource MfSurface1Brush}"
+          BorderBrush="{StaticResource MfBorderBrush}"
+          BorderThickness="1">
+    <Grid RowDefinitions="34,*">
+      <Border BorderBrush="{StaticResource MfBorderBrush}"
+              BorderThickness="0,0,0,1"
+              Padding="10,0">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4">
+          <TextBlock Text="{Binding Title}" Classes="panel-title" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="flat" Command="{Binding ToggleCollapseCommand}" Padding="6,2">
+            <TextBlock Text="{Binding CollapseGlyph}" />
+          </Button>
+          <Button Grid.Column="2" Classes="flat" Command="{Binding ToggleFloatingCommand}" Padding="6,2">
+            <TextBlock Text="{Binding FloatGlyph}" />
+          </Button>
+          <Button Grid.Column="3" Classes="flat" Command="{Binding TogglePinnedCommand}" Padding="6,2">
+            <TextBlock Text="{Binding PinGlyph}" />
+          </Button>
+        </Grid>
+      </Border>
+      <ContentControl Grid.Row="1"
+                      Content="{Binding Content}"
+                      IsVisible="{Binding IsContentVisible}" />
+    </Grid>
+  </Border>
+</UserControl>

@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
         xmlns:shell="using:WTK.MediaForge.Studio.Views.Shell"
+        xmlns:dock="using:WTK.MediaForge.Studio.Views.Docking"
         xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
         xmlns:models="using:WTK.MediaForge.Studio.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -26,7 +27,7 @@
       <RowDefinition Height="36" />
       <RowDefinition Height="*" />
       <RowDefinition Height="5" />
-      <RowDefinition Height="260" MinHeight="210" MaxHeight="420" />
+      <RowDefinition Height="240" MinHeight="180" MaxHeight="420" />
       <RowDefinition Height="26" />
     </Grid.RowDefinitions>
     <shell:StudioTitleBarView Grid.Row="0" />
@@ -34,15 +35,15 @@
 
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="292" MinWidth="260" MaxWidth="380" />
+        <ColumnDefinition Width="280" MinWidth="240" MaxWidth="420" />
         <ColumnDefinition Width="5" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="5" />
-        <ColumnDefinition Width="400" MinWidth="360" MaxWidth="540" />
+        <ColumnDefinition Width="360" MinWidth="320" MaxWidth="520" />
       </Grid.ColumnDefinitions>
 
-      <shell:ProjectExplorerView Grid.Column="0"
-                                 DataContext="{Binding ProjectExplorer}" />
+      <dock:StudioDockPanelHost Grid.Column="0"
+                                DataContext="{Binding NavigationDock}" />
 
       <GridSplitter Grid.Column="1"
                     Background="{StaticResource MfSurface2Brush}"
@@ -59,11 +60,14 @@
                     Background="{StaticResource MfSurface2Brush}"
                     ResizeDirection="Columns" />
 
-      <Grid Grid.Column="4" RowDefinitions="278,*">
-        <shell:ProductionPanelView Grid.Row="0"
-                                   DataContext="{Binding Production}" />
-        <shell:InspectorView Grid.Row="1"
-                             DataContext="{Binding Inspector}" />
+      <Grid Grid.Column="4" RowDefinitions="180,5,*">
+        <dock:StudioDockPanelHost Grid.Row="0"
+                                  DataContext="{Binding ProductionDock}" />
+        <GridSplitter Grid.Row="1"
+                      Background="{StaticResource MfSurface2Brush}"
+                      ResizeDirection="Rows" />
+        <dock:StudioDockPanelHost Grid.Row="2"
+                                  DataContext="{Binding PropertiesDock}" />
       </Grid>
     </Grid>
 
@@ -71,8 +75,8 @@
                   Background="{StaticResource MfSurface2Brush}"
                   ResizeDirection="Rows" />
 
-    <shell:BottomWorkbenchView Grid.Row="4"
-                               DataContext="{Binding BottomWorkbench}" />
+    <dock:StudioDockPanelHost Grid.Row="4"
+                              DataContext="{Binding WorkbenchDock}" />
     <shell:StudioStatusBarView Grid.Row="5"
                                DataContext="{Binding StatusBar}" />
 
