@@ -12,7 +12,7 @@
         <TextBlock Grid.Column="3" Text="Destino" Classes="muted" />
         <TextBlock Grid.Column="4" Text="Bitrate" Classes="muted" />
         <TextBlock Grid.Column="5" Text="Estado" Classes="muted" />
-        <TextBlock Grid.Column="6" Text="Acao" Classes="muted" />
+        <TextBlock Grid.Column="6" Text="Ação" Classes="muted" />
       </Grid>
       <ItemsControl ItemsSource="{Binding Outputs}">
         <ItemsControl.ItemTemplate>

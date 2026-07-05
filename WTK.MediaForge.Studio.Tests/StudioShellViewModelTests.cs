@@ -118,6 +118,50 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
+    public void RouteOutputDialog_UsesAlterarOrTransicionar_NotEnviar()
+    {
+        var shell = CreateShell();
+        var output = shell.Document.Outputs.Single(item => item.Id == "output-rtmp-twitch");
+
+        output.IsLive = false;
+        output.State = StudioOutputState.Running;
+        shell.Production.Outputs.Single(item => item.Id == output.Id).SendSceneCommand!.Execute(null);
+
+        Assert.Equal("Alterar", shell.Dialog.PrimaryText);
+        Assert.Equal("Cancelar", shell.Dialog.SecondaryText);
+        Assert.Contains("Alterar cena", shell.Dialog.Title);
+        Assert.DoesNotContain("Enviar cena", shell.Dialog.Title, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Enviar cena", shell.Dialog.PrimaryText, StringComparison.OrdinalIgnoreCase);
+
+        shell.CancelDialogCommand.Execute(null);
+        output.IsLive = true;
+        output.State = StudioOutputState.Live;
+        shell.Production.Outputs.Single(item => item.Id == output.Id).SendSceneCommand!.Execute(null);
+
+        Assert.Equal("Transicionar", shell.Dialog.PrimaryText);
+        Assert.NotEqual("Cancelar", shell.Dialog.PrimaryText);
+        Assert.Contains("Transicionar cena", shell.Dialog.Title);
+    }
+
+    [Fact]
+    public void RouteOutputDialog_SelectionDoesNotApplyUntilConfirmed()
+    {
+        var shell = CreateShell();
+        var output = shell.Document.Outputs.Single(item => item.Id == "output-rtmp-twitch");
+        var originalScene = output.AssignedSceneId;
+
+        shell.Production.Outputs.Single(item => item.Id == output.Id).SendSceneCommand!.Execute(null);
+        shell.Dialog.Options.Single(item => item.Id == "scene-brb").SelectCommand!.Execute(null);
+
+        Assert.Equal(originalScene, output.AssignedSceneId);
+        Assert.Equal("scene-brb", shell.Dialog.SelectedSceneId);
+
+        shell.ConfirmDialogCommand.Execute(null);
+
+        Assert.Equal("scene-brb", output.AssignedSceneId);
+    }
+
+    [Fact]
     public async Task Stream_and_record_commands_depend_on_configured_outputs_not_engine_state()
     {
         var shell = CreateShell();
@@ -143,6 +187,62 @@ public sealed class StudioShellViewModelTests
         Assert.Equal("sk_live_************", inspector.MaskedStreamKey);
         Assert.DoesNotContain("2d97c8a6", inspector.MaskedStreamKey, StringComparison.Ordinal);
         Assert.DoesNotContain("raw_secret", inspector.MaskedStreamKey, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SceneEditSession_DraftChangesDoNotUpdateAppliedOutput()
+    {
+        var shell = CreateShell();
+        var savedScene = shell.Document.Scenes.Single(item => item.Id == "scene-main");
+        var savedLayer = savedScene.Layers.First(item => !item.IsLocked);
+        var output = shell.Document.Outputs.First(item => item.AssignedSceneId == "scene-main");
+        var snapshotX = output.AppliedSceneSnapshot!.Layers.Single(item => item.Id == savedLayer.Id).Transform.X;
+        var draftLayer = shell.BottomWorkbench.Layers.Single(item => item.Id == savedLayer.Id);
+
+        shell.Preview.MoveLayerFromStart(draftLayer, draftLayer.X, draftLayer.Y, new Vector(80, 0), KeyModifiers.None);
+
+        Assert.True(shell.Preview.HasPendingChanges);
+        Assert.Equal(snapshotX, output.AppliedSceneSnapshot!.Layers.Single(item => item.Id == savedLayer.Id).Transform.X);
+        Assert.Equal(snapshotX, savedLayer.Transform.X);
+        Assert.NotEqual(snapshotX, draftLayer.X);
+    }
+
+    [Fact]
+    public void SceneEditSession_CanApplyOrDiscardChanges()
+    {
+        var shell = CreateShell();
+        var savedScene = shell.Document.Scenes.Single(item => item.Id == "scene-main");
+        var savedLayer = savedScene.Layers.First(item => !item.IsLocked);
+        var draftLayer = shell.BottomWorkbench.Layers.Single(item => item.Id == savedLayer.Id);
+
+        shell.Preview.MoveLayerFromStart(draftLayer, draftLayer.X, draftLayer.Y, new Vector(80, 0), KeyModifiers.None);
+        var editedX = draftLayer.X;
+        shell.ApplySceneDraftCommand.Execute(null);
+
+        Assert.False(shell.Preview.HasPendingChanges);
+        var updatedSavedLayer = savedScene.Layers.Single(item => item.Id == savedLayer.Id);
+        Assert.Equal(draftLayer.Id, updatedSavedLayer.Id);
+        Assert.Equal(editedX, updatedSavedLayer.Transform.X);
+        Assert.Contains(shell.Document.Outputs, item => item.AssignedSceneId == "scene-main" && item.HasPendingSceneUpdate);
+
+        var appliedX = updatedSavedLayer.Transform.X;
+        var secondDraft = shell.BottomWorkbench.Layers.Single(item => item.Id == updatedSavedLayer.Id);
+        shell.Preview.MoveLayerFromStart(secondDraft, secondDraft.X, secondDraft.Y, new Vector(100, 0), KeyModifiers.None);
+        shell.DiscardSceneDraftCommand.Execute(null);
+
+        Assert.False(shell.Preview.HasPendingChanges);
+        Assert.Equal(appliedX, savedScene.Layers.Single(item => item.Id == updatedSavedLayer.Id).Transform.X);
+        Assert.Equal(appliedX, shell.BottomWorkbench.Layers.Single(item => item.Id == updatedSavedLayer.Id).X);
+    }
+
+    [Fact]
+    public void SafeArea_DefaultComesFromSceneProfile()
+    {
+        var shell = CreateShell();
+
+        Assert.Equal(5, shell.Preview.SafeAreaActionMarginPercent);
+        Assert.Equal(10, shell.Preview.SafeAreaTitleMarginPercent);
+        Assert.Equal(SafeAreaDisplayMode.Title, shell.Preview.SafeAreaMode);
     }
 
     [Fact]
@@ -277,6 +377,16 @@ public sealed class PreviewHitTestTests
 
         Assert.Equal(120, locked.X);
         Assert.Equal(120, locked.Y);
+    }
+
+    [Fact]
+    public void PreviewInlineVisibilityToggle_HitTestUsesViewportRect()
+    {
+        var rect = new Rect(100, 80, 320, 180);
+        var toggle = SceneEditorHitTest.VisibilityToggleRect(rect);
+
+        Assert.True(SceneEditorHitTest.HitTestVisibilityToggle(rect, toggle.Center));
+        Assert.False(SceneEditorHitTest.HitTestVisibilityToggle(rect, new Point(rect.Left + 4, rect.Bottom - 4)));
     }
 
     private static LayerItemViewModel CreateLayer(string name, double x, double y, double width, double height, int order)

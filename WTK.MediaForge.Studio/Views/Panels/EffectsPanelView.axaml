@@ -28,7 +28,7 @@
                 <Border Grid.Column="1" Classes="source-thumb" Height="26">
                   <TextBlock Text="{Binding KeyColor}" Classes="mono accent" VerticalAlignment="Center" HorizontalAlignment="Center" />
                 </Border>
-                <TextBlock Grid.Row="1" Text="Tolerancia" Classes="muted" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Text="Tolerância" Classes="muted" VerticalAlignment="Center" />
                 <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Tolerance, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" />
                 <TextBlock Grid.Row="2" Text="Spill" Classes="muted" VerticalAlignment="Center" />
                 <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Spill, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" />

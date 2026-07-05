@@ -21,7 +21,7 @@
         <Grid ColumnDefinitions="72,72,110,*" Margin="0,0,0,6">
           <TextBlock Text="Time" Classes="muted" />
           <TextBlock Grid.Column="1" Text="Level" Classes="muted" />
-          <TextBlock Grid.Column="2" Text="Area" Classes="muted" />
+          <TextBlock Grid.Column="2" Text="Área" Classes="muted" />
           <TextBlock Grid.Column="3" Text="Message" Classes="muted" />
         </Grid>
         <ItemsControl ItemsSource="{Binding Diagnostics}">

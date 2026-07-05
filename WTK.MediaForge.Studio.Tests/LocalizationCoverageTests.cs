@@ -37,6 +37,78 @@ public sealed class LocalizationCoverageTests
         "100%",
         "+",
         "-",
+        "Ação",
+        "Action safe",
+        "Adicionar",
+        "Alterar cena",
+        "Altura",
+        "Aplicar na cena",
+        "Área",
+        "ÁREA",
+        "Avançado",
+        "Base",
+        "Bitrate",
+        "Borda",
+        "Camada",
+        "Camadas",
+        "Cena",
+        "Chave/segredo",
+        "Codec",
+        "Configura",
+        "CORTE",
+        "Cor chave",
+        "Duração",
+        "DESTINO",
+        "Descartar",
+        "Direita",
+        "Dispositivo",
+        "Editar",
+        "EFEITOS",
+        "English",
+        "Entradas",
+        "Esquerda",
+        "ESTADO",
+        "Fechar",
+        "FONTE",
+        "Fundo",
+        "Idioma",
+        "Info",
+        "Largura",
+        "Layout",
+        "Mensagem",
+        "Modo de mistura",
+        "Mostrar",
+        "Nada encontrado",
+        "Navegação",
+        "Nome",
+        "Ocultar",
+        "Opacidade",
+        "Painéis",
+        "Perfil",
+        "Preset",
+        "Preferências",
+        "Produção",
+        "Propriedades",
+        "QUALIDADE",
+        "Reconectar",
+        "Reencaixar",
+        "Recursos planejados",
+        "Resolução",
+        "Restaurar",
+        "ROTEAMENTO",
+        "Rotação",
+        "Saída",
+        "Saídas",
+        "Servidor",
+        "Similaridade",
+        "Spill",
+        "Title safe",
+        "Topo",
+        "Transição",
+        "TRANSFORMAÇÃO",
+        "Tolerância",
+        "Troca explícita",
+        "Usar perfil",
         "□",
         "×",
         "●",
@@ -74,11 +146,16 @@ public sealed class LocalizationCoverageTests
         Assert.DoesNotContain("Start Engine", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("GPU idle", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Preview idle", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Enviar cena", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Send scene", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Configuracoes", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Transicao", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Producao", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Previa", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Saida", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"Acao\"", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"Area\"", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"Tolerancia\"", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -106,7 +183,7 @@ public sealed class LocalizationCoverageTests
             }
         }
 
-        Assert.True(unexpected.Count <= 120, "Hardcoded visible strings must keep shrinking. Unexpected:\n" + string.Join("\n", unexpected.Take(40)));
+        Assert.True(unexpected.Count <= 40, "Hardcoded visible strings must keep shrinking. Unexpected:\n" + string.Join("\n", unexpected.Take(40)));
     }
 
     private static ISet<string> LoadKeys(string relativePath)
