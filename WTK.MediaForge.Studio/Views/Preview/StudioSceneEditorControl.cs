@@ -4,6 +4,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.ViewModels;
@@ -16,6 +17,7 @@ public sealed class StudioSceneEditorControl : Control
     private PreviewCanvasViewModel? _viewModel;
     private LayerItemViewModel? _activeLayer;
     private ResizeHandleKind _activeHandle = ResizeHandleKind.None;
+    private ResizeHandleKind _hoverHandle = ResizeHandleKind.None;
     private SceneEditorInteractionMode _interactionMode = SceneEditorInteractionMode.None;
     private Point _dragStartViewport;
     private Point _dragStartScene;
@@ -23,6 +25,8 @@ public sealed class StudioSceneEditorControl : Control
     private double _layerStartY;
     private Rect _resizeStartBounds;
     private bool _isSpaceDown;
+    private LayerItemViewModel? _hoverLayer;
+    private bool _isHoveringVisibilityToggle;
 
     public StudioSceneEditorControl()
     {
@@ -95,6 +99,16 @@ public sealed class StudioSceneEditorControl : Control
         _dragStartViewport = point.Position;
         _dragStartScene = vm.ScreenToScene(_dragStartViewport);
 
+        if (point.Properties.IsRightButtonPressed)
+        {
+            var contextLayer = SceneEditorHitTest.HitTestLayer(vm.Layers, _dragStartScene);
+            vm.RequestLayerSelection(contextLayer);
+            ShowContextMenu(vm, contextLayer);
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
         if (point.Properties.IsMiddleButtonPressed || (_isSpaceDown && point.Properties.IsLeftButtonPressed))
         {
             BeginInteraction(SceneEditorInteractionMode.Pan, null, ResizeHandleKind.None, e);
@@ -110,6 +124,14 @@ public sealed class StudioSceneEditorControl : Control
         if (selectedLayer is not null)
         {
             var selectedRect = vm.Transform.SceneToViewport(SceneEditorHitTest.LayerSceneRect(selectedLayer));
+            if (SceneEditorHitTest.HitTestVisibilityToggle(selectedRect, _dragStartViewport))
+            {
+                vm.ToggleLayerVisibility(selectedLayer);
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
+
             var handle = SceneEditorHitTest.HitTestResizeHandle(selectedRect, _dragStartViewport, HandleSize + 8);
             if (handle != ResizeHandleKind.None)
             {
@@ -163,9 +185,15 @@ public sealed class StudioSceneEditorControl : Control
             var delta = viewportPoint - _dragStartViewport;
             _dragStartViewport = viewportPoint;
             vm.PanBy(delta.X, delta.Y);
+            Cursor = new Cursor(StandardCursorType.Hand);
             InvalidateVisual();
             e.Handled = true;
             return;
+        }
+
+        if (_interactionMode == SceneEditorInteractionMode.None)
+        {
+            UpdateHover(vm, viewportPoint);
         }
 
         if (_activeLayer is null)
@@ -177,12 +205,14 @@ public sealed class StudioSceneEditorControl : Control
         var sceneDelta = scenePoint - _dragStartScene;
         if (_interactionMode == SceneEditorInteractionMode.MoveLayer)
         {
+            Cursor = new Cursor(StandardCursorType.SizeAll);
             vm.MoveLayerFromStart(_activeLayer, _layerStartX, _layerStartY, sceneDelta, e.KeyModifiers);
             InvalidateVisual();
             e.Handled = true;
         }
         else if (_interactionMode == SceneEditorInteractionMode.ResizeLayer)
         {
+            Cursor = CursorForHandle(_activeHandle);
             vm.ResizeLayerFromStart(_activeLayer, _activeHandle, _resizeStartBounds, sceneDelta, e.KeyModifiers);
             InvalidateVisual();
             e.Handled = true;
@@ -275,6 +305,13 @@ public sealed class StudioSceneEditorControl : Control
         _interactionMode = mode;
         _activeLayer = layer;
         _activeHandle = handle;
+        Cursor = mode switch
+        {
+            SceneEditorInteractionMode.Pan => new Cursor(StandardCursorType.Hand),
+            SceneEditorInteractionMode.MoveLayer => new Cursor(StandardCursorType.SizeAll),
+            SceneEditorInteractionMode.ResizeLayer => CursorForHandle(handle),
+            _ => new Cursor(StandardCursorType.Arrow)
+        };
         e.Pointer.Capture(this);
         e.Handled = true;
     }
@@ -284,6 +321,7 @@ public sealed class StudioSceneEditorControl : Control
         _interactionMode = SceneEditorInteractionMode.None;
         _activeLayer = null;
         _activeHandle = ResizeHandleKind.None;
+        Cursor = new Cursor(StandardCursorType.Arrow);
         e.Pointer.Capture(null);
         e.Handled = true;
     }
@@ -359,8 +397,9 @@ public sealed class StudioSceneEditorControl : Control
 
         using (context.PushOpacity(layer.LayerOpacity))
         {
+            var isHover = ReferenceEquals(layer, _hoverLayer);
             var fill = layer.IsSelected ? Brush("MfSelectedBrush", Brushes.DarkSlateBlue) : Brush("MfOverlayBrush", Brushes.Black);
-            var border = layer.IsSelected ? Pen("MfAccentBrush", 2) : Pen("MfBorderNormalBrush", 1);
+            var border = layer.IsSelected ? Pen("MfAccentBrush", 2) : isHover ? Pen("MfAccentBrush", 1.5) : Pen("MfBorderNormalBrush", 1);
             context.DrawRectangle(fill, border, rect, 8, 8);
             DrawText(context, layer.Name, rect.TopLeft + new Vector(14, 12), 14, Brush("MfTextPrimaryBrush", Brushes.White), FontWeight.SemiBold);
             DrawText(context, layer.Source, rect.TopLeft + new Vector(14, 32), 12, Brush("MfTextSecondaryBrush", Brushes.LightGray), FontWeight.Normal);
@@ -368,16 +407,35 @@ public sealed class StudioSceneEditorControl : Control
 
         if (layer.IsSelected)
         {
-            DrawSelection(context, rect, layer.IsLocked);
+            DrawSelection(context, rect, layer.IsLocked, layer.IsVisible);
         }
     }
 
-    private void DrawSelection(DrawingContext context, Rect rect, bool isLocked)
+    private void DrawSelection(DrawingContext context, Rect rect, bool isLocked, bool isVisible)
     {
         context.DrawRectangle(null, Pen(isLocked ? "MfWarningBrush" : "MfAccentBrush", 2), rect, 8, 8);
         foreach (var handle in SceneEditorHitTest.HandleRects(rect, HandleSize))
         {
             context.DrawRectangle(Brush("MfAccentBrush", Brushes.DeepSkyBlue), Pen("MfCanvasOutsideBrush", 1), handle.Rect, 2, 2);
+        }
+
+        DrawVisibilityToggle(context, SceneEditorHitTest.VisibilityToggleRect(rect), isVisible);
+    }
+
+    private void DrawVisibilityToggle(DrawingContext context, Rect rect, bool isVisible)
+    {
+        var background = _isHoveringVisibilityToggle
+            ? Brush("MfAccentBrush", Brushes.DeepSkyBlue)
+            : Brush("MfSurface2Brush", Brushes.Black);
+        context.DrawRectangle(background, Pen("MfCanvasOutsideBrush", 1), rect, 6, 6);
+
+        var center = rect.Center;
+        var eyeRect = new Rect(center.X - 7, center.Y - 4, 14, 8);
+        context.DrawEllipse(null, Pen("MfTextPrimaryBrush", 1.4), eyeRect);
+        context.DrawEllipse(Brush("MfTextPrimaryBrush", Brushes.White), null, new Rect(center.X - 2, center.Y - 2, 4, 4));
+        if (!isVisible)
+        {
+            context.DrawLine(Pen("MfWarningBrush", 1.6), rect.TopLeft + new Vector(5, 5), rect.BottomRight - new Vector(5, 5));
         }
     }
 
@@ -466,5 +524,125 @@ public sealed class StudioSceneEditorControl : Control
     private Pen Pen(string key, double thickness)
     {
         return new Pen(Brush(key, Brushes.White), thickness);
+    }
+
+    private void UpdateHover(PreviewCanvasViewModel vm, Point viewportPoint)
+    {
+        var previousLayer = _hoverLayer;
+        var previousHandle = _hoverHandle;
+        var previousToggle = _isHoveringVisibilityToggle;
+
+        _hoverLayer = null;
+        _hoverHandle = ResizeHandleKind.None;
+        _isHoveringVisibilityToggle = false;
+
+        if (_isSpaceDown)
+        {
+            Cursor = new Cursor(StandardCursorType.Hand);
+            return;
+        }
+
+        var selectedLayer = vm.SelectedLayer;
+        if (selectedLayer is not null && selectedLayer.IsVisible)
+        {
+            var selectedRect = vm.Transform.SceneToViewport(SceneEditorHitTest.LayerSceneRect(selectedLayer));
+            _isHoveringVisibilityToggle = SceneEditorHitTest.HitTestVisibilityToggle(selectedRect, viewportPoint);
+            if (_isHoveringVisibilityToggle)
+            {
+                _hoverLayer = selectedLayer;
+                Cursor = new Cursor(StandardCursorType.Hand);
+                InvalidateHoverIfChanged(previousLayer, previousHandle, previousToggle);
+                return;
+            }
+
+            _hoverHandle = SceneEditorHitTest.HitTestResizeHandle(selectedRect, viewportPoint, HandleSize + 8);
+            if (_hoverHandle != ResizeHandleKind.None)
+            {
+                _hoverLayer = selectedLayer;
+                Cursor = CursorForHandle(_hoverHandle);
+                InvalidateHoverIfChanged(previousLayer, previousHandle, previousToggle);
+                return;
+            }
+        }
+
+        var scenePoint = vm.ScreenToScene(viewportPoint);
+        _hoverLayer = SceneEditorHitTest.HitTestLayer(vm.Layers, scenePoint);
+        Cursor = _hoverLayer is null
+            ? new Cursor(StandardCursorType.Arrow)
+            : new Cursor(StandardCursorType.Hand);
+        InvalidateHoverIfChanged(previousLayer, previousHandle, previousToggle);
+    }
+
+    private void InvalidateHoverIfChanged(LayerItemViewModel? previousLayer, ResizeHandleKind previousHandle, bool previousToggle)
+    {
+        if (!ReferenceEquals(previousLayer, _hoverLayer)
+            || previousHandle != _hoverHandle
+            || previousToggle != _isHoveringVisibilityToggle)
+        {
+            InvalidateVisual();
+        }
+    }
+
+    private static Cursor CursorForHandle(ResizeHandleKind handle)
+    {
+        return handle switch
+        {
+            ResizeHandleKind.Left or ResizeHandleKind.Right => new Cursor(StandardCursorType.SizeWestEast),
+            ResizeHandleKind.Top or ResizeHandleKind.Bottom => new Cursor(StandardCursorType.SizeNorthSouth),
+            ResizeHandleKind.TopLeft or ResizeHandleKind.BottomRight => new Cursor(StandardCursorType.TopLeftCorner),
+            ResizeHandleKind.TopRight or ResizeHandleKind.BottomLeft => new Cursor(StandardCursorType.TopRightCorner),
+            _ => new Cursor(StandardCursorType.Arrow)
+        };
+    }
+
+    private void ShowContextMenu(PreviewCanvasViewModel vm, LayerItemViewModel? layer)
+    {
+        var items = layer is null
+            ? CreateCanvasContextMenuItems(vm)
+            : CreateLayerContextMenuItems(vm, layer);
+
+        var menu = new ContextMenu
+        {
+            ItemsSource = items
+        };
+        menu.Open(this);
+    }
+
+    private IEnumerable<object> CreateLayerContextMenuItems(PreviewCanvasViewModel vm, LayerItemViewModel layer)
+    {
+        yield return MenuItem(layer.IsVisible ? "Ocultar camada" : "Mostrar camada", () => vm.ToggleLayerVisibility(layer));
+        yield return MenuItem(layer.IsLocked ? "Desbloquear camada" : "Bloquear camada", () => vm.ToggleLayerLock(layer));
+        yield return new Separator();
+        yield return MenuItem("Trazer para frente", () => vm.BringLayerToFront(layer));
+        yield return MenuItem("Enviar para trás", () => vm.SendLayerToBack(layer));
+        yield return MenuItem("Redefinir transformação", () => vm.ResetLayerTransform(layer));
+        yield return new Separator();
+        yield return MenuItem("Abrir propriedades", () => vm.RequestLayerSelection(layer));
+    }
+
+    private IEnumerable<object> CreateCanvasContextMenuItems(PreviewCanvasViewModel vm)
+    {
+        yield return MenuItem("Adicionar entrada à cena", () => vm.AddSourceCommand?.Execute(null), vm.AddSourceCommand?.CanExecute(null) == true);
+        yield return MenuItem("Colar", static () => { }, isEnabled: false);
+        yield return new Separator();
+        yield return MenuItem("Ajustar à tela", vm.FitZoom);
+        yield return MenuItem(vm.IsGridVisible ? "Ocultar grade" : "Mostrar grade", () => vm.ToggleGridCommand.Execute(null));
+        yield return MenuItem(vm.IsSafeFrameVisible ? "Ocultar área segura" : "Mostrar área segura", () => vm.ToggleSafeFrameCommand.Execute(null));
+    }
+
+    private MenuItem MenuItem(string header, Action action, bool isEnabled = true)
+    {
+        var item = new MenuItem
+        {
+            Header = header,
+            IsEnabled = isEnabled
+        };
+        item.Click += (_, e) =>
+        {
+            action();
+            InvalidateVisual();
+            e.Handled = true;
+        };
+        return item;
     }
 }

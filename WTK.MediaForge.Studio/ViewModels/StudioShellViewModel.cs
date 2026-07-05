@@ -94,6 +94,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         ProjectExplorer.AddSceneCommand = AddSceneCommand;
         ProjectExplorer.AddSourceCommand = AddSourceCommand;
         ProjectExplorer.AddOutputCommand = ConfigureOutputCommand;
+        Preview.AddSourceCommand = AddSourceCommand;
 
         _outputService.StatusChanged += OnOutputStatusChanged;
         _selectionService.SelectionChanged += OnSelectionChanged;

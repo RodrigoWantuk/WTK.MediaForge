@@ -383,6 +383,8 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public IRelayCommand<LayerItemViewModel> SelectLayerCommand { get; }
 
+    public ICommand? AddSourceCommand { get; set; }
+
     public bool IsGridVisible
     {
         get => _isGridVisible;
@@ -559,6 +561,38 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         MoveLayer(SelectedLayer, deltaX * factor, deltaY * factor, constrainAxis: false);
     }
 
+    public void ToggleLayerVisibility(LayerItemViewModel layer)
+    {
+        layer.IsVisible = !layer.IsVisible;
+    }
+
+    public void ToggleLayerLock(LayerItemViewModel layer)
+    {
+        layer.IsLocked = !layer.IsLocked;
+    }
+
+    public void BringLayerToFront(LayerItemViewModel layer)
+    {
+        layer.Order = Layers.Count == 0 ? 1 : Layers.Max(item => item.Order) + 1;
+        NormalizeLayerOrder();
+    }
+
+    public void SendLayerToBack(LayerItemViewModel layer)
+    {
+        layer.Order = Layers.Count == 0 ? 1 : Layers.Min(item => item.Order) - 1;
+        NormalizeLayerOrder();
+    }
+
+    public void ResetLayerTransform(LayerItemViewModel layer)
+    {
+        layer.X = Math.Round(CanvasWidth * 0.08);
+        layer.Y = Math.Round(CanvasHeight * 0.08);
+        layer.Width = Math.Round(CanvasWidth * 0.4);
+        layer.Height = Math.Round(CanvasHeight * 0.4);
+        layer.RotationDegrees = 0;
+        layer.Opacity = 100;
+    }
+
     public void ResizeLayer(
         LayerItemViewModel layer,
         ResizeHandleKind handle,
@@ -718,6 +752,15 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         OnPropertyChanged(nameof(PanX));
         OnPropertyChanged(nameof(PanY));
         OnPropertyChanged(nameof(ZoomLabel));
+    }
+
+    private void NormalizeLayerOrder()
+    {
+        var ordered = Layers.OrderBy(item => item.Order).ToArray();
+        for (var i = 0; i < ordered.Length; i++)
+        {
+            ordered[i].Order = i + 1;
+        }
     }
 }
 

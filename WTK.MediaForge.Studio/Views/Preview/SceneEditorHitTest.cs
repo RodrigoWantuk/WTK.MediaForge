@@ -13,6 +13,8 @@ public readonly record struct SceneEditorHitResult(LayerItemViewModel? Layer, Re
 
 public static class SceneEditorHitTest
 {
+    public const double VisibilityToggleSize = 24;
+
     public static LayerItemViewModel? HitTestLayer(IEnumerable<LayerItemViewModel> layers, Point scenePoint)
     {
         return layers
@@ -37,6 +39,20 @@ public static class SceneEditorHitTest
         }
 
         return ResizeHandleKind.None;
+    }
+
+    public static bool HitTestVisibilityToggle(Rect viewportLayerRect, Point viewportPoint)
+    {
+        return VisibilityToggleRect(viewportLayerRect).Contains(viewportPoint);
+    }
+
+    public static Rect VisibilityToggleRect(Rect viewportLayerRect)
+    {
+        return new Rect(
+            viewportLayerRect.Right - VisibilityToggleSize - 8,
+            viewportLayerRect.Top + 8,
+            VisibilityToggleSize,
+            VisibilityToggleSize);
     }
 
     public static IReadOnlyList<(ResizeHandleKind Kind, Rect Rect)> HandleRects(Rect rect, double handleSize)
