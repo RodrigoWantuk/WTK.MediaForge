@@ -227,6 +227,28 @@ The final media path should use a portable native bridge:
 CPU readback remains debug/sample/validation only. The primary path is hardware
 decode/capture to GPU texture, Vulkan composition, and hardware encode/output.
 
+### GPU media transport law
+
+Uncompressed continuous video must not traverse CPU/RAM on the product path.
+
+```text
+Encoded media -> hardware decode -> GPU surface -> composition -> GPU surface
+  -> hardware encode -> encoded packets -> mux/stream/file
+```
+
+Prohibited: GPU readback -> raw CPU frame -> CPU encoder/streamer.
+
+Static images: `StaticCpuAsset` load-time CPU decode, upload to GPU, release CPU copy.
+
+Exceptions for continuous raw CPU video require `RawCpuVideoFrameException` registration.
+
+FFmpeg is not used in the first hardware MP4/RTMP MVP.
+
+Windows recording MVP: Media Foundation hardware MFT H.264, packets-only muxer,
+Vulkan -> D3D11 encoder surface export (Commit 06 gate).
+
+SRT output: Planned/blocked until license and transport design review.
+
 ## Future Audio Contract
 
 Audio is future-only until the video pipeline is stable. The product model should

@@ -39,6 +39,8 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
     private Thread? _captureThread;
     private TaskCompletionSource? _startTcs;
     private long _frameNumber;
+    private int _consecutiveAcquireFailures;
+    private int _reconnectAttempts;
     private int _disposed;
     private int _disposeState = (int)ProviderDisposeState.Active;
     private int _state = (int)MediaSourceState.Stopped;
@@ -400,6 +402,7 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
     private void CaptureLoop(CancellationToken cancellationToken)
     {
         var idleBackoffMs = 0;
+        const int reconnectFailureThreshold = 64;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -409,25 +412,100 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
             if (session is null || slotRing is null)
                 break;
 
-            if (!session.TryAcquireNextFrame(out var desktopTexture, out _))
-            {
-                idleBackoffMs = idleBackoffMs == 0 ? 1 : Math.Min(idleBackoffMs * 2, 16);
-                Thread.Sleep(idleBackoffMs);
-                continue;
-            }
-
-            idleBackoffMs = 0;
-
             try
             {
-                PublishDesktopFrame(session, slotRing, desktopTexture);
-                TryFinalizeRetiredRings();
+                if (!session.TryAcquireNextFrame(out var desktopTexture, out _))
+                {
+                    _consecutiveAcquireFailures++;
+                    idleBackoffMs = idleBackoffMs == 0 ? 1 : Math.Min(idleBackoffMs * 2, 16);
+                    Thread.Sleep(idleBackoffMs);
+
+                    if (_consecutiveAcquireFailures == reconnectFailureThreshold)
+                    {
+                        MediaForgeDiagnostics.Report(
+                            _diagnostics,
+                            MediaForgeDiagnosticSeverity.Warning,
+                            "capture.desktop_reconnect_idle",
+                            $"Desktop duplication for '{Name}' has not acquired a frame for {reconnectFailureThreshold} attempts.",
+                            nameof(DesktopDuplicationFrameProvider),
+                            sourceId: Id.Value,
+                            sourceName: Name);
+                    }
+
+                    continue;
+                }
+
+                _consecutiveAcquireFailures = 0;
+                idleBackoffMs = 0;
+
+                try
+                {
+                    PublishDesktopFrame(session, slotRing, desktopTexture);
+                    TryFinalizeRetiredRings();
+                }
+                finally
+                {
+                    desktopTexture.Dispose();
+                    session.ReleaseFrame();
+                }
             }
-            finally
+            catch (Exception ex) when (IsReconnectableCaptureFailure(ex))
             {
-                desktopTexture.Dispose();
-                session.ReleaseFrame();
+                if (!TryReconnectSession(ex))
+                {
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "capture.desktop_reconnect_failed",
+                        $"Desktop duplication reconnect failed for '{Name}': {ex.Message}",
+                        nameof(DesktopDuplicationFrameProvider),
+                        ex,
+                        Id.Value,
+                        Name);
+                }
             }
+        }
+    }
+
+    private static bool IsReconnectableCaptureFailure(Exception ex) =>
+        ex is InvalidOperationException or TimeoutException;
+
+    private bool TryReconnectSession(Exception trigger)
+    {
+        _reconnectAttempts++;
+
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "capture.desktop_reconnect_attempt",
+            $"Desktop duplication reconnect attempt #{_reconnectAttempts} for '{Name}' after '{trigger.Message}'.",
+            nameof(DesktopDuplicationFrameProvider),
+            trigger,
+            Id.Value,
+            Name);
+
+        try
+        {
+            _session?.Stop();
+            _session = new DesktopDuplicationSession();
+            _session.Start(_captureSource);
+
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Info,
+                "capture.desktop_reconnect_succeeded",
+                $"Desktop duplication reconnect succeeded for '{Name}' on attempt #{_reconnectAttempts}.",
+                nameof(DesktopDuplicationFrameProvider),
+                sourceId: Id.Value,
+                sourceName: Name);
+
+            _consecutiveAcquireFailures = 0;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LastError = ex;
+            return false;
         }
     }
 

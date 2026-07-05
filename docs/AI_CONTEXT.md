@@ -86,6 +86,18 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Sink attach timeout is owned by `RenderOutputSinkDispatcher`; the engine does not wrap that operation in a competing timeout that could abandon dispatcher cleanup before the sink observes cancellation.
 - Source/output type catalogs now include product contracts for animated images, Lottie, IP camera, encoded file, SRT, RTSP, and HLS. These are project/API contracts only until runtime adapters land.
 
+## GPU Media Transport Law (vNext)
+
+- Uncompressed continuous video frames must stay in GPU/VRAM on the product path.
+- CPU/RAM carries encoded packets, static asset load buffers, metadata, and registered exceptions only.
+- Formal types: `EncodedVideoPacket`, `GpuVideoFrame` (GPU lease), `StaticCpuImageAsset` (load-only), raw CPU video prohibited on product path.
+- Registered raw CPU exceptions use `RawCpuVideoFrameException` with kinds: `PixelTestOnly`, `ManualScreenshotOnly`, `WebcamSystemRawInput`. Static image load is **not** an exception.
+- `CpuReadbackSink` is debug/test only (`DebugOnlyCpuReadback`). Product sinks consume `GpuSurface` or `EncodedPacket` after hardware encode.
+- FFmpeg is not used in the first hardware MP4/RTMP MVP.
+- Commit 06 (Vulkan -> D3D11/MF encoder surface export proof) blocks hardware recording until passed.
+- Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
+- `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
+
 
 ## Studio UI Direction
 

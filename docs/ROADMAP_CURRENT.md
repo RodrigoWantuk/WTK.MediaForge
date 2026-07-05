@@ -1,8 +1,9 @@
 # Current Roadmap
 
 This roadmap is mandatory. Do not choose a different order inside the active
-track. Historical acceptance details live in the CP2/CP3 acceptance reports.
-Long-term product planning lives in `docs/FULL_PIPELINE_ROADMAP.md`.
+vNext GPU media track. Historical acceptance details live in the CP2/CP3
+acceptance reports. Long-term product planning lives in
+`docs/FULL_PIPELINE_ROADMAP.md`.
 
 ## Current Status
 
@@ -28,107 +29,61 @@ Acceptance records:
 - `docs/CP3_NESTED_ACCEPTANCE.md`
 - `docs/CP3_CHROMA_ACCEPTANCE.md`
 
-## Active Commit Order
+## Active vNext Commit Order (GPU Media Law)
 
-1. **Preview local reliability milestone**
-   - Run `PreviewPanelSink` for extended periods without obvious GPU leaks.
-   - Validate repeated attach/detach, panel resize, and stop/start cycles.
-   - Keep `PreviewPanelSink` experimental in public docs until milestone criteria are met.
+Execute in this exact order. One commit unit per implementation session.
 
-2. **Renderer primitives after preview reliability**
-   - Full transform/crop/rotation.
-   - Text rendering.
-   - Blur.
-   - Color correction.
-   - Transitions.
-   - PiP and mosaic helpers.
-   - Reusable effect-chain intermediate targets.
+| # | Commit | Gate |
+|---|--------|------|
+| 00 | Docs GPU media law + FFmpeg policy | |
+| 01 | Capability/license matrix + `GetCapabilityReportAsync` | Studio/API consumable |
+| 02 | Media transport types + audit contracts | |
+| 03 | Guard rails (allowlist + scanner) | Fast tier |
+| 04 | Source/output descriptors + registry | |
+| 05 | `RenderFrameContext` temporal | |
+| 06 | **Windows GPU export proof** | **Blocks MP4/RTMP if failed** |
+| 07 | Lifecycle rollback hardening | |
+| 08 | Preview reliability gate | |
+| 09 | Transform/crop/rotation/pivot | |
+| 10 | Static image PNG/JPEG MVP | WebP Planned |
+| 11 | Text rendering MVP (glyph atlas GPU) | |
+| 12 | Effect chain GPU (color + blur) | |
+| 13 | Output route transitions | |
+| 14 | Desktop/window capture reliability | |
+| 15 | Webcam MVP (`WebcamSystemRawInput` exception) | |
+| 16 | Hardware decode boundary | |
+| 17 | Hardware encoder abstraction (MF probe real) | Requires Commit 06 |
+| 18 | Windows MF H.264 hardware MP4 MVP | No FFmpeg/libx264 |
+| 19 | RTMP experimental (encoded packets) | SRT Planned/blocked |
+| 20 | Output sink compliance | |
+| 21 | Engine media telemetry | |
+| 22 | Linux skeleton | |
+| 23 | macOS skeleton | |
+| 24 | Documentation + CI gate closure | |
 
-3. **Media adapters after renderer primitives**
-   - Desktop/window reliability.
-   - Webcam.
-   - Static image.
-   - Animated image/GIF/APNG/WebP.
-   - Lottie raster source.
-   - Media file timeline/MP4.
-   - RTSP/IP camera.
-   - NDI input.
+### Blocking rules
 
-4. **Output adapters after source/runtime contracts**
-   - Encoded file output.
-   - RTMP/SRT streaming.
-   - NDI output.
-   - Virtual camera.
+- Do not implement hardware MP4/RTMP until Commit 06 export proof passes.
+- Do not use FFmpeg, libx264, or software encode in the MP4/RTMP MVP.
+- Do not treat static image load as a raw CPU video exception.
+- NVENC/QSV/AMF direct SDK paths remain Planned until post-MF MVP license review.
+- SRT remains Planned/blocked until license and transport design review.
 
-5. **Future audio track**
-   - Audio source definitions.
-   - Audio bus/mixer/clock contracts.
-   - Mux sync metadata.
-   - Capture/mix/mux/equalization only after the video pipeline is stable.
+## Parallel Studio UI Track
 
+A limited Avalonia Studio UI track may run in parallel when it stays inside the
+UI/mock scope documented in `docs/STUDIO_UI_RECOVERY_PLAN.md`.
 
-## Parallel UI Documentation and Mock Shell Track
+Studio may consume `GetCapabilityReportAsync()` in background to show
+Supported/Planned/Unsupported status with reasons. Do not show recording,
+streaming, or sources as functional when capability report says otherwise.
 
-A limited Avalonia Studio UI track may run in parallel with the active runtime roadmap when it stays strictly inside the UI/mock scope. This is allowed because it does not change engine contracts or open blocked media/runtime work.
+Still blocked in Studio until runtime gates open:
 
-### Studio UI Recovery Gate
-
-The Studio shell is now in the UI recovery and productization cycle documented in
-`docs/STUDIO_UI_RECOVERY_PLAN.md`. Do not implement real Studio sources, real
-outputs, real audio, or productive GPU preview wiring while the recovery gate is
-open. The next UI work must improve the native Avalonia mock editor: shared
-document state, Project Explorer, editable preview canvas, rich inspectors,
-bottom workbench, localization, command state, and tests.
-
-Current Studio UI status:
-
-- first Avalonia mock shell is implemented;
-- Studio tests run in the Fast tier;
-- current UI milestone is UI recovery/productization, scene/source/layer/output
-  workflow, source library, production output cards, explicit scene-to-output
-  routing with transitions, fake service boundaries, typed output state, and
-  model-backed project workflow preparation;
-- runtime preview remains blocked until `PreviewPanelSink` reliability criteria are complete.
-
-Allowed UI work before runtime gates open:
-
-- create/update `docs/UI_STUDIO_DESIGN.md`, `docs/UI_REACT_TO_AVALONIA_MAPPING.md`, `docs/UI_IMPLEMENTATION_PLAN.md`, and `docs/UI_ACCEPTANCE_CHECKLIST.md`;
-- create an Avalonia dark-theme Studio shell;
-- implement scenes-only navigation, source library, editable canvas mock,
-  contextual Propriedades panel, right-side Produção/Saídas cards, bottom
-  Camadas/Saídas da cena workbench, explicit output routing with transitions,
-  and product status bar using mock data;
-- implement fake Stream/Record command state driven by configured output routes;
-- introduce Studio-only fake services, unified selection state, typed UI state, and model-backed project workflow scaffolding;
-- add ViewModel/unit tests for UI selection, command enablement, inspector routing, and mock state.
-
-Still blocked until their roadmap step opens:
-
-- real webcam, desktop/window, media file, animated image, Lottie, NDI, RTSP/IP camera, or stream source adapters;
-- real encoded file, RTMP/SRT, NDI, or virtual-camera outputs;
+- real webcam, desktop/window, media file, animated image, Lottie, NDI, RTSP/IP camera adapters;
+- real encoded file, RTMP, NDI, or virtual-camera outputs;
 - real audio capture, mixer, mux, or equalization;
-- product preview integration beyond the approved `PreviewPanelSink` reliability work;
-- any legacy direct capture/preview path.
-
-The UI shell must be able to run without a GPU and without active MediaForge runtime integration during the first UI milestone.
-
-## Blocking Rule
-
-Do not implement the following until the roadmap step that owns it is active:
-
-- productive preview shell beyond the `PreviewPanelSink` MVP wiring
-- runtime-connected UI shells beyond the approved mock/design Avalonia Studio track
-- NDI, RTSP/IP camera, webcam, MP4 decode, animated image, or Lottie runtime adapters
-- encoder, recording, streaming, virtual camera, or audio sinks
-- public plugin APIs
-
-Allowed before those tracks open:
-
-- documentation and tests
-- API contract work
-- render-graph planning
-- package/preset serialization
-- reliability fixes inside already-open runtime, renderer, source, and sink foundations
+- product preview integration beyond approved `PreviewPanelSink` reliability work.
 
 ## Validation Gates
 
@@ -141,8 +96,10 @@ dotnet test
 ```
 
 When touching Capture, D3D11, Vulkan, GPU lifecycle, keyed mutex, registry,
-render thread, provider, or submission, also run:
+render thread, provider, submission, or GPU export/encode paths, also run:
 
 ```powershell
 ./scripts/test.ps1 -Tier Gpu
+./scripts/verify-media-transport-rules.ps1
+./scripts/verify-license-policy.ps1
 ```

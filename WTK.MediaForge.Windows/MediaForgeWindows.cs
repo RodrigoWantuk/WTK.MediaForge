@@ -1,10 +1,16 @@
 using WTK.MediaForge.Composition.Engine;
+using WTK.MediaForge.Composition.Sources;
+using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Graphics.Vulkan;
+using WTK.MediaForge.Windows.Media;
 
 namespace WTK.MediaForge.Windows;
 
 public static class MediaForgeWindows
 {
+    private static readonly IHardwareMediaCapabilityProbe DefaultCapabilityProbe =
+        new WindowsHardwareMediaCapabilityProbe();
+
     public static MediaForgeEngine CreateEngine(MediaForgeEngineOptions? options = null)
     {
         options ??= new MediaForgeEngineOptions();
@@ -24,6 +30,21 @@ public static class MediaForgeWindows
             RenderThreadJoinTimeout = options.StopTimeout,
             RenderThreadSubmissionShutdownTimeout = options.StopTimeout
         };
+    }
+
+    public static ValueTask<MediaForgeCapabilityReport> GetCapabilityReportAsync(
+        CancellationToken cancellationToken = default) =>
+        GetCapabilityReportAsync(DefaultCapabilityProbe, cancellationToken);
+
+    public static async ValueTask<MediaForgeCapabilityReport> GetCapabilityReportAsync(
+        IHardwareMediaCapabilityProbe probe,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        var hardware = await probe.ProbeAsync(cancellationToken).ConfigureAwait(false);
+        return MediaForgeCapabilityReportBuilder.Build(
+            hardware,
+            MediaSourceTypeRegistry.CreateCapabilityEntries());
     }
 
     private static void ValidateOptions(MediaForgeEngineOptions options)

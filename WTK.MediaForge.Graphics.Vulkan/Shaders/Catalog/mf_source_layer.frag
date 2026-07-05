@@ -13,6 +13,7 @@ layout(push_constant) uniform LayerParams
     float opacity;
     int layoutMode;
     int contentRotation;
+    float rotationDegrees;
     vec4 letterboxColor;
 } params;
 
@@ -87,6 +88,19 @@ vec4 applyChromaKey(vec4 color)
     return vec4(despilled, alpha);
 }
 
+vec2 applyTransformRotation(vec2 uv, float degrees, vec2 pivot)
+{
+    if (abs(degrees) < 0.001)
+        return uv;
+
+    float radians = degrees * 0.017453292519943295;
+    float c = cos(radians);
+    float s = sin(radians);
+    vec2 centered = uv - pivot;
+    vec2 rotated = vec2(centered.x * c - centered.y * s, centered.x * s + centered.y * c);
+    return rotated + pivot;
+}
+
 void main()
 {
     vec2 croppedSize = params.logicalSize * vec2(
@@ -103,6 +117,7 @@ void main()
 
     vec2 uvLogical = mapCroppedUvToFullLogicalUv(uvInCropped, params.cropRect);
     vec2 uvRaw = rotateUv(uvLogical, params.contentRotation);
+    uvRaw = applyTransformRotation(uvRaw, params.rotationDegrees, params.pivot);
 
     vec4 color = texture(uSourceTexture, uvRaw);
     color = applyChromaKey(color);

@@ -154,9 +154,20 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink: it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. `PreviewPanelSink` is an **experimental** GPU preview sink: it consumes a completed rendered output surface and presents it to a Win32 panel handle through an internal Vulkan swapchain blit, without CPU readback. Keep it experimental until the preview local reliability milestone in `docs/ROADMAP_CURRENT.md` is complete.
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. Product recording and streaming sinks consume `EncodedVideoPacket` after hardware encode only. `PreviewPanelSink` is an **experimental** GPU preview sink: it consumes a completed rendered output surface and presents it to a Win32 panel handle through an internal Vulkan swapchain blit, without CPU readback. Keep it experimental until the preview local reliability milestone in `docs/ROADMAP_CURRENT.md` is complete.
 
-Productive preview shells, NDI, MP4/encoded file, streaming, virtual camera, and audio outputs remain blocked until the owning roadmap track opens.
+FFmpeg is not used in the first hardware MP4/RTMP MVP. Future FFmpeg integration requires LGPL-only build, no GPL components, no libx264/libx265, no rawvideo pipe, and license review.
+
+## 4.1 Public Capability API
+
+Capability and license status are queryable without starting the engine:
+
+- `MediaForgeWindows.GetCapabilityReportAsync(CancellationToken)` — must not block the UI thread; probing runs via `IHardwareMediaCapabilityProbe.ProbeAsync`.
+- `MediaForgeCapabilityReport`, `CapabilityEntry`, `MediaForgeSupportStatus`, `MediaForgeLicenseStatus`
+
+Studio and host apps must use capability status to disable or label features that are Planned, Unsupported, or Blocked.
+
+Productive preview shells, NDI, MP4/encoded file, streaming, virtual camera, and audio outputs remain blocked until the owning roadmap track opens and capability report reflects Supported status.
 
 ## 5. Public Package And Preset Serialization
 

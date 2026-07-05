@@ -1,4 +1,5 @@
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Composition.Sources;
 
@@ -44,48 +45,130 @@ public static class MediaSourceTypeRegistry
     public static bool IsLegacy(MediaSourceTypeId typeId) =>
         LegacyToCanonical.ContainsKey(typeId.Value);
 
+    public static IReadOnlyList<CapabilityEntry> CreateCapabilityEntries() =>
+        All.Select(d => new CapabilityEntry
+        {
+            Id = $"source.{d.TypeId.Value}",
+            Category = CapabilityCategories.Source,
+            DisplayName = d.DisplayName,
+            SupportStatus = d.SupportStatus,
+            LicenseStatus = MediaForgeLicenseStatus.Approved,
+            UnavailableReason = d.UnavailableReason,
+            TransportKind = d.OutputTransport
+        }).ToList();
+
     private static IEnumerable<MediaSourceTypeDescriptor> CreateDescriptors()
     {
-        yield return Live("Desktop capture", MediaSourceTypes.Desktop, hasAudio: false);
-        yield return Live("Webcam", MediaSourceTypes.Webcam, hasAudio: true);
-        yield return Live("NDI input", MediaSourceTypes.NdiInput, hasAudio: true);
-        yield return Live("RTSP stream", MediaSourceTypes.RtspInput, hasAudio: true);
-        yield return Live("IP camera", MediaSourceTypes.IpCamera, hasAudio: true);
-        yield return File("Video file", MediaSourceTypes.VideoFile, hasAudio: true);
-        yield return File("Image file", MediaSourceTypes.ImageFile, hasAudio: false);
-        yield return File("Animated image", MediaSourceTypes.AnimatedImage, hasAudio: false);
-        yield return File("Lottie animation", MediaSourceTypes.Lottie, hasAudio: false);
-        yield return Live("Window capture", MediaSourceTypes.WindowCapture, hasAudio: false);
+        yield return LiveGpu("Desktop capture", MediaSourceTypes.Desktop, MediaForgeSupportStatus.Experimental);
+        yield return LiveGpu("Window capture", MediaSourceTypes.WindowCapture, MediaForgeSupportStatus.Experimental);
+        yield return new MediaSourceTypeDescriptor
+        {
+            TypeId = MediaSourceTypes.Webcam,
+            DisplayName = "Webcam",
+            Category = MediaSourceCategory.Live,
+            OutputTransport = MediaTransportKind.GpuSurface,
+            IsLive = true,
+            IsTimeline = false,
+            HasVideo = true,
+            HasAudio = true,
+            RequiresGpuInterop = true,
+            RequiresHardwareDecode = false,
+            AllowsRawCpuException = true,
+            RawCpuExceptionKind = RawCpuVideoFrameExceptionKind.WebcamSystemRawInput,
+            SupportStatus = MediaForgeSupportStatus.Experimental
+        };
+        yield return new MediaSourceTypeDescriptor
+        {
+            TypeId = MediaSourceTypes.ImageFile,
+            DisplayName = "Image file",
+            Category = MediaSourceCategory.Static,
+            OutputTransport = MediaTransportKind.StaticCpuAsset,
+            IsLive = false,
+            IsTimeline = false,
+            HasVideo = true,
+            HasAudio = false,
+            RequiresGpuInterop = true,
+            RequiresHardwareDecode = false,
+            AllowsRawCpuException = false,
+            SupportStatus = MediaForgeSupportStatus.Supported
+        };
+        yield return TimelineEncoded("Video file", MediaSourceTypes.VideoFile, hasAudio: true);
+        yield return TimelineEncoded("RTSP stream", MediaSourceTypes.RtspInput, hasAudio: true);
+        yield return TimelineEncoded("IP camera", MediaSourceTypes.IpCamera, hasAudio: true);
+        yield return Blocked("Animated image", MediaSourceTypes.AnimatedImage, "Blocked until GPU-safe frame strategy.");
+        yield return Blocked("Lottie animation", MediaSourceTypes.Lottie, "Blocked until GPU-safe rasterization strategy.");
+        yield return Blocked("NDI input", MediaSourceTypes.NdiInput, "Unsupported until license and GPU path.", MediaForgeSupportStatus.Unsupported);
         yield return new MediaSourceTypeDescriptor
         {
             TypeId = MediaSourceTypes.Generated,
             DisplayName = "Generated",
+            Category = MediaSourceCategory.Generated,
+            OutputTransport = MediaTransportKind.GpuSurface,
             IsLive = false,
+            IsTimeline = false,
             HasVideo = true,
             HasAudio = false,
-            RequiresGpuInterop = true
+            RequiresGpuInterop = true,
+            RequiresHardwareDecode = false,
+            AllowsRawCpuException = false,
+            SupportStatus = MediaForgeSupportStatus.Experimental
         };
     }
 
-    private static MediaSourceTypeDescriptor Live(string displayName, MediaSourceTypeId typeId, bool hasAudio) =>
+    private static MediaSourceTypeDescriptor LiveGpu(string displayName, MediaSourceTypeId typeId, MediaForgeSupportStatus status) =>
         new()
         {
             TypeId = typeId,
             DisplayName = displayName,
+            Category = MediaSourceCategory.Live,
+            OutputTransport = MediaTransportKind.GpuSurface,
             IsLive = true,
+            IsTimeline = false,
             HasVideo = true,
-            HasAudio = hasAudio,
-            RequiresGpuInterop = true
+            HasAudio = false,
+            RequiresGpuInterop = true,
+            RequiresHardwareDecode = false,
+            AllowsRawCpuException = false,
+            SupportStatus = status
         };
 
-    private static MediaSourceTypeDescriptor File(string displayName, MediaSourceTypeId typeId, bool hasAudio) =>
+    private static MediaSourceTypeDescriptor TimelineEncoded(string displayName, MediaSourceTypeId typeId, bool hasAudio) =>
         new()
         {
             TypeId = typeId,
             DisplayName = displayName,
+            Category = MediaSourceCategory.Timeline,
+            OutputTransport = MediaTransportKind.EncodedPacket,
             IsLive = false,
+            IsTimeline = true,
             HasVideo = true,
             HasAudio = hasAudio,
-            RequiresGpuInterop = true
+            RequiresGpuInterop = true,
+            RequiresHardwareDecode = true,
+            AllowsRawCpuException = false,
+            SupportStatus = MediaForgeSupportStatus.Planned,
+            UnavailableReason = "Hardware decode required; software decode prohibited."
+        };
+
+    private static MediaSourceTypeDescriptor Blocked(
+        string displayName,
+        MediaSourceTypeId typeId,
+        string reason,
+        MediaForgeSupportStatus status = MediaForgeSupportStatus.Planned) =>
+        new()
+        {
+            TypeId = typeId,
+            DisplayName = displayName,
+            Category = MediaSourceCategory.Timeline,
+            OutputTransport = MediaTransportKind.GpuSurface,
+            IsLive = false,
+            IsTimeline = true,
+            HasVideo = true,
+            HasAudio = false,
+            RequiresGpuInterop = true,
+            RequiresHardwareDecode = true,
+            AllowsRawCpuException = false,
+            SupportStatus = status,
+            UnavailableReason = reason
         };
 }

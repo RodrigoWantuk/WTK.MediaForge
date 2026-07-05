@@ -41,6 +41,7 @@ internal static class CompositionPushConstantsBuilder
                     frame.Rotation,
                     frame.LogicalSize,
                     frame.TextureSize),
+            RotationDegrees = layer.Transform.RotationDegrees,
             LetterboxColor = ToVector4(letterbox)
         };
     }

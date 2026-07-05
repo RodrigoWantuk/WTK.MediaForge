@@ -587,7 +587,7 @@ public class Cp1OffscreenCompositionTests
         }
     }
     [Fact]
-    public async Task Source_layer_rotation_reports_unsupported_diagnostic()
+    public async Task Source_layer_rotation_is_supported_without_unsupported_diagnostic()
     {
         if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context, diagnostics: new ListDiagnosticsSink()))
             return;
@@ -624,7 +624,7 @@ public class Cp1OffscreenCompositionTests
                 var submission = backend.Submit(snapshot);
                 await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
 
-                Assert.Contains(
+                Assert.DoesNotContain(
                     diagnostics.Diagnostics,
                     diagnostic => diagnostic.Code == "render.transform_rotation_unsupported");
             }

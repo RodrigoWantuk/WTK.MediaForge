@@ -115,3 +115,17 @@ Before considering a change complete, verify:
 - [ ] Dispose attempts all slots.
 - [ ] Any physical dispose failure faults `FullyDisposed`.
 - [ ] Manager moves faulted resources to failed state.
+
+## GPU Media Transport
+
+- [ ] No product source/sink/encoder uses continuous raw CPU video frames without `RawCpuVideoFrameExceptionAttribute`.
+- [ ] Static image load uses `MediaTransportKind.StaticCpuAsset`; not counted as raw CPU video exception.
+- [ ] `CpuReadbackSink` is not wired as recording, streaming, or primary preview path.
+- [ ] Product recording/streaming sinks consume encoded packets after hardware encode only.
+- [ ] FFmpeg is not used in MP4/RTMP MVP paths.
+- [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
+- [ ] Commit 06 GPU export proof passed before hardware MP4 is marked Supported.
+- [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
+- [ ] Capability report is consumable via `GetCapabilityReportAsync` with status and reason per feature.
+- [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
+- [ ] License policy verification (`verify-license-policy.ps1`) passes.

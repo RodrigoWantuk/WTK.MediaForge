@@ -72,11 +72,14 @@ public class PreviewPanelSinkTests
             RenderPixelFormat.Rgba8Unorm,
             RenderBackendKind.Vulkan);
 
-    private static RenderOutputFrameInfo CreateInfo(RenderedOutputFrame frame, RenderOutputSinkId sinkId) =>
+    private static RenderOutputFrameInfo CreateInfo(
+        RenderedOutputFrame frame,
+        RenderOutputSinkId sinkId,
+        long frameNumber = 1) =>
         new(
             frame.OutputId,
             sinkId,
-            frameNumber: 1,
+            frameNumber,
             TimeSpan.Zero,
             frame.Size,
             frame.Format,
@@ -106,6 +109,104 @@ public class PreviewPanelSinkTests
         await sink.StopAsync(CancellationToken.None);
 
         Assert.Equal(77, removedHandle);
+    }
+
+    private const int StressCycleCount =
+#if DEBUG
+        10;
+#else
+        500;
+#endif
+
+    [Fact]
+    [Trait("Category", "Stress")]
+    public async Task PreviewPanelSink_stress_attach_detach_cycles()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new FakePreviewPresentableSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 1);
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+
+        for (var cycle = 0; cycle < StressCycleCount; cycle++)
+        {
+            await sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id, cycle + 1)),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(StressCycleCount, surface.PresentCount);
+        Assert.False(batch.HasOutstandingLeases);
+    }
+
+    [Fact]
+    [Trait("Category", "Stress")]
+    public async Task PreviewPanelSink_stress_resize_cycles()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new FakePreviewPresentableSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 1);
+        var resizeCycles = StressCycleCount * 2;
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+
+        for (var cycle = 0; cycle < resizeCycles; cycle++)
+        {
+            var size = new FrameSize((uint)(640 + (cycle % 32)), (uint)(360 + (cycle % 24)));
+            await sink.StartAsync(CreateContext(outputId, size), CancellationToken.None);
+            await sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id, cycle + 1)),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(resizeCycles, surface.PresentCount);
+    }
+
+    [Fact]
+    [Trait("Category", "Stress")]
+    public async Task PreviewPanelSink_stress_start_stop_cycles()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new FakePreviewPresentableSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 1);
+        var startStopCycles = Math.Max(StressCycleCount / 2, 10);
+
+        for (var cycle = 0; cycle < startStopCycles; cycle++)
+        {
+            await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+            await sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id, cycle + 1)),
+                CancellationToken.None);
+            await sink.StopAsync(CancellationToken.None);
+        }
+
+        Assert.Equal(startStopCycles, surface.PresentCount);
+    }
+
+    [Fact]
+    [Trait("Category", "Stress")]
+    public async Task PreviewPanelSink_stress_slow_present_releases_lease()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new SlowPreviewSurface(outputId, new FrameSize(640, 360), delayMs: 1);
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 1);
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+
+        for (var cycle = 0; cycle < StressCycleCount; cycle++)
+        {
+            await sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id, cycle + 1)),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(StressCycleCount, surface.PresentCount);
+        Assert.False(batch.HasOutstandingLeases);
     }
 
     [Fact]
@@ -189,6 +290,36 @@ public class PreviewPanelSinkTests
             Interlocked.Increment(ref _disposeCount);
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class SlowPreviewSurface(
+        RenderOutputId outputId,
+        FrameSize size,
+        int delayMs)
+        : IRenderedOutputSurfaceLease, IPreviewPresentableRenderedOutputSurfaceLease
+    {
+        public RenderOutputId OutputId { get; } = outputId;
+
+        public FrameSize Size { get; } = size;
+
+        public RenderPixelFormat Format => RenderPixelFormat.Rgba8Unorm;
+
+        public RenderBackendKind BackendKind => RenderBackendKind.Vulkan;
+
+        public object? BackendSurface => null;
+
+        public int PresentCount => Volatile.Read(ref _presentCount);
+
+        private int _presentCount;
+
+        public async ValueTask PresentToWin32PanelAsync(nint panelHandle, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
+            Interlocked.Increment(ref _presentCount);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class FakeNonPresentableSurface(

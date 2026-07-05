@@ -16,6 +16,16 @@ internal static class RenderFrameSnapshotFactory
     public static SnapshotBuildResult Build(
         ProjectStateSnapshot projectState,
         CompositionRuntime runtime,
+        IMediaForgeDiagnosticsSink? diagnosticsSink = null) =>
+        Build(projectState, runtime, CreateDefaultContext(), diagnosticsSink);
+
+    public static RenderFrameContext CreateDefaultContext(double targetFps = 60) =>
+        new(0, TimeSpan.Zero, TimeSpan.FromSeconds(1d / targetFps), targetFps, CancellationToken.None);
+
+    public static SnapshotBuildResult Build(
+        ProjectStateSnapshot projectState,
+        CompositionRuntime runtime,
+        RenderFrameContext context,
         IMediaForgeDiagnosticsSink? diagnosticsSink = null)
     {
         ArgumentNullException.ThrowIfNull(projectState);
@@ -33,6 +43,7 @@ internal static class RenderFrameSnapshotFactory
                     canvas,
                     canvasLookup,
                     runtime,
+                    context,
                     leasesBySource,
                     diagnostics,
                     nestingDepth: 0))
@@ -44,6 +55,7 @@ internal static class RenderFrameSnapshotFactory
                 Canvases = canvases,
                 Outputs = projectState.Outputs,
                 FrameLeases = leasesBySource.Values.ToImmutableArray(),
+                Context = context,
                 Diagnostics = diagnosticsSink
             };
 
@@ -83,6 +95,7 @@ internal static class RenderFrameSnapshotFactory
         CanvasStateSnapshot canvas,
         IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
         CompositionRuntime runtime,
+        RenderFrameContext context,
         Dictionary<SourceId, GpuFrameLease> leasesBySource,
         List<SnapshotDiagnostic> diagnostics,
         int nestingDepth)
@@ -92,6 +105,7 @@ internal static class RenderFrameSnapshotFactory
                 drawObject,
                 canvasLookup,
                 runtime,
+                context,
                 leasesBySource,
                 diagnostics,
                 nestingDepth))
@@ -111,6 +125,7 @@ internal static class RenderFrameSnapshotFactory
         DrawObjectStateSnapshot drawObject,
         IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
         CompositionRuntime runtime,
+        RenderFrameContext context,
         Dictionary<SourceId, GpuFrameLease> leasesBySource,
         List<SnapshotDiagnostic> diagnostics,
         int nestingDepth)
@@ -138,6 +153,7 @@ internal static class RenderFrameSnapshotFactory
                         sourceLayer.SourceId,
                         sourceLayer.Id,
                         runtime,
+                        context,
                         leasesBySource,
                         diagnostics)
                     : null
@@ -174,6 +190,7 @@ internal static class RenderFrameSnapshotFactory
                     effectiveCrop,
                     canvasLookup,
                     runtime,
+                    context,
                     leasesBySource,
                     diagnostics,
                     nestingDepth)
@@ -203,6 +220,7 @@ internal static class RenderFrameSnapshotFactory
         NormalizedRect effectiveCrop,
         IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
         CompositionRuntime runtime,
+        RenderFrameContext context,
         Dictionary<SourceId, GpuFrameLease> leasesBySource,
         List<SnapshotDiagnostic> diagnostics,
         int nestingDepth)
@@ -233,6 +251,7 @@ internal static class RenderFrameSnapshotFactory
                 nestedCanvasState,
                 canvasLookup,
                 runtime,
+                context,
                 leasesBySource,
                 diagnostics,
                 nestingDepth + 1);
@@ -256,13 +275,14 @@ internal static class RenderFrameSnapshotFactory
         SourceId sourceId,
         DrawObjectId drawObjectId,
         CompositionRuntime runtime,
+        RenderFrameContext context,
         Dictionary<SourceId, GpuFrameLease> leasesBySource,
         List<SnapshotDiagnostic> diagnostics)
     {
         if (leasesBySource.TryGetValue(sourceId, out var existingLease))
             return existingLease.Frame;
 
-        var acquireResult = runtime.TryAcquireFrame(sourceId, TimeSpan.Zero);
+        var acquireResult = runtime.TryAcquireFrame(sourceId, context.PresentationTime);
         switch (acquireResult.Status)
         {
             case SourceFrameAcquireStatus.Acquired:

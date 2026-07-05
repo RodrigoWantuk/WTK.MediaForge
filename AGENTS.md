@@ -17,6 +17,13 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
 - Do not use native handles (`nint`, `DangerousGetHandleForInterop`) as logical texture identity.
 - Do not call GPU wait APIs without explicit timeout.
 - Every lifetime change must include tests.
+- **GPU Media Transport Law**: no uncompressed continuous video frames in CPU/RAM on the product path.
+- No software decode/encode fallback for continuous video; hardware/GPU path or `Unsupported`.
+- `CpuReadbackSink` is debug/test only; never wire as recording, streaming, or primary preview.
+- Static image load uses `StaticCpuAsset` (load-time CPU decode, GPU render); not a `RawCpuVideoFrameException`.
+- FFmpeg is not used in the first hardware MP4/RTMP MVP.
+- Commit 06 GPU export proof is a blocking gate before hardware recording.
+- Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; never block the UI thread.
 
 
 ## Studio UI Exception

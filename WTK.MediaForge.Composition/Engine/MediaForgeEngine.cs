@@ -33,6 +33,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private IRenderBackend? _backend;
     private MediaForgeRenderThread? _renderThread;
     private MediaForgeRenderPump? _renderPump;
+    private long _renderFrameNumber;
+    private TimeSpan _lastRenderPresentationTime;
     private ProjectStateSnapshot? _projectState;
     private MediaForgeProject? _currentProject;
     private MediaForgeEngineState _state = MediaForgeEngineState.Idle;
@@ -621,7 +623,19 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         if (_runtime is null || _projectState is null || _renderThread is null)
             return;
 
-        using var buildResult = RenderFrameSnapshotFactory.Build(_projectState, _runtime, _diagnostics);
+        var frameNumber = Interlocked.Increment(ref _renderFrameNumber);
+        var delta = TimeSpan.FromSeconds(1d / RenderFramesPerSecond);
+        var presentationTime = _lastRenderPresentationTime + delta;
+        _lastRenderPresentationTime = presentationTime;
+
+        var context = new RenderFrameContext(
+            frameNumber,
+            presentationTime,
+            delta,
+            RenderFramesPerSecond,
+            CancellationToken.None);
+
+        using var buildResult = RenderFrameSnapshotFactory.Build(_projectState, _runtime, context, _diagnostics);
         var snapshot = buildResult.TakeSnapshot();
 
         if (snapshot is null)

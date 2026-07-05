@@ -283,12 +283,11 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 
         if (MathF.Abs(transform.RotationDegrees) > 0.001f)
         {
-            ReportTransformRotationUnsupported(drawObject);
-
-            if (transform.Pivot != NormalizedPoint.TopLeft)
-                ReportTransformPivotUnsupported(drawObject);
-
-            skipDraw = true;
+            if (drawObject is not RenderSourceLayerDrawObjectSnapshot)
+            {
+                ReportTransformRotationUnsupported(drawObject);
+                skipDraw = true;
+            }
         }
 
         if (!IsFullCrop(drawObject.EffectiveCrop) &&

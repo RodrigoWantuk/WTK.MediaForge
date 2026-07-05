@@ -171,6 +171,65 @@ adapters should produce/consume GPU-compatible surfaces where possible:
 
 Audio is future contract only until the video pipeline is stable.
 
+## GPU Media Transport Law
+
+Uncompressed video pixels must stay in GPU/VRAM on the normal product path.
+CPU/RAM may carry encoded media, static asset load buffers, metadata, commands,
+and explicitly registered exceptions only.
+
+### Formal media categories
+
+| Category | Description | Product path |
+|----------|-------------|--------------|
+| `EncodedVideoPacket` | H.264/HEVC/AV1/VP9 NAL units, RTSP/MP4 samples | Allowed in CPU/RAM/network |
+| `GpuVideoFrame` | Vulkan image, D3D11 texture, DXGI surface, HW decoder surface | Required for continuous video |
+| `RawCpuVideoFrame` | `byte[]` BGRA/NV12, software `AVFrame`, per-frame CPU bitmap | **Prohibited** on product path |
+| `StaticCpuImageAsset` | PNG/JPEG load decode | Allowed **only at load**; must upload to GPU and release CPU copy |
+
+### Allowed path
+
+```text
+Encoded media (CPU/RAM/network/disk)
+  -> hardware decode / GPU upload boundary
+  -> GPU surface in VRAM
+  -> GPU composition / effects
+  -> GPU surface in VRAM
+  -> hardware encode / GPU presentation / GPU sink
+  -> encoded packets (CPU/RAM/network/disk)
+```
+
+### Prohibited path
+
+```text
+GPU surface -> readback -> raw RGBA/NV12 in RAM -> CPU processing / CPU encoder
+```
+
+### Registered exceptions
+
+Continuous raw CPU video is allowed only when registered with
+`RawCpuVideoFrameException` / `RawCpuVideoFrameExceptionAttribute` and kinds:
+`PixelTestOnly`, `ManualScreenshotOnly`, `WebcamSystemRawInput`.
+
+Static image load is **not** an exception; it uses `MediaTransportKind.StaticCpuAsset`.
+
+### Output sinks
+
+- `PreviewPanelSink`: GPU surface (product/experimental)
+- `CpuReadbackSink`: debug/test/validation only (`DebugOnlyCpuReadback`)
+- Recording/streaming sinks: encoded packets after hardware encode only
+
+### FFmpeg policy
+
+FFmpeg is **not used** in the first hardware MP4/RTMP MVP. Future FFmpeg
+integration requires LGPL-only build, no GPL components, no libx264/libx265,
+no rawvideo pipe, and license review.
+
+### Recording gate
+
+Commit 06 (Windows GPU surface export proof: Vulkan -> D3D11/MF encoder input)
+is a blocking gate before hardware MP4 recording. If export proof fails,
+recording remains blocked in the capability matrix.
+
 ## Test Tiers
 
 | Tier | Command | Scope |

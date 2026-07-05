@@ -18,7 +18,7 @@ $compositionTests = "WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition
 $studioTests = "WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj"
 $d3d11Tests = "WTK.MediaForge.Graphics.D3D11.Tests\WTK.MediaForge.Graphics.D3D11.Tests.csproj"
 $vulkanTests = "WTK.MediaForge.Graphics.Vulkan.Tests\WTK.MediaForge.Graphics.Vulkan.Tests.csproj"
-$captureTests = "WTK.MediaForge.Capture.Tests\WTK.MediaForge.Capture.Tests.csproj"
+$windowsTests = "WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj"
 
 function Invoke-TestProject {
     param(
@@ -49,12 +49,15 @@ switch ($Tier) {
         Invoke-TestProject -Project $diagnosticsTests -Filter $fastFilter
         Invoke-TestProject -Project $compositionTests -Filter $fastFilter
         Invoke-TestProject -Project $studioTests -Filter $fastFilter
+        & "$PSScriptRoot/verify-media-transport-rules.ps1"
+        & "$PSScriptRoot/verify-license-policy.ps1"
     }
     "Gpu" {
         # Never run GPU projects via solution — sequential, one at a time.
         Invoke-TestProject -Project $d3d11Tests -Filter $gpuFilter -MaxCpuOne
         Invoke-TestProject -Project $vulkanTests -Filter $gpuFilter -MaxCpuOne
         Invoke-TestProject -Project $captureTests -Filter $gpuFilter -MaxCpuOne
+        Invoke-TestProject -Project $windowsTests -Filter $gpuFilter -MaxCpuOne
     }
     "Stress" {
         Invoke-TestProject -Project $d3d11Tests -Filter $stressFilter -MaxCpuOne
