@@ -26,16 +26,28 @@ public sealed class HardwareEncoderInputLease : IDisposable
     private int _disposed;
     private readonly Action? _onRelease;
 
-    private HardwareEncoderInputLease(GpuVideoFrameDescriptor descriptor, Action? onRelease)
+    private HardwareEncoderInputLease(
+        GpuVideoFrameDescriptor descriptor,
+        Action? onRelease,
+        object? backendSurface)
     {
         Descriptor = descriptor;
         _onRelease = onRelease;
+        BackendSurface = backendSurface;
     }
 
     public GpuVideoFrameDescriptor Descriptor { get; }
 
+    internal object? BackendSurface { get; }
+
     public static HardwareEncoderInputLease Create(GpuVideoFrameDescriptor descriptor, Action? onRelease = null) =>
-        new(descriptor, onRelease);
+        new(descriptor, onRelease, backendSurface: null);
+
+    internal static HardwareEncoderInputLease CreateWithBackendSurface(
+        GpuVideoFrameDescriptor descriptor,
+        object backendSurface,
+        Action? onRelease = null) =>
+        new(descriptor, onRelease, backendSurface);
 
     public void Dispose()
     {

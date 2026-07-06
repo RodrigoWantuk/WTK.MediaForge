@@ -1,3 +1,4 @@
+using WTK.MediaForge.Composition.Assets;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Sources.Settings;
@@ -14,9 +15,9 @@ internal sealed class ImageFileSourceRuntime : IDisposable
 {
     private readonly SourceId _sourceId;
     private readonly string _name;
-    private readonly StaticImageAssetLoader _loader;
+    private readonly AssetManager _assetManager;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
-    private StaticCpuAsset? _asset;
+    private RefCountedAssetHandle<StaticCpuAsset>? _textureHandle;
     private bool _gpuUploaded;
     private bool _disposed;
 
@@ -29,7 +30,7 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         _sourceId = sourceId;
         _name = name ?? throw new ArgumentNullException(nameof(name));
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _loader = new StaticImageAssetLoader();
+        _assetManager = AssetManager.Shared;
         _diagnostics = diagnostics;
     }
 
@@ -39,19 +40,21 @@ internal sealed class ImageFileSourceRuntime : IDisposable
 
     public bool IsGpuUploaded => _gpuUploaded;
 
-    public StaticCpuAsset? LoadedAsset => _asset;
+    public StaticCpuAsset? LoadedAsset => _textureHandle?.Value;
 
     public void LoadAsset()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _asset = _loader.Load(Settings.Path);
+        _textureHandle?.Dispose();
+        _textureHandle = _assetManager.LoadTexture(Settings.Path);
     }
 
     public void MarkGpuUploaded()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _gpuUploaded = true;
-        _asset = null;
+        _textureHandle?.Dispose();
+        _textureHandle = null;
     }
 
     public bool TryCreateGpuFrameReference(out GpuFrameReference? frame, RenderFrameContext context)
@@ -67,8 +70,8 @@ internal sealed class ImageFileSourceRuntime : IDisposable
             SourceId = _sourceId,
             FrameNumber = context.FrameNumber,
             Timestamp = new MediaTime((long)(context.PresentationTime.TotalSeconds * 1_000_000_000)),
-            LogicalSize = _asset?.Size ?? default,
-            TextureSize = _asset?.Size ?? default
+            LogicalSize = _textureHandle?.Value.Size ?? default,
+            TextureSize = _textureHandle?.Value.Size ?? default
         };
 
         return true;
@@ -111,7 +114,8 @@ internal sealed class ImageFileSourceRuntime : IDisposable
             return;
 
         _disposed = true;
-        _asset = null;
+        _textureHandle?.Dispose();
+        _textureHandle = null;
         State = MediaSourceState.Stopped;
     }
 }

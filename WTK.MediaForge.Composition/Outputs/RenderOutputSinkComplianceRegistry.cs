@@ -41,7 +41,7 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.File,
             Transport = MediaTransportKind.EncodedPacket,
             IsProductSink = true,
-            SupportStatus = MediaForgeSupportStatus.Planned
+            SupportStatus = MediaForgeSupportStatus.Experimental
         },
         new()
         {

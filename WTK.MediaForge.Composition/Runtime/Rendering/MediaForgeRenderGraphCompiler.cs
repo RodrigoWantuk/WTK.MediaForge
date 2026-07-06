@@ -5,6 +5,7 @@ using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Serialization;
+using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
@@ -13,21 +14,27 @@ internal static class MediaForgeRenderGraphCompiler
     public static MediaForgeRenderGraphPlan Compile(MediaForgeProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
+        return Compile(ProjectStateSnapshotFactory.CreateImmutableSnapshot(project));
+    }
 
-        var builder = new Builder(project);
-        foreach (var output in project.Outputs)
+    public static MediaForgeRenderGraphPlan Compile(ProjectStateSnapshot projectState)
+    {
+        ArgumentNullException.ThrowIfNull(projectState);
+
+        var builder = new Builder(projectState);
+        foreach (var output in projectState.Outputs)
             builder.AddOutput(output);
 
         return new MediaForgeRenderGraphPlan(builder.Nodes);
     }
 
-    private sealed class Builder(MediaForgeProject project)
+    private sealed class Builder(ProjectStateSnapshot projectState)
     {
         private readonly Dictionary<string, MediaForgeRenderGraphNode> _nodes = new(StringComparer.Ordinal);
 
         public IReadOnlyList<MediaForgeRenderGraphNode> Nodes => _nodes.Values.ToList();
 
-        public string AddOutput(MediaForgeRenderOutput output)
+        public string AddOutput(RenderOutputStateSnapshot output)
         {
             var canvasKey = AddCanvas(output.CanvasId);
             return AddNode(
@@ -39,7 +46,7 @@ internal static class MediaForgeRenderGraphCompiler
 
         private string AddCanvas(Core.Identifiers.CanvasId canvasId)
         {
-            var canvas = project.Canvases.FirstOrDefault(candidate => candidate.Id == canvasId);
+            var canvas = projectState.Canvases.FirstOrDefault(candidate => candidate.Id == canvasId);
             if (canvas is null)
                 return $"missing-canvas:{canvasId}";
 
@@ -48,7 +55,7 @@ internal static class MediaForgeRenderGraphCompiler
             {
                 switch (drawObject)
                 {
-                    case SourceLayerDrawObject sourceLayer:
+                    case SourceLayerDrawObjectSnapshot sourceLayer:
                         var sourceKey = AddNode(
                             MediaForgeRenderGraphNodeKind.SourceFrame,
                             $"source:{sourceLayer.SourceId}",
@@ -70,7 +77,7 @@ internal static class MediaForgeRenderGraphCompiler
 
                         break;
 
-                    case CanvasDrawObject nested:
+                    case CanvasDrawObjectSnapshot nested:
                         dependencies.Add(AddCanvas(nested.NestedCanvasId));
                         break;
                 }
@@ -105,13 +112,13 @@ internal static class MediaForgeRenderGraphCompiler
         }
     }
 
-    private static IReadOnlyList<MediaForgeEffect> GetEnabledEffects(MediaForgeDrawObject drawObject) =>
+    private static IReadOnlyList<EffectStateSnapshot> GetEnabledEffects(DrawObjectStateSnapshot drawObject) =>
         drawObject.Effects
             .Where(static effect => effect.Enabled)
             .OrderBy(static effect => effect.Order)
             .ToArray();
 
-    private static string HashEffects(IReadOnlyList<MediaForgeEffect> effects)
+    private static string HashEffects(IReadOnlyList<EffectStateSnapshot> effects)
     {
         var fingerprints = effects
             .Where(static effect => effect.Enabled)
@@ -123,10 +130,10 @@ internal static class MediaForgeRenderGraphCompiler
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
     }
 
-    private static object CreateEffectFingerprint(MediaForgeEffect effect) =>
+    private static object CreateEffectFingerprint(EffectStateSnapshot effect) =>
         effect switch
         {
-            ChromaKeyEffect chroma => new
+            ChromaKeyEffectSnapshot chroma => new
             {
                 Type = "effect.chroma",
                 chroma.Order,
@@ -138,7 +145,7 @@ internal static class MediaForgeRenderGraphCompiler
                 chroma.Smoothness,
                 chroma.SpillReduction
             },
-            ColorCorrectionEffect color => new
+            ColorCorrectionEffectSnapshot color => new
             {
                 Type = "effect.color",
                 color.Order,
@@ -147,13 +154,13 @@ internal static class MediaForgeRenderGraphCompiler
                 color.Saturation,
                 color.HueDegrees
             },
-            BlurEffect blur => new
+            BlurEffectSnapshot blur => new
             {
                 Type = "effect.blur",
                 blur.Order,
                 blur.Radius
             },
-            TransitionEffect transition => new
+            TransitionEffectSnapshot transition => new
             {
                 Type = "effect.transition",
                 transition.Order,

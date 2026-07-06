@@ -1,24 +1,33 @@
+using Vortice.Direct3D11;
+using Vortice.DXGI;
+using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Encode;
 using WTK.MediaForge.Core.Media.Interop;
+using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Windows.Media.Encode;
 
 /// <summary>
-/// Media Foundation hardware encoder skeleton. GPU surface in, H.264 packets out.
+/// Media Foundation hardware encoder. GPU surface in, H.264 packets out.
 /// </summary>
 public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
 {
     private readonly HardwareEncoderInfo _info;
     private readonly HardwareEncoderInputRequirement _inputRequirement;
+    private readonly ID3D11Device _device;
+    private MediaFoundationH264EncoderSession? _session;
+    private long _frameNumber;
     private bool _disposed;
 
     public MediaFoundationHardwareVideoEncoder(
+        ID3D11Device device,
         int width,
         int height,
-        string pixelFormat = "NV12")
+        string pixelFormat = "B8G8R8A8_UNORM")
     {
+        _device = device ?? throw new ArgumentNullException(nameof(device));
         _info = new HardwareEncoderInfo
         {
             Name = "Media Foundation H.264 Hardware MFT",
@@ -36,6 +45,14 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         };
     }
 
+    public MediaFoundationHardwareVideoEncoder(
+        int width,
+        int height,
+        string pixelFormat = "NV12")
+        : this(CreateDefaultDevice(), width, height, pixelFormat)
+    {
+    }
+
     public HardwareEncoderInfo Info => _info;
 
     public HardwareEncoderInputRequirement InputRequirement => _inputRequirement;
@@ -46,20 +63,102 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(auditSink);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (context.InputLease.BackendSurface is not D3D11SharedTextureFrameHandle surface)
+            throw new InvalidOperationException("Encoder requires a D3D11 shared texture backend surface.");
+
+        _session ??= CreateSession();
 
         auditSink.Record(new MediaTransportAuditEvent
         {
-            Kind = MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated,
+            Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
             Source = nameof(MediaFoundationHardwareVideoEncoder),
-            Detail = "MF hardware encoder received GPU input lease (skeleton)."
+            Detail = "MF hardware encoder accepted D3D11 GPU surface input."
         });
 
-        return ValueTask.FromResult<EncodedVideoPacket?>(null);
+        var encoded = _session.TryEncodeSurface(surface, Interlocked.Increment(ref _frameNumber));
+        if (encoded is null)
+            return ValueTask.FromResult<EncodedVideoPacket?>(null);
+
+        auditSink.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
+            Source = nameof(MediaFoundationHardwareVideoEncoder),
+            Detail = $"H.264 packet produced ({encoded.Value.Data.Length} bytes)."
+        });
+
+        return ValueTask.FromResult<EncodedVideoPacket?>(new EncodedVideoPacket
+        {
+            Data = encoded.Value.Data,
+            Codec = EncodedVideoCodec.H264,
+            PresentationTime = context.PresentationTime,
+            IsKeyFrame = encoded.Value.IsKeyFrame
+        });
+    }
+
+    public async ValueTask<EncodedVideoPacket?> SubmitFrameAsync(
+        GpuTextureLease textureLease,
+        HardwareEncodeFrameContext context,
+        IGpuFrameExporter frameExporter,
+        IMediaTransportAuditSink auditSink)
+    {
+        ArgumentNullException.ThrowIfNull(textureLease);
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(frameExporter);
+        ArgumentNullException.ThrowIfNull(auditSink);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        context.CancellationToken.ThrowIfCancellationRequested();
+
+        var descriptor = textureLease.ToGpuVideoFrameDescriptor();
+        if (!frameExporter.CanExport(descriptor, _inputRequirement))
+            throw new InvalidOperationException("GPU frame exporter cannot export the provided texture lease.");
+
+        using var inputLease = await frameExporter
+            .ExportForEncoderAsync(descriptor, auditSink, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        var encodeContext = new EncodeFrameContext
+        {
+            InputLease = inputLease,
+            FrameNumber = context.FrameId,
+            PresentationTime = context.PresentationTime,
+            CancellationToken = context.CancellationToken
+        };
+
+        return await EncodeAsync(encodeContext, auditSink).ConfigureAwait(false);
     }
 
     public ValueTask DisposeAsync()
     {
+        if (_disposed)
+            return ValueTask.CompletedTask;
+
         _disposed = true;
+        _session?.Dispose();
+        _session = null;
         return ValueTask.CompletedTask;
+    }
+
+    private MediaFoundationH264EncoderSession CreateSession()
+    {
+        var session = new MediaFoundationH264EncoderSession(
+            _device,
+            _inputRequirement.Width,
+            _inputRequirement.Height);
+        session.Initialize();
+        return session;
+    }
+
+    private static ID3D11Device CreateDefaultDevice()
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("Media Foundation hardware encoder requires Windows.");
+
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+        factory.EnumAdapters1(0, out var adapter).CheckError();
+        using var gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
+        return gpuDevice.Device;
     }
 }

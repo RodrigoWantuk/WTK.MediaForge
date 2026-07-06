@@ -1,14 +1,15 @@
 using Silk.NET.Vulkan;
 using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal sealed class VulkanIntermediateTargetPool : IDisposable
 {
-    private readonly VulkanHeadlessDevice _device;
+    private readonly VulkanGpuResourcePool _gpuResourcePool;
     private readonly object _gate = new();
-    private readonly Dictionary<PoolKey, VulkanOffscreenRenderTarget> _entries = [];
+    private readonly Dictionary<PoolKey, Entry> _entries = [];
     private int _disposed;
 
     internal int LiveEntryCountForTests
@@ -20,8 +21,8 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         }
     }
 
-    public VulkanIntermediateTargetPool(VulkanHeadlessDevice device) =>
-        _device = device ?? throw new ArgumentNullException(nameof(device));
+    public VulkanIntermediateTargetPool(VulkanGpuResourcePool gpuResourcePool) =>
+        _gpuResourcePool = gpuResourcePool ?? throw new ArgumentNullException(nameof(gpuResourcePool));
 
     public VulkanOffscreenTargetHandle Rent(CanvasId canvasId, FrameSize size)
     {
@@ -33,25 +34,24 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         if (size.Width == 0 || size.Height == 0)
             throw new ArgumentOutOfRangeException(nameof(size), "Intermediate target size must be non-zero.");
 
-        VulkanOffscreenRenderTarget target;
+        Entry entry;
         lock (_gate)
         {
             RemoveStaleEntriesForCanvas(canvasId, size);
 
             var key = new PoolKey(canvasId, size);
-            if (_entries.TryGetValue(key, out var existing))
+            if (!_entries.TryGetValue(key, out var existingEntry))
             {
-                target = existing;
+                var acquired = _gpuResourcePool.AcquireOffscreenTarget(size, GpuTextureUsage.Intermediate);
+                existingEntry = new Entry(acquired.Lease, acquired.Target);
+                _entries[key] = existingEntry;
             }
-            else
-            {
-                target = new VulkanOffscreenRenderTarget(_device, size);
-                _entries[key] = target;
-            }
+
+            entry = existingEntry;
         }
 
-        target.CurrentLayout = ImageLayout.Undefined;
-        return new VulkanOffscreenTargetHandle(target, ReleaseRentedTarget);
+        entry.Target.CurrentLayout = ImageLayout.Undefined;
+        return new VulkanOffscreenTargetHandle(entry.Target, static _ => { });
     }
 
     public void InvalidateAll()
@@ -59,13 +59,15 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         if (Volatile.Read(ref _disposed) != 0)
             return;
 
+        List<Entry> entries;
         lock (_gate)
         {
-            foreach (var target in _entries.Values)
-                target.Dispose();
-
+            entries = _entries.Values.ToList();
             _entries.Clear();
         }
+
+        foreach (var entry in entries)
+            entry.Lease.Dispose();
     }
 
     public void Dispose()
@@ -74,11 +76,6 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
             return;
 
         InvalidateAll();
-    }
-
-    private void ReleaseRentedTarget(IVulkanOffscreenRenderTarget target)
-    {
-        _ = target;
     }
 
     private void RemoveStaleEntriesForCanvas(CanvasId canvasId, FrameSize size)
@@ -98,10 +95,12 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
 
         foreach (var key in staleKeys)
         {
-            if (_entries.Remove(key, out var staleTarget))
-                staleTarget.Dispose();
+            if (_entries.Remove(key, out var staleEntry))
+                staleEntry.Lease.Dispose();
         }
     }
 
     private readonly record struct PoolKey(CanvasId CanvasId, FrameSize Size);
+
+    private sealed record Entry(GpuTextureLease Lease, VulkanOffscreenRenderTarget Target);
 }

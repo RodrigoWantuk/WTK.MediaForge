@@ -55,7 +55,11 @@ public sealed class EncodedPacketMp4Muxer : IMp4Muxer
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (_finalized)
+            return ValueTask.CompletedTask;
+
         _finalized = true;
+        IsoBmffMp4Writer.WriteMp4(_outputPath, _packets);
         return ValueTask.CompletedTask;
     }
 

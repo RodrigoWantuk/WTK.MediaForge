@@ -103,3 +103,38 @@ render thread, provider, submission, or GPU export/encode paths, also run:
 ./scripts/verify-media-transport-rules.ps1
 ./scripts/verify-license-policy.ps1
 ```
+
+## Active Phase 2 Commit Order (GPU Pipeline Completo)
+
+Execute in this exact order after vNext (commits 00–24) is complete. Plan:
+`.cursor/plans/phase2_gpu_engine_evolution.plan.md`.
+
+| # | Commit | Gate | Status |
+|---|--------|------|--------|
+| 01 | GPU Resource Lifetime (`GpuResourcePool`, `GpuTextureLease`) | Fast + Gpu | **Done** |
+| 02 | GPU Frame Scheduler | Fast | **Done** |
+| 03 | Asset Manager | Fast | **Done** |
+| 04 | **GPU Surface Export Proof (Real)** | **Blocks 15–17** | **Done** |
+| 05 | Hardware Decode Foundation | Fast | **Done** |
+| 06 | Windows Hardware Decode MVP | Gpu | **Done** |
+| 07 | Video Source Runtime | Fast | **Done** |
+| 08 | Texture Streaming | Gpu | **Done** |
+| 09 | Renderer Video Integration | Gpu | **Done** |
+| 10 | Scene Runtime | Fast + Gpu | **Done** |
+| 11 | Render Graph (executor) | Gpu | **Done** |
+| 12 | GPU Effects Framework | Gpu | **Done** |
+| 13 | Transform Effects | Gpu | **Done** |
+| 14 | Text Rendering | Gpu | **Done** |
+| 15 | Hardware Encode Foundation | Gpu; requires 04 | **Done** |
+| 16 | MP4 Recording MVP | Gpu | **Done** |
+| 17 | RTMP Output MVP | Gpu | **Done** |
+| 18 | Performance Validation | Report | **Done** |
+| 19 | Fault Recovery | Gpu stress | **Done** |
+| 20 | Engine Readiness Gate | Fast + Gpu + verify | **Done** |
+
+### Phase 2 blocking rules
+
+- Do not implement hardware MP4/RTMP/recording until Commit 04 end-to-end export proof passes.
+- All engine textures are acquired through `GpuResourcePool` / `VulkanGpuResourcePool`; no ad-hoc `VulkanOffscreenRenderTarget` construction in product paths.
+- Sinks never invoke render; `FrameScheduler` owns frame ordering (Commit 02+).
+- Physical GPU dispose is deferred to pool retirement; invalidate/recycle does not imply immediate `VkImage` destroy.

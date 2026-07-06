@@ -8,6 +8,7 @@ using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
+using WTK.MediaForge.Graphics.Vulkan.Text;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
@@ -30,21 +31,26 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     private readonly Pipeline _solidPipeline;
     private readonly Pipeline _canvasCompositePipeline;
     private readonly Pipeline _outputLetterboxPipeline;
+    private readonly Pipeline _textPipeline;
     private readonly ShaderModule _vertexModule;
     private readonly ShaderModule _sourceLayerFragmentModule;
     private readonly ShaderModule _solidFragmentModule;
     private readonly ShaderModule _canvasCompositeFragmentModule;
     private readonly ShaderModule _outputLetterboxFragmentModule;
+    private readonly ShaderModule _textFragmentModule;
     private readonly VulkanIntermediateTargetPool _intermediateTargetPool;
+    private VulkanFontAtlasBridge? _fontAtlasBridge;
     private bool _disposed;
 
     public VulkanCompositionShaderPipelines(
         VulkanHeadlessDevice deviceContext,
-        IMediaForgeDiagnosticsSink? diagnostics = null)
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        VulkanGpuResourcePool? gpuResourcePool = null)
     {
         _device = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
-        _intermediateTargetPool = new VulkanIntermediateTargetPool(_device);
+        _intermediateTargetPool = new VulkanIntermediateTargetPool(
+            gpuResourcePool ?? new VulkanGpuResourcePool(_device));
         _vk = deviceContext.Vk;
         _deviceHandle = deviceContext.Device;
 
@@ -59,12 +65,17 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         _solidFragmentModule = CreateShaderModule(VulkanShaderBytecode.SolidFragment);
         _canvasCompositeFragmentModule = CreateShaderModule(VulkanShaderBytecode.CanvasCompositeFragment);
         _outputLetterboxFragmentModule = CreateShaderModule(VulkanShaderBytecode.OutputLetterboxFragment);
+        _textFragmentModule = CreateShaderModule(VulkanShaderBytecode.TextFragment);
 
         _sourceLayerPipeline = CreateGraphicsPipeline(_vertexModule, _sourceLayerFragmentModule, enableAlphaBlend: true);
         _solidPipeline = CreateGraphicsPipeline(_vertexModule, _solidFragmentModule, enableAlphaBlend: true);
         _canvasCompositePipeline = CreateGraphicsPipeline(_vertexModule, _canvasCompositeFragmentModule, enableAlphaBlend: true);
         _outputLetterboxPipeline = CreateGraphicsPipeline(_vertexModule, _outputLetterboxFragmentModule, enableAlphaBlend: false);
+        _textPipeline = CreateGraphicsPipeline(_vertexModule, _textFragmentModule, enableAlphaBlend: true);
     }
+
+    internal void SetFontAtlasBridge(VulkanFontAtlasBridge fontAtlasBridge) =>
+        _fontAtlasBridge = fontAtlasBridge ?? throw new ArgumentNullException(nameof(fontAtlasBridge));
 
     public RenderPass RenderPass => _renderPass;
 
@@ -161,6 +172,33 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                         solidPushConstants,
                         canvas.Size,
                         solid.Transform);
+                    continue;
+                }
+
+                if (drawObject is RenderTextDrawObjectSnapshot textLayer)
+                {
+                    if (_fontAtlasBridge is null ||
+                        !_fontAtlasBridge.TryResolveAtlas(
+                            textLayer.Text,
+                            "Segoe UI",
+                            textLayer.FontSize,
+                            out _,
+                            out var atlasImageView))
+                    {
+                        continue;
+                    }
+
+                    var textPushConstants = CompositionPushConstantsBuilder.BuildText(textLayer);
+                    var textDescriptorSet = AllocateAndWriteDescriptorSet(atlasImageView);
+                    submissionResources.RetainDescriptorSet(textDescriptorSet);
+
+                    DrawTextLayer(
+                        commandBuffer,
+                        _textPipeline,
+                        textDescriptorSet,
+                        textPushConstants,
+                        canvas.Size,
+                        textLayer.Transform);
                     continue;
                 }
 
@@ -588,6 +626,50 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         _vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
     }
 
+    private void DrawTextLayer(
+        CommandBuffer commandBuffer,
+        Pipeline pipeline,
+        DescriptorSet descriptorSet,
+        MediaForgeTextPushConstants pushConstants,
+        FrameSize canvasSize,
+        Transform2D transform)
+    {
+        if (!transform.HasPositiveSize)
+            return;
+
+        if (!TryCreateClippedScissor(transform, canvasSize, out var scissor))
+            return;
+
+        var viewport = new Viewport
+        {
+            X = transform.Position.X,
+            Y = transform.Position.Y,
+            Width = transform.Size.Width,
+            Height = transform.Size.Height,
+            MinDepth = 0,
+            MaxDepth = 1
+        };
+
+        _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
+        _vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, &descriptorSet, 0, null);
+
+        var pushBytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref pushConstants, 1));
+        fixed (byte* pushData = pushBytes)
+        {
+            _vk.CmdPushConstants(
+                commandBuffer,
+                _pipelineLayout,
+                ShaderStageFlags.FragmentBit,
+                0,
+                (uint)pushBytes.Length,
+                pushData);
+        }
+
+        _vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
+        _vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+        _vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
+    }
+
     private void DrawSolidLayer(
         CommandBuffer commandBuffer,
         Pipeline pipeline,
@@ -891,6 +973,9 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         if (_outputLetterboxPipeline.Handle != 0)
             _vk.DestroyPipeline(_deviceHandle, _outputLetterboxPipeline, null);
 
+        if (_textPipeline.Handle != 0)
+            _vk.DestroyPipeline(_deviceHandle, _textPipeline, null);
+
         if (_pipelineLayout.Handle != 0)
             _vk.DestroyPipelineLayout(_deviceHandle, _pipelineLayout, null);
 
@@ -910,6 +995,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         DestroyShaderModule(_solidFragmentModule);
         DestroyShaderModule(_canvasCompositeFragmentModule);
         DestroyShaderModule(_outputLetterboxFragmentModule);
+        DestroyShaderModule(_textFragmentModule);
         DestroyShaderModule(_vertexModule);
     }
 

@@ -1,3 +1,5 @@
+using WTK.MediaForge.Composition.Assets;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Text;
@@ -17,6 +19,8 @@ internal sealed class VulkanTextRenderer : IDisposable
         _atlasCache = new VulkanGlyphAtlasCache(device);
     }
 
+    internal VulkanGlyphAtlasCache AtlasCacheForTests => _atlasCache;
+
     public bool TryInvalidateText(string textKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(textKey);
@@ -28,6 +32,9 @@ internal sealed class VulkanTextRenderer : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(textKey);
         return _atlasCache.TryGet(textKey, out entry);
     }
+
+    internal void StoreAtlasEntry(string textKey, GlyphAtlasEntry entry) =>
+        _atlasCache.Store(textKey, entry);
 
     public void Dispose()
     {
@@ -45,5 +52,5 @@ internal readonly struct GlyphAtlasEntry
 
     public required int Height { get; init; }
 
-    public required ulong GpuTextureId { get; init; }
+    public required GpuTextureId GpuTextureId { get; init; }
 }

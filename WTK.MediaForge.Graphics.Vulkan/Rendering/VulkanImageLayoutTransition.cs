@@ -63,6 +63,18 @@ internal static unsafe class VulkanImageLayoutTransition
                 (PipelineStageFlags.BottomOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit),
             (ImageLayout.TransferDstOptimal, ImageLayout.PresentSrcKhr) =>
                 (PipelineStageFlags.TransferBit, PipelineStageFlags.BottomOfPipeBit, AccessFlags.TransferWriteBit, 0),
+            (ImageLayout.TransferDstOptimal, ImageLayout.TransferSrcOptimal) =>
+                (PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit),
+            (ImageLayout.TransferSrcOptimal, ImageLayout.TransferDstOptimal) =>
+                (PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit),
+            (ImageLayout.General, ImageLayout.TransferDstOptimal) =>
+                (PipelineStageFlags.AllCommandsBit, PipelineStageFlags.TransferBit, AccessFlags.MemoryReadBit, AccessFlags.TransferWriteBit),
+            (ImageLayout.TransferDstOptimal, ImageLayout.General) =>
+                (PipelineStageFlags.TransferBit, PipelineStageFlags.AllCommandsBit, AccessFlags.TransferWriteBit, AccessFlags.MemoryReadBit),
+            (ImageLayout.TransferDstOptimal, ImageLayout.ColorAttachmentOptimal) =>
+                (PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit, AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentWriteBit),
+            (ImageLayout.Undefined, ImageLayout.TransferSrcOptimal) =>
+                (PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferReadBit),
             _ => throw new InvalidOperationException(
                 $"Unsupported image layout transition: {oldLayout} -> {newLayout}.")
         };

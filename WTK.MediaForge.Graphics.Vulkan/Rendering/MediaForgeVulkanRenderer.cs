@@ -8,6 +8,7 @@ using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
+using WTK.MediaForge.Graphics.Vulkan.Text;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
@@ -21,6 +22,8 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly IVulkanRendererFaultInjector _faultInjector;
     private readonly Func<VulkanHeadlessDevice, FrameSize, IVulkanOffscreenRenderTarget> _offscreenTargetFactory;
+    private readonly VulkanGpuResourcePool _gpuResourcePool;
+    private readonly bool _useGpuResourcePool;
     private readonly Action _disposeDevice;
     private readonly VulkanCompositionShaderPipelines _compositionPipelines;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
@@ -48,9 +51,12 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         _diagnostics = diagnostics;
         _faultInjector = faultInjector ?? throw new ArgumentNullException(nameof(faultInjector));
         _offscreenTargetFactory = offscreenTargetFactory ?? CreateOffscreenRenderTarget;
+        _useGpuResourcePool = offscreenTargetFactory is null;
         _disposeDevice = disposeDevice ?? _deviceContext.Dispose;
+        _gpuResourcePool = new VulkanGpuResourcePool(_deviceContext);
         _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
-        _compositionPipelines = new VulkanCompositionShaderPipelines(_deviceContext, diagnostics);
+        _compositionPipelines = new VulkanCompositionShaderPipelines(_deviceContext, diagnostics, _gpuResourcePool);
+        _compositionPipelines.SetFontAtlasBridge(new VulkanFontAtlasBridge(_deviceContext));
     }
 
     internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;
@@ -140,6 +146,17 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         FrameSize size) =>
         new VulkanOffscreenRenderTarget(deviceContext, size);
 
+    private VulkanOffscreenTargetHandle CreateOffscreenHandle(FrameSize size)
+    {
+        if (!_useGpuResourcePool)
+            return new VulkanOffscreenTargetHandle(_offscreenTargetFactory(_deviceContext, size));
+
+        var acquired = _gpuResourcePool.AcquireOffscreenTarget(size);
+        return new VulkanOffscreenTargetHandle(acquired.Target, textureLease: acquired.Lease);
+    }
+
+    internal VulkanGpuResourcePool GpuResourcePoolForTests => _gpuResourcePool;
+
     internal static bool TryCreate(
         RenderThreadGuard threadGuard,
         IMediaForgeDiagnosticsSink? diagnostics,
@@ -179,8 +196,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             if (_offscreenTargets.TryRemove(binding.OutputId, out var existing))
                 existing.Retire();
 
-            _offscreenTargets[binding.OutputId] = new VulkanOffscreenTargetHandle(
-                _offscreenTargetFactory(_deviceContext, binding.SurfaceSize));
+            _offscreenTargets[binding.OutputId] = CreateOffscreenHandle(binding.SurfaceSize);
             _compositionPipelines.InvalidateIntermediateTargets();
         }
 
@@ -228,8 +244,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             {
                 _offscreenTargets.TryRemove(outputId, out _);
                 handle.Retire();
-                _offscreenTargets[outputId] = new VulkanOffscreenTargetHandle(
-                    _offscreenTargetFactory(_deviceContext, surfaceSize));
+                _offscreenTargets[outputId] = CreateOffscreenHandle(surfaceSize);
                 _compositionPipelines.InvalidateIntermediateTargets();
             }
             else if (existing.TargetKind == RenderTargetKind.Offscreen &&
@@ -555,6 +570,15 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
         try
         {
+            _gpuResourcePool.Dispose();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+
+        try
+        {
             _disposeDevice();
         }
         catch (Exception ex)
@@ -623,8 +647,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                 continue;
             }
 
-            var replacement = new VulkanOffscreenTargetHandle(
-                _offscreenTargetFactory(_deviceContext, handle.Target.Size));
+            var replacement = CreateOffscreenHandle(handle.Target.Size);
 
             _offscreenTargets[output.Id] = replacement;
             handle.Retire();

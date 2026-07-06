@@ -3,6 +3,7 @@ namespace WTK.MediaForge.Composition.Media.Stream;
 public sealed class RtmpTransport : IDisposable
 {
     private readonly string _url;
+    private readonly List<FlvPacket> _sentPackets = [];
     private bool _connected;
     private bool _disposed;
 
@@ -15,6 +16,8 @@ public sealed class RtmpTransport : IDisposable
     public string Url => _url;
 
     public bool IsConnected => _connected;
+
+    public IReadOnlyList<FlvPacket> SentPackets => _sentPackets;
 
     public ValueTask ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -32,6 +35,7 @@ public sealed class RtmpTransport : IDisposable
         if (!_connected)
             throw new InvalidOperationException("RTMP transport is not connected.");
 
+        _sentPackets.Add(packet);
         return ValueTask.CompletedTask;
     }
 
@@ -42,5 +46,6 @@ public sealed class RtmpTransport : IDisposable
 
         _disposed = true;
         _connected = false;
+        _sentPackets.Clear();
     }
 }

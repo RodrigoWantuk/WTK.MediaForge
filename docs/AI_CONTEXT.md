@@ -98,6 +98,19 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
 
+## GPU Resource Pool (Phase 2)
+
+- All logical engine textures are acquired via `GpuResourcePool` and exposed as `GpuTextureLease`.
+- Vulkan offscreen/intermediate targets use `VulkanGpuResourcePool`; physical wrappers implement `IGpuPhysicalResource` and retire through `RetiredGpuResourceManager`.
+- Texture recycle honors pending `GpuFence` signals; physical destroy is deferred until pool retirement or renderer dispose.
+- Native Vulkan/D3D11 handles must not leak into Composition or public API layers.
+
+## Frame Scheduler (Phase 2 Commit 02)
+
+- `FrameScheduler` owns frame pacing and produces `FrameExecutionContext` per tick.
+- Flow: `FrameScheduler -> MediaForgeRenderThread -> IRenderBackend`; sinks consume completed output leases only.
+- `MediaForgeRenderPump` is a compatibility wrapper over `FrameScheduler`.
+- `FrameExecutionContext` carries `FrameId`, `Timestamp`, `FrameBudget`, `TargetOutputs`, and `SynchronizationPrimitives`.
 
 ## Studio UI Direction
 

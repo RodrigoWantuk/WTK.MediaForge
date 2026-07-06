@@ -139,6 +139,8 @@ public class VulkanIntermediateTargetPoolTests
         if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
             return;
 
+        var disposeBeforeInvalidate = VulkanOffscreenRenderTargetLifetime.DisposeCount;
+
         using (context)
         {
             context!.Guard.BindToCurrentThread();
@@ -164,16 +166,17 @@ public class VulkanIntermediateTargetPoolTests
 
                 Assert.True(backend.IntermediateTargetPoolLiveCountForTests > 0);
 
-                var disposeBefore = VulkanOffscreenRenderTargetLifetime.DisposeCount;
                 backend.InvalidateIntermediateTargetCacheForTests();
 
                 Assert.Equal(0, backend.IntermediateTargetPoolLiveCountForTests);
-                Assert.True(VulkanOffscreenRenderTargetLifetime.DisposeCount > disposeBefore);
+                Assert.Equal(disposeBeforeInvalidate, VulkanOffscreenRenderTargetLifetime.DisposeCount);
             }
             finally
             {
                 context.Guard.Clear();
             }
         }
+
+        Assert.True(VulkanOffscreenRenderTargetLifetime.DisposeCount > disposeBeforeInvalidate);
     }
 }

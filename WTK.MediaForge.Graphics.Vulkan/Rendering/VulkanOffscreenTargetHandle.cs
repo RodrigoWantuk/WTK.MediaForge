@@ -1,18 +1,23 @@
+using WTK.MediaForge.Core.Gpu.Resources;
+
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 internal sealed class VulkanOffscreenTargetHandle : IDisposable
 {
     private IVulkanOffscreenRenderTarget? _target;
     private readonly Action<IVulkanOffscreenRenderTarget>? _releaseTarget;
+    private GpuTextureLease? _textureLease;
     private int _submissionRefs;
     private int _retired;
 
     public VulkanOffscreenTargetHandle(
         IVulkanOffscreenRenderTarget target,
-        Action<IVulkanOffscreenRenderTarget>? releaseTarget = null)
+        Action<IVulkanOffscreenRenderTarget>? releaseTarget = null,
+        GpuTextureLease? textureLease = null)
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
         _releaseTarget = releaseTarget;
+        _textureLease = textureLease;
     }
 
     public IVulkanOffscreenRenderTarget Target =>
@@ -59,7 +64,11 @@ internal sealed class VulkanOffscreenTargetHandle : IDisposable
 
         if (_releaseTarget is not null)
             _releaseTarget(target);
+        else if (_textureLease is not null)
+            _textureLease.Dispose();
         else
             target.Dispose();
+
+        _textureLease = null;
     }
 }

@@ -31,7 +31,11 @@ public interface IHardwareVideoDecoder : IAsyncDisposable
 {
     HardwareDecoderInfo Info { get; }
 
-    ValueTask<GpuVideoFrameLease?> DecodeAsync(
+    ValueTask OpenAsync(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink);
+
+    ValueTask<DecodedGpuFrame?> DecodeAsync(
         DecodeFrameContext context,
         IMediaTransportAuditSink auditSink);
+
+    ValueTask FlushAsync(IMediaTransportAuditSink auditSink);
 }

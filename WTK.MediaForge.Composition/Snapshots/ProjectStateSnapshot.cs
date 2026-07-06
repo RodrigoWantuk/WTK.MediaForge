@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
-internal sealed class ProjectStateSnapshot
+internal sealed record ProjectStateSnapshot
 {
     public long Version { get; init; }
 

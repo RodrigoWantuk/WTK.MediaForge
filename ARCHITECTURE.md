@@ -41,16 +41,25 @@ Product-layer rules:
 The hardened frame path is:
 
 ```text
-SourceRuntimeManager / SourceFrameBuffer
-  -> ProjectStateSnapshot
+FrameScheduler (replaces direct render pump ownership)
+  -> SceneRuntime / SceneRuntimeSnapshot
+  -> RenderGraphExecutor (consumes MediaForgeRenderGraphPlan)
   -> RenderFrameSnapshot
   -> MediaForgeRenderThread
   -> PendingRenderSubmissionTracker
-  -> MediaForgeVulkanRenderer
+  -> MediaForgeVulkanRenderer (VulkanEffectGraph + text atlas bridge)
   -> VulkanRenderFrameSubmission
   -> RenderOutputSinkDispatcher
   -> public RenderOutputSink(s)
 ```
+
+Phase 2 commits 10–14 add:
+
+- `SceneRuntime` / `SceneRuntimeSnapshot` — scene dirty tracking and hidden-layer filtering before render-graph planning.
+- `RenderGraphExecutor` — DAG execution of planner nodes (Source / Transform / Blend / Output).
+- `VulkanEffectGraphExecutor` + `EffectNode` — color correction and blur passes via pool textures.
+- Transform effect nodes (translate, rotate, scale, crop, opacity) in `Graphics.Vulkan/Effects/Graph/`.
+- `VulkanFontAtlasBridge` — `FontCache` / `AssetManager` integration with `VulkanTextRenderer` and GPU text pipeline (`mf_text.frag`).
 
 Current completed runtime foundations:
 
@@ -113,6 +122,30 @@ Required rules:
 - Framebuffers, descriptor sets, offscreen targets, source texture leases, command buffers, fences, and snapshots are retained by submission ownership until completion cleanup.
 - Public sinks receive leases that preserve rendered output surface lifetime.
 
+### GPU Resource Pool (Phase 2 Commit 01)
+
+Logical GPU textures are acquired only through `GpuResourcePool` (Core) and
+`VulkanGpuResourcePool` (Vulkan backend). Public access uses `GpuTextureLease`;
+native `VkImage` / `ID3D11Texture2D` handles stay internal.
+
+```text
+GpuResourcePool.AcquireTexture(descriptor)
+  -> GpuTextureLease
+  -> backend physical resource (VulkanOffscreenPhysicalTexture)
+  -> lease.Dispose() returns recyclable textures to pool
+  -> non-recyclable / pool shutdown -> RetiredGpuResourceManager finalization
+```
+
+Rules:
+
+- Offscreen and intermediate Vulkan targets route through the pool; no direct
+  `new VulkanOffscreenRenderTarget(...)` in product renderer paths.
+- Recycle waits for optional `GpuFence` retirement before reuse.
+- Invalidate intermediate cache returns leases to the pool without immediate
+  physical destroy; renderer/pool dispose retires physical resources.
+- Dispose failures surface through `RetiredGpuResourceManager` faults; never mark
+  success when physical finalize fails.
+
 ## D3D11/Vulkan Interop
 
 Windows capture currently uses D3D11/DXGI as the practical capture and interop
@@ -149,6 +182,26 @@ readback.
 
 Future encoder, streaming, NDI, and virtual camera sinks must consume completed
 rendered outputs. They must not add direct renderer branches.
+
+### Phase 2 encode/output pipeline (commits 15–17)
+
+```text
+FrameScheduler
+  -> Renderer (IFrameSchedulerTarget)
+  -> EncodeSchedulerTarget (encode pacing != render pacing)
+  -> IGpuFrameExporter (Vulkan -> D3D11 shared surface)
+  -> IHardwareVideoEncoder.SubmitFrameAsync(GpuTextureLease)
+  -> EncodedVideoPacket
+  -> EncodedOutputRouter (single encoder instance)
+       -> RecordingMp4Sink / EncodedPacketMp4Muxer
+       -> RtmpSink / FlvPacketizer / RtmpTransport
+```
+
+Rules:
+
+- Sinks never call render; scheduler owns frame ordering.
+- MP4/RTMP consume encoded packets only (no raw GPU surface frames).
+- No FFmpeg/libx264 on the recording/streaming product path.
 
 ## Resource Rules
 

@@ -7,6 +7,8 @@ public enum MediaTransportAuditEventKind
     CpuReadbackAttempted,
     StagingBufferCreated,
     HardwareEncoderInputLeaseCreated,
+    HardwareEncoderAcceptedSurface,
+    HardwareDecodeSucceeded,
     EncodedPacketProduced
 }
 
@@ -45,6 +47,16 @@ public static class MediaTransportAuditRules
     public static bool IsProductPathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>
         events.Any(e => e.Kind == MediaTransportAuditEventKind.GpuSurfaceExportSucceeded)
         && events.Any(e => e.Kind == MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated)
+        && !events.Any(e => e.Kind is MediaTransportAuditEventKind.CpuReadbackAttempted
+            or MediaTransportAuditEventKind.StagingBufferCreated);
+
+    public static bool IsExportProofPathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>
+        IsProductPathValid(events)
+        && events.Any(e => e.Kind == MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface)
+        && events.Any(e => e.Kind == MediaTransportAuditEventKind.EncodedPacketProduced);
+
+    public static bool IsDecodePathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>
+        events.Any(e => e.Kind == MediaTransportAuditEventKind.HardwareDecodeSucceeded)
         && !events.Any(e => e.Kind is MediaTransportAuditEventKind.CpuReadbackAttempted
             or MediaTransportAuditEventKind.StagingBufferCreated);
 }

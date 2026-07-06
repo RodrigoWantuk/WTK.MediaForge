@@ -1564,7 +1564,8 @@ public class MediaForgeEngineTests
             Assert.Contains(
                 frameDropped,
                 args => args.ReasonCode is "render.frame_dropped_tracker_full" or
-                    "engine.render_pump_frame_dropped_backpressure");
+                    "engine.render_pump_frame_dropped_backpressure" or
+                    "engine.frame_scheduler_frame_dropped_backpressure");
         }
         finally
         {
@@ -1586,7 +1587,9 @@ public class MediaForgeEngineTests
         await pump.StopAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
 
         var backpressureDiagnostics = diagnostics.Diagnostics
-            .Count(static diagnostic => diagnostic.Code == "engine.render_pump_frame_dropped_backpressure");
+            .Count(static diagnostic => diagnostic.Code is
+                "engine.render_pump_frame_dropped_backpressure" or
+                "engine.frame_scheduler_frame_dropped_backpressure");
         Assert.Equal(1, backpressureDiagnostics);
     }
 

@@ -7,8 +7,9 @@ internal enum MediaSourceState
     Stopped = 0,
     Starting = 1,
     Running = 2,
-    Failed = 3,
-    Stopping = 4
+    Paused = 3,
+    Failed = 4,
+    Stopping = 5
 }
 
 internal interface IMediaSource

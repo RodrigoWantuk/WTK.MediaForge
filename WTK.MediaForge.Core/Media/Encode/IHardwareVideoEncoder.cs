@@ -1,3 +1,4 @@
+using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Interop;
@@ -34,5 +35,11 @@ public interface IHardwareVideoEncoder : IAsyncDisposable
 
     ValueTask<EncodedVideoPacket?> EncodeAsync(
         EncodeFrameContext context,
+        IMediaTransportAuditSink auditSink);
+
+    ValueTask<EncodedVideoPacket?> SubmitFrameAsync(
+        GpuTextureLease textureLease,
+        HardwareEncodeFrameContext context,
+        IGpuFrameExporter frameExporter,
         IMediaTransportAuditSink auditSink);
 }

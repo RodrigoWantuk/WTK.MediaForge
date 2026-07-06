@@ -24,7 +24,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 public class Cp3ChromaKeyEffectTests
 {
     [Fact]
-    public async Task Text_draw_object_reports_render_drawobject_not_supported()
+    public async Task Text_draw_object_does_not_report_render_drawobject_not_supported()
     {
         var diagnostics = await VulkanCompositionTestHarness.SubmitDrawObjectForDiagnosticsAsync(new RenderTextDrawObjectSnapshot
         {
@@ -38,7 +38,7 @@ public class Cp3ChromaKeyEffectTests
         if (diagnostics is null)
             return;
 
-        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
     }
     [Fact]
     public async Task Source_layer_unsupported_effect_reports_render_effect_not_supported()

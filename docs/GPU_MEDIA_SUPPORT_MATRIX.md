@@ -35,8 +35,8 @@ Support is determined by **runtime-detected capability**, not marketing GPU name
 |--------|-----------|--------|-------|
 | Preview panel | GpuSurface | Experimental | No CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | Blocked until export proof + MF MVP | Windows MF hardware MFT |
-| RTMP H.264 | EncodedPacket | Planned | After MP4 MVP |
+| Recording MP4 H.264 | EncodedPacket | Experimental | Windows MF hardware MFT via EncodeSchedulerTarget |
+| RTMP H.264 | EncodedPacket | Experimental | Shared encoder with MP4 path |
 | SRT | — | Planned | Blocked by license/transport review |
 | NDI output | — | Unsupported | |
 | Virtual camera | — | Unsupported | |
@@ -54,10 +54,10 @@ Support is determined by **runtime-detected capability**, not marketing GPU name
 
 ## Export Proof Gate
 
-Recording MP4 remains **Blocked** until Commit 06 proves:
+Recording MP4 remains **Experimental** after Phase 2 Commits 15–16:
 
 ```text
-Vulkan offscreen -> D3D11/MF-compatible encoder surface (no CPU readback)
+FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> MF H.264 -> EncodedPacketMp4Muxer
 ```
 
 Capability API exposes `GpuExportProof` status: Passed / Failed / Pending.

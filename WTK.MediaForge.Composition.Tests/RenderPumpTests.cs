@@ -88,7 +88,9 @@ public sealed class RenderPumpTests
         await pump.StopAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
 
         var backpressureDiagnostics = diagnostics.Diagnostics
-            .Count(static diagnostic => diagnostic.Code == "engine.render_pump_frame_dropped_backpressure");
+            .Count(static diagnostic => diagnostic.Code is
+                "engine.render_pump_frame_dropped_backpressure" or
+                "engine.frame_scheduler_frame_dropped_backpressure");
         Assert.Equal(1, backpressureDiagnostics);
     }
 

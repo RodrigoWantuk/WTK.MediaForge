@@ -1,20 +1,20 @@
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Graphics.Vulkan.Effects.Graph;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Effects;
 
 internal sealed class VulkanEffectChainExecutor : IDisposable
 {
-    private readonly VulkanColorCorrectionPass _colorCorrection = new();
-    private readonly VulkanSeparableBlurPass _blur = new();
+    private readonly VulkanEffectGraphExecutor _effectGraph = VulkanEffectGraphExecutorFactory.CreateDefault();
     private bool _disposed;
 
-    public VulkanColorCorrectionPass ColorCorrection => _colorCorrection;
+    public VulkanColorCorrectionPass ColorCorrection { get; } = new();
 
-    public VulkanSeparableBlurPass Blur => _blur;
+    public VulkanSeparableBlurPass Blur { get; } = new();
 
     public bool HasActiveEffects =>
-        _colorCorrection.IsEnabled || _blur.IsEnabled;
+        ColorCorrection.IsEnabled || Blur.IsEnabled;
 
     public void ExecuteSkeleton(
         VulkanHeadlessDevice device,
@@ -23,14 +23,17 @@ internal sealed class VulkanEffectChainExecutor : IDisposable
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(drawObject);
 
-        if (_colorCorrection.CanApply(drawObject))
-            _colorCorrection.ApplySkeleton(device);
-
-        if (_blur.CanApply(drawObject))
+        using var pool = new VulkanGpuResourcePool(device);
+        var context = new VulkanEffectExecutionContext
         {
-            _blur.ApplyHorizontalSkeleton(device);
-            _blur.ApplyVerticalSkeleton(device);
-        }
+            Device = device,
+            Pool = pool,
+            Input = new EffectPassDescriptor { Size = new Core.Frames.FrameSize(1, 1) },
+            Output = new EffectPassDescriptor { Size = new Core.Frames.FrameSize(1, 1) },
+            DrawObject = drawObject
+        };
+
+        _effectGraph.ExecuteChain(context, drawObject);
     }
 
     public void Dispose()
@@ -39,5 +42,6 @@ internal sealed class VulkanEffectChainExecutor : IDisposable
             return;
 
         _disposed = true;
+        _effectGraph.Dispose();
     }
 }

@@ -129,3 +129,5 @@ Before considering a change complete, verify:
 - [ ] Capability report is consumable via `GetCapabilityReportAsync` with status and reason per feature.
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
+- [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15–20.
+- [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.

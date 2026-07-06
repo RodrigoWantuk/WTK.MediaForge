@@ -19,7 +19,7 @@ internal sealed class VulkanGlyphAtlasCache : IDisposable
     public bool TryGet(string textKey, out GlyphAtlasEntry entry) =>
         _entries.TryGetValue(textKey, out entry);
 
-    public void Store(string textKey, GlyphAtlasEntry entry) =>
+    internal void Store(string textKey, GlyphAtlasEntry entry) =>
         _entries[textKey] = entry;
 
     public void Dispose()

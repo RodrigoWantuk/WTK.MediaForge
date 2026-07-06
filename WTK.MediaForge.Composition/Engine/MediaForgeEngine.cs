@@ -5,7 +5,10 @@ using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Outputs;
+using WTK.MediaForge.Composition.Runtime.Scene;
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Runtime.Recovery;
+using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Composition.Validation;
@@ -29,11 +32,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     private SourceRuntimeManager? _sourceRuntimeManager;
     private CompositionRuntime? _runtime;
+    private SceneRuntime? _sceneRuntime;
+    private FaultRecoveryCoordinator? _faultRecoveryCoordinator;
     private RenderThreadGuard? _renderThreadGuard;
     private IRenderBackend? _backend;
     private MediaForgeRenderThread? _renderThread;
     private MediaForgeRenderPump? _renderPump;
-    private long _renderFrameNumber;
     private TimeSpan _lastRenderPresentationTime;
     private ProjectStateSnapshot? _projectState;
     private MediaForgeProject? _currentProject;
@@ -110,9 +114,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     public event EventHandler<MediaForgeFrameDroppedEventArgs>? FrameDropped;
 
+    internal SceneRuntime? SceneRuntimeForTests => _sceneRuntime;
+
+    internal FaultRecoveryCoordinator? FaultRecoveryCoordinatorForTests => _faultRecoveryCoordinator;
+
     internal CompositionRuntime? RuntimeForTests => _runtime;
 
     internal MediaForgeRenderThread? RenderThreadForTests => _renderThread;
+
+    internal FrameScheduler? FrameSchedulerForTests => _renderPump?.Scheduler;
 
     internal MediaForgeRenderPump? RenderPumpForTests => _renderPump;
 
@@ -228,6 +238,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 }
 
                 _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(_currentProject);
+                _sceneRuntime = new SceneRuntime();
+                _sceneRuntime.SyncFrom(_projectState);
+                _faultRecoveryCoordinator = new FaultRecoveryCoordinator(_diagnostics);
                 _renderThread.Start();
 
                 await EnsureSurfaceBindingsForAttachedSinksAsync(_currentProject, cancellationToken)
@@ -243,7 +256,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 _renderPump = new MediaForgeRenderPump(
                     RenderFramesPerSecond,
                     CanPublishRenderFrame,
-                    PublishCurrentRenderFrame,
+                    PublishScheduledRenderFrame,
+                    GetScheduledTargetOutputs,
                     _diagnostics);
 
                 SetState(MediaForgeEngineState.Running);
@@ -312,6 +326,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (State == MediaForgeEngineState.Running)
             {
                 _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(_currentProject);
+                _sceneRuntime?.SyncFrom(_projectState);
                 _renderPump?.RequestFrame();
             }
         }
@@ -618,24 +633,36 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                renderThread.CanAcceptPublishedFrame;
     }
 
-    private void PublishCurrentRenderFrame()
+    private IReadOnlyList<RenderOutputId> GetScheduledTargetOutputs() =>
+        _currentProject?.Outputs.Select(output => output.Id).ToArray()
+        ?? Array.Empty<RenderOutputId>();
+
+    private void PublishScheduledRenderFrame(FrameExecutionContext executionContext)
     {
-        if (_runtime is null || _projectState is null || _renderThread is null)
+        if (_runtime is null || _sceneRuntime is null || _renderThread is null)
             return;
 
-        var frameNumber = Interlocked.Increment(ref _renderFrameNumber);
-        var delta = TimeSpan.FromSeconds(1d / RenderFramesPerSecond);
+        var delta = executionContext.FrameBudget;
         var presentationTime = _lastRenderPresentationTime + delta;
         _lastRenderPresentationTime = presentationTime;
 
         var context = new RenderFrameContext(
-            frameNumber,
+            executionContext.FrameId,
             presentationTime,
             delta,
             RenderFramesPerSecond,
             CancellationToken.None);
 
-        using var buildResult = RenderFrameSnapshotFactory.Build(_projectState, _runtime, context, _diagnostics);
+        var sceneSnapshot = _sceneRuntime.CreateSnapshot();
+        _ = RenderGraphExecutor.Execute(
+            sceneSnapshot.CachedRenderGraphPlan!,
+            new RenderGraphContext
+            {
+                FrameContext = executionContext,
+                SceneSnapshot = sceneSnapshot
+            });
+
+        using var buildResult = _sceneRuntime.BuildRenderSnapshot(_runtime, context, _diagnostics);
         var snapshot = buildResult.TakeSnapshot();
 
         if (snapshot is null)
@@ -912,6 +939,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _sourceRuntimeManager?.Clear();
         _sourceRuntimeManager = null;
         _runtime = null;
+        _sceneRuntime = null;
+        _faultRecoveryCoordinator = null;
         _projectState = null;
 
         SetState(renderThreadStopped && cleanupErrors.Count == 0
@@ -1122,6 +1151,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
         if (diagnostic.Code is "render.frame_dropped_tracker_full" or
             "engine.render_pump_frame_dropped_backpressure" or
+            "engine.frame_scheduler_frame_dropped_backpressure" or
             "sink.frame_dropped_backpressure")
         {
             SafeRaiseEvent(

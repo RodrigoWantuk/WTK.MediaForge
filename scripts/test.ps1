@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Fast", "Gpu", "Stress", "Build")]
+    [ValidateSet("Fast", "Gpu", "Stress", "Performance", "Build")]
     [string]$Tier = "Fast"
 )
 
@@ -11,6 +11,7 @@ Set-Location $repoRoot
 $fastFilter = "Category!=GPU&Category!=Stress"
 $gpuFilter = "Category=GPU&Category!=Stress"
 $stressFilter = "Category=Stress"
+$performanceFilter = "Category=Performance"
 
 $coreTests = "WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj"
 $diagnosticsTests = "WTK.MediaForge.Diagnostics.Tests\WTK.MediaForge.Diagnostics.Tests.csproj"
@@ -19,6 +20,7 @@ $studioTests = "WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj"
 $d3d11Tests = "WTK.MediaForge.Graphics.D3D11.Tests\WTK.MediaForge.Graphics.D3D11.Tests.csproj"
 $vulkanTests = "WTK.MediaForge.Graphics.Vulkan.Tests\WTK.MediaForge.Graphics.Vulkan.Tests.csproj"
 $windowsTests = "WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj"
+$captureTests = "WTK.MediaForge.Capture.Tests\WTK.MediaForge.Capture.Tests.csproj"
 
 function Invoke-TestProject {
     param(
@@ -63,6 +65,10 @@ switch ($Tier) {
         Invoke-TestProject -Project $d3d11Tests -Filter $stressFilter -MaxCpuOne
         Invoke-TestProject -Project $vulkanTests -Filter $stressFilter -MaxCpuOne
         Invoke-TestProject -Project $captureTests -Filter $stressFilter -MaxCpuOne
+    }
+    "Performance" {
+        Invoke-TestProject -Project $diagnosticsTests -Filter $performanceFilter
+        Invoke-TestProject -Project $compositionTests -Filter $performanceFilter
     }
 }
 

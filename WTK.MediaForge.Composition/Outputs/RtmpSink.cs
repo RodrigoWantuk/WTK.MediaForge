@@ -29,12 +29,14 @@ public sealed class RtmpSink : IRenderOutputSink
     public RenderOutputSinkBackpressureMode BackpressureMode =>
         RenderOutputSinkBackpressureMode.KeepLatest;
 
+    public IReadOnlyList<FlvPacket> SentPacketsForTests => _transport?.SentPackets ?? Array.Empty<FlvPacket>();
+
     public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         _transport = new RtmpTransport(_url);
         _started = true;
-        return ValueTask.CompletedTask;
+        return _transport.ConnectAsync(cancellationToken);
     }
 
     public ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken)
