@@ -18,6 +18,8 @@ internal sealed class ImageFileSourceRuntime : IDisposable
     private readonly AssetManager _assetManager;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private RefCountedAssetHandle<StaticCpuAsset>? _textureHandle;
+    private FrameSize? _uploadedSize;
+    private RenderPixelFormat? _uploadedFormat;
     private bool _gpuUploaded;
     private bool _disposed;
 
@@ -25,12 +27,13 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         SourceId sourceId,
         string name,
         ImageFileSourceSettings settings,
+        AssetManager assetManager,
         IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _sourceId = sourceId;
         _name = name ?? throw new ArgumentNullException(nameof(name));
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _assetManager = AssetManager.Shared;
+        _assetManager = assetManager ?? throw new ArgumentNullException(nameof(assetManager));
         _diagnostics = diagnostics;
     }
 
@@ -40,6 +43,10 @@ internal sealed class ImageFileSourceRuntime : IDisposable
 
     public bool IsGpuUploaded => _gpuUploaded;
 
+    public FrameSize? UploadedSize => _uploadedSize;
+
+    public RenderPixelFormat? UploadedPixelFormat => _uploadedFormat;
+
     public StaticCpuAsset? LoadedAsset => _textureHandle?.Value;
 
     public void LoadAsset()
@@ -47,11 +54,19 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         _textureHandle?.Dispose();
         _textureHandle = _assetManager.LoadTexture(Settings.Path);
+        _uploadedSize = null;
+        _uploadedFormat = null;
+        _gpuUploaded = false;
     }
 
     public void MarkGpuUploaded()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_textureHandle is null)
+            throw new InvalidOperationException("Static image asset must be loaded before it can be marked as uploaded.");
+
+        _uploadedSize = _textureHandle.Value.Size;
+        _uploadedFormat = _textureHandle.Value.PixelFormat;
         _gpuUploaded = true;
         _textureHandle?.Dispose();
         _textureHandle = null;
@@ -70,8 +85,8 @@ internal sealed class ImageFileSourceRuntime : IDisposable
             SourceId = _sourceId,
             FrameNumber = context.FrameNumber,
             Timestamp = new MediaTime((long)(context.PresentationTime.TotalSeconds * 1_000_000_000)),
-            LogicalSize = _textureHandle?.Value.Size ?? default,
-            TextureSize = _textureHandle?.Value.Size ?? default
+            LogicalSize = _uploadedSize ?? default,
+            TextureSize = _uploadedSize ?? default
         };
 
         return true;
@@ -116,6 +131,8 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         _disposed = true;
         _textureHandle?.Dispose();
         _textureHandle = null;
+        _uploadedSize = null;
+        _uploadedFormat = null;
         State = MediaSourceState.Stopped;
     }
 }

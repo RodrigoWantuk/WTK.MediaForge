@@ -1,41 +1,34 @@
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.Versioning;
 using WTK.MediaForge.Composition.Assets;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Sources;
+using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Media;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests.Assets;
 
-[SupportedOSPlatform("windows")]
 public sealed class AssetManagerTests
 {
     [Fact]
     public void Fifty_layers_same_png_share_one_cached_texture()
     {
-        var path = CreateTempPng();
-        try
-        {
-            var manager = new AssetManager();
-            StaticCpuAsset? shared = null;
+        var decoder = new CountingStaticImageDecoder();
+        var manager = new AssetManager(decoder);
+        StaticCpuAsset? shared = null;
 
-            var handles = new List<RefCountedAssetHandle<StaticCpuAsset>>(capacity: 50);
-            for (var index = 0; index < 50; index++)
-                handles.Add(manager.LoadTexture(path));
+        var handles = new List<RefCountedAssetHandle<StaticCpuAsset>>(capacity: 50);
+        for (var index = 0; index < 50; index++)
+            handles.Add(manager.LoadTexture("logo.png"));
 
-            shared = handles[0].Value;
-            Assert.All(handles, handle => Assert.Same(shared, handle.Value));
-            Assert.Equal(1, manager.TextureCache.LiveEntryCount);
+        shared = handles[0].Value;
+        Assert.All(handles, handle => Assert.Same(shared, handle.Value));
+        Assert.Equal(1, decoder.DecodeCalls);
+        Assert.Equal(1, manager.TextureCache.LiveEntryCount);
 
-            foreach (var handle in handles)
-                handle.Dispose();
+        foreach (var handle in handles)
+            handle.Dispose();
 
-            Assert.Equal(0, manager.TextureCache.LiveEntryCount);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
+        Assert.Equal(0, manager.TextureCache.LiveEntryCount);
     }
 
     [Fact]
@@ -57,13 +50,21 @@ public sealed class AssetManagerTests
         Assert.Same(first.Value, second.Value);
     }
 
-    private static string CreateTempPng()
+    private sealed class CountingStaticImageDecoder : IStaticImageAssetDecoder
     {
-        var path = Path.Combine(Path.GetTempPath(), $"mf-asset-{Guid.NewGuid():N}.png");
-        using var bitmap = new Bitmap(8, 8);
-        using var graphics = Graphics.FromImage(bitmap);
-        graphics.Clear(Color.Red);
-        bitmap.Save(path, ImageFormat.Png);
-        return path;
+        public int DecodeCalls { get; private set; }
+
+        public StaticCpuAsset Decode(string path)
+        {
+            DecodeCalls++;
+            return new StaticCpuAsset
+            {
+                Path = path,
+                Size = new FrameSize(8, 8),
+                PixelFormat = RenderPixelFormat.Rgba8Unorm,
+                Pixels = new byte[8 * 8 * 4],
+                TransportKind = MediaTransportKind.StaticCpuAsset
+            };
+        }
     }
 }

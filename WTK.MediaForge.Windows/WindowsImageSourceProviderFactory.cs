@@ -1,3 +1,4 @@
+using WTK.MediaForge.Composition.Assets;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Sources;
@@ -6,6 +7,7 @@ using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Diagnostics;
+using WTK.MediaForge.Windows.Media;
 
 namespace WTK.MediaForge.Windows;
 
@@ -22,6 +24,8 @@ internal sealed class WindowsImageSourceProviderFactory : IMediaSourceProviderFa
     public IVideoFrameProvider CreateProvider(MediaForgeSourceDefinition sourceDefinition)
     {
         ArgumentNullException.ThrowIfNull(sourceDefinition);
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("Windows static image source provider requires Windows.");
 
         var settings = (ImageFileSourceSettings)MediaSourceSettingsSerializer.Deserialize(
             sourceDefinition.TypeId,
@@ -30,16 +34,18 @@ internal sealed class WindowsImageSourceProviderFactory : IMediaSourceProviderFa
         if (string.IsNullOrWhiteSpace(settings.Path))
             throw new ArgumentException("Image file path is required.", nameof(sourceDefinition));
 
-        if (!StaticImageAssetLoader.IsSupportedExtension(settings.Path))
+        if (!StaticImageAssetFormats.IsSupportedExtension(settings.Path))
         {
             throw new NotSupportedException(
                 $"Image format '{Path.GetExtension(settings.Path)}' is not supported. WebP is Planned until license review.");
         }
 
+        var assetManager = new AssetManager(new WindowsStaticImageAssetDecoder());
         var runtime = new ImageFileSourceRuntime(
             sourceDefinition.Id,
             sourceDefinition.Name,
             settings,
+            assetManager,
             _diagnostics);
 
         return new ImageFileVideoFrameProvider(sourceDefinition.Id, sourceDefinition.Name, runtime);

@@ -6,7 +6,10 @@ internal sealed class TextureCache
 {
     private readonly object _gate = new();
     private readonly Dictionary<AssetCacheKey, Entry> _entries = new();
-    private readonly StaticImageAssetLoader _loader = new();
+    private readonly IStaticImageAssetDecoder _decoder;
+
+    public TextureCache(IStaticImageAssetDecoder decoder) =>
+        _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
 
     internal int LiveEntryCount
     {
@@ -31,7 +34,7 @@ internal sealed class TextureCache
                 return new RefCountedAssetHandle<StaticCpuAsset>(existing.Asset, Release);
             }
 
-            var asset = _loader.Load(path);
+            var asset = _decoder.Decode(path);
             var entry = new Entry(asset, 1);
             _entries[key] = entry;
             return new RefCountedAssetHandle<StaticCpuAsset>(entry.Asset, Release);

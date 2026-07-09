@@ -166,6 +166,7 @@ Capability and license status are queryable without starting the engine:
 - `MediaForgeCapabilityReport`, `CapabilityEntry`, `MediaForgeSupportStatus`, `MediaForgeLicenseStatus`
 - `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.
 - `IHardwareFileVideoDecoder` and `FileDecodeFrameContext` represent file decoders that own demux/decode internally; file-video runtimes must not pass empty packets into packet decoders.
+- `IStaticImageAssetDecoder`, `StaticCpuAsset`, and `StaticImageAssetFormats` define load-time static image decode contracts. Platform assemblies provide decoder implementations; Composition does not own `System.Drawing` or any platform image decoder.
 
 Studio and host apps must use capability status to disable or label features that are PrototypeOnly, Planned, Unsupported, or Blocked.
 

@@ -2,33 +2,23 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.Versioning;
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Media;
 
-namespace WTK.MediaForge.Composition.Sources;
+namespace WTK.MediaForge.Windows.Media;
 
-/// <summary>
-/// Load-time CPU decode for static PNG/JPEG assets. CPU memory is released after GPU upload.
-/// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class StaticImageAssetLoader
+internal sealed class WindowsStaticImageAssetDecoder : IStaticImageAssetDecoder
 {
-    public static bool IsSupportedExtension(string path)
-    {
-        var extension = Path.GetExtension(path);
-        return extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
-               extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
-               extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase);
-    }
-
-    public StaticCpuAsset Load(string path)
+    public StaticCpuAsset Decode(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
         if (!File.Exists(path))
             throw new FileNotFoundException("Image file was not found.", path);
 
-        if (!IsSupportedExtension(path))
+        if (!StaticImageAssetFormats.IsSupportedExtension(path))
         {
             throw new NotSupportedException(
                 $"Image format '{Path.GetExtension(path)}' is not supported. PNG and JPEG are approved for MVP.");
@@ -77,17 +67,4 @@ public sealed class StaticImageAssetLoader
             TransportKind = MediaTransportKind.StaticCpuAsset
         };
     }
-}
-
-public sealed class StaticCpuAsset
-{
-    public required string Path { get; init; }
-
-    public required FrameSize Size { get; init; }
-
-    public required RenderPixelFormat PixelFormat { get; init; }
-
-    public required byte[] Pixels { get; init; }
-
-    public required MediaTransportKind TransportKind { get; init; }
 }

@@ -1,3 +1,5 @@
+using WTK.MediaForge.Composition.Sources;
+
 namespace WTK.MediaForge.Composition.Assets;
 
 /// <summary>
@@ -5,11 +7,21 @@ namespace WTK.MediaForge.Composition.Assets;
 /// </summary>
 public sealed class AssetManager
 {
-    private readonly TextureCache _textureCache = new();
+    private readonly TextureCache _textureCache;
     private readonly ShaderCache _shaderCache = new();
     private readonly FontCache _fontCache = new();
 
     public static AssetManager Shared { get; } = new();
+
+    public AssetManager()
+        : this(UnsupportedStaticImageAssetDecoder.Instance)
+    {
+    }
+
+    public AssetManager(IStaticImageAssetDecoder staticImageDecoder)
+    {
+        _textureCache = new TextureCache(staticImageDecoder);
+    }
 
     internal TextureCache TextureCache => _textureCache;
 
@@ -28,4 +40,13 @@ public sealed class AssetManager
         float sizePx,
         Func<FontAtlasAsset> factory) =>
         _fontCache.Acquire(fontFamily, sizePx, factory);
+
+    private sealed class UnsupportedStaticImageAssetDecoder : IStaticImageAssetDecoder
+    {
+        public static UnsupportedStaticImageAssetDecoder Instance { get; } = new();
+
+        public StaticCpuAsset Decode(string path) =>
+            throw new PlatformNotSupportedException(
+                "Static image decoding requires a platform-specific IStaticImageAssetDecoder.");
+    }
 }
