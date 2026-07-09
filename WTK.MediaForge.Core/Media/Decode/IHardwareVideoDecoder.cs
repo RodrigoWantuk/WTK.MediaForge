@@ -27,6 +27,15 @@ public sealed class DecodeFrameContext
     public CancellationToken CancellationToken { get; init; }
 }
 
+public sealed class FileDecodeFrameContext
+{
+    public long FrameNumber { get; init; }
+
+    public TimeSpan PresentationTime { get; init; }
+
+    public CancellationToken CancellationToken { get; init; }
+}
+
 public interface IHardwareVideoDecoder : IAsyncDisposable
 {
     HardwareDecoderInfo Info { get; }
@@ -35,6 +44,19 @@ public interface IHardwareVideoDecoder : IAsyncDisposable
 
     ValueTask<DecodedGpuFrame?> DecodeAsync(
         DecodeFrameContext context,
+        IMediaTransportAuditSink auditSink);
+
+    ValueTask FlushAsync(IMediaTransportAuditSink auditSink);
+}
+
+public interface IHardwareFileVideoDecoder : IAsyncDisposable
+{
+    HardwareDecoderInfo Info { get; }
+
+    ValueTask OpenAsync(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink);
+
+    ValueTask<DecodedGpuFrame?> DecodeNextFrameAsync(
+        FileDecodeFrameContext context,
         IMediaTransportAuditSink auditSink);
 
     ValueTask FlushAsync(IMediaTransportAuditSink auditSink);

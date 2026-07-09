@@ -17,7 +17,8 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
     private readonly HardwareEncoderInfo _info;
     private readonly HardwareEncoderInputRequirement _inputRequirement;
     private readonly ID3D11Device _device;
-    private MediaFoundationH264EncoderSession? _session;
+    private readonly bool _allowPrototypeEncoding;
+    private PrototypeMediaFoundationH264EncoderSession? _session;
     private long _frameNumber;
     private bool _disposed;
 
@@ -26,8 +27,19 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int width,
         int height,
         string pixelFormat = "B8G8R8A8_UNORM")
+        : this(device, width, height, pixelFormat, allowPrototypeEncoding: false)
+    {
+    }
+
+    internal MediaFoundationHardwareVideoEncoder(
+        ID3D11Device device,
+        int width,
+        int height,
+        string pixelFormat,
+        bool allowPrototypeEncoding)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        _allowPrototypeEncoding = allowPrototypeEncoding;
         _info = new HardwareEncoderInfo
         {
             Name = "Media Foundation H.264 Hardware MFT",
@@ -49,7 +61,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int width,
         int height,
         string pixelFormat = "NV12")
-        : this(CreateDefaultDevice(), width, height, pixelFormat)
+        : this(CreateDefaultDevice(), width, height, pixelFormat, allowPrototypeEncoding: false)
     {
     }
 
@@ -64,6 +76,12 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (!_allowPrototypeEncoding)
+        {
+            throw new NotSupportedException(
+                "MediaFoundationHardwareVideoEncoder is prototype-only until real Media Foundation hardware MFT output validation is implemented.");
+        }
 
         if (context.InputLease.BackendSurface is not D3D11SharedTextureFrameHandle surface)
             throw new InvalidOperationException("Encoder requires a D3D11 shared texture backend surface.");
@@ -111,6 +129,12 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (!_allowPrototypeEncoding)
+        {
+            throw new NotSupportedException(
+                "MediaFoundationHardwareVideoEncoder is prototype-only until real Media Foundation hardware MFT output validation is implemented.");
+        }
+
         context.CancellationToken.ThrowIfCancellationRequested();
 
         var descriptor = textureLease.ToGpuVideoFrameDescriptor();
@@ -143,9 +167,9 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         return ValueTask.CompletedTask;
     }
 
-    private MediaFoundationH264EncoderSession CreateSession()
+    private PrototypeMediaFoundationH264EncoderSession CreateSession()
     {
-        var session = new MediaFoundationH264EncoderSession(
+        var session = new PrototypeMediaFoundationH264EncoderSession(
             _device,
             _inputRequirement.Width,
             _inputRequirement.Height);

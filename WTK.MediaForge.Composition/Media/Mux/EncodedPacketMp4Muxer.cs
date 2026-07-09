@@ -4,7 +4,7 @@ using WTK.MediaForge.Core.Media.Encode;
 
 namespace WTK.MediaForge.Composition.Media.Mux;
 
-public interface IMp4Muxer : IAsyncDisposable
+internal interface IMp4Muxer : IAsyncDisposable
 {
     ValueTask WritePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken = default);
 
@@ -14,7 +14,7 @@ public interface IMp4Muxer : IAsyncDisposable
 /// <summary>
 /// Packets-only MP4 muxer. CPU handles container metadata only; no raw video frames.
 /// </summary>
-public sealed class EncodedPacketMp4Muxer : IMp4Muxer
+internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
 {
     private readonly string _outputPath;
     private readonly IMediaTransportAuditSink? _auditSink;

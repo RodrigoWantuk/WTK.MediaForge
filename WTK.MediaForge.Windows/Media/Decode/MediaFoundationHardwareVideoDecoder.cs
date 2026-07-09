@@ -6,15 +6,15 @@ using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Decode;
 using WTK.MediaForge.Graphics.D3D11;
-using WTK.MediaForge.Windows.Media.Encode;
 
 namespace WTK.MediaForge.Windows.Media.Decode;
 
-public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder
+public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder, IHardwareFileVideoDecoder
 {
     private readonly HardwareDecoderInfo _info;
     private readonly D3D11GpuDevice _gpuDevice;
     private readonly GpuResourcePool _resourcePool;
+    private readonly bool _allowPrototypeDecoding;
     private string? _sourcePath;
     private int _width;
     private int _height;
@@ -22,6 +22,11 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder
     private bool _disposed;
 
     public MediaFoundationHardwareVideoDecoder()
+        : this(allowPrototypeDecoding: false)
+    {
+    }
+
+    internal MediaFoundationHardwareVideoDecoder(bool allowPrototypeDecoding)
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Media Foundation hardware decoder requires Windows.");
@@ -30,6 +35,7 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder
         factory.EnumAdapters1(0, out var adapter).CheckError();
         _gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
         _resourcePool = new GpuResourcePool(new WindowsDecodeGpuTextureFactory(_gpuDevice.Device));
+        _allowPrototypeDecoding = allowPrototypeDecoding;
         _info = new HardwareDecoderInfo
         {
             Name = "Media Foundation H.264 Hardware MFT",
@@ -39,11 +45,15 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder
         };
     }
 
-    internal MediaFoundationHardwareVideoDecoder(D3D11GpuDevice gpuDevice, IGpuTextureFactory textureFactory)
+    internal MediaFoundationHardwareVideoDecoder(
+        D3D11GpuDevice gpuDevice,
+        IGpuTextureFactory textureFactory,
+        bool allowPrototypeDecoding = false)
     {
         _gpuDevice = gpuDevice ?? throw new ArgumentNullException(nameof(gpuDevice));
         ArgumentNullException.ThrowIfNull(textureFactory);
         _resourcePool = new GpuResourcePool(textureFactory);
+        _allowPrototypeDecoding = allowPrototypeDecoding;
         _info = new HardwareDecoderInfo
         {
             Name = "Media Foundation H.264 Hardware MFT",
@@ -63,6 +73,12 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (!_allowPrototypeDecoding)
+        {
+            throw new NotSupportedException(
+                "MediaFoundationHardwareVideoDecoder is prototype-only until real MF/D3D11VA decode is implemented.");
+        }
+
         if (!File.Exists(context.SourcePath))
             throw new FileNotFoundException("Video file was not found.", context.SourcePath);
 
@@ -80,18 +96,35 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder
         IMediaTransportAuditSink auditSink)
     {
         ArgumentNullException.ThrowIfNull(context);
+
+        if (context.Packet.Data.IsEmpty)
+        {
+            throw new InvalidOperationException(
+                "Packet decoder path requires a real encoded packet. File video decode must use DecodeNextFrameAsync.");
+        }
+
+        return DecodeNextFrameAsync(
+            new FileDecodeFrameContext
+            {
+                FrameNumber = context.FrameNumber,
+                PresentationTime = context.PresentationTime,
+                CancellationToken = context.CancellationToken
+            },
+            auditSink);
+    }
+
+    public ValueTask<DecodedGpuFrame?> DecodeNextFrameAsync(
+        FileDecodeFrameContext context,
+        IMediaTransportAuditSink auditSink)
+    {
+        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (_sourcePath is null)
             return ValueTask.FromResult<DecodedGpuFrame?>(null);
 
-        if (!MediaFoundationDecodeBridge.TryReadGpuFrame(
-                Device,
-                _sourcePath,
-                _width,
-                _height,
-                out var sharedHandle))
+        if (!MediaFoundationDecodeBridge.TryReadGpuFrame(_sourcePath))
         {
             return ValueTask.FromResult<DecodedGpuFrame?>(null);
         }
@@ -186,6 +219,7 @@ internal static class MediaFoundationDecodeBridge
     private static string? _openedPath;
     private static int _width;
     private static int _height;
+    private static bool _mfStarted;
 
     public static bool TryOpen(string path, ID3D11Device device, out int width, out int height)
     {
@@ -204,26 +238,14 @@ internal static class MediaFoundationDecodeBridge
             _height = 360;
             width = _width;
             height = _height;
-            return MediaFoundationH264MftBridge.TryEnsureHardwareEncoder(_width, _height);
+            return TryStartupMediaFoundation();
         }
     }
 
-    public static bool TryReadGpuFrame(
-        ID3D11Device device,
-        string path,
-        int width,
-        int height,
-        out D3D11SharedTextureFrameHandle? handle)
+    public static bool TryReadGpuFrame(string path)
     {
         lock (Gate)
-        {
-            handle = null;
-            if (_openedPath != path)
-                return false;
-
-            handle = D3D11SharedTextureFactory.CreateSharedTexture(device, (uint)width, (uint)height);
-            return true;
-        }
+            return _openedPath == path && _mfStarted;
     }
 
     public static void Reset()
@@ -233,6 +255,13 @@ internal static class MediaFoundationDecodeBridge
             _openedPath = null;
             _width = 0;
             _height = 0;
+            _mfStarted = false;
         }
+    }
+
+    private static bool TryStartupMediaFoundation()
+    {
+        _mfStarted = OperatingSystem.IsWindows();
+        return _mfStarted;
     }
 }

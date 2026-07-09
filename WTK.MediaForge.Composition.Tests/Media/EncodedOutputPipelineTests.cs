@@ -13,12 +13,42 @@ namespace WTK.MediaForge.Composition.Tests.Media;
 public sealed class EncodedOutputPipelineTests
 {
     [Fact]
+    public async Task Recording_mp4_public_sink_is_not_enabled_without_prototype_opt_in()
+    {
+        await using var sink = new RecordingMp4Sink(Path.Combine(Path.GetTempPath(), $"mf_mp4_blocked_{Guid.NewGuid():N}.mp4"));
+
+        await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await sink.StartAsync(
+                new RenderOutputSinkContext(
+                    Core.Identifiers.RenderOutputId.New(),
+                    new Core.Frames.FrameSize(640, 360),
+                    Outputs.RenderPixelFormat.Rgba8Unorm,
+                    Outputs.RenderBackendKind.Vulkan),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Rtmp_public_sink_is_not_enabled_without_prototype_opt_in()
+    {
+        var sink = new RtmpSink("rtmp://127.0.0.1/live/blocked");
+
+        await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await sink.StartAsync(
+                new RenderOutputSinkContext(
+                    Core.Identifiers.RenderOutputId.New(),
+                    new Core.Frames.FrameSize(640, 360),
+                    Outputs.RenderPixelFormat.Rgba8Unorm,
+                    Outputs.RenderBackendKind.Vulkan),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Recording_mp4_produces_playable_file()
     {
         var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_{Guid.NewGuid():N}.mp4");
         try
         {
-            await using var sink = new RecordingMp4Sink(outputPath);
+            await using var sink = new RecordingMp4Sink(outputPath, null, allowPrototypeMuxer: true);
             await sink.StartAsync(
                 new RenderOutputSinkContext(
                     Core.Identifiers.RenderOutputId.New(),
@@ -48,7 +78,7 @@ public sealed class EncodedOutputPipelineTests
     public async Task Rtmp_sink_receives_flv_tags_from_shared_encoder()
     {
         var router = new EncodedOutputRouter(new TestHardwareVideoEncoder());
-        var rtmpSink = new RtmpSink("rtmp://127.0.0.1/live/test");
+        var rtmpSink = new RtmpSink("rtmp://127.0.0.1/live/test", allowPrototypeTransport: true);
         router.RegisterConsumer(new RtmpPacketConsumer(rtmpSink));
 
         await rtmpSink.StartAsync(
@@ -78,8 +108,8 @@ public sealed class EncodedOutputPipelineTests
         var mp4Path = Path.Combine(Path.GetTempPath(), $"mf_shared_{Guid.NewGuid():N}.mp4");
         try
         {
-            var mp4Sink = new RecordingMp4Sink(mp4Path);
-            var rtmpSink = new RtmpSink("rtmp://127.0.0.1/live/shared");
+            var mp4Sink = new RecordingMp4Sink(mp4Path, null, allowPrototypeMuxer: true);
+            var rtmpSink = new RtmpSink("rtmp://127.0.0.1/live/shared", allowPrototypeTransport: true);
 
             router.RegisterConsumer(new RecordingMp4PacketConsumer(mp4Sink));
             router.RegisterConsumer(new RtmpPacketConsumer(rtmpSink));

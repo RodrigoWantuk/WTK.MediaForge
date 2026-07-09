@@ -14,12 +14,13 @@ internal sealed class VideoSourceRuntime : IDisposable
 {
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly VideoClock _clock = new();
-    private IHardwareVideoDecoder? _decoder;
+    private IHardwareFileVideoDecoder? _decoder;
+    private long _frameNumber;
     private bool _disposed;
 
     public VideoSourceRuntime(
         VideoFileSourceSettings settings,
-        Func<HardwareDecodeOpenContext, IHardwareVideoDecoder> decoderFactory,
+        Func<HardwareDecodeOpenContext, IHardwareFileVideoDecoder> decoderFactory,
         IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -30,7 +31,7 @@ internal sealed class VideoSourceRuntime : IDisposable
 
     public VideoFileSourceSettings Settings { get; }
 
-    public Func<HardwareDecodeOpenContext, IHardwareVideoDecoder> DecoderFactory { get; }
+    public Func<HardwareDecodeOpenContext, IHardwareFileVideoDecoder> DecoderFactory { get; }
 
     public TextureLeaseQueue StreamQueue { get; }
 
@@ -90,7 +91,7 @@ internal sealed class VideoSourceRuntime : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         _clock.Pause();
         if (State == MediaSourceState.Running)
-            State = (MediaSourceState)3; // Paused
+            State = MediaSourceState.Paused;
     }
 
     public void Seek(TimeSpan presentationTime)
@@ -109,18 +110,10 @@ internal sealed class VideoSourceRuntime : IDisposable
         if (_decoder is null)
             return null;
 
-        var packet = new EncodedVideoPacket
-        {
-            Data = ReadOnlyMemory<byte>.Empty,
-            Codec = EncodedVideoCodec.H264,
-            PresentationTime = _clock.CurrentPresentationTime
-        };
-
-        var frame = await _decoder.DecodeAsync(
-            new DecodeFrameContext
+        var frame = await _decoder.DecodeNextFrameAsync(
+            new FileDecodeFrameContext
             {
-                Packet = packet,
-                FrameNumber = 1,
+                FrameNumber = Interlocked.Increment(ref _frameNumber),
                 PresentationTime = _clock.CurrentPresentationTime,
                 CancellationToken = cancellationToken
             },

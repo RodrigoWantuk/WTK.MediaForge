@@ -1,6 +1,6 @@
 namespace WTK.MediaForge.Composition.Media.Stream;
 
-public sealed class RtmpTransport : IDisposable
+internal sealed class RtmpTransport : IDisposable
 {
     private readonly string _url;
     private readonly List<FlvPacket> _sentPackets = [];

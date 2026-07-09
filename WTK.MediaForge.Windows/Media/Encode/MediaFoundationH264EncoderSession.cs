@@ -11,9 +11,10 @@ internal readonly struct EncodedSurfaceResult
 }
 
 /// <summary>
-/// Media Foundation hardware H.264 encoder session bound to a D3D11 device.
+/// Prototype H.264 encoder session bound to a D3D11 device.
+/// It emits canned packets and is only available through explicit internal test opt-in.
 /// </summary>
-internal sealed class MediaFoundationH264EncoderSession : IDisposable
+internal sealed class PrototypeMediaFoundationH264EncoderSession : IDisposable
 {
     private readonly ID3D11Device _device;
     private readonly int _width;
@@ -21,7 +22,7 @@ internal sealed class MediaFoundationH264EncoderSession : IDisposable
     private bool _initialized;
     private bool _disposed;
 
-    public MediaFoundationH264EncoderSession(ID3D11Device device, int width, int height)
+    public PrototypeMediaFoundationH264EncoderSession(ID3D11Device device, int width, int height)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         if (width <= 0 || height <= 0)
@@ -34,10 +35,10 @@ internal sealed class MediaFoundationH264EncoderSession : IDisposable
     public void Initialize()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _initialized = MediaFoundationH264MftBridge.TryEnsureHardwareEncoder(_width, _height);
+        _initialized = PrototypeMediaFoundationH264Bridge.TryEnsurePrototypeEncoder(_width, _height);
 
         if (!_initialized)
-            throw new InvalidOperationException("No Media Foundation hardware H.264 encoder is available.");
+            throw new InvalidOperationException("Prototype H.264 encoder is unavailable.");
     }
 
     public EncodedSurfaceResult? TryEncodeSurface(D3D11SharedTextureFrameHandle surface, long frameNumber)
@@ -48,7 +49,7 @@ internal sealed class MediaFoundationH264EncoderSession : IDisposable
         if (!_initialized)
             return null;
 
-        var packet = MediaFoundationH264MftBridge.TryEncodeSurface(
+        var packet = PrototypeMediaFoundationH264Bridge.TryEncodeSurface(
             surface.Texture,
             TimeSpan.FromMilliseconds(frameNumber * 33),
             new Core.Media.Audit.CollectingMediaTransportAuditSink());
@@ -69,6 +70,6 @@ internal sealed class MediaFoundationH264EncoderSession : IDisposable
             return;
 
         _disposed = true;
-        MediaFoundationH264MftBridge.Reset();
+        PrototypeMediaFoundationH264Bridge.Reset();
     }
 }

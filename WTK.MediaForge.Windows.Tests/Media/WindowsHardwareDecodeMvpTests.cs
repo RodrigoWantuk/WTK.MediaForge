@@ -10,6 +10,39 @@ namespace WTK.MediaForge.Windows.Tests.Media;
 public sealed class WindowsHardwareDecodeMvpTests
 {
     [Fact]
+    public async Task Public_decoder_rejects_placeholder_decode_path()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var tempVideo = Path.Combine(Path.GetTempPath(), $"mf-decode-blocked-{Guid.NewGuid():N}.mp4");
+        await File.WriteAllBytesAsync(tempVideo, MinimalMp4TestAsset.CreateAnnexBBytes());
+
+        try
+        {
+            await using var decoder = new MediaFoundationHardwareVideoDecoder();
+            await Assert.ThrowsAsync<NotSupportedException>(async () =>
+                await decoder.OpenAsync(
+                    new HardwareDecodeOpenContext
+                    {
+                        SourcePath = tempVideo,
+                        Session = new HardwareDecodeSession
+                        {
+                            Codec = EncodedVideoCodec.H264,
+                            Width = 640,
+                            Height = 360
+                        }
+                    },
+                    new CollectingMediaTransportAuditSink()));
+        }
+        finally
+        {
+            if (File.Exists(tempVideo))
+                File.Delete(tempVideo);
+        }
+    }
+
+    [Fact]
     public async Task Prototype_decode_frame_produces_gpu_texture_but_not_product_decode_proof()
     {
         var tempVideo = Path.Combine(Path.GetTempPath(), $"mf-decode-{Guid.NewGuid():N}.mp4");
@@ -17,7 +50,7 @@ public sealed class WindowsHardwareDecodeMvpTests
 
         try
         {
-            await using var decoder = new MediaFoundationHardwareVideoDecoder();
+            await using var decoder = new MediaFoundationHardwareVideoDecoder(allowPrototypeDecoding: true);
             var audit = new CollectingMediaTransportAuditSink();
 
             await decoder.OpenAsync(
@@ -33,14 +66,9 @@ public sealed class WindowsHardwareDecodeMvpTests
                 },
                 audit);
 
-            var frame = await decoder.DecodeAsync(
-                new DecodeFrameContext
+            var frame = await decoder.DecodeNextFrameAsync(
+                new FileDecodeFrameContext
                 {
-                    Packet = new EncodedVideoPacket
-                    {
-                        Data = ReadOnlyMemory<byte>.Empty,
-                        Codec = EncodedVideoCodec.H264
-                    },
                     FrameNumber = 1,
                     PresentationTime = TimeSpan.Zero,
                     CancellationToken = CancellationToken.None

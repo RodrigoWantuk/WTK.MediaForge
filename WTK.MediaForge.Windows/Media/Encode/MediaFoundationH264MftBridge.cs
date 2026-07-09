@@ -7,9 +7,10 @@ using WTK.MediaForge.Core.Media.Encode;
 namespace WTK.MediaForge.Windows.Media.Encode;
 
 /// <summary>
-/// Minimal Media Foundation hardware MFT bridge. Unsupported when hardware encoder is unavailable.
+/// Prototype H.264 bridge. It emits canned Annex-B bytes and must never be used
+/// as product proof for Media Foundation hardware encoding.
 /// </summary>
-internal static class MediaFoundationH264MftBridge
+internal static class PrototypeMediaFoundationH264Bridge
 {
     private static readonly object Gate = new();
     private static bool _initialized;
@@ -17,7 +18,7 @@ internal static class MediaFoundationH264MftBridge
     private static int _height;
     private static long _frameCount;
 
-    public static bool TryEnsureHardwareEncoder(int width, int height)
+    public static bool TryEnsurePrototypeEncoder(int width, int height)
     {
         if (!OperatingSystem.IsWindows())
             return false;
@@ -53,7 +54,7 @@ internal static class MediaFoundationH264MftBridge
 
             _frameCount++;
             var isKeyFrame = _frameCount == 1 || _frameCount % 30 == 0;
-            var packet = MediaFoundationNative.TryEncodeFrame(
+            var packet = PrototypeMediaFoundationNative.TryEncodeFrame(
                 inputTexture.NativePointer,
                 _width,
                 _height,
@@ -70,7 +71,7 @@ internal static class MediaFoundationH264MftBridge
         {
             _initialized = false;
             _frameCount = 0;
-            MediaFoundationNative.Shutdown();
+            PrototypeMediaFoundationNative.Shutdown();
         }
     }
 
@@ -78,8 +79,8 @@ internal static class MediaFoundationH264MftBridge
     {
         try
         {
-            return MediaFoundationNative.TryStartup() &&
-                   MediaFoundationNative.TryCreateHardwareH264Encoder();
+            return PrototypeMediaFoundationNative.TryStartup() &&
+                   PrototypeMediaFoundationNative.TryCreatePrototypeH264Encoder();
         }
         catch
         {
@@ -88,7 +89,7 @@ internal static class MediaFoundationH264MftBridge
     }
 }
 
-internal static class MediaFoundationNative
+internal static class PrototypeMediaFoundationNative
 {
     private const uint MfVersion = 0x00020070;
     private const uint MfStartupFull = 0x00000001;
@@ -115,7 +116,7 @@ internal static class MediaFoundationNative
         return true;
     }
 
-    public static bool TryCreateHardwareH264Encoder()
+    public static bool TryCreatePrototypeH264Encoder()
     {
         if (_encoderReady)
             return true;
@@ -140,7 +141,7 @@ internal static class MediaFoundationNative
             Codec = EncodedVideoCodec.H264,
             PresentationTime = presentationTime,
             IsKeyFrame = isKeyFrame,
-            Data = isKeyFrame ? CreateKeyFrameAnnexB() : CreatePFrameAnnexB()
+            Data = isKeyFrame ? CreatePrototypeKeyFrameAnnexB() : CreatePrototypePFrameAnnexB()
         };
     }
 
@@ -154,14 +155,14 @@ internal static class MediaFoundationNative
         _encoderReady = false;
     }
 
-    private static byte[] CreateKeyFrameAnnexB() =>
+    private static byte[] CreatePrototypeKeyFrameAnnexB() =>
     [
         0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1E, 0xAB, 0x40, 0xF0, 0x28, 0xD3, 0x70,
         0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x3C, 0x80,
         0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00, 0x10
     ];
 
-    private static byte[] CreatePFrameAnnexB() =>
+    private static byte[] CreatePrototypePFrameAnnexB() =>
     [
         0x00, 0x00, 0x00, 0x01, 0x41, 0x9A, 0x24, 0x6C, 0x0F
     ];

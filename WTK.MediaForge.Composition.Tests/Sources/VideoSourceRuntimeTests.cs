@@ -5,6 +5,7 @@ using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Decode;
 using WTK.MediaForge.Composition.Tests.Gpu;
+using WTK.MediaForge.Core.Sources;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests.Sources;
@@ -43,6 +44,35 @@ public sealed class VideoSourceRuntimeTests
             var pausedAt = runtime.Clock.CurrentPresentationTime;
             await Task.Delay(20);
             Assert.Equal(pausedAt, runtime.Clock.CurrentPresentationTime);
+            Assert.Equal(MediaSourceState.Paused, runtime.State);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task VideoSourceRuntime_decodes_file_frames_without_empty_packet()
+    {
+        var path = CreateTempVideoPath();
+        try
+        {
+            var decoder = new RecordingFileDecoder();
+            using var runtime = new VideoSourceRuntime(
+                new VideoFileSourceSettings { Path = path },
+                _ => decoder,
+                diagnostics: null);
+
+            await runtime.OpenAsync(CancellationToken.None);
+            runtime.Play();
+            runtime.Seek(TimeSpan.FromMilliseconds(250));
+
+            await runtime.TryDecodeNextFrameAsync(new CollectingMediaTransportAuditSink(), CancellationToken.None);
+
+            Assert.Single(decoder.FileDecodeContexts);
+            Assert.Equal(TimeSpan.FromMilliseconds(250), decoder.FileDecodeContexts[0].PresentationTime);
         }
         finally
         {
@@ -75,7 +105,7 @@ public sealed class VideoSourceRuntimeTests
             _ => new StubDecoder(),
             diagnostics: null);
 
-    private sealed class StubDecoder : IHardwareVideoDecoder
+    private sealed class StubDecoder : IHardwareFileVideoDecoder
     {
         public HardwareDecoderInfo Info { get; } = new()
         {
@@ -92,7 +122,9 @@ public sealed class VideoSourceRuntimeTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask<DecodedGpuFrame?> DecodeAsync(DecodeFrameContext context, IMediaTransportAuditSink auditSink)
+        public ValueTask<DecodedGpuFrame?> DecodeNextFrameAsync(
+            FileDecodeFrameContext context,
+            IMediaTransportAuditSink auditSink)
         {
             _ = context;
             _ = auditSink;
@@ -108,7 +140,7 @@ public sealed class VideoSourceRuntimeTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class ThrowingDecoder : IHardwareVideoDecoder
+    private sealed class ThrowingDecoder : IHardwareFileVideoDecoder
     {
         public HardwareDecoderInfo Info { get; } = new()
         {
@@ -120,8 +152,38 @@ public sealed class VideoSourceRuntimeTests
         public ValueTask OpenAsync(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink) =>
             throw new FileNotFoundException("missing", context.SourcePath);
 
-        public ValueTask<DecodedGpuFrame?> DecodeAsync(DecodeFrameContext context, IMediaTransportAuditSink auditSink) =>
+        public ValueTask<DecodedGpuFrame?> DecodeNextFrameAsync(
+            FileDecodeFrameContext context,
+            IMediaTransportAuditSink auditSink) =>
             ValueTask.FromResult<DecodedGpuFrame?>(null);
+
+        public ValueTask FlushAsync(IMediaTransportAuditSink auditSink) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RecordingFileDecoder : IHardwareFileVideoDecoder
+    {
+        public List<FileDecodeFrameContext> FileDecodeContexts { get; } = [];
+
+        public HardwareDecoderInfo Info { get; } = new()
+        {
+            Name = "Recording",
+            Codec = EncodedVideoCodec.H264,
+            Backend = "Recording",
+            ProducesGpuSurface = true
+        };
+
+        public ValueTask OpenAsync(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<DecodedGpuFrame?> DecodeNextFrameAsync(
+            FileDecodeFrameContext context,
+            IMediaTransportAuditSink auditSink)
+        {
+            FileDecodeContexts.Add(context);
+            return ValueTask.FromResult<DecodedGpuFrame?>(null);
+        }
 
         public ValueTask FlushAsync(IMediaTransportAuditSink auditSink) => ValueTask.CompletedTask;
 

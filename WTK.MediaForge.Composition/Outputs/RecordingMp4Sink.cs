@@ -15,15 +15,25 @@ public sealed class RecordingMp4Sink : IRenderOutputSink
 {
     private readonly string _outputPath;
     private readonly IMediaTransportAuditSink? _auditSink;
+    private readonly bool _allowPrototypeMuxer;
     private IMp4Muxer? _muxer;
     private RenderOutputSinkContext? _context;
     private bool _started;
 
     public RecordingMp4Sink(string outputPath, IMediaTransportAuditSink? auditSink = null)
+        : this(outputPath, auditSink, allowPrototypeMuxer: false)
+    {
+    }
+
+    internal RecordingMp4Sink(
+        string outputPath,
+        IMediaTransportAuditSink? auditSink,
+        bool allowPrototypeMuxer)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
         _outputPath = outputPath;
         _auditSink = auditSink;
+        _allowPrototypeMuxer = allowPrototypeMuxer;
     }
 
     public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
@@ -36,6 +46,13 @@ public sealed class RecordingMp4Sink : IRenderOutputSink
     public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_allowPrototypeMuxer)
+        {
+            throw new NotSupportedException(
+                "RecordingMp4Sink is prototype-only until real hardware encoder output and production MP4 muxing are implemented.");
+        }
+
         _context = context;
         _muxer = new EncodedPacketMp4Muxer(_outputPath, _auditSink);
         _started = true;

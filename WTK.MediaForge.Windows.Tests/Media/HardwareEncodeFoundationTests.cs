@@ -16,6 +16,41 @@ namespace WTK.MediaForge.Windows.Tests.Media;
 public sealed class HardwareEncodeFoundationTests
 {
     [Fact]
+    public async Task Public_encoder_rejects_prototype_canned_packet_path()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+        factory.EnumAdapters1(0, out var adapter).CheckError();
+        using var gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
+
+        await using var encoder = new MediaFoundationHardwareVideoEncoder(
+            gpuDevice.Device,
+            width: 640,
+            height: 360);
+
+        using var inputLease = HardwareEncoderInputLease.Create(new GpuVideoFrameDescriptor
+        {
+            Width = 640,
+            Height = 360,
+            Format = "B8G8R8A8_UNORM",
+            TransportKind = MediaTransportKind.GpuSurface
+        });
+
+        await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await encoder.EncodeAsync(
+                new EncodeFrameContext
+                {
+                    InputLease = inputLease,
+                    FrameNumber = 1,
+                    PresentationTime = TimeSpan.Zero,
+                    CancellationToken = CancellationToken.None
+                },
+                new CollectingMediaTransportAuditSink()));
+    }
+
+    [Fact]
     public async Task Encoder_accepts_gpu_texture_lease_from_export_path()
     {
         if (!OperatingSystem.IsWindows())
@@ -30,7 +65,9 @@ public sealed class HardwareEncodeFoundationTests
         await using var encoder = new MediaFoundationHardwareVideoEncoder(
             gpuDevice.Device,
             width: 640,
-            height: 360);
+            height: 360,
+            pixelFormat: "B8G8R8A8_UNORM",
+            allowPrototypeEncoding: true);
 
         using var pool = new GpuResourcePool(new FakeGpuTextureFactory());
         using var textureLease = pool.AcquireTexture(new GpuTextureDescriptor
@@ -84,7 +121,9 @@ public sealed class HardwareEncodeFoundationTests
         await using var encoder = new MediaFoundationHardwareVideoEncoder(
             gpuDevice.Device,
             width: 320,
-            height: 180);
+            height: 180,
+            pixelFormat: "B8G8R8A8_UNORM",
+            allowPrototypeEncoding: true);
 
         var exporter = new VulkanToD3D11EncoderSurfaceExporter(gpuDevice.Device);
         using var pool = new GpuResourcePool(new FakeGpuTextureFactory());
@@ -109,10 +148,26 @@ public sealed class HardwareEncodeFoundationTests
             TargetOutputs = []
         });
 
-        await Task.Delay(250);
+        await WaitForConditionAsync(
+            () => audit.Contains(MediaTransportAuditEventKind.GpuSurfaceExportSucceeded),
+            TimeSpan.FromSeconds(2));
         await encodeTarget.DisposeAsync();
 
         Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuSurfaceExportSucceeded));
+    }
+
+    private static async Task WaitForConditionAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        while (Environment.TickCount64 < deadline)
+        {
+            if (condition())
+                return;
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException("Condition was not met before timeout.");
     }
 
     private sealed class FakeGpuTextureFactory : IGpuTextureFactory

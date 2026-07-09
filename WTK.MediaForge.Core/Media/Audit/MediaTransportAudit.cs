@@ -41,16 +41,32 @@ public interface IMediaTransportAuditSink
 
 public sealed class CollectingMediaTransportAuditSink : IMediaTransportAuditSink
 {
+    private readonly object _gate = new();
     private readonly List<MediaTransportAuditEvent> _events = [];
 
-    public IReadOnlyList<MediaTransportAuditEvent> Events => _events;
+    public IReadOnlyList<MediaTransportAuditEvent> Events
+    {
+        get
+        {
+            lock (_gate)
+                return _events.ToArray();
+        }
+    }
 
-    public void Record(MediaTransportAuditEvent auditEvent) => _events.Add(auditEvent);
+    public void Record(MediaTransportAuditEvent auditEvent)
+    {
+        lock (_gate)
+            _events.Add(auditEvent);
+    }
 
-    public void Clear() => _events.Clear();
+    public void Clear()
+    {
+        lock (_gate)
+            _events.Clear();
+    }
 
     public bool Contains(MediaTransportAuditEventKind kind) =>
-        _events.Any(e => e.Kind == kind);
+        Events.Any(e => e.Kind == kind);
 }
 
 public static class MediaTransportAuditRules

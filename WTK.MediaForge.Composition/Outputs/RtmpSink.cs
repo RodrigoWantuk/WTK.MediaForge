@@ -12,14 +12,21 @@ namespace WTK.MediaForge.Composition.Outputs;
 public sealed class RtmpSink : IRenderOutputSink
 {
     private readonly string _url;
+    private readonly bool _allowPrototypeTransport;
     private readonly FlvPacketizer _packetizer = new();
     private RtmpTransport? _transport;
     private bool _started;
 
     public RtmpSink(string url)
+        : this(url, allowPrototypeTransport: false)
+    {
+    }
+
+    internal RtmpSink(string url, bool allowPrototypeTransport)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         _url = url;
+        _allowPrototypeTransport = allowPrototypeTransport;
     }
 
     public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
@@ -29,11 +36,18 @@ public sealed class RtmpSink : IRenderOutputSink
     public RenderOutputSinkBackpressureMode BackpressureMode =>
         RenderOutputSinkBackpressureMode.KeepLatest;
 
-    public IReadOnlyList<FlvPacket> SentPacketsForTests => _transport?.SentPackets ?? Array.Empty<FlvPacket>();
+    internal IReadOnlyList<FlvPacket> SentPacketsForTests => _transport?.SentPackets ?? Array.Empty<FlvPacket>();
 
     public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_allowPrototypeTransport)
+        {
+            throw new NotSupportedException(
+                "RtmpSink is prototype-only until a real network RTMP transport is implemented.");
+        }
+
         _transport = new RtmpTransport(_url);
         _started = true;
         return _transport.ConnectAsync(cancellationToken);

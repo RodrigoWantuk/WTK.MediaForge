@@ -42,7 +42,12 @@ public sealed class WindowsGpuExportEndToEndProofTests
 
         using var lease = await exporter.ExportForEncoderAsync(descriptor, offscreen, audit, CancellationToken.None);
 
-        await using var encoder = new MediaFoundationHardwareVideoEncoder(gpuDevice.Device, width, height);
+        await using var encoder = new MediaFoundationHardwareVideoEncoder(
+            gpuDevice.Device,
+            width,
+            height,
+            pixelFormat: "B8G8R8A8_UNORM",
+            allowPrototypeEncoding: true);
         var packet = await encoder.EncodeAsync(
             new EncodeFrameContext
             {
