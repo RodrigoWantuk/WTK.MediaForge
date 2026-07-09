@@ -230,6 +230,25 @@ Uncompressed video pixels must stay in GPU/VRAM on the normal product path.
 CPU/RAM may carry encoded media, static asset load buffers, metadata, commands,
 and explicitly registered exceptions only.
 
+### FFmpeg and external media libraries
+
+FFmpeg is not part of the first MP4/RTMP hardware MVP.
+
+Future FFmpeg library usage is allowed only after the dedicated **FFmpeg Libraries Integration Review** phase and only for encoded-packet/container-level operations.
+
+FFmpeg must never be used as a product path for:
+
+- rawvideo pipes;
+- software video decode;
+- software video encode;
+- raw decompressed frame processing in CPU/RAM.
+
+The authoritative policy is defined in:
+
+- `docs/MEDIA_LICENSE_POLICY.md`
+- `docs/GPU_MEDIA_SUPPORT_MATRIX.md`
+- `docs/ROADMAP_CURRENT.md`
+
 ### Formal media categories
 
 | Category | Description | Product path |

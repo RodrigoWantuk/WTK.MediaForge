@@ -61,3 +61,24 @@ If the change touches Capture, D3D11, Vulkan, GPU lifecycle, keyed mutex, regist
 ```powershell
 ./scripts/test.ps1 -Tier Gpu
 ```
+
+## FFmpeg and codec policy
+
+Do not add FFmpeg, libav*, libx264, libx265, codec libraries, muxers, demuxers, or media container packages without checking:
+
+- `docs/MEDIA_LICENSE_POLICY.md`
+- `docs/GPU_MEDIA_SUPPORT_MATRIX.md`
+- `docs/ROADMAP_CURRENT.md`
+
+FFmpeg is not allowed in the first MP4/RTMP hardware MVP.
+
+Future FFmpeg library usage is limited to encoded-packet/container operations after the dedicated **FFmpeg Libraries Integration Review** phase.
+
+Never implement:
+
+- rawvideo pipe;
+- software video encode fallback;
+- software video decode fallback;
+- raw decompressed video frames crossing CPU/RAM;
+- GPL/nonfree FFmpeg build;
+- libx264/libx265 dependency.

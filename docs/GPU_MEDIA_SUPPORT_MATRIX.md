@@ -63,3 +63,75 @@ FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> MF H.264 -> Encod
 Capability API exposes `GpuExportProof` status: Passed / Failed / Pending, but
 recording remains unavailable until real hardware encoder output and production
 muxing are validated.
+
+## FFmpeg / libav Capability Status
+
+FFmpeg is **not used** in the first MP4/RTMP hardware MVP.
+
+The first recording/streaming MVP must prove the native GPU media path:
+
+```text
+GPU rendered output
+  -> platform hardware encoder
+  -> EncodedVideoPacket
+  -> native muxer / packetizer / stream transport
+```
+
+FFmpeg libraries may be evaluated in a future dedicated phase only for encoded-packet and container-level work. They must never become a product path for raw decompressed video frames in CPU/RAM.
+
+### Capability entries
+
+| Capability | Status | License Status | Product Use | Reason |
+|---|---:|---:|---:|---|
+| FFmpeg executable process | Prohibited | Prohibited | No | External `ffmpeg.exe` execution is not accepted as a product encode/decode path. |
+| FFmpeg rawvideo pipe | Prohibited | Prohibited | No | Moves decompressed frames through CPU/RAM and violates the GPU Media Law. |
+| FFmpeg GPL build | Prohibited | Prohibited | No | GPL components are not acceptable as default commercial product dependencies. |
+| FFmpeg nonfree build | Prohibited | Prohibited | No | Requires explicit commercial/legal review and is not allowed by default. |
+| `libx264` | Prohibited | Prohibited / RequiresCommercialLicense | No | GPL/commercial licensing conflict; not allowed as default encoder. |
+| `libx265` | Prohibited | Prohibited / RequiresCommercialLicense | No | GPL/commercial licensing conflict; not allowed as default encoder. |
+| FFmpeg software video encode | Prohibited | Prohibited | No | Violates GPU-first hardware encode strategy and must not be used as fallback. |
+| FFmpeg software video decode | Prohibited | Prohibited | No | Continuous video sources must decode into GPU surfaces, not raw CPU frames. |
+| `libavformat` demux | Planned | RequiresLegalReview | Future | May be evaluated later for reading encoded packets from containers/streams. |
+| `libavformat` mux | Planned | RequiresLegalReview | Future | May be evaluated later for writing already encoded packets into containers. |
+| `libavcodec` parser / bitstream filter | Planned | RequiresLegalReview | Future | Allowed only for packet/metadata/bitstream operations, not software decode/encode. |
+| `libavutil` auxiliary utilities | Planned | RequiresLegalReview | Future | Allowed only if required by approved packet/container-level FFmpeg usage. |
+
+### Allowed future shape
+
+```text
+Container / network stream
+  -> LGPL-only FFmpeg library demux
+  -> EncodedVideoPacket
+  -> hardware decoder
+  -> GpuVideoFrameLease
+  -> GPU composition
+```
+
+### Prohibited shape
+
+```text
+Container / network stream
+  -> FFmpeg software decode
+  -> AVFrame / raw YUV / raw RGBA in CPU RAM
+  -> upload to GPU
+```
+
+### Required conditions for any future FFmpeg/libav usage
+
+Any future FFmpeg library integration must satisfy all of the following:
+
+- LGPL-only build;
+- no `--enable-gpl`;
+- no `--enable-nonfree`;
+- no `libx264`;
+- no `libx265`;
+- no rawvideo pipe;
+- no software video encode in product runtime;
+- no software video decode for continuous video sources;
+- no decompressed video frame crossing CPU/RAM during normal runtime;
+- dynamic linking unless legal review approves otherwise;
+- documented build configuration;
+- third-party notices and compliance documentation updated;
+- capability report must clearly mark each FFmpeg-backed feature as Supported, Experimental, Planned, RequiresLegalReview, Prohibited, or Unsupported.
+
+Until the dedicated **FFmpeg Libraries Integration Review** phase is completed, all FFmpeg/libav features remain `Planned` or `Prohibited`.

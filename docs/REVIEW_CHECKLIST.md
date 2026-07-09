@@ -131,3 +131,19 @@ Before considering a change complete, verify:
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
 - [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15–20.
 - [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.
+
+## FFmpeg / external codec review checklist
+
+For any PR touching media container, codec, demux, mux, encode, decode, recording, streaming, or packetization:
+
+- [ ] The PR does not call `ffmpeg.exe`.
+- [ ] The PR does not pipe `rawvideo`.
+- [ ] The PR does not use `libx264`.
+- [ ] The PR does not use `libx265`.
+- [ ] The PR does not introduce GPL/nonfree FFmpeg builds.
+- [ ] The PR does not perform software video encode/decode in product runtime.
+- [ ] FFmpeg libraries, if referenced, operate only on encoded packets/container metadata.
+- [ ] `docs/MEDIA_LICENSE_POLICY.md` was updated.
+- [ ] `docs/GPU_MEDIA_SUPPORT_MATRIX.md` was updated.
+- [ ] `scripts/verify-license-policy.ps1` passes.
+- [ ] `scripts/verify-media-transport-rules.ps1` passes.

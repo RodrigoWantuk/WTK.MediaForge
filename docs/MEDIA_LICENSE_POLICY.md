@@ -65,3 +65,68 @@ Do not add arbitrary NuGet image decoders without updating this table first.
 | AMD AMF direct | Planned, RequiresLegalReview |
 
 Media Foundation hardware MFT is the primary Windows MVP encoder path.
+
+## FFmpeg Libraries Integration Review
+
+FFmpeg is not part of the first MP4/RTMP hardware MVP.
+
+The engine may evaluate FFmpeg libraries in a future phase only for encoded-packet/container-level work, never as a raw video frame processing path.
+
+### Allowed future uses, pending license review
+
+The following uses may be evaluated in a future dedicated integration phase:
+
+- `libavformat` for demuxing encoded packets from containers or streams;
+- `libavformat` for muxing already encoded packets into supported containers;
+- `libavutil` for auxiliary packet/container utilities;
+- `libavcodec` only for parsing, bitstream filtering, or codec metadata when it does not perform continuous software video decode/encode.
+
+All future FFmpeg usage must satisfy all of these conditions:
+
+- LGPL-only build;
+- no GPL components;
+- no `--enable-gpl`;
+- no `--enable-nonfree`;
+- dynamic linking unless legal review approves otherwise;
+- documented build configuration;
+- third-party notices and compliance material updated;
+- no raw video pipe;
+- no software video encode/decode in the product path;
+- no decompressed video frame crossing CPU/RAM in normal runtime.
+
+### Explicitly prohibited
+
+The following are prohibited in product code:
+
+- `ffmpeg.exe` process execution for product encode/decode;
+- rawvideo pipe into FFmpeg;
+- `libx264`;
+- `libx265`;
+- GPL FFmpeg builds;
+- nonfree FFmpeg builds;
+- software video encode as fallback;
+- software video decode as fallback for continuous video sources;
+- `AVFrame`/raw YUV/RGBA frame flowing through CPU/RAM as part of normal product runtime.
+
+### Relationship with the GPU Media Law
+
+FFmpeg libraries, if ever accepted, may only operate on encoded packets, containers, metadata, or codec configuration data.
+
+Allowed future shape:
+
+```text
+Container / network stream
+  -> FFmpeg demux, encoded packets only
+  -> EncodedVideoPacket
+  -> hardware decoder
+  -> GPU frame
+```
+
+Prohibited shape:
+
+```text
+Container / network stream
+  -> FFmpeg software decode
+  -> raw AVFrame in RAM
+  -> upload to GPU
+```
