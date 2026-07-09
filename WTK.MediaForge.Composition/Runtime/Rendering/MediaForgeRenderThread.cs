@@ -254,14 +254,20 @@ internal sealed class MediaForgeRenderThread : IDisposable
             }
             catch (Exception ex)
             {
-                command.Fail(ex);
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Error,
-                    "render.command_failed",
-                    "Render command failed.",
-                    nameof(MediaForgeRenderThread),
-                    ex);
+                try
+                {
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "render.command_failed",
+                        "Render command failed.",
+                        nameof(MediaForgeRenderThread),
+                        ex);
+                }
+                finally
+                {
+                    command.Fail(ex);
+                }
             }
 
             processed++;

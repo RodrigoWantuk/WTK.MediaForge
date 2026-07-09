@@ -23,6 +23,13 @@ function Invoke-Step {
 Invoke-Step "verify-media-transport-rules" { & "$PSScriptRoot/verify-media-transport-rules.ps1" }
 Invoke-Step "verify-license-policy" { & "$PSScriptRoot/verify-license-policy.ps1" }
 
+Invoke-Step "prototype media product gates" {
+    dotnet test `
+        WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
+        --filter FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests `
+        --verbosity minimal
+}
+
 Invoke-Step "dotnet test" { dotnet test --verbosity minimal }
 
 Invoke-Step "Fast tier" { & "$PSScriptRoot/test.ps1" -Tier Fast }
