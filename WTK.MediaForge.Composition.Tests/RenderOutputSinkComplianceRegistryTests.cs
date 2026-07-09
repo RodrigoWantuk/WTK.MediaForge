@@ -36,8 +36,10 @@ public class RenderOutputSinkComplianceRegistryTests
 
         Assert.Equal(MediaTransportKind.EncodedPacket, mp4.Transport);
         Assert.Equal(MediaTransportKind.EncodedPacket, rtmp.Transport);
-        Assert.True(mp4.IsProductSink);
-        Assert.True(rtmp.IsProductSink);
+        Assert.False(mp4.IsProductSink);
+        Assert.False(rtmp.IsProductSink);
+        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, mp4.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, rtmp.SupportStatus);
     }
 
     [Fact]

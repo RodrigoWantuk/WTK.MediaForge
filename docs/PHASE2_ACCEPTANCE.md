@@ -50,4 +50,8 @@ See `docs/PERFORMANCE_BASELINE.md` and `artifacts/performance/`.
 
 ## Status
 
-Phase 2 commits 15–20 implemented with Fast + Gpu + readiness script coverage.
+Phase 2 structural contracts are present, but media paths that depended on
+hardware encode/decode, MP4 recording, RTMP streaming, and performance
+validation are reclassified as prototype infrastructure until real backend
+proof replaces canned packets, placeholder textures, in-memory transports, and
+synthetic workloads.

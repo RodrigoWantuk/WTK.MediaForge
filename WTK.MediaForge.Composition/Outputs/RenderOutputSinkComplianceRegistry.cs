@@ -40,16 +40,16 @@ public static class RenderOutputSinkComplianceRegistry
             SinkTypeName = nameof(RecordingMp4Sink),
             Kind = RenderOutputSinkKind.File,
             Transport = MediaTransportKind.EncodedPacket,
-            IsProductSink = true,
-            SupportStatus = MediaForgeSupportStatus.Experimental
+            IsProductSink = false,
+            SupportStatus = MediaForgeSupportStatus.PrototypeOnly
         },
         new()
         {
             SinkTypeName = nameof(RtmpSink),
             Kind = RenderOutputSinkKind.Streaming,
             Transport = MediaTransportKind.EncodedPacket,
-            IsProductSink = true,
-            SupportStatus = MediaForgeSupportStatus.Experimental
+            IsProductSink = false,
+            SupportStatus = MediaForgeSupportStatus.PrototypeOnly
         },
         new()
         {

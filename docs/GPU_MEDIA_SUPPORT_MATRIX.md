@@ -23,7 +23,7 @@ Support is determined by **runtime-detected capability**, not marketing GPU name
 | Webcam | GpuSurface | Experimental | Raw CPU input possible at boundary only |
 | Static image PNG/JPEG | StaticCpuAsset -> GpuSurface | Planned | Load-time CPU decode |
 | Static image WebP | — | Planned | Blocked until license review |
-| Video file MP4 | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
+| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly | Decode bridge does not yet decode actual content into a GPU texture |
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
 | Animated GIF/APNG/WebP | — | Planned | Blocked until GPU-safe strategy |
 | Lottie | — | Planned | Blocked until GPU-safe rasterization |
@@ -35,8 +35,8 @@ Support is determined by **runtime-detected capability**, not marketing GPU name
 |--------|-----------|--------|-------|
 | Preview panel | GpuSurface | Experimental | No CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | Experimental | Windows MF hardware MFT via EncodeSchedulerTarget |
-| RTMP H.264 | EncodedPacket | Experimental | Shared encoder with MP4 path |
+| Recording MP4 H.264 | EncodedPacket | PrototypeOnly | Real MF hardware encoder and production MP4 muxing are not complete |
+| RTMP H.264 | EncodedPacket | PrototypeOnly | Current transport is in-memory only, not network RTMP |
 | SRT | — | Planned | Blocked by license/transport review |
 | NDI output | — | Unsupported | |
 | Virtual camera | — | Unsupported | |
@@ -45,7 +45,7 @@ Support is determined by **runtime-detected capability**, not marketing GPU name
 
 | Encoder | Status | Notes |
 |---------|--------|-------|
-| Media Foundation hardware MFT H.264 | RequiresLegalReview | Primary Windows MVP path |
+| Media Foundation hardware MFT H.264 | PrototypeOnly / RequiresLegalReview | Real hardware MFT enumeration and validated backend output still required |
 | NVENC direct | Planned | RequiresLegalReview |
 | Intel QSV direct | Planned | RequiresLegalReview |
 | AMD AMF direct | Planned | RequiresLegalReview |
@@ -54,10 +54,12 @@ Support is determined by **runtime-detected capability**, not marketing GPU name
 
 ## Export Proof Gate
 
-Recording MP4 remains **Experimental** after Phase 2 Commits 15–16:
+Recording MP4 remains **PrototypeOnly** after Phase 2 Commits 15-16:
 
 ```text
 FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> MF H.264 -> EncodedPacketMp4Muxer
 ```
 
-Capability API exposes `GpuExportProof` status: Passed / Failed / Pending.
+Capability API exposes `GpuExportProof` status: Passed / Failed / Pending, but
+recording remains unavailable until real hardware encoder output and production
+muxing are validated.

@@ -4,6 +4,7 @@ public enum MediaForgeSupportStatus
 {
     Supported,
     Experimental,
+    PrototypeOnly,
     Planned,
     RequiresLegalReview,
     Unsupported,

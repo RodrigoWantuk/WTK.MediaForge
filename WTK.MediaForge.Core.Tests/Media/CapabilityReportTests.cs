@@ -21,11 +21,12 @@ public sealed class CapabilityReportTests
     {
         var pending = MediaForgeCapabilityCatalog.CreateDefaultEntries(GpuExportProofStatus.Pending)
             .First(e => e.Id == MediaForgeCapabilityCatalog.RecordingMp4H264);
-        Assert.Equal(MediaForgeSupportStatus.Blocked, pending.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, pending.SupportStatus);
 
         var passed = MediaForgeCapabilityCatalog.CreateDefaultEntries(GpuExportProofStatus.Passed)
             .First(e => e.Id == MediaForgeCapabilityCatalog.RecordingMp4H264);
-        Assert.Equal(MediaForgeSupportStatus.Planned, passed.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, passed.SupportStatus);
+        Assert.Contains("Prototype", passed.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -106,5 +107,31 @@ public sealed class CapabilityReportTests
         });
 
         Assert.True(MediaTransportAuditRules.IsProductPathValid(good.Events));
+    }
+
+    [Fact]
+    public void CapabilityReport_does_not_advertise_fake_media_paths_as_supported()
+    {
+        var report = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
+        {
+            Platform = "Test",
+            ExportProofStatus = GpuExportProofStatus.Passed
+        });
+
+        Assert.All(
+            new[]
+            {
+                MediaForgeCapabilityCatalog.RecordingMp4H264,
+                MediaForgeCapabilityCatalog.RtmpH264,
+                MediaForgeCapabilityCatalog.MfHardwareH264,
+                MediaForgeCapabilityCatalog.VideoFileMp4
+            },
+            id =>
+            {
+                var entry = Assert.IsType<CapabilityEntry>(report.TryGetEntry(id));
+                Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, entry.SupportStatus);
+                Assert.False(report.IsFeatureAvailable(id));
+                Assert.Contains("Prototype", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+            });
     }
 }

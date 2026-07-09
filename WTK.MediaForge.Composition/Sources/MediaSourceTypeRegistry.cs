@@ -92,7 +92,12 @@ public static class MediaSourceTypeRegistry
             AllowsRawCpuException = false,
             SupportStatus = MediaForgeSupportStatus.Supported
         };
-        yield return TimelineEncoded("Video file", MediaSourceTypes.VideoFile, hasAudio: true);
+        yield return TimelineEncoded(
+            "Video file",
+            MediaSourceTypes.VideoFile,
+            hasAudio: true,
+            MediaForgeSupportStatus.PrototypeOnly,
+            "Prototype only: current file-video runtime does not yet demux/decode real media into GPU frames.");
         yield return TimelineEncoded("RTSP stream", MediaSourceTypes.RtspInput, hasAudio: true);
         yield return TimelineEncoded("IP camera", MediaSourceTypes.IpCamera, hasAudio: true);
         yield return Blocked("Animated image", MediaSourceTypes.AnimatedImage, "Blocked until GPU-safe frame strategy.");
@@ -132,7 +137,12 @@ public static class MediaSourceTypeRegistry
             SupportStatus = status
         };
 
-    private static MediaSourceTypeDescriptor TimelineEncoded(string displayName, MediaSourceTypeId typeId, bool hasAudio) =>
+    private static MediaSourceTypeDescriptor TimelineEncoded(
+        string displayName,
+        MediaSourceTypeId typeId,
+        bool hasAudio,
+        MediaForgeSupportStatus status = MediaForgeSupportStatus.Planned,
+        string? unavailableReason = null) =>
         new()
         {
             TypeId = typeId,
@@ -146,8 +156,8 @@ public static class MediaSourceTypeRegistry
             RequiresGpuInterop = true,
             RequiresHardwareDecode = true,
             AllowsRawCpuException = false,
-            SupportStatus = MediaForgeSupportStatus.Planned,
-            UnavailableReason = "Hardware decode required; software decode prohibited."
+            SupportStatus = status,
+            UnavailableReason = unavailableReason ?? "Hardware decode required; software decode prohibited."
         };
 
     private static MediaSourceTypeDescriptor Blocked(

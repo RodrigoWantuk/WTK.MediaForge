@@ -116,7 +116,7 @@ Execute in this exact order after vNext (commits 00–24) is complete. Plan:
 | 03 | Asset Manager | Fast | **Done** |
 | 04 | **GPU Surface Export Proof (Real)** | **Blocks 15–17** | **Done** |
 | 05 | Hardware Decode Foundation | Fast | **Done** |
-| 06 | Windows Hardware Decode MVP | Gpu | **Done** |
+| 06 | Windows Hardware Decode MVP | Gpu | **PrototypeOnly - needs real decode backend** |
 | 07 | Video Source Runtime | Fast | **Done** |
 | 08 | Texture Streaming | Gpu | **Done** |
 | 09 | Renderer Video Integration | Gpu | **Done** |
@@ -125,10 +125,10 @@ Execute in this exact order after vNext (commits 00–24) is complete. Plan:
 | 12 | GPU Effects Framework | Gpu | **Done** |
 | 13 | Transform Effects | Gpu | **Done** |
 | 14 | Text Rendering | Gpu | **Done** |
-| 15 | Hardware Encode Foundation | Gpu; requires 04 | **Done** |
-| 16 | MP4 Recording MVP | Gpu | **Done** |
-| 17 | RTMP Output MVP | Gpu | **Done** |
-| 18 | Performance Validation | Report | **Done** |
+| 15 | Hardware Encode Foundation | Gpu; requires 04 | **PrototypeOnly - canned packets are not product proof** |
+| 16 | MP4 Recording MVP | Gpu | **PrototypeOnly - muxer not production-ready** |
+| 17 | RTMP Output MVP | Gpu | **PrototypeOnly - in-memory transport only** |
+| 18 | Performance Validation | Report | **NeedsRealBackend - synthetic workload only** |
 | 19 | Fault Recovery | Gpu stress | **Done** |
 | 20 | Engine Readiness Gate | Fast + Gpu + verify | **Done** |
 
@@ -138,3 +138,22 @@ Execute in this exact order after vNext (commits 00–24) is complete. Plan:
 - All engine textures are acquired through `GpuResourcePool` / `VulkanGpuResourcePool`; no ad-hoc `VulkanOffscreenRenderTarget` construction in product paths.
 - Sinks never invoke render; `FrameScheduler` owns frame ordering (Commit 02+).
 - Physical GPU dispose is deferred to pool retirement; invalidate/recycle does not imply immediate `VkImage` destroy.
+
+## Active vNext Correction Track
+
+The current engine must treat MP4 recording, RTMP streaming, Windows hardware
+decode, Windows hardware encode, and performance validation as prototype
+infrastructure until backend work proves real GPU media flow. Product capability
+reports must use `PrototypeOnly`, `Blocked`, or `Planned` for these paths and
+must not expose them as user-available features.
+
+Required correction order:
+
+1. Capability truth reset.
+2. Audit evidence hardening so canned packets or placeholder textures cannot
+   satisfy product proof.
+3. Encode scheduler timing, cancellation, and backpressure correctness.
+4. Real Media Foundation hardware encoder/decode backend work, or explicit
+   unavailable capability.
+5. Real decode -> render -> encode proof before MP4/RTMP can become
+   Experimental or Supported.

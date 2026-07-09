@@ -12,22 +12,20 @@ public static class MediaForgeCapabilityCatalog
     public const string AmfDirect = "encoder.amf.direct";
     public const string MfHardwareH264 = "encoder.mf.hardware.h264";
     public const string GpuExportProof = "interop.gpu.export.proof";
+    public const string VideoFileMp4 = "source.video.file.mp4";
 
     public static IReadOnlyList<CapabilityEntry> CreateDefaultEntries(GpuExportProofStatus exportProofStatus) =>
     [
         Entry(CapabilityCategories.Sink, RecordingMp4H264, "Recording MP4 H.264",
-            exportProofStatus == GpuExportProofStatus.Passed
-                ? MediaForgeSupportStatus.Planned
-                : MediaForgeSupportStatus.Blocked,
+            MediaForgeSupportStatus.PrototypeOnly,
             MediaForgeLicenseStatus.RequiresLegalReview,
-            exportProofStatus == GpuExportProofStatus.Passed
-                ? "Awaiting Commit 18 MF MP4 MVP."
-                : "Blocked until GPU export proof passes (Commit 06).",
+            "Prototype only: current path does not yet prove real Media Foundation hardware encode or production MP4 muxing.",
             MediaTransportKind.EncodedPacket),
 
         Entry(CapabilityCategories.Sink, RtmpH264, "RTMP H.264 streaming",
-            MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,
-            "After MP4 MVP.", MediaTransportKind.EncodedPacket),
+            MediaForgeSupportStatus.PrototypeOnly, MediaForgeLicenseStatus.RequiresLegalReview,
+            "Prototype only: current transport is in-memory and not a network RTMP implementation.",
+            MediaTransportKind.EncodedPacket),
 
         Entry(CapabilityCategories.Sink, SrtOutput, "SRT streaming",
             MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,
@@ -42,8 +40,13 @@ public static class MediaForgeCapabilityCatalog
             "Not used in first hardware MP4/RTMP MVP."),
 
         Entry(CapabilityCategories.Encode, MfHardwareH264, "Media Foundation hardware MFT H.264",
-            MediaForgeSupportStatus.RequiresLegalReview, MediaForgeLicenseStatus.RequiresLegalReview,
-            "Primary Windows MVP encoder path."),
+            MediaForgeSupportStatus.PrototypeOnly, MediaForgeLicenseStatus.RequiresLegalReview,
+            "Prototype only until real hardware MFT enumeration and backend output validation are implemented."),
+
+        Entry(CapabilityCategories.Source, VideoFileMp4, "Video file MP4",
+            MediaForgeSupportStatus.PrototypeOnly, MediaForgeLicenseStatus.RequiresLegalReview,
+            "Prototype only: current Windows decode bridge does not decode actual media content into a GPU surface.",
+            MediaTransportKind.EncodedPacket),
 
         Entry(CapabilityCategories.Encode, NvencDirect, "NVENC direct",
             MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,
