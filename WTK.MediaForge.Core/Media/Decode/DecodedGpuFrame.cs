@@ -26,6 +26,18 @@ public sealed class DecodedGpuFrame : IDisposable
 
     public int Height => TextureLease.Height;
 
+    public GpuTextureLease TakeTextureLease()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+        var lease = Interlocked.Exchange(ref _textureLease, null);
+        if (lease is null)
+            throw new ObjectDisposedException(nameof(DecodedGpuFrame));
+
+        Volatile.Write(ref _disposed, 1);
+        return lease;
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

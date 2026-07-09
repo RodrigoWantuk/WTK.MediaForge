@@ -20,6 +20,7 @@ public sealed class TextureLeaseQueue : ITextureStreamConsumer, IDisposable
     private readonly int _capacity;
     private readonly TextureLeaseQueuePolicy _policy;
     private readonly Queue<GpuTextureLease> _queue = new();
+    private readonly Queue<TaskCompletionSource<GpuTextureLease?>> _waiters = new();
     private readonly object _gate = new();
     private int _disposed;
 
@@ -48,6 +49,16 @@ public sealed class TextureLeaseQueue : ITextureStreamConsumer, IDisposable
 
         lock (_gate)
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+            if (TryDequeueWaiter(out var waiter))
+            {
+                if (!waiter!.TrySetResult(lease))
+                    lease.Dispose();
+
+                return;
+            }
+
             if (_policy == TextureLeaseQueuePolicy.KeepLatest)
             {
                 while (_queue.Count > 0)
@@ -79,18 +90,33 @@ public sealed class TextureLeaseQueue : ITextureStreamConsumer, IDisposable
         }
     }
 
-    public ValueTask<GpuTextureLease?> AcquireAsync(CancellationToken cancellationToken = default)
+    public async ValueTask<GpuTextureLease?> AcquireAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
+        TaskCompletionSource<GpuTextureLease?> waiter;
+
         lock (_gate)
         {
-            if (_queue.Count == 0)
-                return ValueTask.FromResult<GpuTextureLease?>(null);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-            return ValueTask.FromResult<GpuTextureLease?>(_queue.Dequeue());
+            if (_queue.Count > 0)
+                return _queue.Dequeue();
+
+            waiter = new TaskCompletionSource<GpuTextureLease?>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Enqueue(waiter);
         }
+
+        using var cancellationRegistration = cancellationToken.Register(static state =>
+        {
+            var (queue, pendingWaiter) =
+                ((TextureLeaseQueue Queue, TaskCompletionSource<GpuTextureLease?> Waiter))state!;
+            queue.CancelWaiter(pendingWaiter);
+        }, (this, waiter));
+
+        return await waiter.Task.ConfigureAwait(false);
     }
 
     public void Clear()
@@ -107,6 +133,52 @@ public sealed class TextureLeaseQueue : ITextureStreamConsumer, IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        Clear();
+        TaskCompletionSource<GpuTextureLease?>[] waiters;
+
+        lock (_gate)
+        {
+            while (_queue.Count > 0)
+                _queue.Dequeue().Dispose();
+
+            waiters = _waiters.ToArray();
+            _waiters.Clear();
+        }
+
+        foreach (var waiter in waiters)
+            waiter.TrySetException(new ObjectDisposedException(nameof(TextureLeaseQueue)));
+    }
+
+    private bool TryDequeueWaiter(out TaskCompletionSource<GpuTextureLease?>? waiter)
+    {
+        while (_waiters.Count > 0)
+        {
+            var candidate = _waiters.Dequeue();
+            if (candidate.Task.IsCompleted)
+                continue;
+
+            waiter = candidate;
+            return true;
+        }
+
+        waiter = null;
+        return false;
+    }
+
+    private void CancelWaiter(TaskCompletionSource<GpuTextureLease?> waiter)
+    {
+        lock (_gate)
+        {
+            if (waiter.Task.IsCompleted)
+                return;
+
+            var remaining = _waiters
+                .Where(candidate => !ReferenceEquals(candidate, waiter))
+                .ToArray();
+            _waiters.Clear();
+            foreach (var candidate in remaining)
+                _waiters.Enqueue(candidate);
+
+            waiter.TrySetCanceled();
+        }
     }
 }

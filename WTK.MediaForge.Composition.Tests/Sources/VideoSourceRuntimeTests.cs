@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Composition.Sources.Settings;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
@@ -73,6 +74,71 @@ public sealed class VideoSourceRuntimeTests
 
             Assert.Single(decoder.FileDecodeContexts);
             Assert.Equal(TimeSpan.FromMilliseconds(250), decoder.FileDecodeContexts[0].PresentationTime);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task VideoSourceRuntime_decode_and_queue_enqueues_decoded_texture_lease()
+    {
+        var path = CreateTempVideoPath();
+        try
+        {
+            var decoder = new QueuedFrameDecoder();
+            using var runtime = new VideoSourceRuntime(
+                new VideoFileSourceSettings { Path = path },
+                _ => decoder,
+                diagnostics: null);
+
+            await runtime.OpenAsync(CancellationToken.None);
+            runtime.Play();
+
+            var queued = await runtime.DecodeAndQueueNextFrameAsync(
+                new CollectingMediaTransportAuditSink(),
+                CancellationToken.None);
+
+            Assert.True(queued);
+            Assert.True(runtime.StreamQueue.TryAcquire(out var lease));
+            Assert.NotNull(lease);
+            Assert.Equal(decoder.DecodedTextureId, lease!.TextureId);
+
+            lease.Dispose();
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task Dispose_flushes_decoder_and_releases_queued_frame()
+    {
+        var path = CreateTempVideoPath();
+        try
+        {
+            var decoder = new QueuedFrameDecoder();
+            var runtime = new VideoSourceRuntime(
+                new VideoFileSourceSettings { Path = path },
+                _ => decoder,
+                diagnostics: null);
+
+            await runtime.OpenAsync(CancellationToken.None);
+            await runtime.DecodeAndQueueNextFrameAsync(
+                new CollectingMediaTransportAuditSink(),
+                CancellationToken.None);
+
+            Assert.Equal(1, runtime.StreamQueue.Count);
+
+            runtime.Dispose();
+
+            Assert.True(decoder.FlushCalled);
+            Assert.True(decoder.DisposeCalled);
+            Assert.Equal(0, runtime.StreamQueue.Count);
         }
         finally
         {
@@ -188,5 +254,59 @@ public sealed class VideoSourceRuntimeTests
         public ValueTask FlushAsync(IMediaTransportAuditSink auditSink) => ValueTask.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class QueuedFrameDecoder : IHardwareFileVideoDecoder
+    {
+        private readonly GpuResourcePool _pool = new(new FakeTextureFactory());
+
+        public GpuTextureId DecodedTextureId { get; private set; }
+
+        public bool FlushCalled { get; private set; }
+
+        public bool DisposeCalled { get; private set; }
+
+        public HardwareDecoderInfo Info { get; } = new()
+        {
+            Name = "Queued",
+            Codec = EncodedVideoCodec.H264,
+            Backend = "Queued",
+            ProducesGpuSurface = true
+        };
+
+        public ValueTask OpenAsync(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<DecodedGpuFrame?> DecodeNextFrameAsync(
+            FileDecodeFrameContext context,
+            IMediaTransportAuditSink auditSink)
+        {
+            var lease = _pool.AcquireTexture(new GpuTextureDescriptor
+            {
+                Width = 64,
+                Height = 64,
+                Usage = GpuTextureUsage.OffscreenColor
+            });
+            DecodedTextureId = lease.TextureId;
+
+            return ValueTask.FromResult<DecodedGpuFrame?>(
+                new DecodedGpuFrame(
+                    lease,
+                    context.PresentationTime,
+                    TimeSpan.FromMilliseconds(33)));
+        }
+
+        public ValueTask FlushAsync(IMediaTransportAuditSink auditSink)
+        {
+            FlushCalled = true;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCalled = true;
+            _pool.Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 }

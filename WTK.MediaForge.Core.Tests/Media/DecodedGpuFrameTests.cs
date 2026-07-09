@@ -49,4 +49,33 @@ public sealed class DecodedGpuFrameTests
         Assert.Equal(TimeSpan.FromSeconds(2), frame.PresentationTime);
         Assert.Equal(TimeSpan.FromMilliseconds(40), frame.Duration);
     }
+
+    [Fact]
+    public void TakeTextureLease_transfers_ownership_to_caller()
+    {
+        var pool = new GpuResourcePool(new FakeTextureFactory());
+        var descriptor = new GpuTextureDescriptor
+        {
+            Width = 16,
+            Height = 16,
+            Usage = GpuTextureUsage.OffscreenColor
+        };
+        var lease = pool.AcquireTexture(descriptor);
+        var leaseId = lease.TextureId;
+
+        var frame = new DecodedGpuFrame(
+            lease,
+            presentationTime: TimeSpan.Zero,
+            duration: TimeSpan.FromMilliseconds(33));
+
+        var transferred = frame.TakeTextureLease();
+
+        Assert.Equal(leaseId, transferred.TextureId);
+        Assert.Throws<ObjectDisposedException>(() => _ = frame.TextureLease);
+
+        frame.Dispose();
+        Assert.Equal(leaseId, transferred.TextureId);
+
+        transferred.Dispose();
+    }
 }

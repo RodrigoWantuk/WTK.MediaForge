@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using WTK.MediaForge.Composition.Runtime.Streaming;
 using WTK.MediaForge.Composition.Sources.Settings;
 using WTK.MediaForge.Core.Gpu.Resources;
@@ -125,21 +126,77 @@ internal sealed class VideoSourceRuntime : IDisposable
         return frame;
     }
 
+    public async ValueTask<bool> DecodeAndQueueNextFrameAsync(
+        IMediaTransportAuditSink auditSink,
+        CancellationToken cancellationToken = default)
+    {
+        using var frame = await TryDecodeNextFrameAsync(auditSink, cancellationToken);
+        if (frame is null)
+            return false;
+
+        var lease = frame.TakeTextureLease();
+        try
+        {
+            StreamQueue.Enqueue(lease);
+            return true;
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
+    }
+
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        _ = cancellationToken;
         ObjectDisposedException.ThrowIf(_disposed, this);
+        await StopCoreAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task StopCoreAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         _clock.Pause();
+
+        Exception? cleanupFailure = null;
 
         if (_decoder is not null)
         {
-            await _decoder.FlushAsync(new CollectingMediaTransportAuditSink());
-            await _decoder.DisposeAsync();
+            var decoder = _decoder;
             _decoder = null;
+
+            try
+            {
+                await decoder.FlushAsync(new CollectingMediaTransportAuditSink())
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                cleanupFailure = ex;
+            }
+
+            StreamQueue.Clear();
+
+            try
+            {
+                await decoder.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                cleanupFailure = cleanupFailure is null
+                    ? ex
+                    : new AggregateException(cleanupFailure, ex);
+            }
+        }
+        else
+        {
+            StreamQueue.Clear();
         }
 
-        StreamQueue.Clear();
         State = MediaSourceState.Stopped;
+
+        if (cleanupFailure is not null)
+            ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
     }
 
     public void Dispose()
@@ -148,7 +205,14 @@ internal sealed class VideoSourceRuntime : IDisposable
             return;
 
         _disposed = true;
-        _ = StopAsync();
-        StreamQueue.Dispose();
+
+        try
+        {
+            StopCoreAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
+        finally
+        {
+            StreamQueue.Dispose();
+        }
     }
 }
