@@ -12,11 +12,22 @@ public enum MediaTransportAuditEventKind
     EncodedPacketProduced
 }
 
+public enum MediaTransportAuditEvidenceKind
+{
+    ContractOnly,
+    Prototype,
+    BackendCallSucceeded,
+    BackendOutputValidated
+}
+
 public sealed class MediaTransportAuditEvent
 {
     public required MediaTransportAuditEventKind Kind { get; init; }
 
     public required string Source { get; init; }
+
+    public MediaTransportAuditEvidenceKind EvidenceKind { get; init; } =
+        MediaTransportAuditEvidenceKind.ContractOnly;
 
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
 
@@ -45,18 +56,24 @@ public sealed class CollectingMediaTransportAuditSink : IMediaTransportAuditSink
 public static class MediaTransportAuditRules
 {
     public static bool IsProductPathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>
-        events.Any(e => e.Kind == MediaTransportAuditEventKind.GpuSurfaceExportSucceeded)
-        && events.Any(e => e.Kind == MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated)
+        HasEvidence(events, MediaTransportAuditEventKind.GpuSurfaceExportSucceeded, MediaTransportAuditEvidenceKind.BackendCallSucceeded)
+        && HasEvidence(events, MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated, MediaTransportAuditEvidenceKind.BackendCallSucceeded)
         && !events.Any(e => e.Kind is MediaTransportAuditEventKind.CpuReadbackAttempted
             or MediaTransportAuditEventKind.StagingBufferCreated);
 
     public static bool IsExportProofPathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>
         IsProductPathValid(events)
-        && events.Any(e => e.Kind == MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface)
-        && events.Any(e => e.Kind == MediaTransportAuditEventKind.EncodedPacketProduced);
+        && HasEvidence(events, MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface, MediaTransportAuditEvidenceKind.BackendOutputValidated)
+        && HasEvidence(events, MediaTransportAuditEventKind.EncodedPacketProduced, MediaTransportAuditEvidenceKind.BackendOutputValidated);
 
     public static bool IsDecodePathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>
-        events.Any(e => e.Kind == MediaTransportAuditEventKind.HardwareDecodeSucceeded)
+        HasEvidence(events, MediaTransportAuditEventKind.HardwareDecodeSucceeded, MediaTransportAuditEvidenceKind.BackendOutputValidated)
         && !events.Any(e => e.Kind is MediaTransportAuditEventKind.CpuReadbackAttempted
             or MediaTransportAuditEventKind.StagingBufferCreated);
+
+    private static bool HasEvidence(
+        IReadOnlyList<MediaTransportAuditEvent> events,
+        MediaTransportAuditEventKind kind,
+        MediaTransportAuditEvidenceKind minimumEvidence) =>
+        events.Any(e => e.Kind == kind && e.EvidenceKind >= minimumEvidence);
 }

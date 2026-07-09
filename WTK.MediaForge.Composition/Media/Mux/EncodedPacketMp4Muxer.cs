@@ -44,6 +44,7 @@ public sealed class EncodedPacketMp4Muxer : IMp4Muxer
         {
             Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
             Source = nameof(EncodedPacketMp4Muxer),
+            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype,
             Detail = $"Buffered encoded packet for '{_outputPath}'."
         });
 

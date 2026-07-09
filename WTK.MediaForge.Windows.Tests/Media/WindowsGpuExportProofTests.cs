@@ -43,9 +43,13 @@ public sealed class WindowsGpuExportProofTests
 
         Assert.NotNull(lease);
         Assert.True(MediaTransportAuditRules.IsProductPathValid(audit.Events));
+        Assert.False(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
         Assert.False(audit.Contains(MediaTransportAuditEventKind.CpuReadbackAttempted));
         Assert.False(audit.Contains(MediaTransportAuditEventKind.StagingBufferCreated));
         Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuSurfaceExportSucceeded));
         Assert.True(audit.Contains(MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated));
+        Assert.Contains(audit.Events, e =>
+            e.Kind == MediaTransportAuditEventKind.GpuSurfaceExportSucceeded &&
+            e.EvidenceKind == MediaTransportAuditEvidenceKind.BackendCallSucceeded);
     }
 }

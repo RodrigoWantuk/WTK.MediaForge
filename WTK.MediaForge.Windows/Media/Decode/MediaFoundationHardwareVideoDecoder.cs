@@ -109,7 +109,8 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder
         {
             Kind = MediaTransportAuditEventKind.HardwareDecodeSucceeded,
             Source = nameof(MediaFoundationHardwareVideoDecoder),
-            Detail = "MF hardware decoder produced GPU texture output."
+            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype,
+            Detail = "Prototype decode path produced a GPU texture placeholder; real MF/D3D11VA decode output validation is not implemented yet."
         });
 
         _frameNumber++;

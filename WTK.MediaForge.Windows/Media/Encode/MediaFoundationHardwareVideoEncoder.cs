@@ -74,7 +74,8 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         {
             Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
             Source = nameof(MediaFoundationHardwareVideoEncoder),
-            Detail = "MF hardware encoder accepted D3D11 GPU surface input."
+            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype,
+            Detail = "Prototype encoder path accepted D3D11 GPU surface input; real MF MFT output validation is not implemented yet."
         });
 
         var encoded = _session.TryEncodeSurface(surface, Interlocked.Increment(ref _frameNumber));
@@ -85,7 +86,8 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         {
             Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
             Source = nameof(MediaFoundationHardwareVideoEncoder),
-            Detail = $"H.264 packet produced ({encoded.Value.Data.Length} bytes)."
+            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype,
+            Detail = $"Prototype H.264 packet produced ({encoded.Value.Data.Length} bytes)."
         });
 
         return ValueTask.FromResult<EncodedVideoPacket?>(new EncodedVideoPacket

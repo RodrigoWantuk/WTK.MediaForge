@@ -10,7 +10,7 @@ namespace WTK.MediaForge.Windows.Tests.Media;
 public sealed class WindowsHardwareDecodeMvpTests
 {
     [Fact]
-    public async Task First_frame_produces_gpu_texture()
+    public async Task Prototype_decode_frame_produces_gpu_texture_but_not_product_decode_proof()
     {
         var tempVideo = Path.Combine(Path.GetTempPath(), $"mf-decode-{Guid.NewGuid():N}.mp4");
         await File.WriteAllBytesAsync(tempVideo, MinimalMp4TestAsset.CreateAnnexBBytes());
@@ -50,8 +50,11 @@ public sealed class WindowsHardwareDecodeMvpTests
             Assert.NotNull(frame);
             Assert.True(frame!.Width > 0);
             Assert.True(frame.Height > 0);
-            Assert.True(MediaTransportAuditRules.IsDecodePathValid(audit.Events));
+            Assert.False(MediaTransportAuditRules.IsDecodePathValid(audit.Events));
             Assert.False(audit.Contains(MediaTransportAuditEventKind.CpuReadbackAttempted));
+            Assert.Contains(audit.Events, e =>
+                e.Kind == MediaTransportAuditEventKind.HardwareDecodeSucceeded &&
+                e.EvidenceKind == MediaTransportAuditEvidenceKind.Prototype);
         }
         finally
         {

@@ -80,7 +80,8 @@ public sealed class CapabilityReportTests
         bad.Record(new MediaTransportAuditEvent
         {
             Kind = MediaTransportAuditEventKind.GpuSurfaceExportSucceeded,
-            Source = "test"
+            Source = "test",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
         });
         bad.Record(new MediaTransportAuditEvent
         {
@@ -98,15 +99,120 @@ public sealed class CapabilityReportTests
         good.Record(new MediaTransportAuditEvent
         {
             Kind = MediaTransportAuditEventKind.GpuSurfaceExportSucceeded,
-            Source = "test"
+            Source = "test",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
         });
         good.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated,
+            Source = "test",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
+        });
+
+        Assert.True(MediaTransportAuditRules.IsProductPathValid(good.Events));
+    }
+
+    [Fact]
+    public void MediaTransportAuditRules_rejects_contract_only_export_as_product_path()
+    {
+        var audit = new CollectingMediaTransportAuditSink();
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.GpuSurfaceExportSucceeded,
+            Source = "test"
+        });
+        audit.Record(new MediaTransportAuditEvent
         {
             Kind = MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated,
             Source = "test"
         });
 
-        Assert.True(MediaTransportAuditRules.IsProductPathValid(good.Events));
+        Assert.False(MediaTransportAuditRules.IsProductPathValid(audit.Events));
+    }
+
+    [Fact]
+    public void Canned_h264_bytes_do_not_satisfy_export_proof()
+    {
+        var audit = new CollectingMediaTransportAuditSink();
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.GpuSurfaceExportSucceeded,
+            Source = "test",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated,
+            Source = "test",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
+            Source = "canned-encoder",
+            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
+            Source = "canned-encoder",
+            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype
+        });
+
+        Assert.False(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
+    }
+
+    [Fact]
+    public void Backend_validated_encoder_output_satisfies_export_proof()
+    {
+        var audit = new CollectingMediaTransportAuditSink();
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.GpuSurfaceExportSucceeded,
+            Source = "test",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated,
+            Source = "test",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
+            Source = "real-encoder",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
+            Source = "real-encoder",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated
+        });
+
+        Assert.True(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
+    }
+
+    [Fact]
+    public void Shared_texture_creation_alone_does_not_satisfy_export_proof()
+    {
+        var audit = new CollectingMediaTransportAuditSink();
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.GpuSurfaceExportSucceeded,
+            Source = "exporter",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated,
+            Source = "exporter",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
+        });
+
+        Assert.True(MediaTransportAuditRules.IsProductPathValid(audit.Events));
+        Assert.False(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
     }
 
     [Fact]

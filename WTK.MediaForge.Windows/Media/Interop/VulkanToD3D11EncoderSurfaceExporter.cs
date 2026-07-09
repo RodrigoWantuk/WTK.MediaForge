@@ -49,7 +49,8 @@ public sealed class VulkanToD3D11EncoderSurfaceExporter : IGpuFrameExporter, IDi
         auditSink.Record(new MediaTransportAuditEvent
         {
             Kind = MediaTransportAuditEventKind.GpuSurfaceExportStarted,
-            Source = nameof(VulkanToD3D11EncoderSurfaceExporter)
+            Source = nameof(VulkanToD3D11EncoderSurfaceExporter),
+            EvidenceKind = MediaTransportAuditEvidenceKind.ContractOnly
         });
 
         var shared = D3D11SharedTextureFactory.CreateSharedTexture(
@@ -73,6 +74,7 @@ public sealed class VulkanToD3D11EncoderSurfaceExporter : IGpuFrameExporter, IDi
         {
             Kind = MediaTransportAuditEventKind.GpuSurfaceExportSucceeded,
             Source = nameof(VulkanToD3D11EncoderSurfaceExporter),
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
             Detail = vulkanSource is null
                 ? "D3D11 shared NT handle encoder input surface created without CPU staging."
                 : "Vulkan offscreen target copied to D3D11 shared encoder surface via GPU blit."
@@ -94,7 +96,8 @@ public sealed class VulkanToD3D11EncoderSurfaceExporter : IGpuFrameExporter, IDi
         auditSink.Record(new MediaTransportAuditEvent
         {
             Kind = MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated,
-            Source = nameof(VulkanToD3D11EncoderSurfaceExporter)
+            Source = nameof(VulkanToD3D11EncoderSurfaceExporter),
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
         });
 
         return ValueTask.FromResult(lease);

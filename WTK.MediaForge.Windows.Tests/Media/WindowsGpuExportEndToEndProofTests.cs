@@ -16,7 +16,7 @@ namespace WTK.MediaForge.Windows.Tests.Media;
 public sealed class WindowsGpuExportEndToEndProofTests
 {
     [Fact]
-    public async Task End_to_end_vulkan_export_mf_encode_produces_h264_nal_without_cpu_readback()
+    public async Task Prototype_vulkan_export_mf_encode_does_not_satisfy_product_export_proof()
     {
         using var vulkanDevice = VulkanHeadlessDevice.Create();
         using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
@@ -59,12 +59,19 @@ public sealed class WindowsGpuExportEndToEndProofTests
         Assert.True(ContainsH264StartCode(packet.Data.Span));
         Assert.True(ContainsValidNalType(packet.Data.Span));
 
-        Assert.True(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
+        Assert.False(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
         Assert.False(audit.Contains(MediaTransportAuditEventKind.CpuReadbackAttempted));
         Assert.False(audit.Contains(MediaTransportAuditEventKind.StagingBufferCreated));
         Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuSurfaceExportSucceeded));
         Assert.True(audit.Contains(MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface));
         Assert.True(audit.Contains(MediaTransportAuditEventKind.EncodedPacketProduced));
+
+        Assert.Contains(audit.Events, e =>
+            e.Kind == MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface &&
+            e.EvidenceKind == MediaTransportAuditEvidenceKind.Prototype);
+        Assert.Contains(audit.Events, e =>
+            e.Kind == MediaTransportAuditEventKind.EncodedPacketProduced &&
+            e.EvidenceKind == MediaTransportAuditEvidenceKind.Prototype);
     }
 
     private static bool ContainsH264StartCode(ReadOnlySpan<byte> data)

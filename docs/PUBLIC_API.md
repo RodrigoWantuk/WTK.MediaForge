@@ -164,8 +164,9 @@ Capability and license status are queryable without starting the engine:
 
 - `MediaForgeWindows.GetCapabilityReportAsync(CancellationToken)` — must not block the UI thread; probing runs via `IHardwareMediaCapabilityProbe.ProbeAsync`.
 - `MediaForgeCapabilityReport`, `CapabilityEntry`, `MediaForgeSupportStatus`, `MediaForgeLicenseStatus`
+- `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.
 
-Studio and host apps must use capability status to disable or label features that are Planned, Unsupported, or Blocked.
+Studio and host apps must use capability status to disable or label features that are PrototypeOnly, Planned, Unsupported, or Blocked.
 
 Productive preview shells, NDI, MP4/encoded file, streaming, virtual camera, and audio outputs remain blocked until the owning roadmap track opens and capability report reflects Supported status.
 

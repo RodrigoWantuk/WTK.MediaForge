@@ -147,6 +147,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Core.Media.Audit.CollectingMediaTransportAuditSink",
                 "WTK.MediaForge.Core.Media.Audit.IMediaTransportAuditSink",
                 "WTK.MediaForge.Core.Media.Audit.MediaTransportAuditEvent",
+                "WTK.MediaForge.Core.Media.Audit.MediaTransportAuditEvidenceKind",
                 "WTK.MediaForge.Core.Media.Audit.MediaTransportAuditEventKind",
                 "WTK.MediaForge.Core.Media.Audit.MediaTransportAuditRules",
                 "WTK.MediaForge.Core.Media.BlendMode",
