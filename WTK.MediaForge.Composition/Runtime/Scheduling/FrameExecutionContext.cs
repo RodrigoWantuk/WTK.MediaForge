@@ -15,6 +15,8 @@ internal sealed class FrameExecutionContext
 
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
 
+    public TimeSpan PresentationTime { get; init; }
+
     public required TimeSpan FrameBudget { get; init; }
 
     public IReadOnlyList<RenderOutputId> TargetOutputs { get; init; } = Array.Empty<RenderOutputId>();

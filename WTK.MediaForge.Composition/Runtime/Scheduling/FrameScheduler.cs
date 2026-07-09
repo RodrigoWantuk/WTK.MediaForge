@@ -16,6 +16,7 @@ internal sealed class FrameScheduler : IAsyncDisposable
     private readonly TimeSpan _frameBudget;
     private readonly Task _loop;
     private long _frameId;
+    private long _presentationTimeTicks;
     private long _lastBackpressureDiagnosticTicks;
     private int _backpressureDropCount;
     private int _disposed;
@@ -116,6 +117,7 @@ internal sealed class FrameScheduler : IAsyncDisposable
                 {
                     FrameId = Interlocked.Increment(ref _frameId),
                     Timestamp = DateTimeOffset.UtcNow,
+                    PresentationTime = AdvancePresentationTime(),
                     FrameBudget = _frameBudget,
                     TargetOutputs = _targetOutputs()
                 };
@@ -147,6 +149,12 @@ internal sealed class FrameScheduler : IAsyncDisposable
         while (_wake.Wait(0))
         {
         }
+    }
+
+    private TimeSpan AdvancePresentationTime()
+    {
+        var ticks = Interlocked.Add(ref _presentationTimeTicks, _frameBudget.Ticks);
+        return TimeSpan.FromTicks(ticks);
     }
 
     private void ReportBackpressureDrop()

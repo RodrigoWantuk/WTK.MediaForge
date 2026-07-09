@@ -38,7 +38,6 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private IRenderBackend? _backend;
     private MediaForgeRenderThread? _renderThread;
     private MediaForgeRenderPump? _renderPump;
-    private TimeSpan _lastRenderPresentationTime;
     private ProjectStateSnapshot? _projectState;
     private MediaForgeProject? _currentProject;
     private MediaForgeEngineState _state = MediaForgeEngineState.Idle;
@@ -642,14 +641,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         if (_runtime is null || _sceneRuntime is null || _renderThread is null)
             return;
 
-        var delta = executionContext.FrameBudget;
-        var presentationTime = _lastRenderPresentationTime + delta;
-        _lastRenderPresentationTime = presentationTime;
-
         var context = new RenderFrameContext(
             executionContext.FrameId,
-            presentationTime,
-            delta,
+            executionContext.PresentationTime,
+            executionContext.FrameBudget,
             RenderFramesPerSecond,
             CancellationToken.None);
 

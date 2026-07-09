@@ -32,6 +32,29 @@ public sealed class FrameSchedulerTests
         Assert.Contains(outputB, published.TargetOutputs);
         Assert.True(published.FrameId >= 1);
         Assert.True(published.FrameBudget > TimeSpan.Zero);
+        Assert.True(published.PresentationTime > TimeSpan.Zero);
+    }
+
+    [Fact]
+    public async Task Frame_scheduler_presentation_time_increments_at_target_frame_rate()
+    {
+        var published = new List<FrameExecutionContext>();
+
+        await using var scheduler = new FrameScheduler(
+            framesPerSecond: 30,
+            canPublish: static () => true,
+            publish: context => published.Add(context),
+            targetOutputs: static () => Array.Empty<RenderOutputId>(),
+            diagnostics: null);
+
+        scheduler.RequestFrame();
+
+        await WaitForConditionAsync(
+            () => published.Count >= 2,
+            TimeSpan.FromSeconds(2));
+
+        Assert.Equal(TimeSpan.FromSeconds(1d / 30d), published[0].PresentationTime);
+        Assert.Equal(published[0].PresentationTime + scheduler.FrameBudget, published[1].PresentationTime);
     }
 
     [Fact]
