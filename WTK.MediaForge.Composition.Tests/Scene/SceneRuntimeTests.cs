@@ -77,7 +77,67 @@ public sealed class SceneRuntimeTests
         runtime.SyncFrom(projectState);
         runtime.SyncFrom(projectState);
 
-        Assert.Equal(1, runtime.ResourceRefCounts.Count);
-        Assert.Equal(1, runtime.ResourceRefCounts[source.Id]);
+        var resourceRef = Assert.Single(runtime.ResourceRefCounts);
+        Assert.Equal(source.Id, resourceRef.Key);
+        Assert.Equal(1, resourceRef.Value);
+    }
+
+    [Fact]
+    public void Hidden_layer_remains_hidden_after_sync_from_updated_project_state()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
+            .OffscreenOutput("Program", scene, 1920, 1080, out _)
+            .BuildValidated();
+
+        var runtime = new SceneRuntime();
+        var initialState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(project);
+        runtime.SyncFrom(initialState);
+
+        var layer = project.Canvases[0].Objects[0];
+        runtime.SetLayerVisible(layer.Id, isVisible: false);
+
+        layer.Transform = layer.Transform with
+        {
+            Position = new CanvasPoint(100, 100)
+        };
+
+        var updatedState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(project);
+        runtime.SyncFrom(updatedState);
+
+        var snapshot = runtime.CreateSnapshot();
+
+        Assert.Contains(layer.Id, snapshot.HiddenLayerIds);
+        Assert.False(snapshot.Layers[layer.Id].IsVisible);
+        Assert.Empty(snapshot.ProjectState.Canvases[0].Objects);
+    }
+
+    [Fact]
+    public void Removed_layer_is_pruned_from_hidden_layer_set()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
+            .OffscreenOutput("Program", scene, 1920, 1080, out _)
+            .BuildValidated();
+
+        var runtime = new SceneRuntime();
+        var initialState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(project);
+        runtime.SyncFrom(initialState);
+
+        var removedLayerId = project.Canvases[0].Objects[0].Id;
+        runtime.SetLayerVisible(removedLayerId, isVisible: false);
+        project.Canvases[0].Objects.Clear();
+
+        var updatedState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(project);
+        runtime.SyncFrom(updatedState);
+
+        var snapshot = runtime.CreateSnapshot();
+
+        Assert.DoesNotContain(removedLayerId, snapshot.HiddenLayerIds);
+        Assert.False(snapshot.Layers.ContainsKey(removedLayerId));
     }
 }

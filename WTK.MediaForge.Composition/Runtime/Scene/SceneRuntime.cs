@@ -34,7 +34,6 @@ internal sealed class SceneRuntime
 
         _layers.Clear();
         _resourceRefCounts.Clear();
-        _hiddenLayers.Clear();
 
         var layerDirtyKinds = new Dictionary<DrawObjectId, SceneDirtyKind>();
         var structureChanged = false;
@@ -70,6 +69,8 @@ internal sealed class SceneRuntime
                 }
             }
         }
+
+        _hiddenLayers.RemoveWhere(layerId => !currentDrawObjects.ContainsKey(layerId));
 
         _projectState = projectState;
         _version++;
