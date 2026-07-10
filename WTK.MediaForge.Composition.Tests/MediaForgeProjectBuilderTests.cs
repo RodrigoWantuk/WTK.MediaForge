@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using WTK.MediaForge.Composition.DrawObjects;
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Frames;
@@ -57,6 +58,29 @@ public class MediaForgeProjectBuilderTests
         Assert.Equal(640, layer.Transform.Size.Width);
         Assert.Equal(360, layer.Transform.Size.Height);
         Assert.Equal(0.5f, layer.Opacity);
+    }
+
+    [Fact]
+    public void ProjectBuilder_add_color_correction_creates_layer_effect()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main)
+            .DesktopSource("Desktop", displayIndex: 0, out var desktop)
+            .AddSourceLayer(main, desktop, layer =>
+                layer.AddColorCorrection(
+                    brightness: 0.1f,
+                    contrast: 1.2f,
+                    saturation: 0.8f,
+                    hueDegrees: -15f))
+            .OffscreenOutput("Program", main, 1920, 1080, out _)
+            .BuildValidated();
+
+        var layer = Assert.IsType<SourceLayerDrawObject>(project.Canvases[0].Objects[0]);
+        var effect = Assert.IsType<ColorCorrectionEffect>(Assert.Single(layer.Effects));
+        Assert.Equal(0.1f, effect.Brightness);
+        Assert.Equal(1.2f, effect.Contrast);
+        Assert.Equal(0.8f, effect.Saturation);
+        Assert.Equal(-15f, effect.HueDegrees);
     }
 
     [Fact]

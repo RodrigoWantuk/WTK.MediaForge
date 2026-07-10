@@ -14,23 +14,28 @@ internal static partial class CompositionPushConstantsBuilder
     public static MediaForgeLayerPushConstants BuildSourceLayer(
         RenderSourceLayerDrawObjectSnapshot layer,
         GpuFrameReference frame,
-        ChromaKeyEffectSnapshot? chromaKey)
+        ChromaKeyEffectSnapshot? chromaKey,
+        ColorCorrectionEffectSnapshot? colorCorrection)
     {
         var crop = layer.EffectiveCrop;
         var keyColor = chromaKey?.KeyColor ?? ColorRgba.Transparent;
         var letterbox = layer.LetterboxColor;
+        var brightness = colorCorrection?.Brightness ?? 0f;
+        var contrast = colorCorrection?.Contrast ?? 1f;
+        var saturation = colorCorrection?.Saturation ?? 1f;
+        var hueDegrees = colorCorrection?.HueDegrees ?? 0f;
 
         return new MediaForgeLayerPushConstants
         {
             CropRect = new Vector4(crop.Left, crop.Top, crop.Right, crop.Bottom),
-            ChromaKeyColor = ToVector4(keyColor),
+            ChromaKeyColor = new Vector4(keyColor.R, keyColor.G, keyColor.B, brightness),
             ChromaKeyParameters = chromaKey is null
-                ? Vector4.Zero
+                ? new Vector4(-1f, 0f, 0f, hueDegrees)
                 : new Vector4(
                     chromaKey.Similarity,
                     chromaKey.Smoothness,
                     chromaKey.SpillReduction,
-                    1f),
+                    hueDegrees),
             LogicalSize = new Vector2(frame.LogicalSize.Width, frame.LogicalSize.Height),
             BoxSize = new Vector2(layer.Transform.Size.Width, layer.Transform.Size.Height),
             Pivot = new Vector2(layer.Transform.Pivot.X, layer.Transform.Pivot.Y),
@@ -43,6 +48,8 @@ internal static partial class CompositionPushConstantsBuilder
                     frame.LogicalSize,
                     frame.TextureSize),
             RotationDegrees = layer.Transform.RotationDegrees,
+            ColorContrast = contrast,
+            ColorSaturation = saturation,
             LetterboxColor = ToVector4(letterbox)
         };
     }

@@ -204,17 +204,18 @@ Finish product composition primitives before broad media I/O:
 
 1. Full transform, crop, and rotation.
 2. Text rendering.
-3. Blur.
-4. Color correction.
+3. Color correction. Current status: product-validated in the Vulkan
+   source-layer shader.
+4. Blur.
 5. Transitions.
 6. Effect-chain passes and pooled intermediate targets.
 7. PiP helpers.
 8. Mosaic helpers.
 9. Cached reusable effect intermediates.
 
-`ChromaKeyEffect` remains the first accepted real source-layer effect. Unsupported
-effects, routes, sources, outputs, or platform capabilities must produce
-explicit diagnostics, never silent fallback.
+`ChromaKeyEffect` and source-layer `ColorCorrectionEffect` are accepted real
+shader effects. Unsupported effects, routes, sources, outputs, or platform
+capabilities must produce explicit diagnostics, never silent fallback.
 
 ## Native Media Bridge
 

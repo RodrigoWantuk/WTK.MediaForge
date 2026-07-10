@@ -244,7 +244,8 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                 var pushConstants = CompositionPushConstantsBuilder.BuildSourceLayer(
                     sourceLayer,
                     frame,
-                    sourceLayerEffects.ChromaKey);
+                    sourceLayerEffects.ChromaKey,
+                    sourceLayerEffects.ColorCorrection);
                 var descriptorSet = AllocateAndWriteDescriptorSet(import.ImageView);
                 submissionResources.RetainDescriptorSet(descriptorSet);
 
@@ -387,6 +388,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 
         var supported = true;
         ChromaKeyEffectSnapshot? chromaKey = null;
+        ColorCorrectionEffectSnapshot? colorCorrection = null;
 
         foreach (var effect in drawObject.Effects
             .Select((Effect, Index) => (Effect, Index))
@@ -417,11 +419,43 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                 continue;
             }
 
+            if (allowSourceLayerEffects && effect is ColorCorrectionEffectSnapshot color)
+            {
+                if (colorCorrection is not null)
+                {
+                    ReportUnsupportedEffect(
+                        drawObject,
+                        effect,
+                        "Only one active ColorCorrectionEffect is supported per source layer.");
+                    supported = false;
+                    continue;
+                }
+
+                if (chromaKey is not null)
+                {
+                    ReportUnsupportedEffect(
+                        drawObject,
+                        effect,
+                        "ColorCorrectionEffect must execute before ChromaKeyEffect in the current source layer shader.");
+                    supported = false;
+                    continue;
+                }
+
+                if (!TryValidateColorCorrection(drawObject, color))
+                {
+                    supported = false;
+                    continue;
+                }
+
+                colorCorrection = color;
+                continue;
+            }
+
             ReportUnsupportedEffect(drawObject, effect);
             supported = false;
         }
 
-        sourceLayerEffects = new SourceLayerEffectSelection(chromaKey);
+        sourceLayerEffects = new SourceLayerEffectSelection(chromaKey, colorCorrection);
         return supported;
     }
 
@@ -451,6 +485,20 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         return valid;
     }
 
+    private bool TryValidateColorCorrection(
+        RenderDrawObjectSnapshot drawObject,
+        ColorCorrectionEffectSnapshot effect)
+    {
+        var valid = true;
+
+        valid &= ValidateFinite(drawObject, effect, effect.Brightness, "Brightness");
+        valid &= ValidatePositiveFinite(drawObject, effect, effect.Contrast, "Contrast");
+        valid &= ValidatePositiveFinite(drawObject, effect, effect.Saturation, "Saturation");
+        valid &= ValidateFinite(drawObject, effect, effect.HueDegrees, "HueDegrees");
+
+        return valid;
+    }
+
     private bool ValidateUnitRange(
         RenderDrawObjectSnapshot drawObject,
         EffectStateSnapshot effect,
@@ -464,6 +512,38 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             drawObject,
             effect,
             $"{fieldName} must be finite and in the [0,1] range.");
+        return false;
+    }
+
+    private bool ValidatePositiveFinite(
+        RenderDrawObjectSnapshot drawObject,
+        EffectStateSnapshot effect,
+        float value,
+        string fieldName)
+    {
+        if (float.IsFinite(value) && value > 0f)
+            return true;
+
+        ReportInvalidEffect(
+            drawObject,
+            effect,
+            $"{fieldName} must be a positive finite value.");
+        return false;
+    }
+
+    private bool ValidateFinite(
+        RenderDrawObjectSnapshot drawObject,
+        EffectStateSnapshot effect,
+        float value,
+        string fieldName)
+    {
+        if (float.IsFinite(value))
+            return true;
+
+        ReportInvalidEffect(
+            drawObject,
+            effect,
+            $"{fieldName} must be finite.");
         return false;
     }
 
@@ -1230,8 +1310,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         }
     }
 
-    private readonly struct SourceLayerEffectSelection(ChromaKeyEffectSnapshot? chromaKey)
+    private readonly struct SourceLayerEffectSelection(
+        ChromaKeyEffectSnapshot? chromaKey,
+        ColorCorrectionEffectSnapshot? colorCorrection)
     {
         public ChromaKeyEffectSnapshot? ChromaKey { get; } = chromaKey;
+
+        public ColorCorrectionEffectSnapshot? ColorCorrection { get; } = colorCorrection;
     }
 }

@@ -131,6 +131,10 @@ The legacy WinForms preview path has been removed as a product path because it u
   when a source frame is unavailable. It still does not allocate Vulkan
   intermediate targets or execute GPU passes; `GpuTextureLease` output resources
   are reserved for that future bridge.
+- `ColorCorrectionEffect` is implemented in the Vulkan source-layer fragment
+  shader for brightness, contrast, saturation, and hue. The shader applies
+  source sample -> color correction -> chroma key -> opacity. Blur remains a
+  skeleton until intermediate-target passes land.
 
 ## GPU Media Transport Law (vNext)
 

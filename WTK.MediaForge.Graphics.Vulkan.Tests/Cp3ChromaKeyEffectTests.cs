@@ -409,10 +409,8 @@ public class Cp3ChromaKeyEffectTests
                     .Where(diagnostic => diagnostic.Code == "render.effect_not_supported")
                     .ToArray();
 
-                Assert.Collection(
-                    unsupported,
-                    first => Assert.Contains(nameof(ColorCorrectionEffectSnapshot), first.Message, StringComparison.Ordinal),
-                    second => Assert.Contains(nameof(BlurEffectSnapshot), second.Message, StringComparison.Ordinal));
+                var diagnostic = Assert.Single(unsupported);
+                Assert.Contains(nameof(BlurEffectSnapshot), diagnostic.Message, StringComparison.Ordinal);
             }
             finally
             {

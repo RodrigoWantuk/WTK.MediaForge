@@ -76,6 +76,8 @@ Current interpretation:
 - GPU surface export proof is `Done:BackendCallSucceeded`.
 - Windows hardware decode, Windows hardware encode, MP4 recording, and RTMP
   output are `Done:Prototype`.
-- RenderGraph executor and color/blur effect framework are `Done:Skeleton`.
+- RenderGraph executor has a resource bridge but is not a GPU pass executor yet.
+- `ColorCorrectionEffect` is product-validated in the Vulkan source-layer
+  shader; `BlurEffect` remains `Done:Skeleton`.
 - Text rendering is `Done:Prototype`.
 - Synthetic performance validation is `Done:Skeleton`.

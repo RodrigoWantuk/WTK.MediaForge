@@ -14,6 +14,8 @@ layout(push_constant) uniform LayerParams
     int layoutMode;
     int contentRotation;
     float rotationDegrees;
+    float colorContrast;
+    float colorSaturation;
     vec4 letterboxColor;
     vec4 geometryRect;
 } params;
@@ -70,7 +72,7 @@ vec2 rotateUv(vec2 uv, int rotation)
 
 vec4 applyChromaKey(vec4 color)
 {
-    if (params.chromaKeyParameters.w < 0.5)
+    if (params.chromaKeyParameters.x < 0.0)
         return color;
 
     vec3 key = params.chromaKeyColor.rgb;
@@ -87,6 +89,41 @@ vec4 applyChromaKey(vec4 color)
     vec3 despilled = max(color.rgb - spillAxis * spillAmount * spillReduction * (1.0 - matte), vec3(0.0));
 
     return vec4(despilled, alpha);
+}
+
+vec3 rotateHue(vec3 rgb, float hueDegrees)
+{
+    if (abs(hueDegrees) < 0.001)
+        return rgb;
+
+    float angle = hueDegrees * 0.017453292519943295;
+    float s = sin(angle);
+    float c = cos(angle);
+
+    vec3 yiq = vec3(
+        dot(rgb, vec3(0.299, 0.587, 0.114)),
+        dot(rgb, vec3(0.596, -0.274, -0.322)),
+        dot(rgb, vec3(0.211, -0.523, 0.312)));
+    float i = yiq.y * c - yiq.z * s;
+    float q = yiq.y * s + yiq.z * c;
+    return vec3(
+        yiq.x + 0.956 * i + 0.621 * q,
+        yiq.x - 0.272 * i - 0.647 * q,
+        yiq.x - 1.106 * i + 1.703 * q);
+}
+
+vec4 applyColorCorrection(vec4 color)
+{
+    vec3 rgb = color.rgb;
+    rgb += vec3(params.chromaKeyColor.a);
+    rgb = (rgb - vec3(0.5)) * params.colorContrast + vec3(0.5);
+
+    float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+    rgb = mix(vec3(luma), rgb, params.colorSaturation);
+    rgb = rotateHue(rgb, params.chromaKeyParameters.w);
+    rgb = clamp(rgb, vec3(0.0), vec3(1.0));
+
+    return vec4(rgb, color.a);
 }
 
 vec2 mapFragmentToLayerUv(vec2 fragmentUv)
@@ -131,6 +168,7 @@ void main()
     vec2 uvRaw = rotateUv(uvLogical, params.contentRotation);
 
     vec4 color = texture(uSourceTexture, uvRaw);
+    color = applyColorCorrection(color);
     color = applyChromaKey(color);
     outColor = vec4(color.rgb, color.a * params.opacity);
 }

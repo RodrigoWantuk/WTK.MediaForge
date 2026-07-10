@@ -39,6 +39,12 @@ internal struct MediaForgeLayerPushConstants
     [FieldOffset(84)]
     public float RotationDegrees;
 
+    [FieldOffset(88)]
+    public float ColorContrast;
+
+    [FieldOffset(92)]
+    public float ColorSaturation;
+
     [FieldOffset(96)]
     public Vector4 LetterboxColor;
 

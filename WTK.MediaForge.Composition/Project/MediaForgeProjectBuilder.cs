@@ -429,6 +429,27 @@ public sealed class SourceLayerBuilder
         return this;
     }
 
+    public SourceLayerBuilder AddColorCorrection(
+        float brightness = 0f,
+        float contrast = 1f,
+        float saturation = 1f,
+        float hueDegrees = 0f)
+    {
+        EnsureFinite(brightness, nameof(brightness));
+        EnsurePositive(contrast, nameof(contrast));
+        EnsurePositive(saturation, nameof(saturation));
+        EnsureFinite(hueDegrees, nameof(hueDegrees));
+
+        _layer.Effects.Add(new ColorCorrectionEffect
+        {
+            Brightness = brightness,
+            Contrast = contrast,
+            Saturation = saturation,
+            HueDegrees = hueDegrees
+        });
+        return this;
+    }
+
     private static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
     {
         EnsurePositive(width, nameof(width));
@@ -453,6 +474,12 @@ public sealed class SourceLayerBuilder
     {
         if (!float.IsFinite(value) || value < 0 || value > 1)
             throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
+    }
+
+    private static void EnsureFinite(float value, string parameterName)
+    {
+        if (!float.IsFinite(value))
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
     }
 }
 

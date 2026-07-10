@@ -46,6 +46,9 @@ Complete foundations:
 - RenderGraph execution now propagates available source-frame resources and
   explicit skip reasons through the logical graph; real GPU pass execution and
   output texture production remain future work.
+- Vulkan source-layer color correction now applies brightness, contrast,
+  saturation, and hue in the shader before chroma key. Blur remains skeleton
+  until intermediate-target passes are implemented.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -150,7 +153,7 @@ Execute in this exact order after vNext (commits 00–24) is complete. Plan:
 | 09 | Renderer Video Integration | Gpu | **Done** |
 | 10 | Scene Runtime | Fast + Gpu | **Done** |
 | 11 | Render Graph (executor) | Gpu | **Done:Contract/Skeleton - not a GPU pass executor** |
-| 12 | GPU Effects Framework | Gpu | **Done:Skeleton - color/blur passes still need real pixels** |
+| 12 | GPU Effects Framework | Gpu | **Color correction ProductValidated in Vulkan source shader; blur still Skeleton** |
 | 13 | Transform Effects | Gpu | **Done:ProductValidated for Vulkan geometry/shader path; graph nodes remain skeleton** |
 | 14 | Text Rendering | Gpu | **Done:Prototype - synthetic atlas, real glyph rasterization pending** |
 | 15 | Hardware Encode Foundation | Gpu; requires 04 | **PrototypeOnly - canned packets are not product proof** |
@@ -215,7 +218,8 @@ Current truth table:
 | MP4 writer | Done:Prototype |
 | RTMP transport | Done:Prototype |
 | RenderGraph | Done:Contract/resource bridge; not a GPU pass executor |
-| Color/Blur effects | Done:Skeleton |
+| Color correction effect | Done:ProductValidated for Vulkan source-layer shader |
+| Blur effect | Done:Skeleton |
 | Text rendering | Done:Prototype |
 | Performance validation | Done:Skeleton |
 | Fault recovery | Done:Contract |
