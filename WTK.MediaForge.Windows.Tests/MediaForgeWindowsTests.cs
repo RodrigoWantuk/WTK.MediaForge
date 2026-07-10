@@ -50,6 +50,7 @@ public class MediaForgeWindowsTests
         await using var engine = MediaForgeWindows.CreateEngine();
 
         Assert.True(engine.SourceProviderFactoryForTests.CanCreate(MediaSourceTypes.Desktop));
+        Assert.True(engine.SourceProviderFactoryForTests.CanCreate(MediaSourceTypes.ImageFile));
         Assert.True(engine.OutputSinkFactoryForTests.CanCreate(RenderOutputTypes.Offscreen));
     }
 

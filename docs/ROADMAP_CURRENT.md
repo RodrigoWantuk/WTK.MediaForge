@@ -20,6 +20,8 @@ Complete foundations:
 - First public visual sink through `CpuReadbackSink` for debug/sample/validation.
 - `PreviewPanelSink` lifecycle hardening; still experimental pending local reliability.
 - Intermediate target pool and Vulkan readback staging pool.
+- Transform/crop/rotation/pivot support in the Vulkan composition path.
+- Windows PNG/JPEG static image MVP using load-time decode and D3D11 shared texture GPU leases.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:

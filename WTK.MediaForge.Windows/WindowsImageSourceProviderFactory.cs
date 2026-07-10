@@ -3,7 +3,6 @@ using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Composition.Sources.Settings;
-using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Diagnostics;
@@ -48,32 +47,6 @@ internal sealed class WindowsImageSourceProviderFactory : IMediaSourceProviderFa
             assetManager,
             _diagnostics);
 
-        return new ImageFileVideoFrameProvider(sourceDefinition.Id, sourceDefinition.Name, runtime);
-    }
-
-    private sealed class ImageFileVideoFrameProvider(
-        SourceId id,
-        string name,
-        ImageFileSourceRuntime runtime) : IVideoFrameProvider
-    {
-        public SourceId Id { get; } = id;
-
-        public string Name { get; } = name;
-
-        public MediaSourceState State => runtime.State;
-
-        public Exception? LastError { get; private set; }
-
-        public Task StartAsync(CancellationToken cancellationToken) =>
-            runtime.StartAsync(cancellationToken);
-
-        public Task StopAsync(CancellationToken cancellationToken) =>
-            runtime.StopAsync(cancellationToken);
-
-        public bool TryAcquireLatestFrame(out GpuFrameLease lease)
-        {
-            lease = null!;
-            return false;
-        }
+        return new ImageFileVideoFrameProvider(sourceDefinition.Id, sourceDefinition.Name, runtime, _diagnostics);
     }
 }

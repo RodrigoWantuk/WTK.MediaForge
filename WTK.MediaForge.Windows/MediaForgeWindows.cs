@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Engine;
+using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Graphics.Vulkan;
@@ -17,7 +18,9 @@ public static class MediaForgeWindows
         ValidateOptions(options);
 
         return new MediaForgeEngine(
-            new WindowsDesktopSourceProviderFactory(options.Diagnostics),
+            new CompositeMediaSourceProviderFactory(
+                new WindowsDesktopSourceProviderFactory(options.Diagnostics),
+                new WindowsImageSourceProviderFactory(options.Diagnostics)),
             new WindowsRenderOutputSinkFactory(),
             new MediaForgeVulkanRenderBackendFactory(),
             options.Diagnostics)

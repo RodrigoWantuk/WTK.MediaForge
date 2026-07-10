@@ -90,5 +90,7 @@ internal sealed class MediaSourceRuntime : IDisposable
             return;
 
         _buffer.Dispose();
+        if (Provider is IDisposable disposableProvider)
+            disposableProvider.Dispose();
     }
 }

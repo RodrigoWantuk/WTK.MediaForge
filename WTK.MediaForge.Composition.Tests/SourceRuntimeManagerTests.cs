@@ -148,6 +148,17 @@ public class SourceRuntimeManagerTests
         Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "source.frame_acquire_failed");
     }
 
+    [Fact]
+    public void MediaSourceRuntime_dispose_disposes_disposable_provider()
+    {
+        var provider = new DisposableVideoFrameProvider(SourceId.New(), "Disposable");
+        using var runtime = new MediaSourceRuntime(provider);
+
+        runtime.Dispose();
+
+        Assert.True(provider.Disposed);
+    }
+
     private sealed class RecordingVideoFrameProvider(string name) : IVideoFrameProvider
     {
         public SourceId Id { get; } = SourceId.New();
@@ -207,6 +218,31 @@ public class SourceRuntimeManagerTests
 
         public bool TryAcquireLatestFrame(out GpuFrameLease lease) =>
             throw new InvalidOperationException("Configured source acquire failure.");
+    }
+
+    private sealed class DisposableVideoFrameProvider(SourceId id, string name) : IVideoFrameProvider, IDisposable
+    {
+        public SourceId Id { get; } = id;
+
+        public string Name { get; } = name;
+
+        public MediaSourceState State => MediaSourceState.Stopped;
+
+        public Exception? LastError => null;
+
+        public bool Disposed { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public bool TryAcquireLatestFrame(out GpuFrameLease lease)
+        {
+            lease = null!;
+            return false;
+        }
+
+        public void Dispose() => Disposed = true;
     }
 
     private sealed class EdgeTriggeredVideoFrameProvider(SourceId id, string name) : IVideoFrameProvider

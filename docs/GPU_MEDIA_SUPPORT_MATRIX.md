@@ -24,7 +24,7 @@ Prototype bridges are excluded from product capability reports.
 | Desktop capture | GpuSurface | Experimental | D3D11 shared texture |
 | Window capture | GpuSurface | Experimental | |
 | Webcam | GpuSurface | Experimental | Raw CPU input possible at boundary only |
-| Static image PNG/JPEG | StaticCpuAsset -> GpuSurface | Planned | Load-time CPU decode |
+| Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows MVP | Load-time CPU decode; CPU copy released after GPU upload |
 | Static image WebP | — | Planned | Blocked until license review |
 | Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly | Decode bridge does not yet decode actual content into a GPU texture |
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |

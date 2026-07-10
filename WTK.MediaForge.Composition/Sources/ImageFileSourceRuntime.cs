@@ -20,6 +20,7 @@ internal sealed class ImageFileSourceRuntime : IDisposable
     private RefCountedAssetHandle<StaticCpuAsset>? _textureHandle;
     private FrameSize? _uploadedSize;
     private RenderPixelFormat? _uploadedFormat;
+    private IGpuFrameHandle? _uploadedHandle;
     private bool _gpuUploaded;
     private bool _disposed;
 
@@ -56,17 +57,21 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         _textureHandle = _assetManager.LoadTexture(Settings.Path);
         _uploadedSize = null;
         _uploadedFormat = null;
+        _uploadedHandle = null;
         _gpuUploaded = false;
     }
 
-    public void MarkGpuUploaded()
+    public void MarkGpuUploaded(IGpuFrameHandle handle)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(handle);
+
         if (_textureHandle is null)
             throw new InvalidOperationException("Static image asset must be loaded before it can be marked as uploaded.");
 
         _uploadedSize = _textureHandle.Value.Size;
         _uploadedFormat = _textureHandle.Value.PixelFormat;
+        _uploadedHandle = handle;
         _gpuUploaded = true;
         _textureHandle?.Dispose();
         _textureHandle = null;
@@ -83,6 +88,8 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         frame = new GpuFrameReference
         {
             SourceId = _sourceId,
+            Backend = _uploadedHandle?.Backend ?? GpuFrameBackend.Unknown,
+            Handle = _uploadedHandle,
             FrameNumber = context.FrameNumber,
             Timestamp = new MediaTime((long)(context.PresentationTime.TotalSeconds * 1_000_000_000)),
             LogicalSize = _uploadedSize ?? default,
@@ -133,6 +140,7 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         _textureHandle = null;
         _uploadedSize = null;
         _uploadedFormat = null;
+        _uploadedHandle = null;
         State = MediaSourceState.Stopped;
     }
 }

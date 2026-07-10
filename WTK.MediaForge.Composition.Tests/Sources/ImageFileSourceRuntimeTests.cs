@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Composition.Sources.Settings;
 using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
 using Xunit;
@@ -26,7 +27,8 @@ public sealed class ImageFileSourceRuntimeTests
         runtime.LoadAsset();
         Assert.NotNull(runtime.LoadedAsset);
 
-        runtime.MarkGpuUploaded();
+        var handle = new TestGpuFrameHandle(GpuFrameBackend.D3D11SharedTexture);
+        runtime.MarkGpuUploaded(handle);
 
         Assert.True(runtime.IsGpuUploaded);
         Assert.Null(runtime.LoadedAsset);
@@ -43,6 +45,8 @@ public sealed class ImageFileSourceRuntimeTests
                 CancellationToken.None)));
 
         Assert.NotNull(frame);
+        Assert.Equal(GpuFrameBackend.D3D11SharedTexture, frame.Value.Backend);
+        Assert.Same(handle, frame.Value.Handle);
         Assert.Equal(new FrameSize(320, 180), frame.Value.LogicalSize);
         Assert.Equal(new FrameSize(320, 180), frame.Value.TextureSize);
     }
@@ -60,5 +64,10 @@ public sealed class ImageFileSourceRuntimeTests
                 Pixels = new byte[checked((int)(size.Width * size.Height * 4))],
                 TransportKind = MediaTransportKind.StaticCpuAsset
             };
+    }
+
+    private sealed class TestGpuFrameHandle(GpuFrameBackend backend) : IGpuFrameHandle
+    {
+        public GpuFrameBackend Backend { get; } = backend;
     }
 }
