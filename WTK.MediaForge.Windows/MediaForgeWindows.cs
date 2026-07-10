@@ -20,7 +20,8 @@ public static class MediaForgeWindows
         return new MediaForgeEngine(
             new CompositeMediaSourceProviderFactory(
                 new WindowsDesktopSourceProviderFactory(options.Diagnostics),
-                new WindowsImageSourceProviderFactory(options.Diagnostics)),
+                new WindowsImageSourceProviderFactory(options.Diagnostics),
+                new WindowsVideoFileSourceProviderFactory(options.Diagnostics)),
             new WindowsRenderOutputSinkFactory(),
             new MediaForgeVulkanRenderBackendFactory(),
             options.Diagnostics)

@@ -51,6 +51,7 @@ public class MediaForgeWindowsTests
 
         Assert.True(engine.SourceProviderFactoryForTests.CanCreate(MediaSourceTypes.Desktop));
         Assert.True(engine.SourceProviderFactoryForTests.CanCreate(MediaSourceTypes.ImageFile));
+        Assert.False(engine.SourceProviderFactoryForTests.CanCreate(MediaSourceTypes.VideoFile));
         Assert.True(engine.OutputSinkFactoryForTests.CanCreate(RenderOutputTypes.Offscreen));
     }
 

@@ -93,6 +93,13 @@ The legacy WinForms preview path has been removed as a product path because it u
   bridge from `DecodedGpuFrame` to `GpuFrameLease`; it preserves source id,
   PTS, frame number, size, and releases the original texture lease when the
   render source lease is released.
+- `WindowsVideoFileSourceProviderFactory` exists only as an internal
+  prototype scaffold. It is registered in the Windows provider chain with
+  prototype creation disabled, so `MediaForgeWindows.CreateEngine()` does not
+  create video file providers by default. Tests may opt in with fake/prototype
+  decoders to validate `VideoSourceRuntime -> DecodedGpuFrame ->
+  GpuFrameLease`, but capability reports must keep video file sources
+  `PrototypeOnly` until real hardware decode is product validated.
 
 ## GPU Media Transport Law (vNext)
 

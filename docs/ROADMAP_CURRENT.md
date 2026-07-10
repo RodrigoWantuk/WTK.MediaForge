@@ -25,6 +25,9 @@ Complete foundations:
 - Decoded GPU frame to render-source frame bridge, keeping `GpuTextureLease`
   as the internal resource lease and `GpuFrameLease` as the render source
   contract.
+- Windows video-file source provider scaffold wired to `VideoSourceRuntime`
+  behind an internal prototype opt-in; default Windows engine registration and
+  capability reports still keep video file sources unavailable for product use.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -185,6 +188,7 @@ Current truth table:
 | Static image Windows PNG/JPEG | Done:ProductValidated |
 | Export surface proof | Done:BackendCallSucceeded, not ProductValidated |
 | Decode-to-source frame bridge | Done:Contract |
+| Windows video-file source provider | Done:Prototype, blocked by default |
 | Windows decode | Done:Prototype |
 | Windows encode | Done:Prototype |
 | MP4 writer | Done:Prototype |
