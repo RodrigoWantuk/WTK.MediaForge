@@ -40,6 +40,9 @@ Complete foundations:
 - Media Foundation file decode now has an explicit product session boundary:
   real D3D11VA decode reports unavailable, while placeholder texture output is
   isolated in the prototype bridge.
+- Decode-to-render product proof now has an audit gate and remains blocked until
+  hardware decode, source-frame adaptation, and renderer submission all provide
+  `BackendOutputValidated` evidence.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -202,6 +205,7 @@ Current truth table:
 | Decode-to-source frame bridge | Done:Contract |
 | Windows video-file source provider | Done:Prototype, blocked by default |
 | Windows decode | Done:Prototype; product backend explicitly unavailable |
+| Decode-to-render proof | Blocked until real decode backend is validated |
 | Windows encode | Done:Prototype; product backend explicitly unavailable |
 | Encoder format conversion | Done:Contract; BGRA/RGBA to NV12 unavailable until GPU pass |
 | Packet sink boundary | Done:Contract |

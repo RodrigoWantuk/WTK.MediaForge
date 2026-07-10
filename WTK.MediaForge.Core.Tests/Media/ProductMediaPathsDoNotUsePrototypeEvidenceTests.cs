@@ -76,6 +76,43 @@ public sealed class ProductMediaPathsDoNotUsePrototypeEvidenceTests
         Assert.True(MediaTransportAuditRules.IsProductPathValid(exportAudit.Events));
         Assert.False(MediaTransportAuditRules.IsExportProofPathValid(exportAudit.Events));
         Assert.False(MediaTransportAuditRules.IsDecodePathValid(decodeAudit.Events));
+        Assert.False(MediaTransportAuditRules.IsDecodeToRenderProofPathValid(decodeAudit.Events));
+    }
+
+    [Fact]
+    public void Decode_to_render_proof_requires_backend_validated_decode_adapter_and_render_evidence()
+    {
+        var prototypeDecode = CreateDecodeToRenderAudit(MediaTransportAuditEvidenceKind.Prototype);
+        Assert.False(MediaTransportAuditRules.IsDecodeToRenderProofPathValid(prototypeDecode.Events));
+
+        var missingRendererEvidence = new CollectingMediaTransportAuditSink();
+        missingRendererEvidence.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.HardwareDecodeSucceeded,
+            Source = "real-decoder",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated
+        });
+        missingRendererEvidence.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.DecodedFrameAdaptedToSourceFrame,
+            Source = "adapter",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated
+        });
+
+        Assert.False(MediaTransportAuditRules.IsDecodeToRenderProofPathValid(missingRendererEvidence.Events));
+
+        var readbackAudit = CreateDecodeToRenderAudit(MediaTransportAuditEvidenceKind.BackendOutputValidated);
+        readbackAudit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.CpuReadbackAttempted,
+            Source = "test",
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
+        });
+
+        Assert.False(MediaTransportAuditRules.IsDecodeToRenderProofPathValid(readbackAudit.Events));
+
+        var valid = CreateDecodeToRenderAudit(MediaTransportAuditEvidenceKind.BackendOutputValidated);
+        Assert.True(MediaTransportAuditRules.IsDecodeToRenderProofPathValid(valid.Events));
     }
 
     [Fact]
@@ -102,4 +139,29 @@ public sealed class ProductMediaPathsDoNotUsePrototypeEvidenceTests
 
     private static bool IsUserAvailable(MediaForgeSupportStatus status) =>
         status is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Experimental;
+
+    private static CollectingMediaTransportAuditSink CreateDecodeToRenderAudit(MediaTransportAuditEvidenceKind evidenceKind)
+    {
+        var audit = new CollectingMediaTransportAuditSink();
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.HardwareDecodeSucceeded,
+            Source = "decoder",
+            EvidenceKind = evidenceKind
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.DecodedFrameAdaptedToSourceFrame,
+            Source = "adapter",
+            EvidenceKind = evidenceKind
+        });
+        audit.Record(new MediaTransportAuditEvent
+        {
+            Kind = MediaTransportAuditEventKind.SourceFrameSubmittedToRenderer,
+            Source = "renderer",
+            EvidenceKind = evidenceKind
+        });
+
+        return audit;
+    }
 }

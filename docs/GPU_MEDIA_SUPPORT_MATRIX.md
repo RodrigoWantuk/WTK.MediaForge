@@ -26,7 +26,7 @@ Prototype bridges are excluded from product capability reports.
 | Webcam | GpuSurface | Experimental | Raw CPU input possible at boundary only |
 | Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows MVP | Load-time CPU decode; CPU copy released after GPU upload |
 | Static image WebP | — | Planned | Blocked until license review |
-| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly | Decode bridge does not yet decode actual content into a GPU texture |
+| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly | Real decode backend and decode-to-render proof are not validated |
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
 | Animated GIF/APNG/WebP | — | Planned | Blocked until GPU-safe strategy |
 | Lottie | — | Planned | Blocked until GPU-safe rasterization |
@@ -68,6 +68,21 @@ experimental ISO BMFF structure only for internal validation. Capability API
 exposes `GpuExportProof` status: Passed / Failed / Pending, but recording
 remains unavailable until real hardware encoder output and production muxing are
 validated.
+
+## Decode-To-Render Proof Gate
+
+Video file sources remain **PrototypeOnly** until the audit trail proves the
+complete GPU path:
+
+```text
+encoded file/source packet
+  -> hardware decoder BackendOutputValidated
+  -> decoded GPU frame adapted to source frame BackendOutputValidated
+  -> renderer source submission BackendOutputValidated
+```
+
+Prototype decode events, placeholder textures, CPU readback, or staging buffers
+must not satisfy this gate.
 
 ## FFmpeg / libav Capability Status
 

@@ -12,6 +12,8 @@ public enum MediaTransportAuditEventKind
     HardwareEncoderInputLeaseCreated,
     HardwareEncoderAcceptedSurface,
     HardwareDecodeSucceeded,
+    DecodedFrameAdaptedToSourceFrame,
+    SourceFrameSubmittedToRenderer,
     EncodedPacketProduced
 }
 
@@ -89,6 +91,11 @@ public static class MediaTransportAuditRules
         HasEvidence(events, MediaTransportAuditEventKind.HardwareDecodeSucceeded, MediaTransportAuditEvidenceKind.BackendOutputValidated)
         && !events.Any(e => e.Kind is MediaTransportAuditEventKind.CpuReadbackAttempted
             or MediaTransportAuditEventKind.StagingBufferCreated);
+
+    public static bool IsDecodeToRenderProofPathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>
+        IsDecodePathValid(events)
+        && HasEvidence(events, MediaTransportAuditEventKind.DecodedFrameAdaptedToSourceFrame, MediaTransportAuditEvidenceKind.BackendOutputValidated)
+        && HasEvidence(events, MediaTransportAuditEventKind.SourceFrameSubmittedToRenderer, MediaTransportAuditEvidenceKind.BackendOutputValidated);
 
     private static bool HasEvidence(
         IReadOnlyList<MediaTransportAuditEvent> events,

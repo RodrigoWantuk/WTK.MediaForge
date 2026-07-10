@@ -121,6 +121,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   MF/D3D11VA file decode as unavailable before producing any decoded GPU frame
   evidence. Only internal tests may opt into the prototype bridge, and its audit
   evidence must remain `Prototype`.
+- Decode-to-render product proof is explicitly gated by
+  `MediaTransportAuditRules.IsDecodeToRenderProofPathValid()`. It requires
+  `BackendOutputValidated` evidence for hardware decode, decoded-frame to
+  source-frame adaptation, and renderer submission, with no CPU readback or
+  staging evidence. Prototype decoder frames cannot satisfy this proof.
 
 ## GPU Media Transport Law (vNext)
 
