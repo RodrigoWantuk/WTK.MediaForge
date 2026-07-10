@@ -100,6 +100,12 @@ The legacy WinForms preview path has been removed as a product path because it u
   decoders to validate `VideoSourceRuntime -> DecodedGpuFrame ->
   GpuFrameLease`, but capability reports must keep video file sources
   `PrototypeOnly` until real hardware decode is product validated.
+- `MediaFoundationHardwareVideoEncoder` has a separate product session
+  boundary (`MediaFoundationHardwareH264EncoderSession`) from the canned
+  prototype bridge. The public/non-opt-in path reports real Media Foundation
+  H.264 output as unavailable before GPU export or packet production. Only
+  internal tests may opt into `PrototypeMediaFoundationH264EncoderSession`, and
+  its audit evidence must remain `Prototype`.
 
 ## GPU Media Transport Law (vNext)
 

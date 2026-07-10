@@ -28,6 +28,9 @@ Complete foundations:
 - Windows video-file source provider scaffold wired to `VideoSourceRuntime`
   behind an internal prototype opt-in; default Windows engine registration and
   capability reports still keep video file sources unavailable for product use.
+- Media Foundation H.264 encoder product boundary is explicit: the public path
+  reports real backend output as unavailable before GPU export or packet
+  production, while the canned packet bridge remains internal prototype opt-in.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -190,7 +193,7 @@ Current truth table:
 | Decode-to-source frame bridge | Done:Contract |
 | Windows video-file source provider | Done:Prototype, blocked by default |
 | Windows decode | Done:Prototype |
-| Windows encode | Done:Prototype |
+| Windows encode | Done:Prototype; product backend explicitly unavailable |
 | MP4 writer | Done:Prototype |
 | RTMP transport | Done:Prototype |
 | RenderGraph | Done:Contract/Skeleton |

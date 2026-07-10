@@ -18,7 +18,8 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
     private readonly HardwareEncoderInputRequirement _inputRequirement;
     private readonly ID3D11Device _device;
     private readonly bool _allowPrototypeEncoding;
-    private PrototypeMediaFoundationH264EncoderSession? _session;
+    private PrototypeMediaFoundationH264EncoderSession? _prototypeSession;
+    private MediaFoundationHardwareH264EncoderSession? _hardwareSession;
     private long _frameNumber;
     private bool _disposed;
 
@@ -78,15 +79,12 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (!_allowPrototypeEncoding)
-        {
-            throw new NotSupportedException(
-                "MediaFoundationHardwareVideoEncoder is prototype-only until real Media Foundation hardware MFT output validation is implemented.");
-        }
+            EnsureProductBackendAvailable();
 
         if (context.InputLease.BackendSurface is not D3D11SharedTextureFrameHandle surface)
             throw new InvalidOperationException("Encoder requires a D3D11 shared texture backend surface.");
 
-        _session ??= CreateSession();
+        _prototypeSession ??= CreatePrototypeSession();
 
         auditSink.Record(new MediaTransportAuditEvent
         {
@@ -96,7 +94,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             Detail = "Prototype encoder path accepted D3D11 GPU surface input; real MF MFT output validation is not implemented yet."
         });
 
-        var encoded = _session.TryEncodeSurface(surface, Interlocked.Increment(ref _frameNumber));
+        var encoded = _prototypeSession.TryEncodeSurface(surface, Interlocked.Increment(ref _frameNumber));
         if (encoded is null)
             return ValueTask.FromResult<EncodedVideoPacket?>(null);
 
@@ -130,10 +128,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (!_allowPrototypeEncoding)
-        {
-            throw new NotSupportedException(
-                "MediaFoundationHardwareVideoEncoder is prototype-only until real Media Foundation hardware MFT output validation is implemented.");
-        }
+            EnsureProductBackendAvailable();
 
         context.CancellationToken.ThrowIfCancellationRequested();
 
@@ -162,12 +157,24 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             return ValueTask.CompletedTask;
 
         _disposed = true;
-        _session?.Dispose();
-        _session = null;
+        _prototypeSession?.Dispose();
+        _prototypeSession = null;
+        _hardwareSession?.Dispose();
+        _hardwareSession = null;
         return ValueTask.CompletedTask;
     }
 
-    private PrototypeMediaFoundationH264EncoderSession CreateSession()
+    private void EnsureProductBackendAvailable()
+    {
+        _hardwareSession ??= new MediaFoundationHardwareH264EncoderSession(
+            _device,
+            _inputRequirement.Width,
+            _inputRequirement.Height,
+            _inputRequirement.PixelFormat);
+        _hardwareSession.Initialize();
+    }
+
+    private PrototypeMediaFoundationH264EncoderSession CreatePrototypeSession()
     {
         var session = new PrototypeMediaFoundationH264EncoderSession(
             _device,

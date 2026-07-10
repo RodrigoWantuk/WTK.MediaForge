@@ -1,4 +1,5 @@
 using Vortice.Direct3D11;
+using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Windows.Media.Encode;
@@ -72,4 +73,67 @@ internal sealed class PrototypeMediaFoundationH264EncoderSession : IDisposable
         _disposed = true;
         PrototypeMediaFoundationH264Bridge.Reset();
     }
+}
+
+/// <summary>
+/// Product Media Foundation H.264 hardware encoder boundary.
+/// </summary>
+internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
+{
+    private readonly ID3D11Device _device;
+    private readonly int _width;
+    private readonly int _height;
+    private readonly string _pixelFormat;
+    private bool _disposed;
+
+    public MediaFoundationHardwareH264EncoderSession(
+        ID3D11Device device,
+        int width,
+        int height,
+        string pixelFormat)
+    {
+        _device = device ?? throw new ArgumentNullException(nameof(device));
+        if (width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(width), "Encoder width must be positive.");
+
+        if (height <= 0)
+            throw new ArgumentOutOfRangeException(nameof(height), "Encoder height must be positive.");
+
+        if (string.IsNullOrWhiteSpace(pixelFormat))
+            throw new ArgumentException("Encoder pixel format is required.", nameof(pixelFormat));
+
+        _width = width;
+        _height = height;
+        _pixelFormat = pixelFormat;
+    }
+
+    public void Initialize()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = _device;
+        _ = _width;
+        _ = _height;
+        _ = _pixelFormat;
+        throw CreateUnavailableException();
+    }
+
+    public EncodedSurfaceResult? TryEncodeSurface(
+        D3D11SharedTextureFrameHandle surface,
+        long frameNumber,
+        TimeSpan presentationTime,
+        IMediaTransportAuditSink auditSink)
+    {
+        ArgumentNullException.ThrowIfNull(surface);
+        ArgumentNullException.ThrowIfNull(auditSink);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = frameNumber;
+        _ = presentationTime;
+        throw CreateUnavailableException();
+    }
+
+    public static NotSupportedException CreateUnavailableException() =>
+        new(
+            "Real Media Foundation H.264 hardware encoder output is unavailable until GPU surface input, MFT selection, format conversion, and backend packet validation are implemented. The prototype canned-packet bridge is not a product encoder backend.");
+
+    public void Dispose() => _disposed = true;
 }
