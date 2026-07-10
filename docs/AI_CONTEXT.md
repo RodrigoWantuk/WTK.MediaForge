@@ -106,6 +106,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   H.264 output as unavailable before GPU export or packet production. Only
   internal tests may opt into `PrototypeMediaFoundationH264EncoderSession`, and
   its audit evidence must remain `Prototype`.
+- Encoder input export now requires pixel-format compatibility. If an encoder
+  requires NV12 and the renderer produced BGRA/RGBA, the path must go through an
+  `IHardwareEncoderFormatConverter`; `D3D11BgraToNv12Converter` currently
+  reports unavailable and records `GpuFormatConversionUnavailable` without CPU
+  readback or staging.
 
 ## GPU Media Transport Law (vNext)
 

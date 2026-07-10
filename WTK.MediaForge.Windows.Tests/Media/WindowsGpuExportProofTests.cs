@@ -52,4 +52,33 @@ public sealed class WindowsGpuExportProofTests
             e.Kind == MediaTransportAuditEventKind.GpuSurfaceExportSucceeded &&
             e.EvidenceKind == MediaTransportAuditEvidenceKind.BackendCallSucceeded);
     }
+
+    [Fact]
+    public void Gpu_exporter_rejects_pixel_format_mismatch_without_gpu_converter()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+        factory.EnumAdapters1(0, out var adapter).CheckError();
+        using var gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
+
+        var exporter = new VulkanToD3D11EncoderSurfaceExporter(gpuDevice.Device);
+        var descriptor = new GpuVideoFrameDescriptor
+        {
+            Width = 640,
+            Height = 360,
+            Format = "B8G8R8A8_UNORM",
+            TransportKind = MediaTransportKind.GpuSurface
+        };
+        var requirement = new HardwareEncoderInputRequirement
+        {
+            Width = 640,
+            Height = 360,
+            PixelFormat = "NV12",
+            RequiresGpuSurface = true
+        };
+
+        Assert.False(exporter.CanExport(descriptor, requirement));
+    }
 }

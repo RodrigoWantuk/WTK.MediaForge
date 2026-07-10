@@ -29,7 +29,8 @@ public sealed class VulkanToD3D11EncoderSurfaceExporter : IGpuFrameExporter, IDi
         requirement.RequiresGpuSurface
         && descriptor.Width == requirement.Width
         && descriptor.Height == requirement.Height
-        && !requirement.PixelFormat.Contains("cpu", StringComparison.OrdinalIgnoreCase);
+        && !requirement.PixelFormat.Contains("cpu", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(descriptor.Format, requirement.PixelFormat, StringComparison.OrdinalIgnoreCase);
 
     public ValueTask<HardwareEncoderInputLease> ExportForEncoderAsync(
         GpuVideoFrameDescriptor descriptor,

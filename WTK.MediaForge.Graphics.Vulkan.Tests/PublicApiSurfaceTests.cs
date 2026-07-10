@@ -181,6 +181,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Core.Media.Interop.GpuExternalFrameDescriptor",
                 "WTK.MediaForge.Core.Media.Interop.HardwareEncoderInputLease",
                 "WTK.MediaForge.Core.Media.Interop.HardwareEncoderInputRequirement",
+                "WTK.MediaForge.Core.Media.Interop.IHardwareEncoderFormatConverter",
                 "WTK.MediaForge.Core.Media.Interop.IGpuFrameExporter",
                 "WTK.MediaForge.Core.Media.Interop.IGpuFrameImporter",
                 "WTK.MediaForge.Core.Media.LayoutMode",

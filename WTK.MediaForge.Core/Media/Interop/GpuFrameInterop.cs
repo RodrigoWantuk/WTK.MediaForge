@@ -1,5 +1,6 @@
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
+using WTK.MediaForge.Core.Gpu.Resources;
 
 namespace WTK.MediaForge.Core.Media.Interop;
 
@@ -73,6 +74,17 @@ public interface IGpuFrameExporter
 
     ValueTask<HardwareEncoderInputLease> ExportForEncoderAsync(
         GpuVideoFrameDescriptor descriptor,
+        IMediaTransportAuditSink auditSink,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IHardwareEncoderFormatConverter
+{
+    bool CanConvert(GpuVideoFrameDescriptor source, HardwareEncoderInputRequirement requirement);
+
+    ValueTask<HardwareEncoderInputLease> ConvertAsync(
+        GpuTextureLease sourceTexture,
+        HardwareEncoderInputRequirement requirement,
         IMediaTransportAuditSink auditSink,
         CancellationToken cancellationToken = default);
 }

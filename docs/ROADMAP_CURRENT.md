@@ -31,6 +31,9 @@ Complete foundations:
 - Media Foundation H.264 encoder product boundary is explicit: the public path
   reports real backend output as unavailable before GPU export or packet
   production, while the canned packet bridge remains internal prototype opt-in.
+- Encoder format conversion has an explicit contract. Vulkan/D3D11 export now
+  requires pixel-format compatibility, and BGRA/RGBA to NV12 remains unavailable
+  until a real GPU conversion pass lands; CPU staging fallback is prohibited.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -194,6 +197,7 @@ Current truth table:
 | Windows video-file source provider | Done:Prototype, blocked by default |
 | Windows decode | Done:Prototype |
 | Windows encode | Done:Prototype; product backend explicitly unavailable |
+| Encoder format conversion | Done:Contract; BGRA/RGBA to NV12 unavailable until GPU pass |
 | MP4 writer | Done:Prototype |
 | RTMP transport | Done:Prototype |
 | RenderGraph | Done:Contract/Skeleton |
