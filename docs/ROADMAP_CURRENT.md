@@ -34,6 +34,8 @@ Acceptance records:
 ## Active vNext Commit Order (GPU Media Law)
 
 Execute in this exact order. One commit unit per implementation session.
+Before resuming Commit 11, execute the **Active vNext v3 Truth Gate** below so
+prototype/skeleton work cannot be promoted as product capability by mistake.
 
 | # | Commit | Gate |
 |---|--------|------|
@@ -123,16 +125,16 @@ Execute in this exact order after vNext (commits 00–24) is complete. Plan:
 | 08 | Texture Streaming | Gpu | **Done** |
 | 09 | Renderer Video Integration | Gpu | **Done** |
 | 10 | Scene Runtime | Fast + Gpu | **Done** |
-| 11 | Render Graph (executor) | Gpu | **Done** |
-| 12 | GPU Effects Framework | Gpu | **Done** |
-| 13 | Transform Effects | Gpu | **Done** |
-| 14 | Text Rendering | Gpu | **Done** |
+| 11 | Render Graph (executor) | Gpu | **Done:Contract/Skeleton - not a GPU pass executor** |
+| 12 | GPU Effects Framework | Gpu | **Done:Skeleton - color/blur passes still need real pixels** |
+| 13 | Transform Effects | Gpu | **Done:ProductValidated for Vulkan geometry/shader path; graph nodes remain skeleton** |
+| 14 | Text Rendering | Gpu | **Done:Prototype - synthetic atlas, real glyph rasterization pending** |
 | 15 | Hardware Encode Foundation | Gpu; requires 04 | **PrototypeOnly - canned packets are not product proof** |
 | 16 | MP4 Recording Prototype | Gpu | **PrototypeOnly - muxer not production-ready** |
 | 17 | RTMP Output Prototype | Gpu | **PrototypeOnly - in-memory transport only** |
 | 18 | Synthetic Performance Validation | Report | **NeedsRealBackend - synthetic workload only** |
-| 19 | Fault Recovery | Gpu stress | **Done** |
-| 20 | Engine Readiness Gate | Fast + Gpu + verify | **Done** |
+| 19 | Fault Recovery | Gpu stress | **Done:Contract - integration with real failure points pending** |
+| 20 | Engine Readiness Gate | Fast + Gpu + verify | **Done:Contract** |
 
 ### Phase 2 blocking rules
 
@@ -158,7 +160,39 @@ Required correction order:
 4. Real Media Foundation hardware encoder/decode backend work, or explicit
    unavailable capability.
 5. Real decode -> render -> encode proof before MP4/RTMP can become
-   Experimental or Supported.
+Experimental or Supported.
+
+## Active vNext v3 Truth Gate
+
+Product readiness is tracked separately from user-facing support status:
+
+- `Contract`: API/lifetime/scheduling contract exists, but does not prove a product feature.
+- `Skeleton`: placeholder or structural implementation exists and must not be advertised as available.
+- `Prototype`: internal proof or fake/prototype backend exists and must not be advertised as available.
+- `BackendCallSucceeded`: a backend call/export proof succeeded, but full product output is not validated.
+- `ProductValidated`: the feature has product-level behavior and tests for its current scope.
+
+Current truth table:
+
+| Area | Product readiness |
+|---|---|
+| Resource lifetime | Done:Contract |
+| Frame scheduler | Done:Contract |
+| Asset manager | Done:Contract |
+| Static image Windows PNG/JPEG | Done:ProductValidated |
+| Export surface proof | Done:BackendCallSucceeded, not ProductValidated |
+| Windows decode | Done:Prototype |
+| Windows encode | Done:Prototype |
+| MP4 writer | Done:Prototype |
+| RTMP transport | Done:Prototype |
+| RenderGraph | Done:Contract/Skeleton |
+| Color/Blur effects | Done:Skeleton |
+| Text rendering | Done:Prototype |
+| Performance validation | Done:Skeleton |
+| Fault recovery | Done:Contract |
+
+`CapabilityEntry.ProductReadinessStatus` enforces this split: entries marked
+`Prototype` or `Skeleton` cannot be emitted as `Supported` or `Experimental`.
 
 ## Future Phase — FFmpeg Libraries Integration Review
 

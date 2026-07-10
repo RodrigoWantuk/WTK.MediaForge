@@ -12,6 +12,8 @@ public sealed class CapabilityEntry
 
     public required MediaForgeLicenseStatus LicenseStatus { get; init; }
 
+    public required MediaForgeProductReadinessStatus ProductReadinessStatus { get; init; }
+
     public string? UnavailableReason { get; init; }
 
     public MediaTransportKind? TransportKind { get; init; }

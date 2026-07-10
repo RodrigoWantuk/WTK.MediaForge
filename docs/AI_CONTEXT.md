@@ -97,6 +97,9 @@ The legacy WinForms preview path has been removed as a product path because it u
 - FFmpeg is not used in the first hardware MP4/RTMP MVP.
 - Commit 06 (Vulkan -> D3D11/MF encoder surface export proof) blocks hardware recording until passed.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
+- `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
+  `Prototype` and `Skeleton` readiness entries must never be emitted as
+  `Supported` or `Experimental`.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
 
 ## GPU Resource Pool (Phase 2)

@@ -11,6 +11,7 @@ public static class MediaForgeCapabilityReportBuilder
             entries.AddRange(additionalEntries);
 
         EnsureUniqueCapabilityIds(entries);
+        EnsureReadinessDoesNotOverstateProductAvailability(entries);
 
         return new MediaForgeCapabilityReport
         {
@@ -28,4 +29,24 @@ public static class MediaForgeCapabilityReportBuilder
         if (duplicate is not null)
             throw new InvalidOperationException($"Capability report contains duplicate capability id '{duplicate.Key}'.");
     }
+
+    private static void EnsureReadinessDoesNotOverstateProductAvailability(IReadOnlyList<CapabilityEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (!IsUserAvailable(entry.SupportStatus))
+                continue;
+
+            if (entry.ProductReadinessStatus is
+                MediaForgeProductReadinessStatus.Prototype or
+                MediaForgeProductReadinessStatus.Skeleton)
+            {
+                throw new InvalidOperationException(
+                    $"Capability '{entry.Id}' is marked {entry.SupportStatus} but readiness is {entry.ProductReadinessStatus}.");
+            }
+        }
+    }
+
+    private static bool IsUserAvailable(MediaForgeSupportStatus status) =>
+        status is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Experimental;
 }

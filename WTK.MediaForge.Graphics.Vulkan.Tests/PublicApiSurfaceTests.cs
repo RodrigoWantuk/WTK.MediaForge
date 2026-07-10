@@ -188,6 +188,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Core.Media.MediaForgeCapabilityReport",
                 "WTK.MediaForge.Core.Media.MediaForgeCapabilityReportBuilder",
                 "WTK.MediaForge.Core.Media.MediaForgeLicenseStatus",
+                "WTK.MediaForge.Core.Media.MediaForgeProductReadinessStatus",
                 "WTK.MediaForge.Core.Media.MediaForgeSupportStatus",
                 "WTK.MediaForge.Core.Media.MediaTransportKind",
                 "WTK.MediaForge.Core.Media.NullHardwareMediaCapabilityProbe",

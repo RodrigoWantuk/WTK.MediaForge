@@ -21,6 +21,7 @@ public sealed class MediaFoundationHardwareEncoderProbe
             DisplayName = "NVENC direct",
             SupportStatus = MediaForgeSupportStatus.Planned,
             LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = "Vendor SDK direct path; not implemented in MVP.",
             TransportKind = MediaTransportKind.EncodedPacket
         },
@@ -31,6 +32,7 @@ public sealed class MediaFoundationHardwareEncoderProbe
             DisplayName = "Intel QSV direct",
             SupportStatus = MediaForgeSupportStatus.Planned,
             LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = "Vendor SDK direct path; not implemented in MVP.",
             TransportKind = MediaTransportKind.EncodedPacket
         },
@@ -41,6 +43,7 @@ public sealed class MediaFoundationHardwareEncoderProbe
             DisplayName = "AMD AMF direct",
             SupportStatus = MediaForgeSupportStatus.Planned,
             LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = "Vendor SDK direct path; not implemented in MVP.",
             TransportKind = MediaTransportKind.EncodedPacket
         }

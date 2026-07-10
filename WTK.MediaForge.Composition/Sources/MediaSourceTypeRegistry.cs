@@ -53,6 +53,7 @@ public static class MediaSourceTypeRegistry
             DisplayName = d.DisplayName,
             SupportStatus = d.SupportStatus,
             LicenseStatus = MediaForgeLicenseStatus.Approved,
+            ProductReadinessStatus = d.ProductReadinessStatus,
             UnavailableReason = d.UnavailableReason,
             TransportKind = d.OutputTransport
         }).ToList();
@@ -90,13 +91,15 @@ public static class MediaSourceTypeRegistry
             RequiresGpuInterop = true,
             RequiresHardwareDecode = false,
             AllowsRawCpuException = false,
-            SupportStatus = MediaForgeSupportStatus.Supported
+            SupportStatus = MediaForgeSupportStatus.Supported,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated
         };
         yield return TimelineEncoded(
             "Video file",
             MediaSourceTypes.VideoFile,
             hasAudio: true,
             MediaForgeSupportStatus.PrototypeOnly,
+            MediaForgeProductReadinessStatus.Prototype,
             "Prototype only: current file-video runtime does not yet demux/decode real media into GPU frames.");
         yield return TimelineEncoded("RTSP stream", MediaSourceTypes.RtspInput, hasAudio: true);
         yield return TimelineEncoded("IP camera", MediaSourceTypes.IpCamera, hasAudio: true);
@@ -142,6 +145,7 @@ public static class MediaSourceTypeRegistry
         MediaSourceTypeId typeId,
         bool hasAudio,
         MediaForgeSupportStatus status = MediaForgeSupportStatus.Planned,
+        MediaForgeProductReadinessStatus readiness = MediaForgeProductReadinessStatus.Contract,
         string? unavailableReason = null) =>
         new()
         {
@@ -157,6 +161,7 @@ public static class MediaSourceTypeRegistry
             RequiresHardwareDecode = true,
             AllowsRawCpuException = false,
             SupportStatus = status,
+            ProductReadinessStatus = readiness,
             UnavailableReason = unavailableReason ?? "Hardware decode required; software decode prohibited."
         };
 

@@ -31,5 +31,8 @@ public sealed class MediaSourceTypeDescriptor
 
     public MediaForgeSupportStatus SupportStatus { get; init; } = MediaForgeSupportStatus.Planned;
 
+    public MediaForgeProductReadinessStatus ProductReadinessStatus { get; init; } =
+        MediaForgeProductReadinessStatus.Contract;
+
     public string? UnavailableReason { get; init; }
 }

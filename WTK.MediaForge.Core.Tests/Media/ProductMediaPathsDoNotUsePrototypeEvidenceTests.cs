@@ -28,6 +28,7 @@ public sealed class ProductMediaPathsDoNotUsePrototypeEvidenceTests
             var entry = Assert.IsType<CapabilityEntry>(report.TryGetEntry(id));
 
             Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, entry.SupportStatus);
+            Assert.Equal(MediaForgeProductReadinessStatus.Prototype, entry.ProductReadinessStatus);
             Assert.False(report.IsFeatureAvailable(id));
             Assert.False(IsUserAvailable(entry.SupportStatus));
             Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));
@@ -86,7 +87,8 @@ public sealed class ProductMediaPathsDoNotUsePrototypeEvidenceTests
             Category = CapabilityCategories.Sink,
             DisplayName = "Conflicting MP4 recording",
             SupportStatus = MediaForgeSupportStatus.Experimental,
-            LicenseStatus = MediaForgeLicenseStatus.Approved
+            LicenseStatus = MediaForgeLicenseStatus.Approved,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>

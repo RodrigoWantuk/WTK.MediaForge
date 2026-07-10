@@ -56,3 +56,26 @@ validation remain prototype infrastructure until real backend proof replaces
 canned packets, placeholder textures, in-memory transports, and synthetic
 workloads. These rows must not be read as product-ready decode, recording, or
 streaming support.
+
+## Product Readiness Labels
+
+Phase 2 acceptance evidence is now classified separately from support status:
+
+| Label | Meaning |
+|---|---|
+| Done:Contract | API, lifetime, scheduler, or validation contract exists. |
+| Done:Skeleton | Structural placeholder exists, but no real product behavior yet. |
+| Done:Prototype | Internal prototype exists and must remain blocked from product capability. |
+| Done:BackendCallSucceeded | A backend interop/proof call succeeded, but full product output is not validated. |
+| Done:ProductValidated | Current scoped behavior is product-level and covered by tests. |
+
+Current interpretation:
+
+- GPU resource lifetime, scheduler, asset manager, source runtime, scene runtime,
+  texture streaming, and fault recovery are `Done:Contract`.
+- GPU surface export proof is `Done:BackendCallSucceeded`.
+- Windows hardware decode, Windows hardware encode, MP4 recording, and RTMP
+  output are `Done:Prototype`.
+- RenderGraph executor and color/blur effect framework are `Done:Skeleton`.
+- Text rendering is `Done:Prototype`.
+- Synthetic performance validation is `Done:Skeleton`.
