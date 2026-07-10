@@ -115,6 +115,12 @@ The legacy WinForms preview path has been removed as a product path because it u
   sink responsibilities. `IEncodedPacketSink`, `RecordingMp4PacketSink`, and
   `RtmpPacketSink` consume `EncodedVideoPacket`; `IRenderOutputSink` consumers
   receive rendered surfaces only.
+- `MediaFoundationHardwareVideoDecoder` has a separate product decode session
+  boundary (`MediaFoundationFileHardwareVideoDecoderSession`) from the
+  placeholder prototype bridge. The public/non-opt-in path reports real
+  MF/D3D11VA file decode as unavailable before producing any decoded GPU frame
+  evidence. Only internal tests may opt into the prototype bridge, and its audit
+  evidence must remain `Prototype`.
 
 ## GPU Media Transport Law (vNext)
 

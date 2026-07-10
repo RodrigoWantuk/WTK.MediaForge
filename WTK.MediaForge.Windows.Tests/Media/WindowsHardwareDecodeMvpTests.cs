@@ -21,7 +21,8 @@ public sealed class WindowsHardwareDecodeMvpTests
         try
         {
             await using var decoder = new MediaFoundationHardwareVideoDecoder();
-            await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            var audit = new CollectingMediaTransportAuditSink();
+            var ex = await Assert.ThrowsAsync<NotSupportedException>(async () =>
                 await decoder.OpenAsync(
                     new HardwareDecodeOpenContext
                     {
@@ -33,7 +34,10 @@ public sealed class WindowsHardwareDecodeMvpTests
                             Height = 360
                         }
                     },
-                    new CollectingMediaTransportAuditSink()));
+                    audit));
+
+            Assert.Contains("Real Media Foundation D3D11VA file decode is unavailable", ex.Message, StringComparison.Ordinal);
+            Assert.False(audit.Contains(MediaTransportAuditEventKind.HardwareDecodeSucceeded));
         }
         finally
         {

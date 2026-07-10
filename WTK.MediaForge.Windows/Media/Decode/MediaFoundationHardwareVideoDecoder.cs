@@ -15,6 +15,7 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
     private readonly D3D11GpuDevice _gpuDevice;
     private readonly GpuResourcePool _resourcePool;
     private readonly bool _allowPrototypeDecoding;
+    private MediaFoundationFileHardwareVideoDecoderSession? _hardwareSession;
     private string? _sourcePath;
     private int _width;
     private int _height;
@@ -74,15 +75,12 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (!_allowPrototypeDecoding)
-        {
-            throw new NotSupportedException(
-                "MediaFoundationHardwareVideoDecoder is prototype-only until real MF/D3D11VA decode is implemented.");
-        }
+            return OpenProductSessionAsync(context, auditSink);
 
         if (!File.Exists(context.SourcePath))
             throw new FileNotFoundException("Video file was not found.", context.SourcePath);
 
-        if (!MediaFoundationDecodeBridge.TryOpen(context.SourcePath, Device, out var width, out var height))
+        if (!PrototypeMediaFoundationDecodeBridge.TryOpen(context.SourcePath, Device, out var width, out var height))
             throw new InvalidOperationException("Media Foundation hardware decoder could not open the source.");
 
         _sourcePath = context.SourcePath;
@@ -124,7 +122,7 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
         if (_sourcePath is null)
             return ValueTask.FromResult<DecodedGpuFrame?>(null);
 
-        if (!MediaFoundationDecodeBridge.TryReadGpuFrame(_sourcePath))
+        if (!PrototypeMediaFoundationDecodeBridge.TryReadGpuFrame(_sourcePath))
         {
             return ValueTask.FromResult<DecodedGpuFrame?>(null);
         }
@@ -167,8 +165,18 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
         _disposed = true;
         _resourcePool.Dispose();
         _gpuDevice.Dispose();
-        MediaFoundationDecodeBridge.Reset();
+        _hardwareSession?.Dispose();
+        _hardwareSession = null;
+        PrototypeMediaFoundationDecodeBridge.Reset();
         return ValueTask.CompletedTask;
+    }
+
+    private ValueTask OpenProductSessionAsync(
+        HardwareDecodeOpenContext context,
+        IMediaTransportAuditSink auditSink)
+    {
+        _hardwareSession ??= new MediaFoundationFileHardwareVideoDecoderSession(Device);
+        return _hardwareSession.OpenAsync(context, auditSink);
     }
 }
 
@@ -215,7 +223,31 @@ internal sealed class WindowsDecodeGpuPhysicalTexture : IGpuPhysicalResource, IG
     }
 }
 
-internal static class MediaFoundationDecodeBridge
+internal sealed class MediaFoundationFileHardwareVideoDecoderSession : IDisposable
+{
+    private readonly ID3D11Device _device;
+    private bool _disposed;
+
+    public MediaFoundationFileHardwareVideoDecoderSession(ID3D11Device device) =>
+        _device = device ?? throw new ArgumentNullException(nameof(device));
+
+    public ValueTask OpenAsync(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(auditSink);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = _device;
+        throw CreateUnavailableException();
+    }
+
+    public static NotSupportedException CreateUnavailableException() =>
+        new(
+            "Real Media Foundation D3D11VA file decode is unavailable until file demux, hardware MFT selection, decoded GPU surface extraction, and backend output validation are implemented. The placeholder texture bridge is not a product decoder backend.");
+
+    public void Dispose() => _disposed = true;
+}
+
+internal static class PrototypeMediaFoundationDecodeBridge
 {
     private static readonly object Gate = new();
     private static string? _openedPath;
