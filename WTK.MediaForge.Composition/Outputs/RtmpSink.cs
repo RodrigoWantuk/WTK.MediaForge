@@ -1,15 +1,12 @@
 using WTK.MediaForge.Composition.Media.Stream;
-using WTK.MediaForge.Composition.Outputs;
-using WTK.MediaForge.Composition.Runtime.Rendering;
-using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Composition.Outputs;
 
 /// <summary>
-/// Experimental RTMP sink using hardware-encoded H.264 packets only.
+/// Experimental RTMP packet sink using hardware-encoded H.264 packets only.
 /// </summary>
-public sealed class RtmpSink : IRenderOutputSink
+public sealed class RtmpPacketSink : IEncodedPacketSink
 {
     private readonly string _url;
     private readonly bool _allowPrototypeTransport;
@@ -17,57 +14,49 @@ public sealed class RtmpSink : IRenderOutputSink
     private RtmpTransport? _transport;
     private bool _started;
 
-    public RtmpSink(string url)
+    public RtmpPacketSink(string url)
         : this(url, allowPrototypeTransport: false)
     {
     }
 
-    internal RtmpSink(string url, bool allowPrototypeTransport)
+    internal RtmpPacketSink(string url, bool allowPrototypeTransport)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         _url = url;
         _allowPrototypeTransport = allowPrototypeTransport;
     }
 
-    public RenderOutputSinkId Id { get; } = RenderOutputSinkId.New();
-
-    public RenderOutputSinkKind Kind => RenderOutputSinkKind.Streaming;
-
-    public RenderOutputSinkBackpressureMode BackpressureMode =>
-        RenderOutputSinkBackpressureMode.KeepLatest;
-
     internal IReadOnlyList<FlvPacket> SentPacketsForTests => _transport?.SentPackets ?? Array.Empty<FlvPacket>();
 
-    public ValueTask StartAsync(RenderOutputSinkContext context, CancellationToken cancellationToken)
+    public ValueTask StartAsync(EncodedPacketSinkContext context, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_allowPrototypeTransport)
         {
             throw new NotSupportedException(
-                "RtmpSink is prototype-only until a real network RTMP transport is implemented.");
+                "RtmpPacketSink is prototype-only until a real network RTMP transport is implemented.");
         }
+
+        if (context.Codec != EncodedVideoCodec.H264)
+            throw new NotSupportedException($"RTMP currently accepts H.264 packets, not '{context.Codec}'.");
 
         _transport = new RtmpTransport(_url);
         _started = true;
         return _transport.ConnectAsync(cancellationToken);
     }
 
-    public ValueTask OnFrameAsync(RenderOutputFrameLease frame, CancellationToken cancellationToken)
+    public async ValueTask WritePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(packet);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_started)
-            throw new InvalidOperationException("RTMP sink has not been started.");
+        if (!_started || _transport is null)
+            throw new InvalidOperationException("RTMP packet sink has not been started.");
 
-        throw new NotSupportedException(
-            "RtmpSink accepts encoded packets only. Wire hardware encoder output instead of GPU surface frames.");
-    }
-
-    public async ValueTask WriteEncodedPacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
-    {
-        if (_transport is null)
-            throw new InvalidOperationException("RTMP sink has not been started.");
+        if (packet.Codec != EncodedVideoCodec.H264)
+            throw new NotSupportedException($"RTMP currently accepts H.264 packets, not '{packet.Codec}'.");
 
         var flvPacket = _packetizer.Packetize(packet);
         await _transport.SendAsync(flvPacket, cancellationToken).ConfigureAwait(false);
@@ -75,6 +64,7 @@ public sealed class RtmpSink : IRenderOutputSink
 
     public ValueTask StopAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _started = false;
         return ValueTask.CompletedTask;
     }
@@ -86,4 +76,30 @@ public sealed class RtmpSink : IRenderOutputSink
         _started = false;
         return ValueTask.CompletedTask;
     }
+}
+
+public sealed class RtmpSink : IEncodedPacketSink
+{
+    private readonly RtmpPacketSink _inner;
+
+    public RtmpSink(string url)
+        : this(url, allowPrototypeTransport: false)
+    {
+    }
+
+    internal RtmpSink(string url, bool allowPrototypeTransport) =>
+        _inner = new RtmpPacketSink(url, allowPrototypeTransport);
+
+    internal IReadOnlyList<FlvPacket> SentPacketsForTests => _inner.SentPacketsForTests;
+
+    public ValueTask StartAsync(EncodedPacketSinkContext context, CancellationToken cancellationToken) =>
+        _inner.StartAsync(context, cancellationToken);
+
+    public ValueTask WritePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken) =>
+        _inner.WritePacketAsync(packet, cancellationToken);
+
+    public ValueTask StopAsync(CancellationToken cancellationToken) =>
+        _inner.StopAsync(cancellationToken);
+
+    public ValueTask DisposeAsync() => _inner.DisposeAsync();
 }

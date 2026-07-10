@@ -111,6 +111,10 @@ The legacy WinForms preview path has been removed as a product path because it u
   `IHardwareEncoderFormatConverter`; `D3D11BgraToNv12Converter` currently
   reports unavailable and records `GpuFormatConversionUnavailable` without CPU
   readback or staging.
+- Recording and streaming outputs are packet-sink responsibilities, not render
+  sink responsibilities. `IEncodedPacketSink`, `RecordingMp4PacketSink`, and
+  `RtmpPacketSink` consume `EncodedVideoPacket`; `IRenderOutputSink` consumers
+  receive rendered surfaces only.
 
 ## GPU Media Transport Law (vNext)
 

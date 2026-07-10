@@ -37,7 +37,7 @@ public static class RenderOutputSinkComplianceRegistry
         },
         new()
         {
-            SinkTypeName = nameof(RecordingMp4Sink),
+            SinkTypeName = nameof(RecordingMp4PacketSink),
             Kind = RenderOutputSinkKind.File,
             Transport = MediaTransportKind.EncodedPacket,
             IsProductSink = false,
@@ -45,7 +45,7 @@ public static class RenderOutputSinkComplianceRegistry
         },
         new()
         {
-            SinkTypeName = nameof(RtmpSink),
+            SinkTypeName = nameof(RtmpPacketSink),
             Kind = RenderOutputSinkKind.Streaming,
             Transport = MediaTransportKind.EncodedPacket,
             IsProductSink = false,

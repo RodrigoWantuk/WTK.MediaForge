@@ -54,22 +54,22 @@ internal interface IEncodedPacketConsumer
 
 internal sealed class RecordingMp4PacketConsumer : IEncodedPacketConsumer
 {
-    private readonly RecordingMp4Sink _sink;
+    private readonly IEncodedPacketSink _sink;
 
-    public RecordingMp4PacketConsumer(RecordingMp4Sink sink) =>
+    public RecordingMp4PacketConsumer(IEncodedPacketSink sink) =>
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
 
     public ValueTask WriteEncodedPacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken) =>
-        _sink.WriteEncodedPacketAsync(packet, cancellationToken);
+        _sink.WritePacketAsync(packet, cancellationToken);
 }
 
 internal sealed class RtmpPacketConsumer : IEncodedPacketConsumer
 {
-    private readonly RtmpSink _sink;
+    private readonly IEncodedPacketSink _sink;
 
-    public RtmpPacketConsumer(RtmpSink sink) =>
+    public RtmpPacketConsumer(IEncodedPacketSink sink) =>
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
 
     public ValueTask WriteEncodedPacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken) =>
-        _sink.WriteEncodedPacketAsync(packet, cancellationToken);
+        _sink.WritePacketAsync(packet, cancellationToken);
 }

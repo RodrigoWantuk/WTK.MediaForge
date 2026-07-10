@@ -31,8 +31,8 @@ public class RenderOutputSinkComplianceRegistryTests
     [Fact]
     public void Recording_and_rtmp_sinks_use_encoded_packet_transport()
     {
-        var mp4 = Assert.Single(RenderOutputSinkComplianceRegistry.All, e => e.SinkTypeName == nameof(RecordingMp4Sink));
-        var rtmp = Assert.Single(RenderOutputSinkComplianceRegistry.All, e => e.SinkTypeName == nameof(RtmpSink));
+        var mp4 = Assert.Single(RenderOutputSinkComplianceRegistry.All, e => e.SinkTypeName == nameof(RecordingMp4PacketSink));
+        var rtmp = Assert.Single(RenderOutputSinkComplianceRegistry.All, e => e.SinkTypeName == nameof(RtmpPacketSink));
 
         Assert.Equal(MediaTransportKind.EncodedPacket, mp4.Transport);
         Assert.Equal(MediaTransportKind.EncodedPacket, rtmp.Transport);

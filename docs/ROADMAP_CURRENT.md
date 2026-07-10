@@ -34,6 +34,9 @@ Complete foundations:
 - Encoder format conversion has an explicit contract. Vulkan/D3D11 export now
   requires pixel-format compatibility, and BGRA/RGBA to NV12 remains unavailable
   until a real GPU conversion pass lands; CPU staging fallback is prohibited.
+- Encoded output sinks are separated from render output sinks:
+  `RecordingMp4PacketSink` and `RtmpPacketSink` consume `EncodedVideoPacket`
+  only, while render sinks remain surface consumers.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -198,6 +201,7 @@ Current truth table:
 | Windows decode | Done:Prototype |
 | Windows encode | Done:Prototype; product backend explicitly unavailable |
 | Encoder format conversion | Done:Contract; BGRA/RGBA to NV12 unavailable until GPU pass |
+| Packet sink boundary | Done:Contract |
 | MP4 writer | Done:Prototype |
 | RTMP transport | Done:Prototype |
 | RenderGraph | Done:Contract/Skeleton |

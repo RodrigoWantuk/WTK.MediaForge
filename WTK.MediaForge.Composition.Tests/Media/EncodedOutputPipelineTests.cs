@@ -18,13 +18,7 @@ public sealed class EncodedOutputPipelineTests
         await using var sink = new RecordingMp4Sink(Path.Combine(Path.GetTempPath(), $"mf_mp4_blocked_{Guid.NewGuid():N}.mp4"));
 
         await Assert.ThrowsAsync<NotSupportedException>(async () =>
-            await sink.StartAsync(
-                new RenderOutputSinkContext(
-                    Core.Identifiers.RenderOutputId.New(),
-                    new Core.Frames.FrameSize(640, 360),
-                    Outputs.RenderPixelFormat.Rgba8Unorm,
-                    Outputs.RenderBackendKind.Vulkan),
-                CancellationToken.None));
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None));
     }
 
     [Fact]
@@ -33,13 +27,16 @@ public sealed class EncodedOutputPipelineTests
         var sink = new RtmpSink("rtmp://127.0.0.1/live/blocked");
 
         await Assert.ThrowsAsync<NotSupportedException>(async () =>
-            await sink.StartAsync(
-                new RenderOutputSinkContext(
-                    Core.Identifiers.RenderOutputId.New(),
-                    new Core.Frames.FrameSize(640, 360),
-                    Outputs.RenderPixelFormat.Rgba8Unorm,
-                    Outputs.RenderBackendKind.Vulkan),
-                CancellationToken.None));
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None));
+    }
+
+    [Fact]
+    public void Encoded_packet_sinks_do_not_implement_render_output_sink()
+    {
+        Assert.False(typeof(IRenderOutputSink).IsAssignableFrom(typeof(RecordingMp4PacketSink)));
+        Assert.False(typeof(IRenderOutputSink).IsAssignableFrom(typeof(RecordingMp4Sink)));
+        Assert.False(typeof(IRenderOutputSink).IsAssignableFrom(typeof(RtmpPacketSink)));
+        Assert.False(typeof(IRenderOutputSink).IsAssignableFrom(typeof(RtmpSink)));
     }
 
     [Fact]
@@ -50,17 +47,11 @@ public sealed class EncodedOutputPipelineTests
         {
             var audit = new CollectingMediaTransportAuditSink();
             await using var sink = new RecordingMp4Sink(outputPath, audit, allowPrototypeMuxer: true);
-            await sink.StartAsync(
-                new RenderOutputSinkContext(
-                    Core.Identifiers.RenderOutputId.New(),
-                    new Core.Frames.FrameSize(640, 360),
-                    Outputs.RenderPixelFormat.Rgba8Unorm,
-                    Outputs.RenderBackendKind.Vulkan),
-                CancellationToken.None);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
 
             var packets = CreateSyntheticH264Packets(frameCount: 60);
             foreach (var packet in packets)
-                await sink.WriteEncodedPacketAsync(packet, CancellationToken.None);
+                await sink.WritePacketAsync(packet, CancellationToken.None);
 
             await sink.StopAsync(CancellationToken.None);
 
@@ -83,16 +74,10 @@ public sealed class EncodedOutputPipelineTests
     public async Task Rtmp_sink_receives_flv_tags_from_shared_encoder()
     {
         var router = new EncodedOutputRouter(new TestHardwareVideoEncoder());
-        var rtmpSink = new RtmpSink("rtmp://127.0.0.1/live/test", allowPrototypeTransport: true);
+        var rtmpSink = new RtmpPacketSink("rtmp://127.0.0.1/live/test", allowPrototypeTransport: true);
         router.RegisterConsumer(new RtmpPacketConsumer(rtmpSink));
 
-        await rtmpSink.StartAsync(
-            new RenderOutputSinkContext(
-                Core.Identifiers.RenderOutputId.New(),
-                new Core.Frames.FrameSize(640, 360),
-                Outputs.RenderPixelFormat.Rgba8Unorm,
-                Outputs.RenderBackendKind.Vulkan),
-            CancellationToken.None);
+        await rtmpSink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
 
         var packet = CreateSyntheticH264Packets(1).Single();
         await router.RoutePacketAsync(packet, CancellationToken.None);
@@ -113,26 +98,14 @@ public sealed class EncodedOutputPipelineTests
         var mp4Path = Path.Combine(Path.GetTempPath(), $"mf_shared_{Guid.NewGuid():N}.mp4");
         try
         {
-            var mp4Sink = new RecordingMp4Sink(mp4Path, null, allowPrototypeMuxer: true);
-            var rtmpSink = new RtmpSink("rtmp://127.0.0.1/live/shared", allowPrototypeTransport: true);
+            var mp4Sink = new RecordingMp4PacketSink(mp4Path, null, allowPrototypeMuxer: true);
+            var rtmpSink = new RtmpPacketSink("rtmp://127.0.0.1/live/shared", allowPrototypeTransport: true);
 
             router.RegisterConsumer(new RecordingMp4PacketConsumer(mp4Sink));
             router.RegisterConsumer(new RtmpPacketConsumer(rtmpSink));
 
-            await mp4Sink.StartAsync(
-                new RenderOutputSinkContext(
-                    Core.Identifiers.RenderOutputId.New(),
-                    new Core.Frames.FrameSize(640, 360),
-                    Outputs.RenderPixelFormat.Rgba8Unorm,
-                    Outputs.RenderBackendKind.Vulkan),
-                CancellationToken.None);
-            await rtmpSink.StartAsync(
-                new RenderOutputSinkContext(
-                    Core.Identifiers.RenderOutputId.New(),
-                    new Core.Frames.FrameSize(640, 360),
-                    Outputs.RenderPixelFormat.Rgba8Unorm,
-                    Outputs.RenderBackendKind.Vulkan),
-                CancellationToken.None);
+            await mp4Sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+            await rtmpSink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
 
             foreach (var packet in CreateSyntheticH264Packets(30))
                 await router.RoutePacketAsync(packet, CancellationToken.None);
@@ -166,6 +139,14 @@ public sealed class EncodedOutputPipelineTests
 
         return packets;
     }
+
+    private static EncodedPacketSinkContext CreatePacketSinkContext() =>
+        new()
+        {
+            Codec = EncodedVideoCodec.H264,
+            Size = new Core.Frames.FrameSize(640, 360),
+            FramesPerSecond = 30
+        };
 
     private static byte[] CreateKeyFrameAnnexB() =>
     [
