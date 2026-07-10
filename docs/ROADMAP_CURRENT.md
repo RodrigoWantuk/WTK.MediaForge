@@ -43,6 +43,9 @@ Complete foundations:
 - Decode-to-render product proof now has an audit gate and remains blocked until
   hardware decode, source-frame adaptation, and renderer submission all provide
   `BackendOutputValidated` evidence.
+- RenderGraph execution now propagates available source-frame resources and
+  explicit skip reasons through the logical graph; real GPU pass execution and
+  output texture production remain future work.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -211,7 +214,7 @@ Current truth table:
 | Packet sink boundary | Done:Contract |
 | MP4 writer | Done:Prototype |
 | RTMP transport | Done:Prototype |
-| RenderGraph | Done:Contract/Skeleton |
+| RenderGraph | Done:Contract/resource bridge; not a GPU pass executor |
 | Color/Blur effects | Done:Skeleton |
 | Text rendering | Done:Prototype |
 | Performance validation | Done:Skeleton |

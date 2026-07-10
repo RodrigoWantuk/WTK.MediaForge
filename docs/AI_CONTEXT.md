@@ -126,6 +126,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   `BackendOutputValidated` evidence for hardware decode, decoded-frame to
   source-frame adaptation, and renderer submission, with no CPU readback or
   staging evidence. Prototype decoder frames cannot satisfy this proof.
+- The logical `RenderGraphExecutor` now carries renderable `GpuFrameReference`
+  resources through source/effect/canvas/output nodes and skips downstream work
+  when a source frame is unavailable. It still does not allocate Vulkan
+  intermediate targets or execute GPU passes; `GpuTextureLease` output resources
+  are reserved for that future bridge.
 
 ## GPU Media Transport Law (vNext)
 

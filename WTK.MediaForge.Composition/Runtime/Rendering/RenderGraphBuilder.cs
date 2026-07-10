@@ -1,4 +1,7 @@
 using WTK.MediaForge.Composition.Runtime.Scene;
+using WTK.MediaForge.Core.Gpu;
+using WTK.MediaForge.Core.Gpu.Resources;
+using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
@@ -88,20 +91,45 @@ internal sealed class SourceRenderGraphNode : RenderGraphNode
                 {
                     NodeKey = Key,
                     Kind = Kind,
-                    WasSkipped = true
+                    WasSkipped = true,
+                    FailureReason = "Source layer is hidden."
                 };
             }
+        }
+
+        var requiredSourceId = ExtractSourceId(PlanNode.Key);
+        if (requiredSourceId is null)
+        {
+            return new RenderGraphNodeResult
+            {
+                NodeKey = Key,
+                Kind = Kind,
+                WasSkipped = true,
+                FailureReason = "Source node key does not contain a source id."
+            };
+        }
+
+        if (!context.SourceFrames.TryGetValue(requiredSourceId.Value, out var frame))
+        {
+            return new RenderGraphNodeResult
+            {
+                NodeKey = Key,
+                Kind = Kind,
+                WasSkipped = true,
+                FailureReason = "Source frame is unavailable for this graph execution."
+            };
         }
 
         return new RenderGraphNodeResult
         {
             NodeKey = Key,
             Kind = Kind,
-            WasSkipped = false
+            WasSkipped = false,
+            SourceFrame = frame
         };
     }
 
-    private bool IsSourceHidden(Core.Identifiers.SourceId sourceId)
+    private bool IsSourceHidden(SourceId sourceId)
     {
         if (SceneSnapshot is null)
             return false;
@@ -115,14 +143,14 @@ internal sealed class SourceRenderGraphNode : RenderGraphNode
         return false;
     }
 
-    private static Core.Identifiers.SourceId? ExtractSourceId(string key)
+    private static SourceId? ExtractSourceId(string key)
     {
         const string prefix = "source:";
         if (!key.StartsWith(prefix, StringComparison.Ordinal))
             return null;
 
         return Guid.TryParse(key[prefix.Length..], out var value)
-            ? Core.Identifiers.SourceId.From(value)
+            ? SourceId.From(value)
             : null;
     }
 }
@@ -131,44 +159,195 @@ internal sealed class TransformRenderGraphNode : RenderGraphNode
 {
     public required MediaForgeRenderGraphNode PlanNode { get; init; }
 
-    public override RenderGraphNodeResult Execute(RenderGraphContext context) =>
-        new()
+    public override RenderGraphNodeResult Execute(RenderGraphContext context)
+    {
+        if (!RenderGraphNodeResourceFlow.TryGetDependencyResources(
+                this,
+                context,
+                out var sourceFrame,
+                out var outputTexture,
+                out var failureReason))
+        {
+            return new RenderGraphNodeResult
+            {
+                NodeKey = Key,
+                Kind = Kind,
+                WasSkipped = true,
+                FailureReason = failureReason
+            };
+        }
+
+        return new RenderGraphNodeResult
         {
             NodeKey = Key,
             Kind = Kind,
-            WasSkipped = Dependencies.Any(dependency =>
-                context.NodeResults.TryGetValue(dependency, out var result) &&
-                result.WasSkipped)
+            WasSkipped = false,
+            SourceFrame = sourceFrame,
+            OutputTexture = outputTexture
         };
+    }
 }
 
 internal sealed class BlendRenderGraphNode : RenderGraphNode
 {
     public required MediaForgeRenderGraphNode PlanNode { get; init; }
 
-    public override RenderGraphNodeResult Execute(RenderGraphContext context) =>
-        new()
+    public override RenderGraphNodeResult Execute(RenderGraphContext context)
+    {
+        if (Dependencies.Count == 0)
+        {
+            return new RenderGraphNodeResult
+            {
+                NodeKey = Key,
+                Kind = Kind,
+                WasSkipped = true,
+                FailureReason = "Canvas render node has no renderable dependencies."
+            };
+        }
+
+        if (!RenderGraphNodeResourceFlow.TryGetAnyDependencyResource(
+                this,
+                context,
+                out var sourceFrame,
+                out var outputTexture,
+                out var failureReason))
+        {
+            return new RenderGraphNodeResult
+            {
+                NodeKey = Key,
+                Kind = Kind,
+                WasSkipped = true,
+                FailureReason = failureReason
+            };
+        }
+
+        return new RenderGraphNodeResult
         {
             NodeKey = Key,
             Kind = Kind,
-            WasSkipped = Dependencies.Count > 0 &&
-                         Dependencies.All(dependency =>
-                             context.NodeResults.TryGetValue(dependency, out var result) &&
-                             result.WasSkipped)
+            WasSkipped = false,
+            SourceFrame = sourceFrame,
+            OutputTexture = outputTexture
         };
+    }
 }
 
 internal sealed class OutputRenderGraphNode : RenderGraphNode
 {
     public required MediaForgeRenderGraphNode PlanNode { get; init; }
 
-    public override RenderGraphNodeResult Execute(RenderGraphContext context) =>
-        new()
+    public override RenderGraphNodeResult Execute(RenderGraphContext context)
+    {
+        if (!RenderGraphNodeResourceFlow.TryGetDependencyResources(
+                this,
+                context,
+                out var sourceFrame,
+                out var outputTexture,
+                out var failureReason))
+        {
+            return new RenderGraphNodeResult
+            {
+                NodeKey = Key,
+                Kind = Kind,
+                WasSkipped = true,
+                FailureReason = failureReason
+            };
+        }
+
+        return new RenderGraphNodeResult
         {
             NodeKey = Key,
             Kind = Kind,
-            WasSkipped = Dependencies.Any(dependency =>
-                context.NodeResults.TryGetValue(dependency, out var result) &&
-                result.WasSkipped)
+            WasSkipped = false,
+            SourceFrame = sourceFrame,
+            OutputTexture = outputTexture
         };
+    }
+}
+
+internal static class RenderGraphNodeResourceFlow
+{
+    public static bool TryGetDependencyResources(
+        RenderGraphNode node,
+        RenderGraphContext context,
+        out GpuFrameReference? sourceFrame,
+        out GpuTextureLease? outputTexture,
+        out string? failureReason)
+    {
+        sourceFrame = null;
+        outputTexture = null;
+        failureReason = null;
+
+        if (node.Dependencies.Count == 0)
+        {
+            failureReason = "Node has no dependencies that can produce a renderable resource.";
+            return false;
+        }
+
+        foreach (var dependency in node.Dependencies)
+        {
+            if (!context.NodeResults.TryGetValue(dependency, out var result))
+            {
+                failureReason = $"Dependency '{dependency}' did not execute before node '{node.Key}'.";
+                return false;
+            }
+
+            if (result.WasSkipped)
+            {
+                failureReason = result.FailureReason ?? $"Dependency '{dependency}' was skipped.";
+                return false;
+            }
+
+            if (!result.HasRenderableResource)
+            {
+                failureReason = $"Dependency '{dependency}' produced no renderable resource.";
+                return false;
+            }
+
+            sourceFrame ??= result.SourceFrame;
+            outputTexture ??= result.OutputTexture;
+        }
+
+        return sourceFrame.HasValue || outputTexture is not null;
+    }
+
+    public static bool TryGetAnyDependencyResource(
+        RenderGraphNode node,
+        RenderGraphContext context,
+        out GpuFrameReference? sourceFrame,
+        out GpuTextureLease? outputTexture,
+        out string? failureReason)
+    {
+        sourceFrame = null;
+        outputTexture = null;
+        failureReason = null;
+
+        if (node.Dependencies.Count == 0)
+        {
+            failureReason = "Node has no dependencies that can produce a renderable resource.";
+            return false;
+        }
+
+        foreach (var dependency in node.Dependencies)
+        {
+            if (!context.NodeResults.TryGetValue(dependency, out var result))
+            {
+                failureReason = $"Dependency '{dependency}' did not execute before node '{node.Key}'.";
+                return false;
+            }
+
+            if (result.WasSkipped || !result.HasRenderableResource)
+            {
+                failureReason ??= result.FailureReason ?? $"Dependency '{dependency}' produced no renderable resource.";
+                continue;
+            }
+
+            sourceFrame ??= result.SourceFrame;
+            outputTexture ??= result.OutputTexture;
+            return true;
+        }
+
+        failureReason ??= "Dependencies produced no renderable resource.";
+        return false;
+    }
 }
