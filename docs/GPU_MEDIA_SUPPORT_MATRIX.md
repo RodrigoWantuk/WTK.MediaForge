@@ -1,6 +1,9 @@
 # GPU Media Support Matrix
 
 Support is determined by **runtime-detected capability**, not marketing GPU names.
+Windows media probes intentionally do not advertise H.264 decode/encode codecs
+until real Media Foundation enumeration and backend output validation land.
+Prototype bridges are excluded from product capability reports.
 
 ## Platform Backends
 

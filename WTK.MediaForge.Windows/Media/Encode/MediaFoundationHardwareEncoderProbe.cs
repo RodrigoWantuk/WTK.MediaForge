@@ -7,19 +7,9 @@ public sealed class MediaFoundationHardwareEncoderProbe
 {
     public IReadOnlyList<HardwareEncoderInfo> Probe()
     {
-        if (!OperatingSystem.IsWindows())
-            return Array.Empty<HardwareEncoderInfo>();
-
-        return
-        [
-            new HardwareEncoderInfo
-            {
-                Name = "Media Foundation H.264 Hardware MFT",
-                Codec = EncodedVideoCodec.H264,
-                Backend = "MediaFoundation-HardwareMft",
-                AcceptsGpuSurfaceInput = true
-            }
-        ];
+        // This intentionally returns no product encoder until real MF MFT
+        // enumeration and backend output validation are implemented.
+        return Array.Empty<HardwareEncoderInfo>();
     }
 
     public IReadOnlyList<CapabilityEntry> CreateVendorPlannedEntries() =>
