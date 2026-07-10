@@ -86,6 +86,13 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Sink attach timeout is owned by `RenderOutputSinkDispatcher`; the engine does not wrap that operation in a competing timeout that could abandon dispatcher cleanup before the sink observes cancellation.
 - Source/output type catalogs now include product contracts for animated images, Lottie, IP camera, encoded file, SRT, RTSP, and HLS. These are project/API contracts only until runtime adapters land.
 - Windows PNG/JPEG static image sources decode once into `StaticCpuAsset`, upload to a D3D11 shared texture, release the CPU pixel copy, and then publish GPU frame leases. WebP remains Planned until decoder/license review.
+- Decode/video resource ownership remains split by purpose: `GpuTextureLease`
+  is the internal pooled GPU texture lease, `GpuFrameLease` is the render
+  source lease consumed by snapshots/renderers, and hardware encoder leases
+  remain encoder-specific. `DecodedFrameToSourceFrameAdapter` is the internal
+  bridge from `DecodedGpuFrame` to `GpuFrameLease`; it preserves source id,
+  PTS, frame number, size, and releases the original texture lease when the
+  render source lease is released.
 
 ## GPU Media Transport Law (vNext)
 

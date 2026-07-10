@@ -188,7 +188,7 @@ internal sealed class WindowsDecodeGpuTextureFactory : IGpuTextureFactory
                 (uint)descriptor.Height));
 }
 
-internal sealed class WindowsDecodeGpuPhysicalTexture : IGpuPhysicalResource
+internal sealed class WindowsDecodeGpuPhysicalTexture : IGpuPhysicalResource, IGpuFrameHandleProvider
 {
     private readonly D3D11SharedTextureFrameHandle _handle;
     private readonly TaskCompletionSource _fullyDisposed = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -201,6 +201,8 @@ internal sealed class WindowsDecodeGpuPhysicalTexture : IGpuPhysicalResource
     }
 
     public Task FullyDisposed => _fullyDisposed.Task;
+
+    public IGpuFrameHandle FrameHandle => _handle;
 
     public bool TryFinalizePhysicalResources()
     {

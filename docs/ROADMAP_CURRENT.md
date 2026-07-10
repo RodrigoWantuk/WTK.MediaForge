@@ -22,6 +22,9 @@ Complete foundations:
 - Intermediate target pool and Vulkan readback staging pool.
 - Transform/crop/rotation/pivot support in the Vulkan composition path.
 - Windows PNG/JPEG static image MVP using load-time decode and D3D11 shared texture GPU leases.
+- Decoded GPU frame to render-source frame bridge, keeping `GpuTextureLease`
+  as the internal resource lease and `GpuFrameLease` as the render source
+  contract.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -181,6 +184,7 @@ Current truth table:
 | Asset manager | Done:Contract |
 | Static image Windows PNG/JPEG | Done:ProductValidated |
 | Export surface proof | Done:BackendCallSucceeded, not ProductValidated |
+| Decode-to-source frame bridge | Done:Contract |
 | Windows decode | Done:Prototype |
 | Windows encode | Done:Prototype |
 | MP4 writer | Done:Prototype |
