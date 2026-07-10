@@ -26,7 +26,8 @@ function Invoke-TestProject {
     param(
         [string]$Project,
         [string]$Filter,
-        [switch]$MaxCpuOne
+        [switch]$MaxCpuOne,
+        [switch]$RequireTests
     )
 
     $args = @("test", $Project, "--filter", $Filter, "--verbosity", "minimal")
@@ -36,8 +37,22 @@ function Invoke-TestProject {
     }
 
     Write-Host ">> dotnet $($args -join ' ')"
-    & dotnet @args
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $output = & dotnet @args 2>&1
+    $exitCode = $LASTEXITCODE
+    $output | ForEach-Object { Write-Host $_ }
+    if ($exitCode -ne 0) { exit $exitCode }
+
+    if ($RequireTests) {
+        $joinedOutput = $output -join [Environment]::NewLine
+        if ($joinedOutput -match "No test matches" -or
+            $joinedOutput -match "No test is available" -or
+            $joinedOutput -match "Nenhum teste corresponde" -or
+            $joinedOutput -match "Nenhum teste.*dispon[ií]vel" -or
+            $joinedOutput -match "Passed!\s+-\s+Failed:\s+0,\s+Passed:\s+0" -or
+            $joinedOutput -match "Aprovado!\s+.*Aprovado:\s+0") {
+            throw "Required test filter '$Filter' did not execute any tests for project '$Project'."
+        }
+    }
 }
 
 switch ($Tier) {
@@ -67,8 +82,8 @@ switch ($Tier) {
         Invoke-TestProject -Project $captureTests -Filter $stressFilter -MaxCpuOne
     }
     "Performance" {
-        Invoke-TestProject -Project $diagnosticsTests -Filter $performanceFilter
-        Invoke-TestProject -Project $compositionTests -Filter $performanceFilter
+        Invoke-TestProject -Project $diagnosticsTests -Filter $performanceFilter -RequireTests
+        Invoke-TestProject -Project $compositionTests -Filter $performanceFilter -RequireTests
     }
 }
 

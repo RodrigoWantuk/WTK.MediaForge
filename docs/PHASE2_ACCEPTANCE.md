@@ -1,6 +1,6 @@
 # Phase 2 Acceptance
 
-Evidence for WTK MediaForge Phase 2 (GPU Pipeline Completo) commits 01–20.
+Evidence for WTK MediaForge Phase 2 (GPU Pipeline Completo) commits 01-20.
 
 ## Validation commands
 
@@ -21,7 +21,7 @@ dotnet test
 | 03 | Asset Manager | `WTK.MediaForge.Composition.Tests/Assets/AssetManagerTests.cs` |
 | 04 | GPU Surface Export Proof | `WTK.MediaForge.Windows.Tests/Media/WindowsGpuExportProofTests.cs` |
 | 05 | Hardware Decode Foundation | `WTK.MediaForge.Core.Tests/Media/DecodedGpuFrameTests.cs` |
-| 06 | Windows Hardware Decode MVP | `WTK.MediaForge.Windows.Tests/Media/WindowsHardwareDecodeMvpTests.cs` |
+| 06 | Windows Hardware Decode Prototype | `WTK.MediaForge.Windows.Tests/Media/WindowsHardwareDecodeMvpTests.cs` |
 | 07 | Video Source Runtime | `WTK.MediaForge.Composition.Tests/Sources/VideoSourceRuntimeTests.cs` |
 | 08 | Texture Streaming | `WTK.MediaForge.Composition.Tests/Streaming/TextureLeaseQueueTests.cs` |
 | 09 | Renderer Video Integration | `WTK.MediaForge.Graphics.Vulkan.Tests/VideoPreviewIntegrationTests.cs` |
@@ -31,9 +31,9 @@ dotnet test
 | 13 | Transform Effects | `WTK.MediaForge.Graphics.Vulkan.Tests/Effects/TransformEffectTests.cs` |
 | 14 | Text Rendering | `WTK.MediaForge.Graphics.Vulkan.Tests/Text/TextRenderingTests.cs` |
 | 15 | Hardware Encode Foundation | `WTK.MediaForge.Windows.Tests/Media/HardwareEncodeFoundationTests.cs` |
-| 16 | MP4 Recording MVP | `WTK.MediaForge.Composition.Tests/Media/EncodedOutputPipelineTests.cs` |
-| 17 | RTMP Output MVP | `EncodedOutputPipelineTests.Rtmp_sink_receives_flv_tags_from_shared_encoder` |
-| 18 | Performance Validation | `WTK.MediaForge.Diagnostics.Tests/Performance/PerformanceValidationSuiteTests.cs` |
+| 16 | MP4 Recording Prototype | `WTK.MediaForge.Composition.Tests/Media/EncodedOutputPipelineTests.cs` |
+| 17 | RTMP Output Prototype | `EncodedOutputPipelineTests.Rtmp_sink_receives_flv_tags_from_shared_encoder` |
+| 18 | Synthetic Performance Validation | `WTK.MediaForge.Diagnostics.Tests/Performance/PerformanceValidationSuiteTests.cs` and `WTK.MediaForge.Composition.Tests/Performance/CompositionPerformanceGateTests.cs` |
 | 19 | Fault Recovery | `WTK.MediaForge.Composition.Tests/Recovery/FaultRecoveryCoordinatorTests.cs` |
 | 20 | Engine Readiness Gate | `./scripts/verify-phase2-readiness.ps1` |
 
@@ -50,8 +50,9 @@ See `docs/PERFORMANCE_BASELINE.md` and `artifacts/performance/`.
 
 ## Status
 
-Phase 2 structural contracts are present, but media paths that depended on
+Phase 2 structural contracts are present, but media paths that depend on
 hardware encode/decode, MP4 recording, RTMP streaming, and performance
-validation are reclassified as prototype infrastructure until real backend
-proof replaces canned packets, placeholder textures, in-memory transports, and
-synthetic workloads.
+validation remain prototype infrastructure until real backend proof replaces
+canned packets, placeholder textures, in-memory transports, and synthetic
+workloads. These rows must not be read as product-ready decode, recording, or
+streaming support.

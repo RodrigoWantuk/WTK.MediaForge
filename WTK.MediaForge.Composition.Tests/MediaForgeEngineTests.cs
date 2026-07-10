@@ -140,10 +140,11 @@ public class MediaForgeEngineTests
         var project = CreateValidProject();
 
         await engine.LoadProjectAsync(project);
+        var currentProject = GetCurrentProject(engine);
 
-        Assert.NotSame(project, engine.CurrentProject);
-        Assert.NotSame(project.Canvases[0], engine.CurrentProject!.Canvases[0]);
-        Assert.NotSame(project.Outputs[0], engine.CurrentProject.Outputs[0]);
+        Assert.NotSame(project, currentProject);
+        Assert.NotSame(project.Canvases[0], currentProject.Canvases[0]);
+        Assert.NotSame(project.Outputs[0], currentProject.Outputs[0]);
     }
 
     [Fact]
@@ -204,7 +205,7 @@ public class MediaForgeEngineTests
         await engine.LoadProjectAsync(project);
 
         Assert.Equal(LegacyMediaSourceTypeIds.DesktopCapture, project.SourceDefinitions[0].TypeId);
-        Assert.Equal(MediaSourceTypes.Desktop, engine.CurrentProject.SourceDefinitions[0].TypeId);
+        Assert.Equal(MediaSourceTypes.Desktop, GetCurrentProject(engine).SourceDefinitions[0].TypeId);
     }
 
     [Fact]
@@ -216,9 +217,10 @@ public class MediaForgeEngineTests
         await engine.LoadProjectAsync(project);
         project.Canvases[0].Name = "Mutated outside engine";
         project.Outputs[0].Name = "Mutated output";
+        var currentProject = GetCurrentProject(engine);
 
-        Assert.NotEqual(project.Canvases[0].Name, engine.CurrentProject.Canvases[0].Name);
-        Assert.NotEqual(project.Outputs[0].Name, engine.CurrentProject.Outputs[0].Name);
+        Assert.NotEqual(project.Canvases[0].Name, currentProject.Canvases[0].Name);
+        Assert.NotEqual(project.Outputs[0].Name, currentProject.Outputs[0].Name);
     }
 
     [Fact]
@@ -234,7 +236,7 @@ public class MediaForgeEngineTests
             e.AddText(canvasId, "Live", new Transform2D { Size = new CanvasSize(200, 64) });
         });
 
-        Assert.Contains(engine.CurrentProject.Canvases[0].Objects, o => o.Name == "Text");
+        Assert.Contains(GetCurrentProject(engine).Canvases[0].Objects, o => o.Name == "Text");
     }
 
     [Fact]
@@ -243,14 +245,14 @@ public class MediaForgeEngineTests
         await using var engine = CreateEngine();
         var project = CreateValidProject();
         await engine.LoadProjectAsync(project);
-        var output = engine.CurrentProject.Outputs[0];
+        var output = GetCurrentProject(engine).Outputs[0];
         var originalCanvasId = output.CanvasId;
 
         await Assert.ThrowsAsync<MediaForgeProjectValidationException>(() =>
             engine.ApplyProjectUpdateAsync(e => e.Project.Outputs[0].CanvasId = CanvasId.New()));
 
         Assert.Equal(output.Id, engine.CurrentProject!.Outputs[0].Id);
-        Assert.Equal(originalCanvasId, engine.CurrentProject.Outputs[0].CanvasId);
+        Assert.Equal(originalCanvasId, GetCurrentProject(engine).Outputs[0].CanvasId);
     }
 
     [Fact]
@@ -297,13 +299,13 @@ public class MediaForgeEngineTests
         await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount >= 1, TimeSpan.FromSeconds(5));
         var originalProject = engine.CurrentProject;
         var submitCount = backendFactory.Backend!.SubmitCount;
-        var canvasId = engine.CurrentProject.Canvases[0].Id;
+        var canvasId = GetCurrentProject(engine).Canvases[0].Id;
 
         await engine.ApplyProjectUpdateAsync(e =>
             e.AddText(canvasId, "Live", new Transform2D { Size = new CanvasSize(200, 64) }));
 
         Assert.NotSame(originalProject, engine.CurrentProject);
-        Assert.Contains(engine.CurrentProject.Canvases[0].Objects, o => o.Name == "Text");
+        Assert.Contains(GetCurrentProject(engine).Canvases[0].Objects, o => o.Name == "Text");
         await WaitUntilAsync(() => backendFactory.Backend!.SubmitCount > submitCount, TimeSpan.FromSeconds(5));
         backendFactory.Backend.CompleteAllPending();
     }
@@ -1888,6 +1890,13 @@ public class MediaForgeEngineTests
             outputSinkFactory ?? new FakeRenderOutputSinkFactory(),
             backendFactory ?? new RecordingRenderBackendFactory(),
             diagnostics);
+    }
+
+    private static MediaForgeProject GetCurrentProject(MediaForgeEngine engine)
+    {
+        var project = engine.CurrentProject;
+        Assert.NotNull(project);
+        return project;
     }
 
     private static WinFormsPreviewRenderOutputTarget CreatePreviewTarget(nint handle) =>

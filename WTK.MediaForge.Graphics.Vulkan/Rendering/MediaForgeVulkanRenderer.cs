@@ -15,6 +15,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 {
     private const int MaxExternalTextureImportsPerSubmit = 128;
+    private static readonly TimeSpan RegistryDisposeTimeout = TimeSpan.FromSeconds(5);
 
     private readonly RenderThreadGuard _threadGuard;
     private readonly VulkanHeadlessDevice _deviceContext;
@@ -398,22 +399,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         if (surfaces is null)
             return;
 
-        List<Exception>? errors = null;
-
-        foreach (var surface in surfaces)
-        {
-            try
-            {
-                surface.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                (errors ??= []).Add(ex);
-            }
-        }
-
-        if (errors is not null)
-            throw new AggregateException("Failed to dispose rendered output surfaces after submit failure.", errors);
+        RenderedOutputFrameBatch.FromRenderedSurfaces(surfaces).DisposeSurfaces();
     }
 
     private Dictionary<VulkanOffscreenRenderTarget, ImageLayout> CaptureOffscreenTargetLayouts()
@@ -561,7 +547,25 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
         try
         {
-            _textureRegistry.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _textureRegistry.DisposeAsync()
+                .AsTask()
+                .WaitAsync(RegistryDisposeTimeout)
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (TimeoutException ex)
+        {
+            errors ??= [];
+            errors.Add(new TimeoutException(
+                $"Vulkan external texture registry did not dispose within {RegistryDisposeTimeout}.",
+                ex));
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "vulkan.texture_registry_dispose_timeout",
+                $"Vulkan external texture registry did not dispose within {RegistryDisposeTimeout}.",
+                nameof(MediaForgeVulkanRenderer),
+                ex);
         }
         catch (Exception ex)
         {

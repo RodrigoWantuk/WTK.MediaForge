@@ -73,6 +73,24 @@ public class RenderedOutputFrameBatchTests
         Assert.Null(frame.SurfaceLease.BackendSurface);
     }
 
+    [Fact]
+    public void RenderedOutputFrameBatch_dispose_times_out_hanging_surface_lease()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new HangingRenderedOutputSurfaceLease(outputId, new FrameSize(320, 180));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+
+        var started = Environment.TickCount64;
+        var ex = Assert.Throws<AggregateException>(() =>
+            batch.DisposeSurfaces(TimeSpan.FromMilliseconds(50)));
+        var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
+        Assert.True(elapsed < TimeSpan.FromSeconds(2));
+        Assert.Contains(ex.Flatten().InnerExceptions, inner => inner is TimeoutException);
+
+        surface.Release();
+    }
+
     private static RenderOutputFrameInfo CreateInfo(
         RenderedOutputFrame frame,
         RenderOutputSinkId? sinkId = null) =>
@@ -109,5 +127,28 @@ public class RenderedOutputFrameBatchTests
             Interlocked.Increment(ref _disposeCount);
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class HangingRenderedOutputSurfaceLease(
+        RenderOutputId outputId,
+        FrameSize size)
+        : IRenderedOutputSurfaceLease
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RenderOutputId OutputId { get; } = outputId;
+
+        public FrameSize Size { get; } = size;
+
+        public RenderPixelFormat Format => RenderPixelFormat.Rgba8Unorm;
+
+        public RenderBackendKind BackendKind => RenderBackendKind.Vulkan;
+
+        public object? BackendSurface { get; } = new object();
+
+        public ValueTask DisposeAsync() => new(_release.Task);
+
+        public void Release() => _release.TrySetResult();
     }
 }

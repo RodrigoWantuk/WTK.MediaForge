@@ -148,6 +148,40 @@ public sealed class VideoSourceRuntimeTests
     }
 
     [Fact]
+    public async Task VideoSourceRuntime_dispose_does_not_block_indefinitely()
+    {
+        var path = CreateTempVideoPath();
+        try
+        {
+            var decoder = new HangingFlushDecoder();
+            var runtime = new VideoSourceRuntime(
+                new VideoFileSourceSettings { Path = path },
+                _ => decoder,
+                diagnostics: null)
+            {
+                DisposeCleanupTimeout = TimeSpan.FromMilliseconds(50)
+            };
+
+            await runtime.OpenAsync(CancellationToken.None);
+
+            var started = Environment.TickCount64;
+            var ex = Assert.Throws<TimeoutException>(runtime.Dispose);
+            var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
+            Assert.True(elapsed < TimeSpan.FromSeconds(2));
+            Assert.Contains("flush", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(decoder.DisposeCalled);
+
+            decoder.ReleaseFlush();
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task Decode_failure_surfaces_diagnostic_without_crash()
     {
         using var runtime = new VideoSourceRuntime(
@@ -308,5 +342,41 @@ public sealed class VideoSourceRuntimeTests
             _pool.Dispose();
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class HangingFlushDecoder : IHardwareFileVideoDecoder
+    {
+        private readonly TaskCompletionSource _flushRelease =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private int _disposeCalled;
+
+        public bool DisposeCalled => Volatile.Read(ref _disposeCalled) != 0;
+
+        public HardwareDecoderInfo Info { get; } = new()
+        {
+            Name = "HangingFlush",
+            Codec = EncodedVideoCodec.H264,
+            Backend = "HangingFlush",
+            ProducesGpuSurface = true
+        };
+
+        public ValueTask OpenAsync(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<DecodedGpuFrame?> DecodeNextFrameAsync(
+            FileDecodeFrameContext context,
+            IMediaTransportAuditSink auditSink) =>
+            ValueTask.FromResult<DecodedGpuFrame?>(null);
+
+        public ValueTask FlushAsync(IMediaTransportAuditSink auditSink) => new(_flushRelease.Task);
+
+        public ValueTask DisposeAsync()
+        {
+            Volatile.Write(ref _disposeCalled, 1);
+            return ValueTask.CompletedTask;
+        }
+
+        public void ReleaseFlush() => _flushRelease.TrySetResult();
     }
 }

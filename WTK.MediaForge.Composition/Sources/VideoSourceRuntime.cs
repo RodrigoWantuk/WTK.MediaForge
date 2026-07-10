@@ -13,10 +13,13 @@ namespace WTK.MediaForge.Composition.Sources;
 
 internal sealed class VideoSourceRuntime : IDisposable
 {
+    private static readonly TimeSpan DefaultDisposeCleanupTimeout = TimeSpan.FromSeconds(5);
+
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly VideoClock _clock = new();
     private IHardwareFileVideoDecoder? _decoder;
     private long _frameNumber;
+    private TimeSpan _disposeCleanupTimeout = DefaultDisposeCleanupTimeout;
     private bool _disposed;
 
     public VideoSourceRuntime(
@@ -39,6 +42,18 @@ internal sealed class VideoSourceRuntime : IDisposable
     public IVideoClock Clock => _clock;
 
     public MediaSourceState State { get; private set; } = MediaSourceState.Stopped;
+
+    internal TimeSpan DisposeCleanupTimeout
+    {
+        get => _disposeCleanupTimeout;
+        set
+        {
+            if (value <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(value), "Dispose cleanup timeout must be positive.");
+
+            _disposeCleanupTimeout = value;
+        }
+    }
 
     public async Task OpenAsync(CancellationToken cancellationToken = default)
     {
@@ -150,10 +165,10 @@ internal sealed class VideoSourceRuntime : IDisposable
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        await StopCoreAsync(cancellationToken).ConfigureAwait(false);
+        await StopCoreAsync(cancellationToken, cleanupTimeout: null).ConfigureAwait(false);
     }
 
-    private async Task StopCoreAsync(CancellationToken cancellationToken)
+    private async Task StopCoreAsync(CancellationToken cancellationToken, TimeSpan? cleanupTimeout)
     {
         cancellationToken.ThrowIfCancellationRequested();
         _clock.Pause();
@@ -167,7 +182,11 @@ internal sealed class VideoSourceRuntime : IDisposable
 
             try
             {
-                await decoder.FlushAsync(new CollectingMediaTransportAuditSink())
+                await AwaitCleanupAsync(
+                        decoder.FlushAsync(new CollectingMediaTransportAuditSink()),
+                        cleanupTimeout,
+                        cancellationToken,
+                        "flush")
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -179,7 +198,12 @@ internal sealed class VideoSourceRuntime : IDisposable
 
             try
             {
-                await decoder.DisposeAsync().ConfigureAwait(false);
+                await AwaitCleanupAsync(
+                        decoder.DisposeAsync(),
+                        cleanupTimeout,
+                        cancellationToken,
+                        "dispose")
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -199,6 +223,32 @@ internal sealed class VideoSourceRuntime : IDisposable
             ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
     }
 
+    private static async ValueTask AwaitCleanupAsync(
+        ValueTask operation,
+        TimeSpan? timeout,
+        CancellationToken cancellationToken,
+        string operationName)
+    {
+        var task = operation.AsTask();
+
+        if (timeout is null)
+        {
+            await task.ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await task.WaitAsync(timeout.Value, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException(
+                $"Video source decoder {operationName} did not complete within {timeout.Value}.",
+                ex);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -208,7 +258,21 @@ internal sealed class VideoSourceRuntime : IDisposable
 
         try
         {
-            StopCoreAsync(CancellationToken.None).GetAwaiter().GetResult();
+            StopCoreAsync(CancellationToken.None, DisposeCleanupTimeout)
+                .WaitAsync(TimeSpan.FromTicks(DisposeCleanupTimeout.Ticks * 2))
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (TimeoutException ex)
+        {
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "source.video.dispose_timeout",
+                ex.Message,
+                nameof(VideoSourceRuntime),
+                ex);
+            throw;
         }
         finally
         {

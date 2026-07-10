@@ -62,6 +62,7 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
         while (true)
         {
             RegistryEntry? entry = null;
+            RegistryEntry? timedOutEntry = null;
             var isCreator = false;
 
             lock (_gate)
@@ -82,6 +83,11 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
                         entry.RefCount++;
                         return new VulkanExternalTextureLease(entry, this);
                     }
+
+                    if (entry.ImportWaitTimedOut && !entry.Creation.Task.IsCompleted)
+                    {
+                        timedOutEntry = entry;
+                    }
                 }
 
                 if (entry is null)
@@ -91,6 +97,9 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
                     isCreator = true;
                 }
             }
+
+            if (timedOutEntry is not null && !timedOutEntry.Creation.Task.IsCompleted)
+                ThrowImportWaitTimeout(timedOutEntry, alreadyTimedOut: true);
 
             if (isCreator)
             {
@@ -174,36 +183,20 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
     private void WaitForImportCreation(RegistryEntry entry, VulkanExternalTextureKey key)
     {
         var task = entry.Creation.Task;
-        var completed = false;
 
         try
         {
-            completed = task.Wait(_creationWaitTimeout);
+            task.WaitAsync(_creationWaitTimeout).GetAwaiter().GetResult();
         }
-        catch
+        catch (TimeoutException)
         {
-            completed = true;
-        }
+            lock (_gate)
+            {
+                if (_entries.TryGetValue(key, out var current) && ReferenceEquals(current, entry))
+                    current.MarkImportWaitTimedOut();
+            }
 
-        if (!completed)
-        {
-            var timeout = new TimeoutException(
-                $"Timed out waiting for Vulkan texture import creation after {_creationWaitTimeout}.");
-
-            MediaForgeDiagnostics.Report(
-                _diagnostics,
-                MediaForgeDiagnosticSeverity.Error,
-                "vulkan.texture_import_wait_timeout",
-                timeout.Message,
-                nameof(VulkanExternalTextureRegistry),
-                timeout);
-
-            throw timeout;
-        }
-
-        try
-        {
-            task.GetAwaiter().GetResult();
+            ThrowImportWaitTimeout(entry, alreadyTimedOut: false);
         }
         catch
         {
@@ -215,6 +208,25 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
             throw;
         }
+    }
+
+    private void ThrowImportWaitTimeout(RegistryEntry entry, bool alreadyTimedOut)
+    {
+        var message = alreadyTimedOut
+            ? $"Vulkan texture import creation is still pending after a previous {_creationWaitTimeout} wait timed out."
+            : $"Timed out waiting for Vulkan texture import creation after {_creationWaitTimeout}.";
+        var timeout = new TimeoutException(message);
+
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Error,
+            "vulkan.texture_import_wait_timeout",
+            timeout.Message,
+            nameof(VulkanExternalTextureRegistry),
+            timeout,
+            entry.Key.TextureId.Value);
+
+        throw timeout;
     }
 
     internal void Release(VulkanExternalTextureKey key)
@@ -324,10 +336,15 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
 
         public bool IsReady => Import is not null;
 
+        public bool ImportWaitTimedOut { get; private set; }
+
+        public void MarkImportWaitTimedOut() => ImportWaitTimedOut = true;
+
         public void PublishImport(VulkanD3D11TextureImport import, D3D11SharedTextureFrameHandle sourceHandle)
         {
             Import = import;
             SourceHandle = sourceHandle;
+            ImportWaitTimedOut = false;
             Creation.TrySetResult(import);
         }
     }

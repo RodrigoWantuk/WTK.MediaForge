@@ -26,6 +26,7 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
 {
     private const int SlotCount = 3;
     private const int DisposeWaitSeconds = 5;
+    private static readonly TimeSpan SynchronousDisposeTimeout = TimeSpan.FromSeconds((DisposeWaitSeconds * 2) + 1);
 
     private readonly CaptureSourceInfo _captureSource;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
@@ -143,7 +144,35 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
         }
     }
 
-    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+    public void Dispose()
+    {
+        try
+        {
+            DisposeAsync()
+                .AsTask()
+                .WaitAsync(SynchronousDisposeTimeout)
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (TimeoutException ex)
+        {
+            Volatile.Write(ref _disposeState, (int)ProviderDisposeState.DisposeTimedOut);
+
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "capture.dispose_sync_timeout",
+                $"Synchronous dispose did not complete within {SynchronousDisposeTimeout}.",
+                nameof(DesktopDuplicationFrameProvider),
+                ex,
+                Id.Value,
+                Name);
+
+            throw new TimeoutException(
+                $"Synchronous dispose did not complete within {SynchronousDisposeTimeout}.",
+                ex);
+        }
+    }
 
     public bool TryAcquireLatestFrame(out GpuFrameLease lease)
     {
@@ -418,7 +447,8 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
                 {
                     _consecutiveAcquireFailures++;
                     idleBackoffMs = idleBackoffMs == 0 ? 1 : Math.Min(idleBackoffMs * 2, 16);
-                    Thread.Sleep(idleBackoffMs);
+                    if (cancellationToken.WaitHandle.WaitOne(idleBackoffMs))
+                        break;
 
                     if (_consecutiveAcquireFailures == reconnectFailureThreshold)
                     {

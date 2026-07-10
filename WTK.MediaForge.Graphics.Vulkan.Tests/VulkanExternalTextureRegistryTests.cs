@@ -327,7 +327,7 @@ public class VulkanExternalTextureRegistryTests
     }
 
     [Fact]
-    public void Acquire_after_import_failure_can_retry_cleanly()
+    public void Registry_import_failure_removes_entry_and_allows_clean_retry()
     {
         var shouldFail = true;
         var factory = new DelegatingImportFactory((deviceContext, handle) =>
@@ -448,6 +448,59 @@ public class VulkanExternalTextureRegistryTests
 
             using var creatorLease = await creatorTask;
             Assert.Equal(1, context.Registry.EntryCount);
+            Assert.Equal(1, factory.ImportCallCount);
+        }
+    }
+
+    [Fact]
+    public async Task Registry_waiter_timeout_fails_future_waiters_fast_with_diagnostic()
+    {
+        using var importEntered = new ManualResetEventSlim();
+        using var releaseImport = new ManualResetEventSlim();
+        var diagnostics = new InMemoryDiagnosticsSink();
+
+        var factory = new DelegatingImportFactory((deviceContext, handle) =>
+        {
+            importEntered.Set();
+
+            if (!releaseImport.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("Timed out waiting to release controlled import.");
+
+            return VulkanD3D11TextureImport.Import(deviceContext, handle);
+        });
+
+        if (!TryCreateContext(
+                out var context,
+                factory,
+                diagnostics,
+                creationWaitTimeout: TimeSpan.FromMilliseconds(50)))
+        {
+            return;
+        }
+
+        using (context)
+        {
+            var creatorTask = Task.Run(() => context.Registry.Acquire(context.Handle));
+            Assert.True(importEntered.Wait(TimeSpan.FromSeconds(5)));
+
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                Task.Run(() => context.Registry.Acquire(context.Handle)));
+
+            var started = Environment.TickCount64;
+            var secondWaiterError = await Assert.ThrowsAsync<TimeoutException>(() =>
+                Task.Run(() => context.Registry.Acquire(context.Handle)));
+            var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
+            Assert.True(elapsed < TimeSpan.FromMilliseconds(500));
+            Assert.Contains("previous", secondWaiterError.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(diagnostics.Diagnostics.Count(d => d.Code == "vulkan.texture_import_wait_timeout") >= 2);
+
+            releaseImport.Set();
+
+            using var creatorLease = await creatorTask;
+            using var reusedLease = context.Registry.Acquire(context.Handle);
+
+            Assert.Same(creatorLease.Import, reusedLease.Import);
             Assert.Equal(1, factory.ImportCallCount);
         }
     }

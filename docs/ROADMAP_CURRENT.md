@@ -116,7 +116,7 @@ Execute in this exact order after vNext (commits 00–24) is complete. Plan:
 | 03 | Asset Manager | Fast | **Done** |
 | 04 | **GPU Surface Export Proof (Real)** | **Blocks 15–17** | **Done** |
 | 05 | Hardware Decode Foundation | Fast | **Done** |
-| 06 | Windows Hardware Decode MVP | Gpu | **PrototypeOnly - needs real decode backend** |
+| 06 | Windows Hardware Decode Prototype | Gpu | **PrototypeOnly - needs real decode backend** |
 | 07 | Video Source Runtime | Fast | **Done** |
 | 08 | Texture Streaming | Gpu | **Done** |
 | 09 | Renderer Video Integration | Gpu | **Done** |
@@ -126,9 +126,9 @@ Execute in this exact order after vNext (commits 00–24) is complete. Plan:
 | 13 | Transform Effects | Gpu | **Done** |
 | 14 | Text Rendering | Gpu | **Done** |
 | 15 | Hardware Encode Foundation | Gpu; requires 04 | **PrototypeOnly - canned packets are not product proof** |
-| 16 | MP4 Recording MVP | Gpu | **PrototypeOnly - muxer not production-ready** |
-| 17 | RTMP Output MVP | Gpu | **PrototypeOnly - in-memory transport only** |
-| 18 | Performance Validation | Report | **NeedsRealBackend - synthetic workload only** |
+| 16 | MP4 Recording Prototype | Gpu | **PrototypeOnly - muxer not production-ready** |
+| 17 | RTMP Output Prototype | Gpu | **PrototypeOnly - in-memory transport only** |
+| 18 | Synthetic Performance Validation | Report | **NeedsRealBackend - synthetic workload only** |
 | 19 | Fault Recovery | Gpu stress | **Done** |
 | 20 | Engine Readiness Gate | Fast + Gpu + verify | **Done** |
 

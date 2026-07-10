@@ -29,34 +29,37 @@ WTK MediaForge is being built around a few core principles:
   Scenes, overlays, text, layouts, and media sources should be adjustable while the pipeline is running.
 
 * **Studio application**
-  In addition to the engine/API surface, the project now has a planned Avalonia-based Studio shell for users who want a complete desktop tool for scenes, sources, layers, effects, outputs, diagnostics, and future audio workflows.
+  In addition to the engine/API surface, the project now has an Avalonia-based Studio mock shell for users who want a complete desktop tool for scenes, sources, layers, effects, outputs, and future audio workflows.
 
 ## Technology Direction
 
 The current technical direction is:
 
 * **.NET 8**
-* **Avalonia UI** for the planned cross-platform Studio application
+* **Avalonia UI** for the cross-platform Studio application
 * **WinForms** only as an initial Windows test harness / legacy POC host
 * **Silk.NET** for Vulkan bindings
 * **Vulkan** for GPU-based rendering and composition
 * **Vortice.Direct3D11 / Vortice.DXGI** for D3D11/DXGI interop
 * **Desktop Duplication API** for the first Windows desktop capture implementation
 
-Future media processing and output modules may use FFmpeg through controlled LGPL-compatible integration.
+FFmpeg is not part of the first hardware MP4/RTMP product path. Any future FFmpeg/libav usage must pass the dedicated license and GPU media transport review, and may only operate on encoded packets, containers, metadata, or bitstream data.
 
 
 ## Studio UI Direction
 
-WTK MediaForge Studio is the planned desktop product shell for users who do not want to consume the engine through APIs directly.
+WTK MediaForge Studio is the desktop product shell for users who do not want to consume the engine through APIs directly.
 
-The approved first UI direction is an Avalonia dark-theme workbench with:
+The approved current UI direction is an Avalonia dark-theme mock workbench with:
 
-* project explorer for scenes, sources, outputs, presets, and packages;
-* central preview/canvas area with zoom, grid/safe-area controls, and layer selection overlays;
-* contextual inspector for scene/source/layer/effect/output properties;
-* bottom workbench tabs for layers, effects, timeline, diagnostics, performance, output monitor, and future audio mixer;
-* compact runtime status for engine, backend, FPS, frame time, dropped frames, outputs, and warnings.
+* a project model centered on scenes/canvases, reusable sources, scene layers, scene/layer effects, and routed outputs;
+* a scenes-first left navigation with source/output actions close to the relevant lists;
+* a dominant editable canvas mock with zoom, pan, layer hit testing, move/resize handles, grid/safe-area controls, and a separate overlay layer for future GPU preview integration;
+* contextual properties for scene, source, layer, effect, and output routing settings;
+* bottom workbench content limited to the main user workflow: layers, effects, and scene outputs;
+* production/output cards that make scene-to-sink routing and transitions visible without exposing engine, Vulkan, D3D11, command buffers, fences, or native handles.
+
+Diagnostics, performance details, and other low-level runtime information belong in advanced tooling, not in the primary user workflow. The Studio shell remains mock-only until the runtime roadmap explicitly opens each real capture, preview, recording, streaming, NDI, virtual camera, or audio track.
 
 The React/Lovable prototype is a visual reference only. The Studio implementation must be native Avalonia/MVVM and must not embed React, WebView, Electron, or browser runtime dependencies.
 

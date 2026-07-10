@@ -5,6 +5,8 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 internal sealed class RenderedOutputFrameBatch
 {
+    internal static readonly TimeSpan DefaultSurfaceDisposeTimeout = TimeSpan.FromSeconds(5);
+
     private readonly TaskCompletionSource _allLeasesReleased =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Func<ValueTask>? _leaseReleased;
@@ -82,15 +84,30 @@ internal sealed class RenderedOutputFrameBatch
             .ConfigureAwait(false);
     }
 
-    public void DisposeSurfaces()
+    public void DisposeSurfaces() => DisposeSurfaces(DefaultSurfaceDisposeTimeout);
+
+    public void DisposeSurfaces(TimeSpan timeout)
     {
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Surface dispose timeout must be positive.");
+
         List<Exception>? errors = null;
 
         foreach (var frame in Frames)
         {
             try
             {
-                frame.DisposeSurfaceAsync().AsTask().GetAwaiter().GetResult();
+                frame.DisposeSurfaceAsync()
+                    .AsTask()
+                    .WaitAsync(timeout)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (TimeoutException ex)
+            {
+                (errors ??= []).Add(new TimeoutException(
+                    $"Rendered output surface for output {frame.OutputId} did not dispose within {timeout}.",
+                    ex));
             }
             catch (Exception ex)
             {
