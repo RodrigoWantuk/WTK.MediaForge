@@ -15,6 +15,7 @@ layout(push_constant) uniform LayerParams
     int contentRotation;
     float rotationDegrees;
     vec4 letterboxColor;
+    vec4 geometryRect;
 } params;
 
 layout(location = 0) in vec2 vUv;
@@ -88,26 +89,37 @@ vec4 applyChromaKey(vec4 color)
     return vec4(despilled, alpha);
 }
 
-vec2 applyTransformRotation(vec2 uv, float degrees, vec2 pivot)
+vec2 mapFragmentToLayerUv(vec2 fragmentUv)
 {
-    if (abs(degrees) < 0.001)
-        return uv;
+    vec2 localPoint = params.geometryRect.xy + fragmentUv * params.geometryRect.zw;
 
-    float radians = degrees * 0.017453292519943295;
+    if (abs(params.rotationDegrees) < 0.001)
+        return localPoint / max(params.boxSize, vec2(0.0001));
+
+    float radians = -params.rotationDegrees * 0.017453292519943295;
     float c = cos(radians);
     float s = sin(radians);
-    vec2 centered = uv - pivot;
+    vec2 pivotPx = params.pivot * params.boxSize;
+    vec2 centered = localPoint - pivotPx;
     vec2 rotated = vec2(centered.x * c - centered.y * s, centered.x * s + centered.y * c);
-    return rotated + pivot;
+    return (rotated + pivotPx) / max(params.boxSize, vec2(0.0001));
 }
 
 void main()
 {
+    vec2 layerUv = mapFragmentToLayerUv(vUv);
+    if (layerUv.x < 0.0 || layerUv.x > 1.0 ||
+        layerUv.y < 0.0 || layerUv.y > 1.0)
+    {
+        outColor = vec4(0.0);
+        return;
+    }
+
     vec2 croppedSize = params.logicalSize * vec2(
         params.cropRect.z - params.cropRect.x,
         params.cropRect.w - params.cropRect.y);
 
-    vec2 uvInCropped = computeLayoutUv(vUv, params.layoutMode, croppedSize, params.boxSize);
+    vec2 uvInCropped = computeLayoutUv(layerUv, params.layoutMode, croppedSize, params.boxSize);
     if (uvInCropped.x < 0.0 || uvInCropped.x > 1.0 ||
         uvInCropped.y < 0.0 || uvInCropped.y > 1.0)
     {
@@ -117,7 +129,6 @@ void main()
 
     vec2 uvLogical = mapCroppedUvToFullLogicalUv(uvInCropped, params.cropRect);
     vec2 uvRaw = rotateUv(uvLogical, params.contentRotation);
-    uvRaw = applyTransformRotation(uvRaw, params.rotationDegrees, params.pivot);
 
     vec4 color = texture(uSourceTexture, uvRaw);
     color = applyChromaKey(color);

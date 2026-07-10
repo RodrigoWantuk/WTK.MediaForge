@@ -4,6 +4,10 @@ Status: **accepted**
 
 Validation date: 2026-06-22
 
+Current status note: vNext Commit 09 supersedes the original CP2 transform
+limits. Source, solid, text, and nested-canvas draw objects now share the
+renderer transform path for crop, rotation, and pivot handling.
+
 Validation commands (all green):
 
 ```powershell
@@ -14,7 +18,7 @@ dotnet test WTK.MediaForge.sln
 ./scripts/test.ps1 -Tier Gpu
 ```
 
-## Supported Scope
+## Original Supported Scope
 
 CP2 covers multi-layer source composition on one canvas and one offscreen
 `RenderOutput` in Vulkan:
@@ -29,7 +33,7 @@ CP2 covers multi-layer source composition on one canvas and one offscreen
 - Simple transform (position and size, no rotation)
 - Clipping against canvas bounds
 
-## Out of Scope
+## Original CP2 Out of Scope
 
 The following are explicitly not part of CP2:
 
@@ -65,11 +69,11 @@ File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp2MultiLayerStressTests.cs`
 | `Cp2_repeated_multi_layer_submits_do_not_exhaust_descriptor_pool` | Descriptor pool stability |
 | `Cp2_multi_layer_submission_dispose_releases_framebuffers_descriptors_and_surfaces` | Submission cleanup after fence |
 
-## Expected Diagnostics
+## Original Expected Diagnostics
 
-CP2 does not introduce new unsupported-feature diagnostics beyond CP1. Unsupported
-transform/crop requests on source layers continue to emit explicit render diagnostics
-instead of silent fallback.
+At CP2 acceptance time, transform/crop requests outside the supported subset
+emitted explicit render diagnostics instead of silent fallback. vNext Commit 09
+removes those unsupported diagnostics for the shared transform path.
 
 ## Known Limitations
 

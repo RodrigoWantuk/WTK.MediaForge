@@ -251,7 +251,7 @@ public class Cp3SolidLayerTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
     }
     [Fact]
-    public async Task Solid_layer_rotation_reports_unsupported_diagnostic()
+    public async Task Solid_layer_rotation_is_supported_without_unsupported_diagnostic()
     {
         if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context, diagnostics: new ListDiagnosticsSink()))
             return;
@@ -293,7 +293,7 @@ public class Cp3SolidLayerTests
                 var submission = backend.Submit(snapshot);
                 await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
 
-                Assert.Contains(
+                Assert.DoesNotContain(
                     diagnostics.Diagnostics,
                     diagnostic => diagnostic.Code == "render.transform_rotation_unsupported");
             }
@@ -304,7 +304,7 @@ public class Cp3SolidLayerTests
         }
     }
     [Fact]
-    public async Task Solid_layer_crop_reports_unsupported_diagnostic()
+    public async Task Solid_layer_crop_is_supported_without_unsupported_diagnostic()
     {
         if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context, diagnostics: new ListDiagnosticsSink()))
             return;
@@ -344,7 +344,7 @@ public class Cp3SolidLayerTests
                 var submission = backend.Submit(snapshot);
                 await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
 
-                Assert.Contains(
+                Assert.DoesNotContain(
                     diagnostics.Diagnostics,
                     diagnostic => diagnostic.Code == "render.crop_unsupported");
             }

@@ -4,7 +4,11 @@ Status: **accepted**
 
 Validation date: 2026-06-22
 
-## Supported Scope
+Current status note: vNext Commit 09 supersedes the original CP3 solid-layer
+transform limits. Solid layers now use the shared renderer transform path for
+crop, rotation, and pivot.
+
+## Original Supported Scope
 
 Vulkan rendering of `SolidDrawObject` layers:
 
@@ -14,7 +18,7 @@ Vulkan rendering of `SolidDrawObject` layers:
 - Opacity and normal alpha blending over source layers
 - Single draw per solid layer (no duplicate geometry pass)
 
-## Out of Scope
+## Original CP3 Out of Scope
 
 - Rotation (`render.transform_rotation_unsupported`)
 - Crop (`render.crop_unsupported`)
@@ -31,10 +35,10 @@ File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp3SolidLayerTests.cs`
 | `Solid_layer_respects_transform_and_clipping` | Transform + clip |
 | `Solid_layer_opacity_0_5_blends_exactly_once_over_source_layer` | No double draw |
 | `Solid_draw_object_does_not_report_render_drawobject_not_supported` | Supported draw object |
-| `Solid_layer_rotation_reports_unsupported_diagnostic` | Rotation diagnostic |
-| `Solid_layer_crop_reports_unsupported_diagnostic` | Crop diagnostic |
+| `Solid_layer_rotation_is_supported_without_unsupported_diagnostic` | Rotation accepted by current renderer |
+| `Solid_layer_crop_is_supported_without_unsupported_diagnostic` | Crop accepted by current renderer |
 
-## Expected Diagnostics
+## Original Expected Diagnostics
 
 | Code | When |
 |------|------|
@@ -44,11 +48,10 @@ File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp3SolidLayerTests.cs`
 
 ## Known Limitations
 
-- Solid layers share the same unsupported transform subset as source layers.
 - Acceptance is proven through offscreen pixel readback, not live preview.
 
 ## Acceptance Criteria
 
-Solid layer rendering is accepted because pixel tests prove color, blend, transform,
-clip, and single-pass opacity behavior, with explicit diagnostics for unsupported
-transform features.
+Solid layer rendering is accepted because pixel tests prove color, blend,
+transform, clip, and single-pass opacity behavior. vNext Commit 09 extends that
+foundation with shared crop, rotation, and pivot handling.

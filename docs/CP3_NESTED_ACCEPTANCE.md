@@ -4,7 +4,11 @@ Status: **accepted**
 
 Validation date: 2026-06-22
 
-## Supported Scope
+Current status note: vNext Commit 09 supersedes the original CP3 nested-canvas
+transform limits. Nested canvas layers now use the shared renderer transform
+path for crop, rotation, and pivot.
+
+## Original Supported Scope
 
 Vulkan rendering of `CanvasDrawObject` nested canvases:
 
@@ -14,7 +18,7 @@ Vulkan rendering of `CanvasDrawObject` nested canvases:
 - Depth limit of 8 nested levels
 - Intermediate GPU target retained until submission fence completes
 
-## Out of Scope
+## Original CP3 Out of Scope
 
 - Rotation on nested canvas layers
 - Crop on nested canvas layers
@@ -31,8 +35,8 @@ File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp3NestedCanvasTests.cs`
 | `Nested_canvas_depth_8_works` | Depth-8 nesting |
 | `Nested_canvas_target_lifetime_survives_submission` | Target survives until fence |
 | `Canvas_draw_object_does_not_report_render_drawobject_not_supported` | Supported draw object |
-| `Canvas_layer_rotation_reports_unsupported_diagnostic` | Rotation diagnostic |
-| `Canvas_layer_crop_reports_unsupported_diagnostic` | Crop diagnostic |
+| `Canvas_layer_rotation_is_supported_without_unsupported_diagnostic` | Rotation accepted by current renderer |
+| `Canvas_layer_crop_is_supported_without_unsupported_diagnostic` | Crop accepted by current renderer |
 
 ## Lifetime Expectation
 
@@ -50,5 +54,6 @@ submission-scoped lifetime.
 ## Acceptance Criteria
 
 Nested canvas rendering is accepted because pixel tests prove composition,
-transform, depth-8 behavior, and submission-scoped intermediate target lifetime,
-with explicit diagnostics for unsupported transform features.
+transform, depth-8 behavior, and submission-scoped intermediate target lifetime.
+vNext Commit 09 extends that foundation with shared crop, rotation, and pivot
+handling.

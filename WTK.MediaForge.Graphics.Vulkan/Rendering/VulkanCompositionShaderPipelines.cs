@@ -283,7 +283,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                 nested.BlendMode != BlendMode.Normal ||
                 HasEnabledEffects(nested) ||
                 !nested.Transform.HasPositiveSize ||
-                !TryCreateClippedScissor(nested.Transform, canvas.Size, out _))
+                !VulkanLayerGeometry.TryCreate(nested.Transform, canvas.Size, out _))
             {
                 continue;
             }
@@ -319,57 +319,47 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         skipDraw = false;
         var transform = drawObject.Transform;
 
-        if (MathF.Abs(transform.RotationDegrees) > 0.001f)
+        if (!IsFiniteTransform(transform) || !transform.HasPositiveSize)
         {
-            if (drawObject is not RenderSourceLayerDrawObjectSnapshot)
-            {
-                ReportTransformRotationUnsupported(drawObject);
-                skipDraw = true;
-            }
+            ReportInvalidTransform(drawObject);
+            skipDraw = true;
+            return true;
         }
 
-        if (!IsFullCrop(drawObject.EffectiveCrop) &&
-            drawObject is RenderSolidDrawObjectSnapshot or RenderCanvasDrawObjectSnapshot)
+        if (!drawObject.EffectiveCrop.IsValid)
         {
-            ReportCropUnsupported(drawObject);
+            ReportInvalidCrop(drawObject);
             skipDraw = true;
+            return true;
         }
 
         return true;
     }
 
-    private static bool IsFullCrop(NormalizedRect crop) =>
-        crop.Left == 0f &&
-        crop.Top == 0f &&
-        crop.Right == 1f &&
-        crop.Bottom == 1f;
+    private static bool IsFiniteTransform(Transform2D transform) =>
+        float.IsFinite(transform.Position.X) &&
+        float.IsFinite(transform.Position.Y) &&
+        float.IsFinite(transform.Size.Width) &&
+        float.IsFinite(transform.Size.Height) &&
+        float.IsFinite(transform.Pivot.X) &&
+        float.IsFinite(transform.Pivot.Y) &&
+        float.IsFinite(transform.RotationDegrees);
 
-    private void ReportTransformRotationUnsupported(RenderDrawObjectSnapshot drawObject) =>
+    private void ReportInvalidTransform(RenderDrawObjectSnapshot drawObject) =>
         MediaForgeDiagnostics.Report(
             _diagnostics,
             MediaForgeDiagnosticSeverity.Warning,
-            "render.transform_rotation_unsupported",
-            $"Draw object '{drawObject.Name}' uses RotationDegrees={transformSummary(drawObject.Transform.RotationDegrees)}, which is not supported by the renderer yet.",
+            "render.transform_invalid",
+            $"Draw object '{drawObject.Name}' has invalid transform '{drawObject.Transform}' and was skipped.",
             nameof(VulkanCompositionShaderPipelines));
 
-    private void ReportTransformPivotUnsupported(RenderDrawObjectSnapshot drawObject) =>
+    private void ReportInvalidCrop(RenderDrawObjectSnapshot drawObject) =>
         MediaForgeDiagnostics.Report(
             _diagnostics,
             MediaForgeDiagnosticSeverity.Warning,
-            "render.transform_pivot_unsupported",
-            $"Draw object '{drawObject.Name}' uses pivot {drawObject.Transform.Pivot}, which is not supported while rotation is active.",
+            "render.crop_invalid",
+            $"Draw object '{drawObject.Name}' has invalid crop {drawObject.EffectiveCrop} and was skipped.",
             nameof(VulkanCompositionShaderPipelines));
-
-    private void ReportCropUnsupported(RenderDrawObjectSnapshot drawObject) =>
-        MediaForgeDiagnostics.Report(
-            _diagnostics,
-            MediaForgeDiagnosticSeverity.Warning,
-            "render.crop_unsupported",
-            $"Draw object '{drawObject.Name}' of type '{drawObject.GetType().Name}' uses crop {drawObject.EffectiveCrop}, which is not supported yet.",
-            nameof(VulkanCompositionShaderPipelines));
-
-    private static string transformSummary(float rotationDegrees) =>
-        rotationDegrees.ToString("0.###");
 
     private bool IsSupportedBlendMode(RenderDrawObjectSnapshot drawObject)
     {
@@ -590,21 +580,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         FrameSize canvasSize,
         Transform2D transform)
     {
-        if (!transform.HasPositiveSize)
+        if (!VulkanLayerGeometry.TryCreate(transform, canvasSize, out var geometry))
             return;
 
-        if (!TryCreateClippedScissor(transform, canvasSize, out var scissor))
-            return;
-
-        var viewport = new Viewport
-        {
-            X = transform.Position.X,
-            Y = transform.Position.Y,
-            Width = transform.Size.Width,
-            Height = transform.Size.Height,
-            MinDepth = 0,
-            MaxDepth = 1
-        };
+        pushConstants.GeometryRect = geometry.GeometryRect;
+        var viewport = geometry.Viewport;
+        var scissor = geometry.Scissor;
 
         _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
         _vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, &descriptorSet, 0, null);
@@ -634,21 +615,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         FrameSize canvasSize,
         Transform2D transform)
     {
-        if (!transform.HasPositiveSize)
+        if (!VulkanLayerGeometry.TryCreate(transform, canvasSize, out var geometry))
             return;
 
-        if (!TryCreateClippedScissor(transform, canvasSize, out var scissor))
-            return;
-
-        var viewport = new Viewport
-        {
-            X = transform.Position.X,
-            Y = transform.Position.Y,
-            Width = transform.Size.Width,
-            Height = transform.Size.Height,
-            MinDepth = 0,
-            MaxDepth = 1
-        };
+        pushConstants.GeometryRect = geometry.GeometryRect;
+        var viewport = geometry.Viewport;
+        var scissor = geometry.Scissor;
 
         _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
         _vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, &descriptorSet, 0, null);
@@ -677,21 +649,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         FrameSize canvasSize,
         Transform2D transform)
     {
-        if (!transform.HasPositiveSize)
+        if (!VulkanLayerGeometry.TryCreate(transform, canvasSize, out var geometry))
             return;
 
-        if (!TryCreateClippedScissor(transform, canvasSize, out var scissor))
-            return;
-
-        var viewport = new Viewport
-        {
-            X = transform.Position.X,
-            Y = transform.Position.Y,
-            Width = transform.Size.Width,
-            Height = transform.Size.Height,
-            MinDepth = 0,
-            MaxDepth = 1
-        };
+        pushConstants.GeometryRect = geometry.GeometryRect;
+        var viewport = geometry.Viewport;
+        var scissor = geometry.Scissor;
 
         _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
 
@@ -720,21 +683,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         FrameSize canvasSize,
         Transform2D transform)
     {
-        if (!transform.HasPositiveSize)
+        if (!VulkanLayerGeometry.TryCreate(transform, canvasSize, out var geometry))
             return;
 
-        if (!TryCreateClippedScissor(transform, canvasSize, out var scissor))
-            return;
-
-        var viewport = new Viewport
-        {
-            X = transform.Position.X,
-            Y = transform.Position.Y,
-            Width = transform.Size.Width,
-            Height = transform.Size.Height,
-            MinDepth = 0,
-            MaxDepth = 1
-        };
+        pushConstants.GeometryRect = geometry.GeometryRect;
+        var viewport = geometry.Viewport;
+        var scissor = geometry.Scissor;
 
         _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
         _vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _pipelineLayout, 0, 1, &descriptorSet, 0, null);
@@ -754,31 +708,6 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         _vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
         _vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
         _vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
-    }
-
-    private static bool TryCreateClippedScissor(
-        Transform2D transform,
-        FrameSize canvasSize,
-        out Rect2D scissor)
-    {
-        var left = Math.Max(0, (int)Math.Floor(transform.Position.X));
-        var top = Math.Max(0, (int)Math.Floor(transform.Position.Y));
-        var right = Math.Min((int)canvasSize.Width, (int)Math.Ceiling(transform.Position.X + transform.Size.Width));
-        var bottom = Math.Min((int)canvasSize.Height, (int)Math.Ceiling(transform.Position.Y + transform.Size.Height));
-
-        if (right <= left || bottom <= top)
-        {
-            scissor = default;
-            return false;
-        }
-
-        scissor = new Rect2D
-        {
-            Offset = new Offset2D(left, top),
-            Extent = new Extent2D((uint)(right - left), (uint)(bottom - top))
-        };
-
-        return true;
     }
 
     private void DrawFullscreen(

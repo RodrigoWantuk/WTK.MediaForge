@@ -4,6 +4,7 @@ using WTK.MediaForge.Core.Capture;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
@@ -66,17 +67,28 @@ internal static partial class CompositionPushConstantsBuilder
         return new MediaForgeSolidPushConstants
         {
             FillColor = ToVector4(color),
-            Opacity = solid.Opacity
+            CropRect = ToVector4(solid.EffectiveCrop),
+            BoxSize = new Vector2(solid.Transform.Size.Width, solid.Transform.Size.Height),
+            Pivot = new Vector2(solid.Transform.Pivot.X, solid.Transform.Pivot.Y),
+            Opacity = solid.Opacity,
+            RotationDegrees = solid.Transform.RotationDegrees
         };
     }
 
     private static Vector4 ToVector4(ColorRgba color) =>
         new(color.R, color.G, color.B, color.A);
 
+    private static Vector4 ToVector4(NormalizedRect rect) =>
+        new(rect.Left, rect.Top, rect.Right, rect.Bottom);
+
     public static MediaForgeCanvasCompositePushConstants BuildCanvasComposite(
         RenderCanvasDrawObjectSnapshot canvas) =>
         new()
         {
-            Opacity = canvas.Opacity
+            CropRect = ToVector4(canvas.EffectiveCrop),
+            BoxSize = new Vector2(canvas.Transform.Size.Width, canvas.Transform.Size.Height),
+            Pivot = new Vector2(canvas.Transform.Pivot.X, canvas.Transform.Pivot.Y),
+            Opacity = canvas.Opacity,
+            RotationDegrees = canvas.Transform.RotationDegrees
         };
 }

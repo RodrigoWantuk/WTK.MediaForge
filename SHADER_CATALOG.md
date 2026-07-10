@@ -27,15 +27,25 @@ Embedded in `WTK.MediaForge.Graphics.Vulkan/Shaders/Catalog/`:
 
 ## UV Pipeline
 
-Order is fixed and matches `CoordinateSystem.CompositionPipelineOrder`:
+Layer shaders draw into the axis-aligned bounding box of the transformed object,
+then map each fragment back into local layer UV using the inverse object
+rotation around `Transform2D.Pivot`.
+
+For sampled source layers, the order matches
+`CoordinateSystem.CompositionPipelineOrder`:
 
 ```glsl
+localUv = inverseObjectTransform(fragmentUv, geometryRect, boxSize, pivot, rotationDegrees);
 croppedLogicalSize = logicalSize * crop.sizeFraction;
 uvInCroppedContent = computeLayoutUv(localUv, layoutMode, croppedLogicalSize, boxSize);
 uvLogical = mapCroppedUvToFullLogicalUv(uvInCroppedContent, crop);
 uvRaw = rotateUvForTexture(uvLogical, contentRotation);
 color = texture(sourceTexture, uvRaw);
 ```
+
+For texture-like draw objects (`TextDrawObject`, `CanvasDrawObject`), crop maps
+local UV into a sampled sub-rectangle. For `SolidDrawObject`, crop behaves as a
+local mask because there is no source texture to sample.
 
 ## Managed API
 
