@@ -1,9 +1,9 @@
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Media.Mux;
 using WTK.MediaForge.Composition.Media.Stream;
-using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Encode;
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Encode;
 using WTK.MediaForge.Core.Media.Interop;
 using Xunit;
@@ -43,12 +43,13 @@ public sealed class EncodedOutputPipelineTests
     }
 
     [Fact]
-    public async Task Recording_mp4_produces_playable_file()
+    public async Task Recording_mp4_prototype_muxer_writes_experimental_file_structure()
     {
         var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_{Guid.NewGuid():N}.mp4");
         try
         {
-            await using var sink = new RecordingMp4Sink(outputPath, null, allowPrototypeMuxer: true);
+            var audit = new CollectingMediaTransportAuditSink();
+            await using var sink = new RecordingMp4Sink(outputPath, audit, allowPrototypeMuxer: true);
             await sink.StartAsync(
                 new RenderOutputSinkContext(
                     Core.Identifiers.RenderOutputId.New(),
@@ -64,8 +65,12 @@ public sealed class EncodedOutputPipelineTests
             await sink.StopAsync(CancellationToken.None);
 
             Assert.True(File.Exists(outputPath));
-            Assert.True(IsoBmffMp4Writer.IsPlayableStructure(outputPath));
+            Assert.True(IsoBmffMp4Writer.HasExperimentalBoxStructure(outputPath));
             Assert.True(new FileInfo(outputPath).Length > 256);
+            Assert.All(
+                audit.Events.Where(static e => e.Kind == MediaTransportAuditEventKind.EncodedPacketProduced),
+                static e => Assert.Equal(MediaTransportAuditEvidenceKind.Prototype, e.EvidenceKind));
+            Assert.False(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
         }
         finally
         {
@@ -100,7 +105,7 @@ public sealed class EncodedOutputPipelineTests
     }
 
     [Fact]
-    public async Task Shared_encoder_instance_feeds_mp4_and_rtmp()
+    public async Task Shared_prototype_packet_router_feeds_mp4_and_rtmp()
     {
         var encoder = new TestHardwareVideoEncoder();
         var router = new EncodedOutputRouter(encoder);
@@ -133,7 +138,7 @@ public sealed class EncodedOutputPipelineTests
                 await router.RoutePacketAsync(packet, CancellationToken.None);
 
             await mp4Sink.StopAsync(CancellationToken.None);
-            Assert.True(IsoBmffMp4Writer.IsPlayableStructure(mp4Path));
+            Assert.True(IsoBmffMp4Writer.HasExperimentalBoxStructure(mp4Path));
             Assert.NotEmpty(rtmpSink.SentPacketsForTests);
             Assert.Same(encoder, router.Encoder);
         }

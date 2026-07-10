@@ -25,7 +25,7 @@ internal static class IsoBmffMp4Writer
         stream.Write(mdatBytes);
     }
 
-    public static bool IsPlayableStructure(string path)
+    public static bool HasExperimentalBoxStructure(string path)
     {
         if (!File.Exists(path))
             return false;

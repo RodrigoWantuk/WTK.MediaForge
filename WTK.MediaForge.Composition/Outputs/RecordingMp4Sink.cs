@@ -54,7 +54,7 @@ public sealed class RecordingMp4Sink : IRenderOutputSink
         }
 
         _context = context;
-        _muxer = new EncodedPacketMp4Muxer(_outputPath, _auditSink);
+        _muxer = new PrototypeEncodedPacketMp4Muxer(_outputPath, _auditSink);
         _started = true;
         return ValueTask.CompletedTask;
     }

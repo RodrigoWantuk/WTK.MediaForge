@@ -12,9 +12,11 @@ internal interface IMp4Muxer : IAsyncDisposable
 }
 
 /// <summary>
-/// Packets-only MP4 muxer. CPU handles container metadata only; no raw video frames.
+/// Prototype-only packet collector for the experimental ISO BMFF writer.
+/// CPU handles container metadata only; no raw video frames.
+/// This buffers all packets in memory and must not be treated as product MP4 recording.
 /// </summary>
-internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
+internal sealed class PrototypeEncodedPacketMp4Muxer : IMp4Muxer
 {
     private readonly string _outputPath;
     private readonly IMediaTransportAuditSink? _auditSink;
@@ -22,7 +24,7 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
     private bool _finalized;
     private bool _disposed;
 
-    public EncodedPacketMp4Muxer(string outputPath, IMediaTransportAuditSink? auditSink = null)
+    public PrototypeEncodedPacketMp4Muxer(string outputPath, IMediaTransportAuditSink? auditSink = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
         _outputPath = outputPath;
@@ -43,7 +45,7 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
         _auditSink?.Record(new MediaTransportAuditEvent
         {
             Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
-            Source = nameof(EncodedPacketMp4Muxer),
+            Source = nameof(PrototypeEncodedPacketMp4Muxer),
             EvidenceKind = MediaTransportAuditEvidenceKind.Prototype,
             Detail = $"Buffered encoded packet for '{_outputPath}'."
         });

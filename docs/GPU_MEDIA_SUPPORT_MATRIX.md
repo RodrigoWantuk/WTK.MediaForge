@@ -57,12 +57,14 @@ Support is determined by **runtime-detected capability**, not marketing GPU name
 Recording MP4 remains **PrototypeOnly** after Phase 2 Commits 15-16:
 
 ```text
-FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> MF H.264 -> EncodedPacketMp4Muxer
+FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> MF H.264 -> PrototypeEncodedPacketMp4Muxer
 ```
 
-Capability API exposes `GpuExportProof` status: Passed / Failed / Pending, but
-recording remains unavailable until real hardware encoder output and production
-muxing are validated.
+`PrototypeEncodedPacketMp4Muxer` buffers packets in memory and writes an
+experimental ISO BMFF structure only for internal validation. Capability API
+exposes `GpuExportProof` status: Passed / Failed / Pending, but recording
+remains unavailable until real hardware encoder output and production muxing are
+validated.
 
 ## FFmpeg / libav Capability Status
 

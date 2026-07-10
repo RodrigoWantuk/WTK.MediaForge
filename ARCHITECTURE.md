@@ -193,7 +193,7 @@ FrameScheduler
   -> IHardwareVideoEncoder.SubmitFrameAsync(GpuTextureLease)
   -> EncodedVideoPacket
   -> EncodedOutputRouter (single encoder instance)
-       -> RecordingMp4Sink / EncodedPacketMp4Muxer
+       -> RecordingMp4Sink / PrototypeEncodedPacketMp4Muxer
        -> RtmpSink / FlvPacketizer / RtmpTransport
 ```
 
@@ -201,6 +201,8 @@ Rules:
 
 - Sinks never call render; scheduler owns frame ordering.
 - MP4/RTMP consume encoded packets only (no raw GPU surface frames).
+- `PrototypeEncodedPacketMp4Muxer` is a prototype-only structural writer and
+  does not prove production MP4 recording.
 - No FFmpeg/libx264 on the recording/streaming product path.
 
 ## Resource Rules
