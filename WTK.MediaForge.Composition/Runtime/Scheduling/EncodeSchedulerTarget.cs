@@ -13,18 +13,34 @@ internal enum EncodeSchedulerBackpressurePolicy
     QueueWithBackpressure
 }
 
+internal sealed class ScheduledRenderedFrame : IDisposable
+{
+    private int _disposed;
+
+    public required FrameExecutionContext Context { get; init; }
+
+    public required GpuTextureLease TextureLease { get; init; }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        TextureLease.Dispose();
+    }
+}
+
 /// <summary>
 /// Scheduler target for hardware encode. Encode pacing is independent from render pacing.
 /// </summary>
-internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDisposable
+internal sealed class EncodeSchedulerTarget : IAsyncDisposable
 {
     private readonly IHardwareVideoEncoder _encoder;
     private readonly IGpuFrameExporter _frameExporter;
     private readonly IMediaTransportAuditSink _auditSink;
-    private readonly Func<GpuTextureLease?> _acquireRenderedFrame;
     private readonly Action<EncodedVideoPacket> _onPacketProduced;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
-    private readonly Queue<FrameExecutionContext> _pendingFrames = new();
+    private readonly Queue<ScheduledRenderedFrame> _pendingFrames = new();
     private readonly object _queueGate = new();
     private readonly SemaphoreSlim _queueSignal = new(0, 1);
     private readonly CancellationTokenSource _stop = new();
@@ -39,7 +55,6 @@ internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDispo
         IHardwareVideoEncoder encoder,
         IGpuFrameExporter frameExporter,
         IMediaTransportAuditSink auditSink,
-        Func<GpuTextureLease?> acquireRenderedFrame,
         Action<EncodedVideoPacket> onPacketProduced,
         IMediaForgeDiagnosticsSink? diagnostics = null,
         int queueCapacity = 2,
@@ -52,7 +67,6 @@ internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDispo
         _encoder = encoder ?? throw new ArgumentNullException(nameof(encoder));
         _frameExporter = frameExporter ?? throw new ArgumentNullException(nameof(frameExporter));
         _auditSink = auditSink ?? throw new ArgumentNullException(nameof(auditSink));
-        _acquireRenderedFrame = acquireRenderedFrame ?? throw new ArgumentNullException(nameof(acquireRenderedFrame));
         _onPacketProduced = onPacketProduced ?? throw new ArgumentNullException(nameof(onPacketProduced));
         _diagnostics = diagnostics;
         _queueCapacity = queueCapacity;
@@ -70,36 +84,58 @@ internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDispo
         }
     }
 
-    public void OnScheduledFrame(FrameExecutionContext context)
+    public void OnRenderedFrame(ScheduledRenderedFrame frame)
     {
+        ArgumentNullException.ThrowIfNull(frame);
+        ArgumentNullException.ThrowIfNull(frame.Context);
+        ArgumentNullException.ThrowIfNull(frame.TextureLease);
+
         if (Volatile.Read(ref _disposed) != 0)
+        {
+            frame.Dispose();
             return;
+        }
 
         var dropped = 0;
         var enqueued = false;
+        List<ScheduledRenderedFrame>? droppedFrames = null;
 
         lock (_queueGate)
         {
-            if (_pendingFrames.Count >= _queueCapacity)
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                AddDropped(frame);
+            }
+            else if (_pendingFrames.Count >= _queueCapacity)
             {
                 if (_backpressurePolicy == EncodeSchedulerBackpressurePolicy.KeepLatest)
                 {
                     while (_pendingFrames.Count >= _queueCapacity)
                     {
-                        _pendingFrames.Dequeue();
+                        AddDropped(_pendingFrames.Dequeue());
                         dropped++;
                     }
+
+                    _pendingFrames.Enqueue(frame);
+                    enqueued = true;
                 }
                 else
                 {
+                    AddDropped(frame);
                     dropped = 1;
-                    ReportFrameDroppedBackpressure(dropped);
-                    return;
                 }
             }
+            else
+            {
+                _pendingFrames.Enqueue(frame);
+                enqueued = true;
+            }
+        }
 
-            _pendingFrames.Enqueue(context);
-            enqueued = true;
+        if (droppedFrames is not null)
+        {
+            foreach (var droppedFrame in droppedFrames)
+                droppedFrame.Dispose();
         }
 
         if (dropped > 0)
@@ -107,7 +143,15 @@ internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDispo
 
         if (enqueued)
             SignalQueue();
+
+        void AddDropped(ScheduledRenderedFrame droppedFrame)
+        {
+            droppedFrames ??= [];
+            droppedFrames.Add(droppedFrame);
+        }
     }
+
+    public void EnqueueRenderedFrame(ScheduledRenderedFrame frame) => OnRenderedFrame(frame);
 
     public async ValueTask StopAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
@@ -129,6 +173,7 @@ internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDispo
         }
         finally
         {
+            ClearPendingFrames();
             _queueSignal.Dispose();
             _stop.Dispose();
         }
@@ -140,7 +185,7 @@ internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDispo
     {
         while (!_stop.IsCancellationRequested)
         {
-            if (!TryDequeue(out var frameContext))
+            if (!TryDequeue(out var scheduledFrame))
             {
                 try
                 {
@@ -155,9 +200,9 @@ internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDispo
                 continue;
             }
 
-            using var textureLease = _acquireRenderedFrame();
-            if (textureLease is null)
-                continue;
+            using var renderedFrame = scheduledFrame!;
+            var frameContext = renderedFrame.Context;
+            var textureLease = renderedFrame.TextureLease;
 
             try
             {
@@ -222,10 +267,24 @@ internal sealed class EncodeSchedulerTarget : IFrameSchedulerTarget, IAsyncDispo
         }
     }
 
-    private bool TryDequeue(out FrameExecutionContext frameContext)
+    private bool TryDequeue(out ScheduledRenderedFrame? frame)
     {
         lock (_queueGate)
-            return _pendingFrames.TryDequeue(out frameContext!);
+            return _pendingFrames.TryDequeue(out frame);
+    }
+
+    private void ClearPendingFrames()
+    {
+        ScheduledRenderedFrame[] pendingFrames;
+
+        lock (_queueGate)
+        {
+            pendingFrames = _pendingFrames.ToArray();
+            _pendingFrames.Clear();
+        }
+
+        foreach (var pendingFrame in pendingFrames)
+            pendingFrame.Dispose();
     }
 
     private void SignalQueue()

@@ -132,20 +132,23 @@ public sealed class HardwareEncodeFoundationTests
             encoder,
             exporter,
             audit,
-            acquireRenderedFrame: () => pool.AcquireTexture(new GpuTextureDescriptor
+            onPacketProduced: packets.Add);
+
+        encodeTarget.OnRenderedFrame(new ScheduledRenderedFrame
+        {
+            Context = new FrameExecutionContext
+            {
+                FrameId = 1,
+                FrameBudget = TimeSpan.FromMilliseconds(33),
+                TargetOutputs = []
+            },
+            TextureLease = pool.AcquireTexture(new GpuTextureDescriptor
             {
                 Width = 320,
                 Height = 180,
                 Format = "B8G8R8A8_UNORM",
                 Usage = GpuTextureUsage.OffscreenColor
-            }),
-            onPacketProduced: packets.Add);
-
-        encodeTarget.OnScheduledFrame(new FrameExecutionContext
-        {
-            FrameId = 1,
-            FrameBudget = TimeSpan.FromMilliseconds(33),
-            TargetOutputs = []
+            })
         });
 
         await WaitForConditionAsync(

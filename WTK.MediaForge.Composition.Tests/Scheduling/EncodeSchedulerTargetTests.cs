@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Runtime.Scheduling;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
@@ -22,12 +23,11 @@ public sealed class EncodeSchedulerTargetTests
             encoder,
             new FakeGpuFrameExporter(),
             new CollectingMediaTransportAuditSink(),
-            () => CreateLease(pool),
             packets.Add,
             encodeTimeout: TimeSpan.FromSeconds(1));
 
-        target.OnScheduledFrame(CreateContext(1, TimeSpan.FromMilliseconds(33)));
-        target.OnScheduledFrame(CreateContext(2, TimeSpan.FromMilliseconds(66)));
+        target.OnRenderedFrame(CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33)));
+        target.OnRenderedFrame(CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66)));
 
         await WaitForConditionAsync(() => packets.Count == 2, TimeSpan.FromSeconds(2));
 
@@ -35,6 +35,42 @@ public sealed class EncodeSchedulerTargetTests
         Assert.Equal(TimeSpan.FromMilliseconds(66), packets[1].PresentationTime);
         Assert.All(encoder.Contexts, context =>
             Assert.True(context.PresentationTime < TimeSpan.FromDays(1)));
+    }
+
+    [Fact]
+    public async Task Encode_scheduler_pairs_each_packet_with_its_rendered_texture()
+    {
+        using var pool = new GpuResourcePool(new FakeGpuTextureFactory());
+        var packets = new List<EncodedVideoPacket>();
+        var encoder = new RecordingEncoder();
+
+        await using var target = new EncodeSchedulerTarget(
+            encoder,
+            new FakeGpuFrameExporter(),
+            new CollectingMediaTransportAuditSink(),
+            packets.Add,
+            queueCapacity: 3,
+            backpressurePolicy: EncodeSchedulerBackpressurePolicy.QueueWithBackpressure,
+            encodeTimeout: TimeSpan.FromSeconds(1));
+
+        var frameA = CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33));
+        var frameB = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
+        var frameC = CreateRenderedFrame(pool, 3, TimeSpan.FromMilliseconds(99));
+
+        var expected = new[]
+        {
+            new EncodedFrameRecord(1, TimeSpan.FromMilliseconds(33), frameA.TextureLease.TextureId),
+            new EncodedFrameRecord(2, TimeSpan.FromMilliseconds(66), frameB.TextureLease.TextureId),
+            new EncodedFrameRecord(3, TimeSpan.FromMilliseconds(99), frameC.TextureLease.TextureId)
+        };
+
+        target.OnRenderedFrame(frameA);
+        target.OnRenderedFrame(frameB);
+        target.OnRenderedFrame(frameC);
+
+        await WaitForConditionAsync(() => encoder.EncodedFrames.Count == 3, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(expected, encoder.EncodedFrames);
     }
 
     [Fact]
@@ -48,12 +84,11 @@ public sealed class EncodeSchedulerTargetTests
             encoder,
             new FakeGpuFrameExporter(),
             new CollectingMediaTransportAuditSink(),
-            () => CreateLease(pool),
             _ => { },
             diagnostics,
             encodeTimeout: TimeSpan.FromMilliseconds(50));
 
-        target.OnScheduledFrame(CreateContext(1, TimeSpan.FromMilliseconds(33)));
+        target.OnRenderedFrame(CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33)));
 
         await WaitForConditionAsync(
             () => encoder.CancellationObserved &&
@@ -72,24 +107,28 @@ public sealed class EncodeSchedulerTargetTests
             encoder,
             new FakeGpuFrameExporter(),
             new CollectingMediaTransportAuditSink(),
-            () => CreateLease(pool),
             _ => { },
             diagnostics,
             queueCapacity: 1,
             backpressurePolicy: EncodeSchedulerBackpressurePolicy.QueueWithBackpressure,
             encodeTimeout: TimeSpan.FromSeconds(5));
 
-        target.OnScheduledFrame(CreateContext(1, TimeSpan.FromMilliseconds(33)));
+        target.OnRenderedFrame(CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33)));
         await WaitForConditionAsync(() => encoder.Started, TimeSpan.FromSeconds(2));
 
-        target.OnScheduledFrame(CreateContext(2, TimeSpan.FromMilliseconds(66)));
-        target.OnScheduledFrame(CreateContext(3, TimeSpan.FromMilliseconds(99)));
+        var second = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
+        var third = CreateRenderedFrame(pool, 3, TimeSpan.FromMilliseconds(99));
+        var rejectedLease = third.TextureLease;
+
+        target.OnRenderedFrame(second);
+        target.OnRenderedFrame(third);
 
         await WaitForConditionAsync(
             () => diagnostics.Diagnostics.Any(d => d.Code == "engine.encode_scheduler_frame_dropped_backpressure"),
             TimeSpan.FromSeconds(2));
 
         Assert.True(target.PendingFrameCount <= 1);
+        Assert.Equal(default, rejectedLease.TextureId);
     }
 
     [Fact]
@@ -103,24 +142,62 @@ public sealed class EncodeSchedulerTargetTests
             encoder,
             new FakeGpuFrameExporter(),
             new CollectingMediaTransportAuditSink(),
-            () => CreateLease(pool),
             _ => { },
             diagnostics,
             queueCapacity: 1,
             backpressurePolicy: EncodeSchedulerBackpressurePolicy.KeepLatest,
             encodeTimeout: TimeSpan.FromSeconds(5));
 
-        target.OnScheduledFrame(CreateContext(1, TimeSpan.FromMilliseconds(33)));
+        target.OnRenderedFrame(CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33)));
         await WaitForConditionAsync(() => encoder.Started, TimeSpan.FromSeconds(2));
 
-        target.OnScheduledFrame(CreateContext(2, TimeSpan.FromMilliseconds(66)));
-        target.OnScheduledFrame(CreateContext(3, TimeSpan.FromMilliseconds(99)));
+        var second = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
+        var third = CreateRenderedFrame(pool, 3, TimeSpan.FromMilliseconds(99));
+        var replacedLease = second.TextureLease;
+
+        target.OnRenderedFrame(second);
+        target.OnRenderedFrame(third);
 
         await WaitForConditionAsync(
             () => diagnostics.Diagnostics.Any(d => d.Code == "engine.encode_scheduler_frame_dropped_backpressure"),
             TimeSpan.FromSeconds(2));
 
         Assert.Equal(1, target.PendingFrameCount);
+        Assert.Equal(default, replacedLease.TextureId);
+    }
+
+    [Fact]
+    public async Task Stop_releases_processing_and_pending_rendered_frame_leases()
+    {
+        using var pool = new GpuResourcePool(new FakeGpuTextureFactory());
+        var encoder = new BlockingEncoder();
+
+        await using var target = new EncodeSchedulerTarget(
+            encoder,
+            new FakeGpuFrameExporter(),
+            new CollectingMediaTransportAuditSink(),
+            _ => { },
+            queueCapacity: 2,
+            backpressurePolicy: EncodeSchedulerBackpressurePolicy.QueueWithBackpressure,
+            encodeTimeout: TimeSpan.FromSeconds(5));
+
+        var first = CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33));
+        var second = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
+        var third = CreateRenderedFrame(pool, 3, TimeSpan.FromMilliseconds(99));
+        var firstLease = first.TextureLease;
+        var secondLease = second.TextureLease;
+        var thirdLease = third.TextureLease;
+
+        target.OnRenderedFrame(first);
+        await WaitForConditionAsync(() => encoder.Started, TimeSpan.FromSeconds(2));
+        target.OnRenderedFrame(second);
+        target.OnRenderedFrame(third);
+
+        await target.StopAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+
+        Assert.Equal(default, firstLease.TextureId);
+        Assert.Equal(default, secondLease.TextureId);
+        Assert.Equal(default, thirdLease.TextureId);
     }
 
     private static FrameExecutionContext CreateContext(long frameId, TimeSpan presentationTime) =>
@@ -130,6 +207,16 @@ public sealed class EncodeSchedulerTargetTests
             PresentationTime = presentationTime,
             FrameBudget = TimeSpan.FromMilliseconds(33),
             TargetOutputs = []
+        };
+
+    private static ScheduledRenderedFrame CreateRenderedFrame(
+        GpuResourcePool pool,
+        long frameId,
+        TimeSpan presentationTime) =>
+        new()
+        {
+            Context = CreateContext(frameId, presentationTime),
+            TextureLease = CreateLease(pool)
         };
 
     private static GpuTextureLease CreateLease(GpuResourcePool pool) =>
@@ -159,6 +246,8 @@ public sealed class EncodeSchedulerTargetTests
     {
         public List<HardwareEncodeFrameContext> Contexts { get; } = [];
 
+        public List<EncodedFrameRecord> EncodedFrames { get; } = [];
+
         public HardwareEncoderInfo Info { get; } = new()
         {
             Name = "Fake",
@@ -187,6 +276,10 @@ public sealed class EncodeSchedulerTargetTests
             IMediaTransportAuditSink auditSink)
         {
             Contexts.Add(context);
+            EncodedFrames.Add(new EncodedFrameRecord(
+                context.FrameId,
+                context.PresentationTime,
+                textureLease.TextureId));
             context.CancellationToken.ThrowIfCancellationRequested();
             return ValueTask.FromResult<EncodedVideoPacket?>(new EncodedVideoPacket
             {
@@ -199,6 +292,11 @@ public sealed class EncodeSchedulerTargetTests
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
+
+    private readonly record struct EncodedFrameRecord(
+        long FrameId,
+        TimeSpan PresentationTime,
+        GpuTextureId TextureId);
 
     private sealed class BlockingEncoder : IHardwareVideoEncoder
     {
