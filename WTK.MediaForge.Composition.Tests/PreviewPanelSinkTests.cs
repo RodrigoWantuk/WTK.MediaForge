@@ -63,6 +63,86 @@ public class PreviewPanelSinkTests
             sink.OnFrameAsync(
                 batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
                 CancellationToken.None).AsTask());
+
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+    }
+
+    [Fact]
+    public async Task PreviewPanelSink_releases_lease_when_present_fails()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new FailingPreviewSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 1);
+
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
+                CancellationToken.None).AsTask());
+
+        Assert.Equal("Preview presentation failed.", error.Message);
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+    }
+
+    [Fact]
+    public async Task PreviewPanelSink_releases_lease_when_present_callback_fails()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new FakePreviewPresentableSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(
+            panelHandle: 1,
+            onFramePresented: (_, _) => ValueTask.FromException(new InvalidOperationException("Callback failed.")));
+
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
+                CancellationToken.None).AsTask());
+
+        Assert.Equal("Callback failed.", error.Message);
+        Assert.Equal(1, surface.PresentCount);
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+    }
+
+    [Fact]
+    public async Task PreviewPanelSink_releases_lease_when_called_after_dispose()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new FakePreviewPresentableSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 1);
+
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+        await sink.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            sink.OnFrameAsync(
+                batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
+                CancellationToken.None).AsTask());
+
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+    }
+
+    [Fact]
+    public async Task PreviewPanelSink_start_after_dispose_is_rejected()
+    {
+        var sink = new PreviewPanelSink(panelHandle: 1);
+
+        await sink.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            sink.StartAsync(CreateContext(RenderOutputId.New()), CancellationToken.None).AsTask());
     }
 
     private static RenderOutputSinkContext CreateContext(RenderOutputId outputId, FrameSize? size = null) =>
@@ -226,6 +306,9 @@ public class PreviewPanelSinkTests
             sink.OnFrameAsync(
                 batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
                 cts.Token).AsTask());
+
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
     }
 
     private sealed class CancellingPreviewSurface(
@@ -243,13 +326,21 @@ public class PreviewPanelSinkTests
 
         public object? BackendSurface => null;
 
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        private int _disposeCount;
+
         public ValueTask PresentToWin32PanelAsync(nint panelHandle, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return ValueTask.FromException(new OperationCanceledException(cancellationToken));
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class FakePreviewPresentableSurface(
@@ -337,6 +428,43 @@ public class PreviewPanelSinkTests
 
         public object? BackendSurface => null;
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        private int _disposeCount;
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FailingPreviewSurface(
+        RenderOutputId outputId,
+        FrameSize size)
+        : IRenderedOutputSurfaceLease, IPreviewPresentableRenderedOutputSurfaceLease
+    {
+        public RenderOutputId OutputId { get; } = outputId;
+
+        public FrameSize Size { get; } = size;
+
+        public RenderPixelFormat Format => RenderPixelFormat.Rgba8Unorm;
+
+        public RenderBackendKind BackendKind => RenderBackendKind.Vulkan;
+
+        public object? BackendSurface => null;
+
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        private int _disposeCount;
+
+        public ValueTask PresentToWin32PanelAsync(nint panelHandle, CancellationToken cancellationToken) =>
+            ValueTask.FromException(new InvalidOperationException("Preview presentation failed."));
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            return ValueTask.CompletedTask;
+        }
     }
 }

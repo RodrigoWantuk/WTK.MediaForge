@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 
 namespace WTK.MediaForge.Composition.Outputs;
@@ -11,6 +12,7 @@ public sealed class PreviewPanelSink : IRenderOutputSink
     private readonly nint _panelHandle;
     private readonly Func<RenderOutputFrameLease, CancellationToken, ValueTask>? _onFramePresented;
     private int _started;
+    private int _disposed;
 
     public PreviewPanelSink(
         nint panelHandle,
@@ -60,6 +62,7 @@ public sealed class PreviewPanelSink : IRenderOutputSink
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
 
         if (context.BackendKind != RenderBackendKind.Vulkan)
         {
@@ -76,30 +79,44 @@ public sealed class PreviewPanelSink : IRenderOutputSink
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(frame);
-        cancellationToken.ThrowIfCancellationRequested();
 
-        if (Volatile.Read(ref _started) == 0)
-            throw new InvalidOperationException("PreviewPanelSink must be started before receiving frames.");
+        Exception? operationError = null;
 
-        if (frame.SurfaceLease is not IPreviewPresentableRenderedOutputSurfaceLease presentableSurface)
+        try
         {
-            throw new NotSupportedException(
-                $"Render backend '{frame.BackendKind}' does not expose GPU preview presentation for output frames.");
+            cancellationToken.ThrowIfCancellationRequested();
+            ThrowIfDisposed();
+
+            if (Volatile.Read(ref _started) == 0)
+                throw new InvalidOperationException("PreviewPanelSink must be started before receiving frames.");
+
+            if (frame.SurfaceLease is not IPreviewPresentableRenderedOutputSurfaceLease presentableSurface)
+            {
+                throw new NotSupportedException(
+                    $"Render backend '{frame.BackendKind}' does not expose GPU preview presentation for output frames.");
+            }
+
+            await presentableSurface
+                .PresentToWin32PanelAsync(_panelHandle, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (_onFramePresented is not null)
+                await _onFramePresented(frame, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            operationError = ex;
         }
 
-        await presentableSurface
-            .PresentToWin32PanelAsync(_panelHandle, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (_onFramePresented is not null)
-            await _onFramePresented(frame, cancellationToken).ConfigureAwait(false);
-
-        await frame.DisposeAsync().ConfigureAwait(false);
+        await DisposeFrameLeaseAsync(frame, operationError).ConfigureAwait(false);
     }
 
     public ValueTask StopAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (Volatile.Read(ref _disposed) != 0)
+            return ValueTask.CompletedTask;
+
         Interlocked.Exchange(ref _started, 0);
         PreviewPanelPresenterLifecycle.RemovePresentersForPanel(_panelHandle);
         return ValueTask.CompletedTask;
@@ -107,8 +124,42 @@ public sealed class PreviewPanelSink : IRenderOutputSink
 
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return ValueTask.CompletedTask;
+
         Interlocked.Exchange(ref _started, 0);
         PreviewPanelPresenterLifecycle.RemovePresentersForPanel(_panelHandle);
         return ValueTask.CompletedTask;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            throw new ObjectDisposedException(nameof(PreviewPanelSink));
+    }
+
+    private static async ValueTask DisposeFrameLeaseAsync(
+        RenderOutputFrameLease frame,
+        Exception? operationError)
+    {
+        try
+        {
+            await frame.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception disposeError)
+        {
+            if (operationError is not null)
+            {
+                throw new AggregateException(
+                    "PreviewPanelSink failed while consuming a frame and releasing its lease.",
+                    operationError,
+                    disposeError);
+            }
+
+            throw;
+        }
+
+        if (operationError is not null)
+            ExceptionDispatchInfo.Capture(operationError).Throw();
     }
 }
