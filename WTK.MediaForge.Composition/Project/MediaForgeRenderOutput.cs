@@ -26,4 +26,7 @@ public sealed class MediaForgeRenderOutput
     public LayoutMode CanvasLayoutMode { get; set; } = LayoutMode.Fit;
 
     public ColorRgba LetterboxColor { get; set; } = ColorRgba.Black;
+
+    public OutputRouteTransition RouteTransition { get; set; } =
+        OutputRouteTransition.Cut("cut");
 }

@@ -57,6 +57,66 @@ public class RenderGraphCompilerTests
     }
 
     [Fact]
+    public void Same_source_and_blur_chain_across_scenes_reuses_effect_node()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Preview", 1280, 720, out var preview)
+            .Scene("Program", 1920, 1080, out var program)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(
+                preview,
+                source,
+                layer => layer
+                    .SetBounds(0, 0, 1280, 720)
+                    .AddBlur(6f))
+            .AddSourceLayer(
+                program,
+                source,
+                layer => layer
+                    .SetBounds(100, 100, 640, 360)
+                    .AddBlur(6f))
+            .OffscreenOutput("Preview out", preview, 1280, 720, out _)
+            .OffscreenOutput("Program out", program, 1920, 1080, out _)
+            .BuildValidated();
+
+        var graph = MediaForgeRenderGraphCompiler.Compile(project);
+
+        Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceFrame));
+        Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
+        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
+        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.OutputPass));
+    }
+
+    [Fact]
+    public void Different_blur_configuration_does_not_reuse_effect_node()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Preview", 1280, 720, out var preview)
+            .Scene("Program", 1920, 1080, out var program)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(
+                preview,
+                source,
+                layer => layer
+                    .SetBounds(0, 0, 1280, 720)
+                    .AddBlur(4f))
+            .AddSourceLayer(
+                program,
+                source,
+                layer => layer
+                    .SetBounds(100, 100, 640, 360)
+                    .AddBlur(12f))
+            .OffscreenOutput("Preview out", preview, 1280, 720, out _)
+            .OffscreenOutput("Program out", program, 1920, 1080, out _)
+            .BuildValidated();
+
+        var graph = MediaForgeRenderGraphCompiler.Compile(project);
+
+        Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceFrame));
+        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
+    }
+
+    [Fact]
     public void Canvas_depends_on_effect_chain_instead_of_raw_source_when_effects_are_enabled()
     {
         var project = MediaForgeProjectBuilder.Create()

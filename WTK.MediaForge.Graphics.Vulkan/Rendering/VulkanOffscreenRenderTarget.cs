@@ -84,7 +84,8 @@ internal sealed unsafe class VulkanOffscreenRenderTarget : IVulkanOffscreenRende
                 Tiling = ImageTiling.Optimal,
                 Usage = ImageUsageFlags.ColorAttachmentBit |
                         ImageUsageFlags.SampledBit |
-                        ImageUsageFlags.TransferSrcBit,
+                        ImageUsageFlags.TransferSrcBit |
+                        ImageUsageFlags.TransferDstBit,
                 SharingMode = SharingMode.Exclusive,
                 InitialLayout = ImageLayout.Undefined
             };

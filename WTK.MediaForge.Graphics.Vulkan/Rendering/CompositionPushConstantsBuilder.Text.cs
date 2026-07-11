@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Color;
+using WTK.MediaForge.Core.Frames;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
@@ -42,4 +43,30 @@ internal static partial class CompositionPushConstantsBuilder
             Opacity = text.Opacity,
             RotationDegrees = text.Transform.RotationDegrees
         };
+
+    public static MediaForgeBlurPushConstants BuildBlur(
+        FrameSize textureSize,
+        float radius,
+        bool horizontal) =>
+        new()
+        {
+            TexelSize = new Vector2(
+                1f / MathF.Max(textureSize.Width, 1),
+                1f / MathF.Max(textureSize.Height, 1)),
+            Direction = horizontal ? new Vector2(1, 0) : new Vector2(0, 1),
+            Radius = radius
+        };
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 32)]
+internal struct MediaForgeBlurPushConstants
+{
+    [FieldOffset(0)]
+    public Vector2 TexelSize;
+
+    [FieldOffset(8)]
+    public Vector2 Direction;
+
+    [FieldOffset(16)]
+    public float Radius;
 }

@@ -65,6 +65,8 @@ internal static unsafe class VulkanImageLayoutTransition
                 (PipelineStageFlags.TransferBit, PipelineStageFlags.BottomOfPipeBit, AccessFlags.TransferWriteBit, 0),
             (ImageLayout.TransferDstOptimal, ImageLayout.TransferSrcOptimal) =>
                 (PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit),
+            (ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal) =>
+                (PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit),
             (ImageLayout.TransferSrcOptimal, ImageLayout.TransferDstOptimal) =>
                 (PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit),
             (ImageLayout.General, ImageLayout.TransferDstOptimal) =>

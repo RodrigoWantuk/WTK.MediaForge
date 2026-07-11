@@ -41,6 +41,8 @@ internal sealed class TextDrawObjectSnapshot : DrawObjectStateSnapshot
 {
     public string Text { get; init; } = string.Empty;
 
+    public string FontFamily { get; init; } = DrawObjects.TextDrawObject.DefaultFontFamily;
+
     public ColorRgba TextColor { get; init; } = ColorRgba.White;
 
     public float FontSize { get; init; } = 24f;

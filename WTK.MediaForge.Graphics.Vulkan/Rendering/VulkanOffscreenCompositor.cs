@@ -40,13 +40,29 @@ internal static class VulkanOffscreenCompositor
 
             submissionResources.RetainOffscreenTarget(targetHandle);
 
-            pipelines.ComposeOutput(
-                commandBuffer,
-                output,
-                canvas,
-                importsByHandle,
-                outputTarget,
-                submissionResources);
+            if (output.RouteTransitionKind == OutputRouteTransitionKind.Fade &&
+                output.PreviousCanvasId is { } previousCanvasId &&
+                snapshot.Canvases.FirstOrDefault(c => c.Id == previousCanvasId) is { } previousCanvas)
+            {
+                pipelines.ComposeTransitionOutput(
+                    commandBuffer,
+                    output,
+                    previousCanvas,
+                    canvas,
+                    importsByHandle,
+                    outputTarget,
+                    submissionResources);
+            }
+            else
+            {
+                pipelines.ComposeOutput(
+                    commandBuffer,
+                    output,
+                    canvas,
+                    importsByHandle,
+                    outputTarget,
+                    submissionResources);
+            }
 
             renderedSurfaces.Add(new VulkanRenderedOutputSurfaceLease(
                 targetHandle,

@@ -169,6 +169,7 @@ internal static class RenderFrameSnapshotFactory
                 BlendMode = text.BlendMode,
                 Effects = text.Effects,
                 Text = text.Text,
+                FontFamily = text.FontFamily,
                 TextColor = text.TextColor,
                 FontSize = text.FontSize
             },

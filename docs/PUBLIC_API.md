@@ -39,6 +39,9 @@ Current public authoring types:
 - `ProjectValidationResult`
 - `MediaForgeProjectValidationException`
 - `ValidationIssue`
+- `OutputRouteTransition`
+- `OutputRouteTransitionKind`
+- `OutputRouteTransitionRuntime`
 
 Applications should not directly construct render snapshots, runtime snapshots, GPU leases, render threads, or backend submissions.
 
@@ -50,6 +53,16 @@ fit live-production workflows without introducing a second scene graph.
 source/output definitions. They create serializable project definitions only;
 they do not create capture devices, decoders, encoders, network clients, GPU
 surfaces, or sink workers.
+
+Current scoped rendering support includes:
+
+- `TextDrawObject.FontFamily`, propagated through snapshots into the Vulkan text
+  renderer.
+- `TextLayerBuilder.SetFontFamily(...)` for fluent text authoring.
+- `SourceLayerBuilder.AddBlur(...)` for the currently supported source-layer
+  blur effect.
+- `MediaForgeRenderOutput.RouteTransition` for cut/fade route transitions on an
+  output.
 
 ## 2. Public Runtime API
 
@@ -215,6 +228,16 @@ Current public effects:
 - `TransitionEffect`
 
 Effects may exist as project model contracts before the renderer implements every effect. Public API must not imply that an effect is rendered unless renderer support and tests exist.
+
+Current renderer-backed effect support:
+
+- `ChromaKeyEffect` on source layers.
+- `ColorCorrectionEffect` on source layers in the Vulkan shader path.
+- `BlurEffect` on source layers in the Vulkan intermediate-pass path.
+
+Scene-wide effects, transition effects as generic layer/scene effects, and
+non-source-layer blur remain project contracts until their owning renderer
+scope lands.
 
 ## 7. Public Diagnostics
 

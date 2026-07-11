@@ -43,6 +43,11 @@ Before considering a change complete, verify:
 - [ ] CP1 descriptor pool capacity is explicit and covered by many-layer submit tests.
 - [ ] CP1 canvas render pass clears with `canvas.BackgroundColor`.
 - [ ] CP1 layer scissors are clipped to framebuffer/canvas bounds and fully outside layers are skipped.
+- [ ] Text atlas uploads use explicit GPU wait timeout and release staging buffer/memory on partial failures.
+- [ ] Text atlas cache keys include text, font family, and size.
+- [ ] Source-layer blur retains intermediate targets/descriptors/framebuffers until submission fence completion.
+- [ ] Output route fade transitions use explicit frame delta time, not wall-clock drift.
+- [ ] Output transition passes use load/blend render pass state only after the previous output pass has completed command recording for the same submission.
 
 ## Registry
 

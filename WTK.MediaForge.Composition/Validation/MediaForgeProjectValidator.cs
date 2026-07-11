@@ -162,6 +162,8 @@ public static class MediaForgeProjectValidator
                 break;
 
             case TextDrawObject text:
+                if (string.IsNullOrWhiteSpace(text.FontFamily))
+                    issues.Add(ValidationIssue.Error("drawobject.text.font_family", $"Text object '{drawObject.Name}' has invalid FontFamily."));
                 if (!text.TextColor.IsInRange())
                     issues.Add(ValidationIssue.Error("drawobject.text.color", $"Text object '{drawObject.Name}' color out of range."));
                 if (!float.IsFinite(text.FontSize) || text.FontSize <= 0)

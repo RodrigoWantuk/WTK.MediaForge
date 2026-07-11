@@ -73,7 +73,7 @@ public class Cp3ChromaKeyEffectTests
                             context.SharedHandle,
                             SourceId.New(),
                             new Transform2D { Size = new CanvasSize(64, 64) },
-                            effects: [new BlurEffectSnapshot { Id = EffectId.New(), Name = "Blur" }])
+                            effects: [new TransitionEffectSnapshot { Id = EffectId.New(), Name = "Transition" }])
                     ]);
 
                 var submission = backend.Submit(snapshot);
@@ -387,7 +387,7 @@ public class Cp3ChromaKeyEffectTests
                             new Transform2D { Size = new CanvasSize(64, 64) },
                             effects:
                             [
-                                new BlurEffectSnapshot
+                                new TransitionEffectSnapshot
                                 {
                                     Id = EffectId.New(),
                                     Name = "Second",
@@ -410,7 +410,7 @@ public class Cp3ChromaKeyEffectTests
                     .ToArray();
 
                 var diagnostic = Assert.Single(unsupported);
-                Assert.Contains(nameof(BlurEffectSnapshot), diagnostic.Message, StringComparison.Ordinal);
+                Assert.Contains(nameof(TransitionEffectSnapshot), diagnostic.Message, StringComparison.Ordinal);
             }
             finally
             {

@@ -21,7 +21,7 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
             Transition = transition,
             FromCanvasId = fromCanvasId,
             ToCanvasId = toCanvasId,
-            StartedUtc = DateTime.UtcNow,
+            Elapsed = TimeSpan.Zero,
             Progress = transition.Kind == OutputRouteTransitionKind.Cut ? 1f : 0f
         };
     }
@@ -50,8 +50,8 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
         }
 
         var duration = TimeSpan.FromMilliseconds(Math.Max(active.Transition.DurationMs, 1));
-        var elapsed = DateTime.UtcNow - active.StartedUtc + deltaTime;
-        active.Progress = Math.Clamp((float)(elapsed.TotalMilliseconds / duration.TotalMilliseconds), 0f, 1f);
+        active.Elapsed += deltaTime < TimeSpan.Zero ? TimeSpan.Zero : deltaTime;
+        active.Progress = Math.Clamp((float)(active.Elapsed.TotalMilliseconds / duration.TotalMilliseconds), 0f, 1f);
 
         if (active.Progress >= 1f)
             _active.Remove(outputId);
@@ -74,7 +74,7 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
 
         public required CanvasId ToCanvasId { get; init; }
 
-        public required DateTime StartedUtc { get; init; }
+        public TimeSpan Elapsed { get; set; }
 
         public float Progress { get; set; }
     }

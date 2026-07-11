@@ -203,19 +203,24 @@ Implementation order:
 Finish product composition primitives before broad media I/O:
 
 1. Full transform, crop, and rotation.
-2. Text rendering.
+2. Text rendering. Current status: product-validated for Windows Vulkan glyph
+   atlas text layers.
 3. Color correction. Current status: product-validated in the Vulkan
    source-layer shader.
-4. Blur.
-5. Transitions.
+4. Blur. Current status: product-validated for Vulkan source-layer blur using
+   pooled intermediate targets.
+5. Transitions. Current status: product-validated for output route cut/fade in
+   the Vulkan output pass. Scene/layer transition effects remain future work.
 6. Effect-chain passes and pooled intermediate targets.
 7. PiP helpers.
 8. Mosaic helpers.
 9. Cached reusable effect intermediates.
 
-`ChromaKeyEffect` and source-layer `ColorCorrectionEffect` are accepted real
-shader effects. Unsupported effects, routes, sources, outputs, or platform
-capabilities must produce explicit diagnostics, never silent fallback.
+`ChromaKeyEffect`, source-layer `ColorCorrectionEffect`, source-layer
+`BlurEffect`, text layers, and output route cut/fade are accepted real Vulkan
+features in their current scoped form. Unsupported effects, routes, sources,
+outputs, or platform capabilities must produce explicit diagnostics, never
+silent fallback.
 
 ## Native Media Bridge
 

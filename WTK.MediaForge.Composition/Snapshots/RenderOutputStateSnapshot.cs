@@ -26,4 +26,11 @@ internal sealed class RenderOutputStateSnapshot
     public LayoutMode CanvasLayoutMode { get; init; } = LayoutMode.Fit;
 
     public ColorRgba LetterboxColor { get; init; } = ColorRgba.Black;
+
+    public OutputRouteTransitionKind RouteTransitionKind { get; init; } =
+        OutputRouteTransitionKind.Cut;
+
+    public CanvasId? PreviousCanvasId { get; init; }
+
+    public float RouteTransitionProgress { get; init; } = 1f;
 }

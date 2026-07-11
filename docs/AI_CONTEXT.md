@@ -133,8 +133,22 @@ The legacy WinForms preview path has been removed as a product path because it u
   are reserved for that future bridge.
 - `ColorCorrectionEffect` is implemented in the Vulkan source-layer fragment
   shader for brightness, contrast, saturation, and hue. The shader applies
-  source sample -> color correction -> chroma key -> opacity. Blur remains a
-  skeleton until intermediate-target passes land.
+  source sample -> color correction -> chroma key -> opacity.
+- `BlurEffect` is implemented for Vulkan source layers by rendering the source
+  layer into a pooled intermediate target, running horizontal and vertical blur
+  shader passes, then compositing the blurred target into the canvas with the
+  layer opacity. The current scope is product-validated by Vulkan pixel and
+  intermediate-pool reuse tests.
+- `TextDrawObject` includes `FontFamily`; snapshots propagate it into the Vulkan
+  renderer. Text rendering uses a rasterized glyph atlas uploaded to a Vulkan
+  sampled image. Current validation covers Windows Vulkan text layers and
+  verifies that atlas content is keyed by text/family/size rather than by font
+  size alone.
+- `MediaForgeRenderOutput.RouteTransition` describes the route transition for
+  an output. `OutputRouteTransitionRuntime` advances progress from explicit
+  frame delta time only. Vulkan output composition supports cut and fade by
+  rendering previous/current canvas targets and alpha-blending the current
+  output pass over the previous one.
 
 ## GPU Media Transport Law (vNext)
 

@@ -58,8 +58,9 @@ public sealed class DocsProductTruthTests
 
         Assert.Contains("RenderGraph | Done:Contract/resource bridge; not a GPU pass executor", roadmap, StringComparison.Ordinal);
         Assert.Contains("Color correction effect | Done:ProductValidated for Vulkan source-layer shader", roadmap, StringComparison.Ordinal);
-        Assert.Contains("Blur effect | Done:Skeleton", roadmap, StringComparison.Ordinal);
-        Assert.Contains("Text rendering | Done:Prototype", roadmap, StringComparison.Ordinal);
+        Assert.Contains("Blur effect | Done:ProductValidated for Vulkan source-layer shader/intermediate passes", roadmap, StringComparison.Ordinal);
+        Assert.Contains("Text rendering | Done:ProductValidated for Windows Vulkan glyph atlas upload", roadmap, StringComparison.Ordinal);
+        Assert.Contains("Output route transitions | Done:ProductValidated for Vulkan cut/fade output pass", roadmap, StringComparison.Ordinal);
         Assert.Contains("Performance validation | Done:Skeleton", roadmap, StringComparison.Ordinal);
 
         Assert.Contains("Windows hardware decode, Windows hardware encode, MP4 recording, and RTMP", phase2Acceptance, StringComparison.Ordinal);

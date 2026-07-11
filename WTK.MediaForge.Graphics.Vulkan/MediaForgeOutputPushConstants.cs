@@ -13,4 +13,6 @@ internal struct MediaForgeOutputPushConstants
     public Vector4 LetterboxColor;
 
     public int LayoutMode;
+
+    public float Opacity;
 }

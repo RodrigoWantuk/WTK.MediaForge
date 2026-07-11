@@ -79,6 +79,10 @@ Current interpretation:
   output are `Done:Prototype`.
 - RenderGraph executor has a resource bridge but is not a GPU pass executor yet.
 - `ColorCorrectionEffect` is product-validated in the Vulkan source-layer
-  shader; `BlurEffect` remains `Done:Skeleton`.
-- Text rendering is `Done:Prototype`.
+  shader, and `BlurEffect` is product-validated for the current Vulkan
+  source-layer intermediate-pass scope.
+- Text rendering is `Done:ProductValidated` for Windows Vulkan glyph atlas text
+  layers.
+- Output route cut/fade transitions are `Done:ProductValidated` for the current
+  Vulkan output pass scope.
 - Synthetic performance validation is `Done:Skeleton`.

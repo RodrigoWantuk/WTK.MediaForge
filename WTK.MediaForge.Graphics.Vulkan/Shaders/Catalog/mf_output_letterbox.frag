@@ -8,6 +8,7 @@ layout(push_constant) uniform OutputParams
     vec2 outputSize;
     vec4 letterboxColor;
     int layoutMode;
+    float opacity;
 } params;
 
 layout(location = 0) in vec2 vUv;
@@ -41,7 +42,8 @@ void main()
 {
     if (params.layoutMode == 2)
     {
-        outColor = texture(uCanvasTexture, vUv);
+        vec4 color = texture(uCanvasTexture, vUv);
+        outColor = vec4(color.rgb, color.a * params.opacity);
         return;
     }
 
@@ -49,9 +51,10 @@ void main()
 
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
     {
-        outColor = params.letterboxColor;
+        outColor = vec4(params.letterboxColor.rgb, params.letterboxColor.a * params.opacity);
         return;
     }
 
-    outColor = texture(uCanvasTexture, uv);
+    vec4 color = texture(uCanvasTexture, uv);
+    outColor = vec4(color.rgb, color.a * params.opacity);
 }

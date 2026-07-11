@@ -33,8 +33,14 @@ internal sealed class VulkanFontAtlasBridge : IDisposable
         out GlyphAtlasEntry entry,
         out ImageView imageView)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(text);
-        ArgumentException.ThrowIfNullOrWhiteSpace(fontFamily);
+        ArgumentNullException.ThrowIfNull(text);
+
+        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(fontFamily))
+        {
+            entry = default;
+            imageView = default;
+            return false;
+        }
 
         var textKey = CreateTextKey(text, fontFamily, fontSizePx);
         if (_textRenderer.TryGetAtlasEntry(textKey, out entry))
@@ -43,6 +49,7 @@ internal sealed class VulkanFontAtlasBridge : IDisposable
         }
 
         using var fontHandle = _assetManager.LoadFontAtlas(
+            text,
             fontFamily,
             fontSizePx,
             () => CreateFontAtlasAsset(text, fontFamily, fontSizePx));
@@ -73,31 +80,6 @@ internal sealed class VulkanFontAtlasBridge : IDisposable
     internal static string CreateTextKey(string text, string fontFamily, float fontSizePx) =>
         $"{fontFamily}|{fontSizePx:0.###}|{text}";
 
-    private static FontAtlasAsset CreateFontAtlasAsset(string text, string fontFamily, float fontSizePx)
-    {
-        const int width = 64;
-        const int height = 64;
-        var pixels = new byte[width * height * 4];
-
-        for (var y = 16; y < 48; y++)
-        {
-            for (var x = 16; x < 48; x++)
-            {
-                var index = (y * width + x) * 4;
-                pixels[index] = 255;
-                pixels[index + 1] = 255;
-                pixels[index + 2] = 255;
-                pixels[index + 3] = 255;
-            }
-        }
-
-        return new FontAtlasAsset
-        {
-            FontFamily = fontFamily,
-            SizePx = fontSizePx,
-            Width = width,
-            Height = height,
-            AtlasPixels = pixels
-        };
-    }
+    private static FontAtlasAsset CreateFontAtlasAsset(string text, string fontFamily, float fontSizePx) =>
+        VulkanFontAtlasRasterizer.Rasterize(text, fontFamily, fontSizePx);
 }

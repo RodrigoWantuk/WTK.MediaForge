@@ -36,10 +36,11 @@ public sealed class AssetManager
         _shaderCache.Acquire(shaderSourceKey, factory);
 
     internal RefCountedAssetHandle<FontAtlasAsset> LoadFontAtlas(
+        string text,
         string fontFamily,
         float sizePx,
         Func<FontAtlasAsset> factory) =>
-        _fontCache.Acquire(fontFamily, sizePx, factory);
+        _fontCache.Acquire(text, fontFamily, sizePx, factory);
 
     private sealed class UnsupportedStaticImageAssetDecoder : IStaticImageAssetDecoder
     {

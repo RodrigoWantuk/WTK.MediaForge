@@ -47,8 +47,16 @@ Complete foundations:
   explicit skip reasons through the logical graph; real GPU pass execution and
   output texture production remain future work.
 - Vulkan source-layer color correction now applies brightness, contrast,
-  saturation, and hue in the shader before chroma key. Blur remains skeleton
-  until intermediate-target passes are implemented.
+  saturation, and hue in the shader before chroma key.
+- Vulkan source-layer blur is product-validated for the current scope: a
+  source layer is rendered to a pooled intermediate target, blurred with
+  horizontal/vertical shader passes, and composited back into the canvas.
+- Vulkan text rendering now uses a rasterized glyph atlas uploaded to GPU
+  texture memory; current product validation covers Windows Vulkan text layers
+  with explicit `FontFamily` snapshot/API propagation.
+- Output route transitions now support product-validated cut/fade behavior for
+  routed output changes. The current Vulkan implementation crossfades previous
+  and current canvas targets in the output pass and is covered by pixel tests.
 - Full pipeline product foundation: scene/source/output helpers, multi-scene routing contracts, package/preset serialization contracts, and render-graph planning tests.
 
 Acceptance records:
@@ -154,9 +162,9 @@ Execute in this exact order after vNext (commits 00-24) is complete. Plan:
 | 09 | Renderer Video Integration | Gpu | **Done** |
 | 10 | Scene Runtime | Fast + Gpu | **Done** |
 | 11 | Render Graph (executor) | Gpu | **Done:Contract/Skeleton - not a GPU pass executor** |
-| 12 | GPU Effects Framework | Gpu | **Color correction ProductValidated in Vulkan source shader; blur still Skeleton** |
+| 12 | GPU Effects Framework | Gpu | **Color correction and source-layer blur ProductValidated in Vulkan source/effect passes** |
 | 13 | Transform Effects | Gpu | **Done:ProductValidated for Vulkan geometry/shader path; graph nodes remain skeleton** |
-| 14 | Text Rendering | Gpu | **Done:Prototype - synthetic atlas, real glyph rasterization pending** |
+| 14 | Text Rendering | Gpu | **Done:ProductValidated for Windows Vulkan glyph atlas text layers** |
 | 15 | Hardware Encode Foundation | Gpu; requires 04 | **PrototypeOnly - canned packets are not product proof** |
 | 16 | MP4 Recording Prototype | Gpu | **PrototypeOnly - muxer not production-ready** |
 | 17 | RTMP Output Prototype | Gpu | **PrototypeOnly - in-memory transport only** |
@@ -220,8 +228,9 @@ Current truth table:
 | RTMP transport | Done:Prototype |
 | RenderGraph | Done:Contract/resource bridge; not a GPU pass executor |
 | Color correction effect | Done:ProductValidated for Vulkan source-layer shader |
-| Blur effect | Done:Skeleton |
-| Text rendering | Done:Prototype |
+| Blur effect | Done:ProductValidated for Vulkan source-layer shader/intermediate passes |
+| Text rendering | Done:ProductValidated for Windows Vulkan glyph atlas upload |
+| Output route transitions | Done:ProductValidated for Vulkan cut/fade output pass |
 | Performance validation | Done:Skeleton |
 | Fault recovery | Done:Contract |
 

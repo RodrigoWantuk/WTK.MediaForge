@@ -1,18 +1,21 @@
 # WTK MediaForge Shader Catalog
 
-Stable catalog ids for the modular composition shader family. Each draw object type maps to one pipeline kind through `RenderDrawObjectPipelineMapper`.
+Stable catalog ids for the modular composition shader family. Draw object
+pipelines map through `RenderDrawObjectPipelineMapper`; effect/output passes are
+internal Vulkan pipeline resources.
 
 ## Naming
 
-| Catalog id | Pipeline kind | Draw object |
+| Catalog id | Pipeline kind / role | Draw object / scope |
 |---|---|---|
 | `mf.source.layer` | SourceLayer | `SourceLayerDrawObject` |
 | `mf.solid` | Solid | `SolidDrawObject` |
 | `mf.text` | Text | `TextDrawObject` |
 | `mf.canvas.composite` | CanvasComposite | `CanvasDrawObject` |
+| `mf.blur` | Internal effect pass | Source-layer intermediate target |
 | `mf.output.letterbox` | OutputLetterbox | Render output target |
 
-## GLSL Skeletons
+## GLSL Catalog
 
 Embedded in `WTK.MediaForge.Graphics.Vulkan/Shaders/Catalog/`:
 
@@ -23,7 +26,8 @@ Embedded in `WTK.MediaForge.Graphics.Vulkan/Shaders/Catalog/`:
 | `mf_solid.frag` | Solid fill |
 | `mf_text.frag` | Pre-rasterized text texture |
 | `mf_canvas_composite.frag` | Nested canvas texture |
-| `mf_output_letterbox.frag` | Canvas fit into output surface |
+| `mf_blur.frag` | Separable blur pass over an intermediate source-layer target |
+| `mf_output_letterbox.frag` | Canvas fit into output surface, including transition opacity |
 
 ## UV Pipeline
 
@@ -46,6 +50,18 @@ color = texture(sourceTexture, uvRaw);
 For texture-like draw objects (`TextDrawObject`, `CanvasDrawObject`), crop maps
 local UV into a sampled sub-rectangle. For `SolidDrawObject`, crop behaves as a
 local mask because there is no source texture to sample.
+
+## Effect And Output Passes
+
+Source-layer color correction and chroma key run inside `mf_source_layer.frag`.
+`BlurEffect` is applied after source-layer sampling by rendering the layer into
+a pooled intermediate target, running horizontal and vertical `mf_blur.frag`
+passes, then compositing the blurred texture into the canvas.
+
+Output route fade transitions render previous and current canvas targets through
+`mf_output_letterbox.frag`. The first pass writes the previous canvas; the
+second pass loads the same output attachment and alpha-blends the current
+canvas using the transition progress as opacity.
 
 ## Managed API
 

@@ -6,14 +6,16 @@ internal sealed class FontCache
     private readonly Dictionary<AssetCacheKey, Entry> _entries = new();
 
     public RefCountedAssetHandle<FontAtlasAsset> Acquire(
+        string text,
         string fontFamily,
         float sizePx,
         Func<FontAtlasAsset> factory)
     {
+        ArgumentNullException.ThrowIfNull(text);
         ArgumentException.ThrowIfNullOrWhiteSpace(fontFamily);
         ArgumentNullException.ThrowIfNull(factory);
 
-        var key = AssetCacheKey.FromString($"{fontFamily}|{sizePx:0.###}");
+        var key = AssetCacheKey.FromString($"{fontFamily}|{sizePx:0.###}|{text}");
 
         lock (_gate)
         {
@@ -68,6 +70,8 @@ internal sealed class FontCache
 
 internal sealed class FontAtlasAsset
 {
+    public required string Text { get; init; }
+
     public required string FontFamily { get; init; }
 
     public required float SizePx { get; init; }

@@ -450,6 +450,17 @@ public sealed class SourceLayerBuilder
         return this;
     }
 
+    public SourceLayerBuilder AddBlur(float radius)
+    {
+        EnsurePositive(radius, nameof(radius));
+
+        _layer.Effects.Add(new BlurEffect
+        {
+            Radius = radius
+        });
+        return this;
+    }
+
     private static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
     {
         EnsurePositive(width, nameof(width));
@@ -509,6 +520,13 @@ public sealed class TextLayerBuilder
             throw new ArgumentOutOfRangeException(nameof(fontSize), "Font size must be finite and positive.");
 
         _layer.FontSize = fontSize;
+        return this;
+    }
+
+    public TextLayerBuilder SetFontFamily(string fontFamily)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fontFamily);
+        _layer.FontFamily = fontFamily;
         return this;
     }
 

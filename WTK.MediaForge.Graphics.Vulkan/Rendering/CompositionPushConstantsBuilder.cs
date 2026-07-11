@@ -56,7 +56,8 @@ internal static partial class CompositionPushConstantsBuilder
 
     public static MediaForgeOutputPushConstants BuildOutputLetterbox(
         RenderOutputStateSnapshot output,
-        FrameSize canvasSize)
+        FrameSize canvasSize,
+        float opacity = 1f)
     {
         var letterbox = output.LetterboxColor;
         return new MediaForgeOutputPushConstants
@@ -64,7 +65,8 @@ internal static partial class CompositionPushConstantsBuilder
             CanvasSize = new Vector2(canvasSize.Width, canvasSize.Height),
             OutputSize = new Vector2(output.OutputSize.Width, output.OutputSize.Height),
             LetterboxColor = new Vector4(letterbox.R, letterbox.G, letterbox.B, letterbox.A),
-            LayoutMode = (int)output.CanvasLayoutMode
+            LayoutMode = (int)output.CanvasLayoutMode,
+            Opacity = opacity
         };
     }
 

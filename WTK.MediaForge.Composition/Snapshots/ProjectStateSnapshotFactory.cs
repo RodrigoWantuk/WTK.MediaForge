@@ -52,7 +52,8 @@ internal static class ProjectStateSnapshotFactory
             CanvasId = output.CanvasId,
             OutputSize = output.OutputSize,
             CanvasLayoutMode = output.CanvasLayoutMode,
-            LetterboxColor = output.LetterboxColor
+            LetterboxColor = output.LetterboxColor,
+            RouteTransitionKind = output.RouteTransition.Kind
         };
 
     private static DrawObjectStateSnapshot CloneDrawObject(MediaForgeDrawObject drawObject)
@@ -87,6 +88,7 @@ internal static class ProjectStateSnapshotFactory
                 BlendMode = text.BlendMode,
                 Effects = effects,
                 Text = text.Text,
+                FontFamily = text.FontFamily,
                 TextColor = text.TextColor,
                 FontSize = text.FontSize
             },
