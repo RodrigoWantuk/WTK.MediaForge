@@ -191,6 +191,117 @@ public class PreviewPanelSinkTests
         Assert.Equal(77, removedHandle);
     }
 
+    [Fact]
+    public async Task PreviewPanelSink_stop_waits_for_inflight_present_before_removing_presenter()
+    {
+        var removedHandle = 0L;
+        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
+            Interlocked.Exchange(ref removedHandle, handle));
+
+        var outputId = RenderOutputId.New();
+        var surface = new BlockingPreviewSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 99);
+
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+        var frameTask = sink.OnFrameAsync(
+            batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
+            CancellationToken.None).AsTask();
+
+        await surface.WaitUntilPresentingAsync(TimeSpan.FromSeconds(5));
+
+        var stopTask = sink.StopAsync(CancellationToken.None).AsTask();
+        await Task.Delay(50);
+
+        Assert.False(stopTask.IsCompleted);
+        Assert.Equal(0, removedHandle);
+
+        surface.CompletePresentation();
+
+        await frameTask;
+        await stopTask;
+
+        Assert.Equal(99, removedHandle);
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+    }
+
+    [Fact]
+    public async Task PreviewPanelSink_stop_cancellation_does_not_remove_presenter_while_present_is_inflight()
+    {
+        var removedHandle = 0L;
+        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
+            Interlocked.Exchange(ref removedHandle, handle));
+
+        var outputId = RenderOutputId.New();
+        var surface = new BlockingPreviewSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(panelHandle: 101);
+
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+        var frameTask = sink.OnFrameAsync(
+            batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
+            CancellationToken.None).AsTask();
+
+        await surface.WaitUntilPresentingAsync(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            sink.StopAsync(cts.Token).AsTask());
+
+        Assert.Equal(0, removedHandle);
+
+        surface.CompletePresentation();
+
+        await frameTask;
+        await sink.StopAsync(CancellationToken.None);
+
+        Assert.Equal(101, removedHandle);
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+    }
+
+    [Fact]
+    public async Task PreviewPanelSink_dispose_timeout_preserves_presenter_until_retry_can_complete()
+    {
+        var removedHandle = 0L;
+        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
+            Interlocked.Exchange(ref removedHandle, handle));
+
+        var outputId = RenderOutputId.New();
+        var surface = new BlockingPreviewSurface(outputId, new FrameSize(640, 360));
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        var frame = Assert.Single(batch.Frames);
+        var sink = new PreviewPanelSink(
+            id: RenderOutputSinkId.New(),
+            panelHandle: 103,
+            backpressureMode: RenderOutputSinkBackpressureMode.KeepLatest,
+            onFramePresented: null,
+            disposePresentationTimeout: TimeSpan.FromMilliseconds(50));
+
+        await sink.StartAsync(CreateContext(outputId), CancellationToken.None);
+        var frameTask = sink.OnFrameAsync(
+            batch.CreateLease(frame, CreateInfo(frame, sink.Id)),
+            CancellationToken.None).AsTask();
+
+        await surface.WaitUntilPresentingAsync(TimeSpan.FromSeconds(5));
+
+        await Assert.ThrowsAsync<TimeoutException>(() => sink.DisposeAsync().AsTask());
+
+        Assert.Equal(0, removedHandle);
+
+        surface.CompletePresentation();
+
+        await frameTask;
+        await sink.DisposeAsync();
+
+        Assert.Equal(103, removedHandle);
+        Assert.False(batch.HasOutstandingLeases);
+        Assert.Equal(1, surface.DisposeCount);
+    }
+
     private const int StressCycleCount =
 #if DEBUG
         10;
@@ -335,6 +446,48 @@ public class PreviewPanelSinkTests
             cancellationToken.ThrowIfCancellationRequested();
             return ValueTask.FromException(new OperationCanceledException(cancellationToken));
         }
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingPreviewSurface(
+        RenderOutputId outputId,
+        FrameSize size)
+        : IRenderedOutputSurfaceLease, IPreviewPresentableRenderedOutputSurfaceLease
+    {
+        private readonly TaskCompletionSource _presenting =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private int _disposeCount;
+
+        public RenderOutputId OutputId { get; } = outputId;
+
+        public FrameSize Size { get; } = size;
+
+        public RenderPixelFormat Format => RenderPixelFormat.Rgba8Unorm;
+
+        public RenderBackendKind BackendKind => RenderBackendKind.Vulkan;
+
+        public object? BackendSurface => null;
+
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        public async ValueTask PresentToWin32PanelAsync(nint panelHandle, CancellationToken cancellationToken)
+        {
+            _presenting.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask WaitUntilPresentingAsync(TimeSpan timeout) =>
+            await _presenting.Task.WaitAsync(timeout).ConfigureAwait(false);
+
+        public void CompletePresentation() => _release.TrySetResult();
 
         public ValueTask DisposeAsync()
         {

@@ -102,6 +102,7 @@ Before considering a change complete, verify:
 - [ ] Sink attach failure rolls back without leaving a partially registered sink or surface.
 - [ ] Sink detach stops delivery, stops the sink, disposes it, and removes automatic surface bindings when no sinks remain.
 - [ ] One `RenderOutput` can feed multiple sinks without rendering the same output more than once per frame.
+- [ ] `PreviewPanelSink` does not remove a Win32 panel presenter while a presentation is in flight; timeout/cancellation is observable and preserves the presenter.
 
 ## Texture Identity
 

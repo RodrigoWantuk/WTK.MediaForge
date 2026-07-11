@@ -86,7 +86,7 @@ The legacy WinForms preview path has been removed as a product path because it u
 - CP3 nested canvas rendering is implemented in Vulkan by rendering child canvases into submission-retained intermediate targets and compositing them into parent canvases with transform, opacity, and depth-8 coverage.
 - CP3 `ChromaKeyEffect` is the only supported source-layer effect. Unsupported/invalid/multiple chroma configurations emit explicit diagnostics and are covered by `Cp3ChromaKeyEffectTests`.
 - Vulkan offscreen composition is implemented through `VulkanCompositionShaderPipelines` and `VulkanOffscreenCompositor`.
-- `PreviewPanelSink` presents completed Vulkan offscreen surfaces to a Win32 panel through an internal swapchain blit. It is the GPU preview path; `CpuReadbackSink` remains debug/sample only.
+- `PreviewPanelSink` presents completed Vulkan offscreen surfaces to a Win32 panel through an internal swapchain blit. Stop/dispose waits for in-flight presentation to become idle before removing the panel presenter; cancellation/timeout preserves the presenter instead of risking use-after-free. It is the GPU preview path; `CpuReadbackSink` remains debug/sample only.
 - Sink attach timeout is owned by `RenderOutputSinkDispatcher`; the engine does not wrap that operation in a competing timeout that could abandon dispatcher cleanup before the sink observes cancellation.
 - Source/output type catalogs now include product contracts for animated images, Lottie, IP camera, encoded file, SRT, RTSP, and HLS. These are project/API contracts only until runtime adapters land.
 - Window capture remains a project/API contract only. Capability reports keep it

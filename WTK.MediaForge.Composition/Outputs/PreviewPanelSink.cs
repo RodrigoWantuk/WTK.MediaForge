@@ -9,10 +9,16 @@ namespace WTK.MediaForge.Composition.Outputs;
 /// </summary>
 public sealed class PreviewPanelSink : IRenderOutputSink
 {
+    private static readonly TimeSpan DefaultDisposePresentationTimeout = TimeSpan.FromSeconds(5);
+
     private readonly nint _panelHandle;
     private readonly Func<RenderOutputFrameLease, CancellationToken, ValueTask>? _onFramePresented;
+    private readonly SemaphoreSlim _presentationGate = new(1, 1);
+    private readonly TimeSpan _disposePresentationTimeout;
     private int _started;
+    private int _disposeRequested;
     private int _disposed;
+    private int _presenterRemoved;
 
     public PreviewPanelSink(
         nint panelHandle,
@@ -27,6 +33,16 @@ public sealed class PreviewPanelSink : IRenderOutputSink
         nint panelHandle,
         RenderOutputSinkBackpressureMode backpressureMode = RenderOutputSinkBackpressureMode.KeepLatest,
         Func<RenderOutputFrameLease, CancellationToken, ValueTask>? onFramePresented = null)
+        : this(id, panelHandle, backpressureMode, onFramePresented, DefaultDisposePresentationTimeout)
+    {
+    }
+
+    internal PreviewPanelSink(
+        RenderOutputSinkId id,
+        nint panelHandle,
+        RenderOutputSinkBackpressureMode backpressureMode,
+        Func<RenderOutputFrameLease, CancellationToken, ValueTask>? onFramePresented,
+        TimeSpan disposePresentationTimeout)
     {
         if (id.IsEmpty)
             throw new ArgumentException("Sink id cannot be empty.", nameof(id));
@@ -34,10 +50,18 @@ public sealed class PreviewPanelSink : IRenderOutputSink
         if (panelHandle == 0)
             throw new ArgumentException("Panel handle cannot be zero.", nameof(panelHandle));
 
+        if (disposePresentationTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(disposePresentationTimeout),
+                "Preview presentation dispose timeout must be positive.");
+        }
+
         Id = id;
         _panelHandle = panelHandle;
         BackpressureMode = backpressureMode;
         _onFramePresented = onFramePresented;
+        _disposePresentationTimeout = disposePresentationTimeout;
     }
 
     public RenderOutputSinkId Id { get; }
@@ -71,6 +95,13 @@ public sealed class PreviewPanelSink : IRenderOutputSink
         }
 
         Interlocked.Exchange(ref _started, 1);
+        Interlocked.Exchange(ref _presenterRemoved, 0);
+        if (Volatile.Read(ref _disposeRequested) != 0)
+        {
+            Interlocked.Exchange(ref _started, 0);
+            ThrowIfDisposed();
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -81,6 +112,7 @@ public sealed class PreviewPanelSink : IRenderOutputSink
         ArgumentNullException.ThrowIfNull(frame);
 
         Exception? operationError = null;
+        var presentationGateAcquired = false;
 
         try
         {
@@ -96,6 +128,15 @@ public sealed class PreviewPanelSink : IRenderOutputSink
                     $"Render backend '{frame.BackendKind}' does not expose GPU preview presentation for output frames.");
             }
 
+            await _presentationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            presentationGateAcquired = true;
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ThrowIfDisposed();
+
+            if (Volatile.Read(ref _started) == 0)
+                throw new InvalidOperationException("PreviewPanelSink must be started before receiving frames.");
+
             await presentableSurface
                 .PresentToWin32PanelAsync(_panelHandle, cancellationToken)
                 .ConfigureAwait(false);
@@ -107,35 +148,66 @@ public sealed class PreviewPanelSink : IRenderOutputSink
         {
             operationError = ex;
         }
+        finally
+        {
+            if (presentationGateAcquired)
+                _presentationGate.Release();
+        }
 
         await DisposeFrameLeaseAsync(frame, operationError).ConfigureAwait(false);
     }
 
-    public ValueTask StopAsync(CancellationToken cancellationToken)
+    public async ValueTask StopAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (Volatile.Read(ref _disposed) != 0)
-            return ValueTask.CompletedTask;
+            return;
 
         Interlocked.Exchange(ref _started, 0);
-        PreviewPanelPresenterLifecycle.RemovePresentersForPanel(_panelHandle);
-        return ValueTask.CompletedTask;
+        await WaitForPresentationIdleAsync(cancellationToken).ConfigureAwait(false);
+        RemovePresenterOnce();
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return ValueTask.CompletedTask;
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
 
+        Interlocked.Exchange(ref _disposeRequested, 1);
         Interlocked.Exchange(ref _started, 0);
-        PreviewPanelPresenterLifecycle.RemovePresentersForPanel(_panelHandle);
-        return ValueTask.CompletedTask;
+
+        using var timeout = new CancellationTokenSource(_disposePresentationTimeout);
+        try
+        {
+            await WaitForPresentationIdleAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (timeout.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"PreviewPanelSink presentation did not become idle within {_disposePresentationTimeout}.",
+                ex);
+        }
+
+        RemovePresenterOnce();
+        Interlocked.Exchange(ref _disposed, 1);
     }
 
     private void ThrowIfDisposed()
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _disposeRequested) != 0)
             throw new ObjectDisposedException(nameof(PreviewPanelSink));
+    }
+
+    private async ValueTask WaitForPresentationIdleAsync(CancellationToken cancellationToken)
+    {
+        await _presentationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        _presentationGate.Release();
+    }
+
+    private void RemovePresenterOnce()
+    {
+        if (Interlocked.Exchange(ref _presenterRemoved, 1) == 0)
+            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(_panelHandle);
     }
 
     private static async ValueTask DisposeFrameLeaseAsync(
