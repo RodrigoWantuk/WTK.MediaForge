@@ -23,6 +23,23 @@ public sealed class SourceCapabilityReadinessTests
     }
 
     [Fact]
+    public void Window_capture_is_not_available_until_gpu_provider_exists()
+    {
+        var report = MediaForgeCapabilityReportBuilder.Build(
+            new HardwareMediaCapabilityReport { Platform = "Test" },
+            MediaSourceTypeRegistry.CreateCapabilityEntries());
+
+        var window = Assert.Single(
+            report.Entries,
+            entry => entry.Id == $"source.{MediaSourceTypes.WindowCapture.Value}");
+
+        Assert.Equal(MediaForgeSupportStatus.Planned, window.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.Contract, window.ProductReadinessStatus);
+        Assert.False(report.IsFeatureAvailable(window.Id));
+        Assert.Contains("Windows Graphics Capture", window.UnavailableReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Source_capability_entries_do_not_mark_skeleton_or_prototype_as_available()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(

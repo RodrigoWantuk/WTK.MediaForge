@@ -7,7 +7,7 @@ using ResultCode = Vortice.DXGI.ResultCode;
 
 namespace WTK.MediaForge.Capture.DesktopDuplication;
 
-internal sealed class DesktopDuplicationSession : IDisposable
+internal sealed class DesktopDuplicationSession : IDesktopDuplicationSession
 {
     private D3D11GpuDevice? _device;
     private IDXGIOutputDuplication? _duplication;

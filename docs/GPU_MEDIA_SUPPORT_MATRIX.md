@@ -22,7 +22,7 @@ Prototype bridges are excluded from product capability reports.
 | Source | Transport | Status | Notes |
 |--------|-----------|--------|-------|
 | Desktop capture | GpuSurface | Experimental | D3D11 shared texture |
-| Window capture | GpuSurface | Experimental | |
+| Window capture | GpuSurface | Planned | Requires Windows Graphics Capture provider that publishes D3D11 GPU frame leases |
 | Webcam | GpuSurface | Experimental | Raw CPU input possible at boundary only |
 | Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows product path | Load-time CPU decode; CPU copy released after GPU upload |
 | Static image WebP | N/A | Planned | Blocked until license review |

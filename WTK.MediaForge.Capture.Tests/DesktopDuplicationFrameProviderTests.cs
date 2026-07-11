@@ -11,6 +11,8 @@ using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
 using Xunit;
 
 namespace WTK.MediaForge.Capture.Tests;
@@ -558,6 +560,82 @@ public class DesktopDuplicationFrameProviderTests
         Assert.NotEqual(ProviderDisposeState.Disposing, provider.DisposeState);
     }
 
+    [Fact]
+    public async Task Reconnect_replaces_slot_ring_before_publishing_frames_from_new_session()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var firstDevice) ||
+            !TestGpuCaptureSupport.TryCreateDefaultDevice(out var secondDevice))
+        {
+            return;
+        }
+
+        using var allowFirstAcquire = new ManualResetEventSlim(false);
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var factory = new ScriptedDesktopDuplicationSessionFactory(
+            new FakeDesktopDuplicationSession(firstDevice, SessionBehavior.ThrowOnAcquire, allowFirstAcquire),
+            new FakeDesktopDuplicationSession(secondDevice, SessionBehavior.ProduceFrames));
+        var provider = new DesktopDuplicationFrameProvider(
+            SourceId.New(),
+            CreateMinimalCaptureSource(),
+            diagnostics,
+            factory);
+
+        await provider.StartAsync(CancellationToken.None);
+        var firstRing = provider.Ring;
+        allowFirstAcquire.Set();
+
+        GpuFrameLease? lease = null;
+        await WaitUntilAsync(
+            () =>
+            {
+                if (factory.CreatedCount < 2 || ReferenceEquals(provider.Ring, firstRing))
+                    return false;
+
+                if (!provider.TryAcquireLatestFrame(out lease))
+                    return false;
+
+                return true;
+            },
+            TimeSpan.FromSeconds(5));
+
+        lease!.Dispose();
+
+        Assert.NotSame(firstRing, provider.Ring);
+        Assert.Contains(diagnostics.Diagnostics, d => d.Code == "capture.desktop_reconnect_attempt");
+        Assert.Contains(diagnostics.Diagnostics, d => d.Code == "capture.desktop_reconnect_succeeded");
+
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Reconnect_failure_marks_provider_failed_and_retires_current_ring()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var firstDevice))
+            return;
+
+        var diagnostics = new InMemoryDiagnosticsSink();
+        var factory = new ScriptedDesktopDuplicationSessionFactory(
+            new FakeDesktopDuplicationSession(firstDevice, SessionBehavior.ThrowOnAcquire),
+            new FakeDesktopDuplicationSession(startFailure: new InvalidOperationException("Simulated reconnect failure.")));
+        var provider = new DesktopDuplicationFrameProvider(
+            SourceId.New(),
+            CreateMinimalCaptureSource(),
+            diagnostics,
+            factory);
+
+        await provider.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(
+            () => provider.State == MediaSourceState.Failed,
+            TimeSpan.FromSeconds(5));
+
+        Assert.Null(provider.Ring);
+        Assert.NotNull(provider.LastError);
+        Assert.Contains(diagnostics.Diagnostics, d => d.Code == "capture.desktop_reconnect_failed");
+
+        await provider.DisposeAsync();
+    }
+
     private static CaptureSourceInfo CreateMinimalCaptureSource() =>
         new()
         {
@@ -712,5 +790,132 @@ public class DesktopDuplicationFrameProviderTests
 
         using var result = RenderFrameSnapshotFactory.Build(projectState, runtime);
         return result.TakeSnapshot()!;
+    }
+
+    private enum SessionBehavior
+    {
+        ProduceFrames,
+        ThrowOnAcquire
+    }
+
+    private sealed class ScriptedDesktopDuplicationSessionFactory : IDesktopDuplicationSessionFactory
+    {
+        private readonly Queue<IDesktopDuplicationSession> _sessions;
+
+        public ScriptedDesktopDuplicationSessionFactory(params IDesktopDuplicationSession[] sessions) =>
+            _sessions = new Queue<IDesktopDuplicationSession>(sessions);
+
+        public int CreatedCount { get; private set; }
+
+        public IDesktopDuplicationSession Create()
+        {
+            CreatedCount++;
+            return _sessions.Dequeue();
+        }
+    }
+
+    private sealed class FakeDesktopDuplicationSession : IDesktopDuplicationSession
+    {
+        private readonly D3D11GpuDevice? _device;
+        private readonly SessionBehavior _behavior;
+        private readonly ManualResetEventSlim? _allowAcquire;
+        private readonly Exception? _startFailure;
+        private bool _disposed;
+        private bool _started;
+
+        public FakeDesktopDuplicationSession(
+            D3D11GpuDevice device,
+            SessionBehavior behavior,
+            ManualResetEventSlim? allowAcquire = null)
+        {
+            _device = device;
+            _behavior = behavior;
+            _allowAcquire = allowAcquire;
+        }
+
+        public FakeDesktopDuplicationSession(Exception startFailure) =>
+            _startFailure = startFailure;
+
+        public D3D11GpuDevice Device =>
+            _device ?? throw new InvalidOperationException("Fake session has no D3D11 device.");
+
+        public FrameSize TextureSize { get; private set; }
+
+        public Format TextureFormat { get; private set; }
+
+        public CaptureSessionInfo? SessionInfo { get; private set; }
+
+        public void Start(CaptureSourceInfo source)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (_startFailure is not null)
+                throw _startFailure;
+
+            TextureSize = source.TextureSize;
+            TextureFormat = Format.B8G8R8A8_UNorm;
+            SessionInfo = new CaptureSessionInfo
+            {
+                CaptureAdapterLuid = GpuAdapterLuid.Empty,
+                DuplicationTextureSize = TextureSize,
+                TextureFormat = TextureFormat.ToString(),
+                RefreshRateNumerator = 60,
+                RefreshRateDenominator = 1
+            };
+            _started = true;
+        }
+
+        public bool TryAcquireNextFrame(out ID3D11Texture2D acquiredTexture, out OutduplFrameInfo frameInfo)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_started)
+                throw new InvalidOperationException("Fake session is not started.");
+
+            acquiredTexture = null!;
+            frameInfo = default;
+
+            _allowAcquire?.Wait(TimeSpan.FromSeconds(5));
+
+            if (_behavior == SessionBehavior.ThrowOnAcquire)
+                throw new InvalidOperationException("Simulated desktop duplication loss.");
+
+            acquiredTexture = Device.Device.CreateTexture2D(new Texture2DDescription
+            {
+                Width = TextureSize.Width,
+                Height = TextureSize.Height,
+                MipLevels = 1,
+                ArraySize = 1,
+                Format = TextureFormat,
+                SampleDescription = new SampleDescription(1, 0),
+                Usage = ResourceUsage.Default,
+                BindFlags = BindFlags.ShaderResource | BindFlags.RenderTarget,
+                CPUAccessFlags = CpuAccessFlags.None,
+                MiscFlags = ResourceOptionFlags.None
+            });
+
+            return true;
+        }
+
+        public void ReleaseFrame()
+        {
+        }
+
+        public void Stop()
+        {
+            _started = false;
+            SessionInfo = null;
+            TextureSize = default;
+            TextureFormat = default;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            Stop();
+            _device?.Dispose();
+        }
     }
 }

@@ -78,6 +78,10 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `MediaForgeEngine.StopAsync` attempts runtime cleanup even when the engine is already `Failed`; it no longer returns silently while runtime resources remain alive.
 - CP1 visual correctness is proven by Vulkan offscreen pixel readback tests for center pixel, Fit transparency, Fill, Stretch, opacity, output letterbox color, canvas background, transparent layer over background, and clipped/fully outside layer geometry.
 - CP1 descriptor capacity is explicitly sized for larger submits, and `VulkanExternalTextureRegistry` waiters use timeout diagnostics instead of indefinite blocking.
+- `DesktopDuplicationFrameProvider` reconnect replaces the D3D11 slot ring when
+  a new duplication session/device is created, retires the old ring through
+  `RetiredGpuResourceManager`, and marks the provider `Failed` if reconnect
+  cannot restore a valid GPU session.
 - CP3 solid layer rendering is implemented in Vulkan with transform, clipping, opacity, normal alpha blending, and pixel tests.
 - CP3 nested canvas rendering is implemented in Vulkan by rendering child canvases into submission-retained intermediate targets and compositing them into parent canvases with transform, opacity, and depth-8 coverage.
 - CP3 `ChromaKeyEffect` is the only supported source-layer effect. Unsupported/invalid/multiple chroma configurations emit explicit diagnostics and are covered by `Cp3ChromaKeyEffectTests`.
@@ -85,6 +89,9 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `PreviewPanelSink` presents completed Vulkan offscreen surfaces to a Win32 panel through an internal swapchain blit. It is the GPU preview path; `CpuReadbackSink` remains debug/sample only.
 - Sink attach timeout is owned by `RenderOutputSinkDispatcher`; the engine does not wrap that operation in a competing timeout that could abandon dispatcher cleanup before the sink observes cancellation.
 - Source/output type catalogs now include product contracts for animated images, Lottie, IP camera, encoded file, SRT, RTSP, and HLS. These are project/API contracts only until runtime adapters land.
+- Window capture remains a project/API contract only. Capability reports keep it
+  `Planned` until a Windows Graphics Capture provider publishes D3D11 GPU frame
+  leases; it must not be shown as available.
 - Windows PNG/JPEG static image sources decode once into `StaticCpuAsset`, upload to a D3D11 shared texture, release the CPU pixel copy, and then publish GPU frame leases. WebP remains Planned until decoder/license review.
 - Decode/video resource ownership remains split by purpose: `GpuTextureLease`
   is the internal pooled GPU texture lease, `GpuFrameLease` is the render

@@ -30,11 +30,12 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
 
     private readonly CaptureSourceInfo _captureSource;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
+    private readonly IDesktopDuplicationSessionFactory _sessionFactory;
     private readonly object _stateGate = new();
     private readonly RetiredGpuResourceManager _retiredResourceManager = new();
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
-    private DesktopDuplicationSession? _session;
+    private IDesktopDuplicationSession? _session;
     private D3D11GpuFrameSlotRing? _slotRing;
     private CancellationTokenSource? _captureCts;
     private Thread? _captureThread;
@@ -49,11 +50,13 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
     public DesktopDuplicationFrameProvider(
         SourceId id,
         CaptureSourceInfo captureSource,
-        IMediaForgeDiagnosticsSink? diagnostics = null)
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        IDesktopDuplicationSessionFactory? sessionFactory = null)
     {
         Id = id;
         _captureSource = captureSource ?? throw new ArgumentNullException(nameof(captureSource));
         _diagnostics = diagnostics;
+        _sessionFactory = sessionFactory ?? new DesktopDuplicationSessionFactory();
     }
 
     public SourceId Id { get; }
@@ -387,18 +390,10 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
     {
         try
         {
-            _session = new DesktopDuplicationSession();
+            _session = _sessionFactory.Create();
             _session.Start(_captureSource);
 
-            Volatile.Write(
-                ref _slotRing,
-                new D3D11GpuFrameSlotRing(
-                    _session.Device.Device,
-                    _session.TextureSize.Width,
-                    _session.TextureSize.Height,
-                    _session.TextureFormat,
-                    SlotCount,
-                    _diagnostics));
+            ReplaceSlotRingForSession(_session, retireExisting: false);
 
             lock (_stateGate)
                 Volatile.Write(ref _state, (int)MediaSourceState.Running);
@@ -492,6 +487,11 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
                         ex,
                         Id.Value,
                         Name);
+
+                    lock (_stateGate)
+                        Volatile.Write(ref _state, (int)MediaSourceState.Failed);
+
+                    break;
                 }
             }
         }
@@ -517,8 +517,22 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
         try
         {
             _session?.Stop();
-            _session = new DesktopDuplicationSession();
-            _session.Start(_captureSource);
+
+            var newSession = _sessionFactory.Create();
+            try
+            {
+                newSession.Start(_captureSource);
+            }
+            catch
+            {
+                newSession.Dispose();
+                _session = null;
+                RetireCurrentRing();
+                throw;
+            }
+
+            _session = newSession;
+            ReplaceSlotRingForSession(newSession, retireExisting: true);
 
             MediaForgeDiagnostics.Report(
                 _diagnostics,
@@ -540,7 +554,7 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
     }
 
     private void PublishDesktopFrame(
-        DesktopDuplicationSession session,
+        IDesktopDuplicationSession session,
         D3D11GpuFrameSlotRing slotRing,
         ID3D11Texture2D desktopTexture)
     {
@@ -603,7 +617,7 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
         return _session?.TextureSize ?? _captureSource.TextureSize;
     }
 
-    private void RecreateSlotRing(DesktopDuplicationSession session, Texture2DDescription description)
+    private void RecreateSlotRing(IDesktopDuplicationSession session, Texture2DDescription description)
     {
         var newRing = new D3D11GpuFrameSlotRing(
             session.Device.Device,
@@ -612,6 +626,31 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
             description.Format,
             SlotCount,
             _diagnostics);
+
+        var oldRing = Interlocked.Exchange(ref _slotRing, newRing);
+
+        if (oldRing is not null)
+        {
+            oldRing.Retire();
+            _retiredResourceManager.Add(oldRing);
+        }
+    }
+
+    private void ReplaceSlotRingForSession(IDesktopDuplicationSession session, bool retireExisting)
+    {
+        var newRing = new D3D11GpuFrameSlotRing(
+            session.Device.Device,
+            session.TextureSize.Width,
+            session.TextureSize.Height,
+            session.TextureFormat,
+            SlotCount,
+            _diagnostics);
+
+        if (!retireExisting)
+        {
+            Volatile.Write(ref _slotRing, newRing);
+            return;
+        }
 
         var oldRing = Interlocked.Exchange(ref _slotRing, newRing);
 

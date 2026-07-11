@@ -61,7 +61,11 @@ public static class MediaSourceTypeRegistry
     private static IEnumerable<MediaSourceTypeDescriptor> CreateDescriptors()
     {
         yield return LiveGpu("Desktop capture", MediaSourceTypes.Desktop, MediaForgeSupportStatus.Experimental);
-        yield return LiveGpu("Window capture", MediaSourceTypes.WindowCapture, MediaForgeSupportStatus.Experimental);
+        yield return LiveGpu(
+            "Window capture",
+            MediaSourceTypes.WindowCapture,
+            MediaForgeSupportStatus.Planned,
+            "Planned until a Windows Graphics Capture provider publishes D3D11 GPU frame leases.");
         yield return new MediaSourceTypeDescriptor
         {
             TypeId = MediaSourceTypes.Webcam,
@@ -123,7 +127,11 @@ public static class MediaSourceTypeRegistry
         };
     }
 
-    private static MediaSourceTypeDescriptor LiveGpu(string displayName, MediaSourceTypeId typeId, MediaForgeSupportStatus status) =>
+    private static MediaSourceTypeDescriptor LiveGpu(
+        string displayName,
+        MediaSourceTypeId typeId,
+        MediaForgeSupportStatus status,
+        string? unavailableReason = null) =>
         new()
         {
             TypeId = typeId,
@@ -137,7 +145,8 @@ public static class MediaSourceTypeRegistry
             RequiresGpuInterop = true,
             RequiresHardwareDecode = false,
             AllowsRawCpuException = false,
-            SupportStatus = status
+            SupportStatus = status,
+            UnavailableReason = unavailableReason
         };
 
     private static MediaSourceTypeDescriptor TimelineEncoded(
