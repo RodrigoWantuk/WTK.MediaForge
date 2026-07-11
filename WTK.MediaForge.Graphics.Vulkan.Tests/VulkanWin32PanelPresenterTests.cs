@@ -7,6 +7,7 @@ using Xunit;
 namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 
 [Trait("Category", TestCategories.Gpu)]
+[Collection("VulkanComposition")]
 public class VulkanWin32PanelPresenterTests
 {
     [Fact]

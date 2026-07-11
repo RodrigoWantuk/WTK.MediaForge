@@ -21,9 +21,13 @@ local reliability track, but it is not yet a product preview feature.
 - Stop waits for in-flight presentation; cancellation preserves the presenter.
 - Dispose timeout is observable and allows retry instead of pretending success.
 - Attach/detach, resize, start/stop, and slow-present cycles are stress-tested.
+- GPU smoke coverage presents a renderer-produced Vulkan output frame through
+  `PreviewPanelSink` to a real Win32 panel handle and verifies lease, presenter,
+  and pending command-buffer cleanup without CPU readback.
 
 ## Remaining Product Gate
 
-Before `PreviewPanelSink` can become product-supported, run and document a local
-Win32/Avalonia panel smoke test proving real window presentation, resize,
-attach/detach, stop/dispose retry, and sustained delivery without CPU readback.
+Before `PreviewPanelSink` can become product-supported, run and document a
+product-hosted Avalonia panel reliability pass proving real visible presentation,
+interactive resize, attach/detach, stop/dispose retry, and sustained delivery
+without CPU readback.

@@ -70,6 +70,9 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
     internal int IntermediateTargetPoolLiveCountForTests =>
         _compositionPipelines.IntermediateTargetPoolLiveCountForTests;
 
+    internal bool SupportsWin32PresentationForTests =>
+        _deviceContext.SupportsWin32Presentation;
+
     internal void InvalidateIntermediateTargetCacheForTests() =>
         _compositionPipelines.InvalidateIntermediateTargets();
 
