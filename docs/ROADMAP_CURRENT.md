@@ -22,6 +22,9 @@ Complete foundations:
 - Intermediate target pool and Vulkan readback staging pool.
 - Transform/crop/rotation/pivot support in the Vulkan composition path.
 - Windows PNG/JPEG static image product path using load-time decode and D3D11 shared texture GPU leases.
+- Desktop duplication capture reconnect now retires old D3D11 slot rings and
+  stops/disposes superseded or failed duplication sessions instead of leaking
+  native capture resources during recovery.
 - Decoded GPU frame to render-source frame bridge, keeping `GpuTextureLease`
   as the internal resource lease and `GpuFrameLease` as the render source
   contract.

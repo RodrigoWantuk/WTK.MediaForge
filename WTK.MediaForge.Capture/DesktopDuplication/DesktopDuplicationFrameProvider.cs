@@ -516,7 +516,9 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
 
         try
         {
-            _session?.Stop();
+            var oldSession = _session;
+            _session = null;
+            StopSessionForReconnect(oldSession);
 
             var newSession = _sessionFactory.Create();
             try
@@ -528,11 +530,13 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
                 newSession.Dispose();
                 _session = null;
                 RetireCurrentRing();
+                DisposeSessionAfterFailedReconnect(oldSession);
                 throw;
             }
 
             _session = newSession;
             ReplaceSlotRingForSession(newSession, retireExisting: true);
+            DisposeSessionForReconnect(oldSession);
 
             MediaForgeDiagnostics.Report(
                 _diagnostics,
@@ -549,8 +553,73 @@ internal sealed class DesktopDuplicationFrameProvider : IVideoFrameProvider, IAs
         catch (Exception ex)
         {
             LastError = ex;
+            var failedSession = _session;
+            _session = null;
+            RetireCurrentRing();
+            DisposeSessionAfterFailedReconnect(failedSession);
             return false;
         }
+    }
+
+    private void StopSessionForReconnect(IDesktopDuplicationSession? session)
+    {
+        if (session is null)
+            return;
+
+        try
+        {
+            session.Stop();
+        }
+        catch (Exception ex)
+        {
+            DisposeSessionAfterFailedReconnect(session);
+            ReportReconnectSessionCleanupFailure(ex);
+            throw;
+        }
+    }
+
+    private void DisposeSessionForReconnect(IDesktopDuplicationSession? session)
+    {
+        if (session is null)
+            return;
+
+        try
+        {
+            session.Dispose();
+        }
+        catch (Exception ex)
+        {
+            ReportReconnectSessionCleanupFailure(ex);
+            throw;
+        }
+    }
+
+    private void DisposeSessionAfterFailedReconnect(IDesktopDuplicationSession? session)
+    {
+        if (session is null)
+            return;
+
+        try
+        {
+            session.Dispose();
+        }
+        catch (Exception ex)
+        {
+            ReportReconnectSessionCleanupFailure(ex);
+        }
+    }
+
+    private void ReportReconnectSessionCleanupFailure(Exception exception)
+    {
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Error,
+            "capture.desktop_reconnect_dispose_failed",
+            $"Desktop duplication session cleanup failed for '{Name}' during reconnect: {exception.Message}",
+            nameof(DesktopDuplicationFrameProvider),
+            exception,
+            Id.Value,
+            Name);
     }
 
     private void PublishDesktopFrame(

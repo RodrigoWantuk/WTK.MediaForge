@@ -81,7 +81,9 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `DesktopDuplicationFrameProvider` reconnect replaces the D3D11 slot ring when
   a new duplication session/device is created, retires the old ring through
   `RetiredGpuResourceManager`, and marks the provider `Failed` if reconnect
-  cannot restore a valid GPU session.
+  cannot restore a valid GPU session. Reconnect cleanup must stop and dispose
+  superseded or failed duplication sessions; cleanup failures are diagnostic and
+  prevent reconnect from being reported as successful.
 - CP3 solid layer rendering is implemented in Vulkan with transform, clipping, opacity, normal alpha blending, and pixel tests.
 - CP3 nested canvas rendering is implemented in Vulkan by rendering child canvases into submission-retained intermediate targets and compositing them into parent canvases with transform, opacity, and depth-8 coverage.
 - CP3 `ChromaKeyEffect` is the only supported source-layer effect. Unsupported/invalid/multiple chroma configurations emit explicit diagnostics and are covered by `Cp3ChromaKeyEffectTests`.

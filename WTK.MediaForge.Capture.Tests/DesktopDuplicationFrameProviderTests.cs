@@ -571,9 +571,11 @@ public class DesktopDuplicationFrameProviderTests
 
         using var allowFirstAcquire = new ManualResetEventSlim(false);
         var diagnostics = new InMemoryDiagnosticsSink();
+        var firstSession = new FakeDesktopDuplicationSession(firstDevice, SessionBehavior.ThrowOnAcquire, allowFirstAcquire);
+        var secondSession = new FakeDesktopDuplicationSession(secondDevice, SessionBehavior.ProduceFrames);
         var factory = new ScriptedDesktopDuplicationSessionFactory(
-            new FakeDesktopDuplicationSession(firstDevice, SessionBehavior.ThrowOnAcquire, allowFirstAcquire),
-            new FakeDesktopDuplicationSession(secondDevice, SessionBehavior.ProduceFrames));
+            firstSession,
+            secondSession);
         var provider = new DesktopDuplicationFrameProvider(
             SourceId.New(),
             CreateMinimalCaptureSource(),
@@ -601,10 +603,13 @@ public class DesktopDuplicationFrameProviderTests
         lease!.Dispose();
 
         Assert.NotSame(firstRing, provider.Ring);
+        Assert.True(firstSession.IsDisposed);
+        Assert.False(secondSession.IsDisposed);
         Assert.Contains(diagnostics.Diagnostics, d => d.Code == "capture.desktop_reconnect_attempt");
         Assert.Contains(diagnostics.Diagnostics, d => d.Code == "capture.desktop_reconnect_succeeded");
 
         await provider.DisposeAsync();
+        Assert.True(secondSession.IsDisposed);
     }
 
     [Fact]
@@ -614,9 +619,12 @@ public class DesktopDuplicationFrameProviderTests
             return;
 
         var diagnostics = new InMemoryDiagnosticsSink();
+        var firstSession = new FakeDesktopDuplicationSession(firstDevice, SessionBehavior.ThrowOnAcquire);
+        var failedSession = new FakeDesktopDuplicationSession(
+            startFailure: new InvalidOperationException("Simulated reconnect failure."));
         var factory = new ScriptedDesktopDuplicationSessionFactory(
-            new FakeDesktopDuplicationSession(firstDevice, SessionBehavior.ThrowOnAcquire),
-            new FakeDesktopDuplicationSession(startFailure: new InvalidOperationException("Simulated reconnect failure.")));
+            firstSession,
+            failedSession);
         var provider = new DesktopDuplicationFrameProvider(
             SourceId.New(),
             CreateMinimalCaptureSource(),
@@ -630,6 +638,8 @@ public class DesktopDuplicationFrameProviderTests
             TimeSpan.FromSeconds(5));
 
         Assert.Null(provider.Ring);
+        Assert.True(firstSession.IsDisposed);
+        Assert.True(failedSession.IsDisposed);
         Assert.NotNull(provider.LastError);
         Assert.Contains(diagnostics.Diagnostics, d => d.Code == "capture.desktop_reconnect_failed");
 
@@ -838,6 +848,8 @@ public class DesktopDuplicationFrameProviderTests
 
         public D3D11GpuDevice Device =>
             _device ?? throw new InvalidOperationException("Fake session has no D3D11 device.");
+
+        public bool IsDisposed => _disposed;
 
         public FrameSize TextureSize { get; private set; }
 

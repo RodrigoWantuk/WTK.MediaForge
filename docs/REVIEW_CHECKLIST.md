@@ -118,6 +118,7 @@ Before considering a change complete, verify:
 - [ ] Retry after `DisposeTimedOut` or `DisposeFailed` works when the failed resource is recoverable.
 - [ ] Desktop duplication reconnect replaces GPU slot rings created on the old D3D11 device before publishing frames from the new session.
 - [ ] Failed reconnect marks the provider failed and emits diagnostics instead of leaving the source apparently running.
+- [ ] Desktop/window capture reconnect stops and disposes superseded or failed native sessions instead of leaking them.
 - [ ] Window capture is not advertised as available until a real GPU provider exists.
 
 ## D3D11 Ring
