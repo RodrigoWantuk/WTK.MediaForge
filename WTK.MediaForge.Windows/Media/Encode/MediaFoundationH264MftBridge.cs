@@ -139,7 +139,9 @@ internal static class PrototypeMediaFoundationNative
         return new EncodedVideoPacket
         {
             Codec = EncodedVideoCodec.H264,
+            BitstreamFormat = EncodedVideoBitstreamFormat.AnnexB,
             PresentationTime = presentationTime,
+            Duration = TimeSpan.FromMilliseconds(33),
             IsKeyFrame = isKeyFrame,
             Data = isKeyFrame ? CreatePrototypeKeyFrameAnnexB() : CreatePrototypePFrameAnnexB()
         };

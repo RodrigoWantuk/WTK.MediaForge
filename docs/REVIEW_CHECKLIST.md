@@ -132,6 +132,7 @@ Before considering a change complete, verify:
 - [ ] Static image load uses `MediaTransportKind.StaticCpuAsset`; not counted as raw CPU video exception.
 - [ ] `CpuReadbackSink` is not wired as recording, streaming, or primary preview path.
 - [ ] Product recording/streaming sinks consume encoded packets after hardware encode only.
+- [ ] Encoded H.264 packets declare Annex-B/AVCC format and sinks reject unknown bitstreams instead of guessing.
 - [ ] FFmpeg is not used in first MP4/RTMP product paths.
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
 - [ ] Commit 06 GPU export proof passed before hardware MP4 is marked Supported.

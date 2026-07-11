@@ -64,6 +64,9 @@ public sealed class RecordingMp4PacketSink : IEncodedPacketSink
         if (packet.Codec != EncodedVideoCodec.H264)
             throw new NotSupportedException($"MP4 recording currently accepts H.264 packets, not '{packet.Codec}'.");
 
+        if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.Unknown)
+            throw new NotSupportedException("MP4 recording requires packets with an explicit H.264 bitstream format.");
+
         return _muxer.WritePacketAsync(packet, cancellationToken);
     }
 

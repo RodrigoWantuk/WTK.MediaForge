@@ -58,6 +58,9 @@ public sealed class RtmpPacketSink : IEncodedPacketSink
         if (packet.Codec != EncodedVideoCodec.H264)
             throw new NotSupportedException($"RTMP currently accepts H.264 packets, not '{packet.Codec}'.");
 
+        if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.Unknown)
+            throw new NotSupportedException("RTMP requires packets with an explicit H.264 bitstream format.");
+
         var flvPacket = _packetizer.Packetize(packet);
         await _transport.SendAsync(flvPacket, cancellationToken).ConfigureAwait(false);
     }

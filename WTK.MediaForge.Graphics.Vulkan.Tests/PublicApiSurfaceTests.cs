@@ -169,6 +169,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Core.Media.Encode.HardwareEncodeFrameContext",
                 "WTK.MediaForge.Core.Media.Encode.HardwareEncoderInfo",
                 "WTK.MediaForge.Core.Media.Encode.IHardwareVideoEncoder",
+                "WTK.MediaForge.Core.Media.EncodedVideoBitstreamFormat",
                 "WTK.MediaForge.Core.Media.EncodedVideoCodec",
                 "WTK.MediaForge.Core.Media.EncodedVideoPacket",
                 "WTK.MediaForge.Core.Media.EncodedVideoPacketLease",

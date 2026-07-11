@@ -7,6 +7,7 @@ using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Encode;
 using WTK.MediaForge.Core.Media.Interop;
 using Xunit;
+using System.Buffers.Binary;
 
 namespace WTK.MediaForge.Composition.Tests.Media;
 
@@ -84,9 +85,135 @@ public sealed class EncodedOutputPipelineTests
 
         Assert.NotEmpty(rtmpSink.SentPacketsForTests);
         Assert.Equal(packet.Data, rtmpSink.SentPacketsForTests[0].Data);
+        Assert.Equal(packet.BitstreamFormat, rtmpSink.SentPacketsForTests[0].BitstreamFormat);
 
         await rtmpSink.DisposeAsync();
         await router.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Recording_mp4_rejects_h264_packet_without_explicit_bitstream_format()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_unknown_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            await using var sink = new RecordingMp4PacketSink(outputPath, null, allowPrototypeMuxer: true);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+
+            var packet = new EncodedVideoPacket
+            {
+                Codec = EncodedVideoCodec.H264,
+                PresentationTime = TimeSpan.Zero,
+                Data = CreateKeyFrameAnnexB(),
+                IsKeyFrame = true
+            };
+
+            await Assert.ThrowsAsync<NotSupportedException>(async () =>
+                await sink.WritePacketAsync(packet, CancellationToken.None));
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public async Task Recording_mp4_rejects_annex_b_without_sps_pps_or_codec_configuration()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_no_config_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            await using var sink = new RecordingMp4PacketSink(outputPath, null, allowPrototypeMuxer: true);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+
+            await sink.WritePacketAsync(
+                new EncodedVideoPacket
+                {
+                    Codec = EncodedVideoCodec.H264,
+                    BitstreamFormat = EncodedVideoBitstreamFormat.AnnexB,
+                    PresentationTime = TimeSpan.Zero,
+                    Duration = TimeSpan.FromMilliseconds(33),
+                    Data = CreatePFrameAnnexB(),
+                    IsKeyFrame = true
+                },
+                CancellationToken.None);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await sink.StopAsync(CancellationToken.None));
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public void Recording_mp4_writer_rejects_null_packet_with_diagnostic()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_null_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            var packets = new List<EncodedVideoPacket> { null! };
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                IsoBmffMp4Writer.WriteMp4(outputPath, packets));
+
+            Assert.Contains("null encoded packet", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public void Recording_mp4_writer_records_real_mdat_offset_and_minf_video_header()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_tables_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            IsoBmffMp4Writer.WriteMp4(outputPath, CreateSyntheticH264Packets(3));
+
+            var bytes = File.ReadAllBytes(outputPath);
+            var mdatTypeOffset = FindBoxTypeOffset(bytes, "mdat");
+            var expectedMdatPayloadOffset = checked((uint)(mdatTypeOffset + 4));
+
+            Assert.Equal(expectedMdatPayloadOffset, ReadFirstChunkOffset(bytes));
+            Assert.True(IsBoxNestedInside(bytes, childType: "vmhd", parentType: "minf"));
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public async Task Rtmp_rejects_h264_packet_without_explicit_bitstream_format()
+    {
+        var sink = new RtmpPacketSink("rtmp://127.0.0.1/live/unknown", allowPrototypeTransport: true);
+        try
+        {
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+
+            var packet = new EncodedVideoPacket
+            {
+                Codec = EncodedVideoCodec.H264,
+                PresentationTime = TimeSpan.Zero,
+                Data = CreateKeyFrameAnnexB(),
+                IsKeyFrame = true
+            };
+
+            await Assert.ThrowsAsync<NotSupportedException>(async () =>
+                await sink.WritePacketAsync(packet, CancellationToken.None));
+        }
+        finally
+        {
+            await sink.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -131,7 +258,9 @@ public sealed class EncodedOutputPipelineTests
             packets.Add(new EncodedVideoPacket
             {
                 Codec = EncodedVideoCodec.H264,
+                BitstreamFormat = EncodedVideoBitstreamFormat.AnnexB,
                 PresentationTime = TimeSpan.FromMilliseconds(index * 33),
+                Duration = TimeSpan.FromMilliseconds(33),
                 IsKeyFrame = isKeyFrame,
                 Data = isKeyFrame ? CreateKeyFrameAnnexB() : CreatePFrameAnnexB()
             });
@@ -159,6 +288,38 @@ public sealed class EncodedOutputPipelineTests
     [
         0x00, 0x00, 0x00, 0x01, 0x41, 0x9A, 0x24, 0x6C, 0x0F
     ];
+
+    private static int FindBoxTypeOffset(byte[] bytes, string type)
+    {
+        var pattern = System.Text.Encoding.ASCII.GetBytes(type);
+        for (var index = 4; index <= bytes.Length - pattern.Length; index++)
+        {
+            if (bytes.AsSpan(index, pattern.Length).SequenceEqual(pattern))
+                return index;
+        }
+
+        throw new InvalidOperationException($"MP4 box '{type}' was not found.");
+    }
+
+    private static uint ReadFirstChunkOffset(byte[] bytes)
+    {
+        var stcoTypeOffset = FindBoxTypeOffset(bytes, "stco");
+        var stcoBoxOffset = stcoTypeOffset - 4;
+        var entryCount = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(stcoBoxOffset + 12, 4));
+        Assert.Equal(1u, entryCount);
+        return BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(stcoBoxOffset + 16, 4));
+    }
+
+    private static bool IsBoxNestedInside(byte[] bytes, string childType, string parentType)
+    {
+        var childTypeOffset = FindBoxTypeOffset(bytes, childType);
+        var childBoxOffset = childTypeOffset - 4;
+        var parentTypeOffset = FindBoxTypeOffset(bytes, parentType);
+        var parentBoxOffset = parentTypeOffset - 4;
+        var parentSize = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(parentBoxOffset, 4));
+        return childBoxOffset >= parentBoxOffset + 8 &&
+            childBoxOffset < parentBoxOffset + parentSize;
+    }
 
     private sealed class TestHardwareVideoEncoder : IHardwareVideoEncoder
     {

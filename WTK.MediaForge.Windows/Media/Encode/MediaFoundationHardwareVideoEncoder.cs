@@ -129,7 +129,9 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         {
             Data = encoded.Value.Data,
             Codec = EncodedVideoCodec.H264,
+            BitstreamFormat = EncodedVideoBitstreamFormat.AnnexB,
             PresentationTime = context.PresentationTime,
+            Duration = TimeSpan.FromMilliseconds(33),
             IsKeyFrame = encoded.Value.IsKeyFrame
         });
     }

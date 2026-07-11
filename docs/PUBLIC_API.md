@@ -160,6 +160,10 @@ Current public sink contracts:
 - `RenderBackendKind`
 - `FrameNotificationSink`
 - `FrameNotificationEventArgs`
+- `EncodedVideoPacket`
+- `EncodedVideoPacketLease`
+- `EncodedVideoCodec`
+- `EncodedVideoBitstreamFormat`
 
 The product architecture is:
 
@@ -167,7 +171,7 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. Product recording and streaming sinks consume `EncodedVideoPacket` after hardware encode only. `PreviewPanelSink` is an **experimental** GPU preview sink: it consumes a completed rendered output surface and presents it to a Win32 panel handle through an internal Vulkan swapchain blit, without CPU readback. Keep it experimental until the preview local reliability milestone in `docs/ROADMAP_CURRENT.md` is complete.
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. Product recording and streaming sinks consume `EncodedVideoPacket` after hardware encode only. Encoded packets must identify codec, bitstream format (`AnnexB` or `Avcc` for H.264), presentation time, optional duration, and optional codec configuration data; sinks must reject unknown bitstream format instead of guessing. `PreviewPanelSink` is an **experimental** GPU preview sink: it consumes a completed rendered output surface and presents it to a Win32 panel handle through an internal Vulkan swapchain blit, without CPU readback. Keep it experimental until the preview local reliability milestone in `docs/ROADMAP_CURRENT.md` is complete.
 
 FFmpeg is not used in the first hardware MP4/RTMP product path. Future FFmpeg integration requires LGPL-only build, no GPL components, no libx264/libx265, no rawvideo pipe, and license review.
 

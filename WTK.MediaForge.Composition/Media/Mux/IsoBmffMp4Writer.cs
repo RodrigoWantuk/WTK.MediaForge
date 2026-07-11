@@ -12,12 +12,17 @@ internal static class IsoBmffMp4Writer
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
         ArgumentNullException.ThrowIfNull(packets);
 
-        if (packets.Count == 0)
-            throw new InvalidOperationException("Cannot write MP4 without encoded packets.");
+        ValidatePackets(packets);
 
-        var mdatBytes = BuildMdat(packets, out var sampleDurations, out var syncSampleIndices);
-        var moov = BuildMoov(packets, sampleDurations, syncSampleIndices, mdatBytes.Length);
         var ftyp = BuildFtyp();
+        var mdatBytes = BuildMdat(
+            packets,
+            out var sampleDurations,
+            out var syncSampleIndices,
+            out var sampleSizes);
+        var placeholderMoov = BuildMoov(packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset: 0);
+        var mdatDataOffset = checked((uint)(ftyp.Length + placeholderMoov.Length + 8));
+        var moov = BuildMoov(packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
 
         using var stream = File.Create(outputPath);
         stream.Write(ftyp);
@@ -52,11 +57,12 @@ internal static class IsoBmffMp4Writer
         IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
-        int mdatPayloadLength)
+        IReadOnlyList<uint> sampleSizes,
+        uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         WriteMvhd(content, sampleDurations);
-        WriteTrak(content, packets, sampleDurations, syncSampleIndices, mdatPayloadLength);
+        WriteTrak(content, packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
         return WrapBox("moov", content.ToArray());
     }
 
@@ -87,11 +93,12 @@ internal static class IsoBmffMp4Writer
         IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
-        int mdatPayloadLength)
+        IReadOnlyList<uint> sampleSizes,
+        uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         WriteTkhd(content, sampleDurations);
-        WriteMdia(content, packets, sampleDurations, syncSampleIndices, mdatPayloadLength);
+        WriteMdia(content, packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
         writer.Write(WrapBox("trak", content.ToArray()));
     }
 
@@ -110,12 +117,13 @@ internal static class IsoBmffMp4Writer
         IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
-        int mdatPayloadLength)
+        IReadOnlyList<uint> sampleSizes,
+        uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         WriteMdhd(content, sampleDurations);
         WriteHdlr(content);
-        WriteMinf(content, packets, sampleDurations, syncSampleIndices, mdatPayloadLength);
+        WriteMinf(content, packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
         writer.Write(WrapBox("mdia", content.ToArray()));
     }
 
@@ -145,12 +153,13 @@ internal static class IsoBmffMp4Writer
         IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
-        int mdatPayloadLength)
+        IReadOnlyList<uint> sampleSizes,
+        uint mdatDataOffset)
     {
         using var content = new MemoryStream();
-        writer.Write(WrapBox("vmhd", [0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
+        content.Write(WrapBox("vmhd", [0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
         WriteDinf(content);
-        WriteStbl(content, packets, sampleDurations, syncSampleIndices, mdatPayloadLength);
+        WriteStbl(content, packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
         writer.Write(WrapBox("minf", content.ToArray()));
     }
 
@@ -171,15 +180,16 @@ internal static class IsoBmffMp4Writer
         IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
-        int mdatPayloadLength)
+        IReadOnlyList<uint> sampleSizes,
+        uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         WriteStsd(content, packets);
         WriteStts(content, sampleDurations);
         WriteStss(content, syncSampleIndices);
         WriteStsc(content);
-        WriteStsz(content, packets);
-        WriteStco(content, mdatPayloadLength);
+        WriteStsz(content, sampleSizes);
+        WriteStco(content, mdatDataOffset);
         writer.Write(WrapBox("stbl", content.ToArray()));
     }
 
@@ -198,10 +208,17 @@ internal static class IsoBmffMp4Writer
 
     private static byte[] BuildAvcC(IReadOnlyList<EncodedVideoPacket> packets)
     {
-        var keyFrame = packets.FirstOrDefault(packet => packet.IsKeyFrame) ?? packets[0];
-        var nalUnits = ExtractNalUnits(keyFrame.Data.Span);
-        var sps = nalUnits.FirstOrDefault(nal => (nal[0] & 0x1F) == 7) ?? [0x67, 0x42, 0x00, 0x1E, 0xAB, 0x40, 0xF0, 0x28, 0xD3, 0x70];
-        var pps = nalUnits.FirstOrDefault(nal => (nal[0] & 0x1F) == 8) ?? [0x68, 0xCE, 0x3C, 0x80];
+        var configuration = packets
+            .Select(packet => packet.CodecConfiguration)
+            .FirstOrDefault(configuration => !configuration.IsEmpty);
+        if (!configuration.IsEmpty)
+            return configuration.ToArray();
+
+        if (!TryFindParameterSets(packets, out var sps, out var pps))
+            throw new InvalidOperationException("Cannot build MP4 avcC without H.264 SPS and PPS data.");
+
+        if (sps.Length < 4)
+            throw new InvalidOperationException("H.264 SPS is too short to build MP4 avcC data.");
 
         using var content = new MemoryStream();
         content.WriteByte(0x01);
@@ -252,40 +269,46 @@ internal static class IsoBmffMp4Writer
         writer.Write(WrapBox("stsc", content.ToArray()));
     }
 
-    private static void WriteStsz(MemoryStream writer, IReadOnlyList<EncodedVideoPacket> packets)
+    private static void WriteStsz(MemoryStream writer, IReadOnlyList<uint> sampleSizes)
     {
         using var content = new MemoryStream();
         content.Write(new byte[8]);
-        WriteUInt32(content, (uint)packets.Count);
-        foreach (var packet in packets)
-            WriteUInt32(content, (uint)packet.Data.Length);
+        WriteUInt32(content, (uint)sampleSizes.Count);
+        foreach (var sampleSize in sampleSizes)
+            WriteUInt32(content, sampleSize);
 
         writer.Write(WrapBox("stsz", content.ToArray()));
     }
 
-    private static void WriteStco(MemoryStream writer, int mdatPayloadLength)
+    private static void WriteStco(MemoryStream writer, uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         content.Write(new byte[4]);
         WriteUInt32(content, 1);
-        WriteUInt32(content, (uint)(8 + 512 + mdatPayloadLength / 10));
+        WriteUInt32(content, mdatDataOffset);
         writer.Write(WrapBox("stco", content.ToArray()));
     }
 
     private static byte[] BuildMdat(
         IReadOnlyList<EncodedVideoPacket> packets,
         out List<uint> sampleDurations,
-        out List<uint> syncSampleIndices)
+        out List<uint> syncSampleIndices,
+        out List<uint> sampleSizes)
     {
         sampleDurations = [];
         syncSampleIndices = [];
+        sampleSizes = [];
 
         using var payload = new MemoryStream();
         for (var index = 0; index < packets.Count; index++)
         {
             var packet = packets[index];
-            payload.Write(ConvertAnnexBToAvcc(packet.Data.Span));
-            sampleDurations.Add(1_000u / 30u);
+            var sampleBytes = packet.BitstreamFormat == EncodedVideoBitstreamFormat.AnnexB
+                ? ConvertAnnexBToAvcc(packet.Data.Span)
+                : packet.Data.ToArray();
+            payload.Write(sampleBytes);
+            sampleSizes.Add((uint)sampleBytes.Length);
+            sampleDurations.Add(ResolveSampleDurationMilliseconds(packets, index));
 
             if (packet.IsKeyFrame || (H264NalUtilities.TryGetFirstNalType(packet.Data.Span, out var nalType) && nalType == 5))
                 syncSampleIndices.Add((uint)(index + 1));
@@ -300,7 +323,7 @@ internal static class IsoBmffMp4Writer
     private static byte[] ConvertAnnexBToAvcc(ReadOnlySpan<byte> annexB)
     {
         using var content = new MemoryStream();
-        foreach (var nal in ExtractNalUnits(annexB))
+        foreach (var nal in H264NalUtilities.ExtractAnnexBNalUnits(annexB))
         {
             WriteUInt32(content, (uint)nal.Length);
             content.Write(nal);
@@ -309,41 +332,94 @@ internal static class IsoBmffMp4Writer
         return content.ToArray();
     }
 
-    private static List<byte[]> ExtractNalUnits(ReadOnlySpan<byte> data)
+    private static void ValidatePackets(IReadOnlyList<EncodedVideoPacket> packets)
     {
-        var units = new List<byte[]>();
-        var index = 0;
+        if (packets.Count == 0)
+            throw new InvalidOperationException("Cannot write MP4 without encoded packets.");
 
-        while (index < data.Length)
+        EncodedVideoBitstreamFormat? expectedFormat = null;
+        var avccHasCodecConfiguration = false;
+        for (var index = 0; index < packets.Count; index++)
         {
-            var start = FindStartCode(data, index);
-            if (start < 0)
-                break;
+            var packet = packets[index] ??
+                throw new InvalidOperationException("Cannot write MP4 with a null encoded packet.");
 
-            var next = FindStartCode(data, start + 3);
-            var end = next < 0 ? data.Length : next;
-            var nalLength = end - start;
-            if (nalLength > 0)
-                units.Add(data.Slice(start, nalLength).ToArray());
+            expectedFormat ??= packet.BitstreamFormat;
+            avccHasCodecConfiguration |= !packet.CodecConfiguration.IsEmpty;
 
-            index = next < 0 ? data.Length : next;
-        }
+            if (packet.Codec != EncodedVideoCodec.H264)
+                throw new NotSupportedException($"MP4 prototype writer currently accepts H.264 packets, not '{packet.Codec}'.");
 
-        return units;
-    }
+            if (packet.Data.IsEmpty)
+                throw new InvalidOperationException("Cannot write MP4 with an empty encoded packet.");
 
-    private static int FindStartCode(ReadOnlySpan<byte> data, int offset)
-    {
-        for (var index = offset; index <= data.Length - 3; index++)
-        {
-            if (data[index] == 0x00 && data[index + 1] == 0x00 &&
-                (data[index + 2] == 0x01 || (index + 3 < data.Length && data[index + 2] == 0x00 && data[index + 3] == 0x01)))
+            if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.Unknown)
+                throw new NotSupportedException("MP4 prototype writer requires an explicit H.264 bitstream format.");
+
+            if (packet.BitstreamFormat != expectedFormat.Value)
+                throw new NotSupportedException("MP4 prototype writer does not support mixed H.264 bitstream formats in one file.");
+
+            if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.AnnexB)
             {
-                return index + (data[index + 2] == 0x01 ? 3 : 4);
+                if (!H264NalUtilities.ContainsValidStartCode(packet.Data.Span))
+                    throw new InvalidOperationException("Annex-B H.264 packet does not contain a valid start code.");
+
+                if (H264NalUtilities.ExtractAnnexBNalUnits(packet.Data.Span).Count == 0)
+                    throw new InvalidOperationException("Annex-B H.264 packet does not contain a NAL payload.");
             }
         }
 
-        return -1;
+        if (expectedFormat == EncodedVideoBitstreamFormat.Avcc && !avccHasCodecConfiguration)
+            throw new NotSupportedException("AVCC H.264 packets require codec configuration data for MP4 writing.");
+    }
+
+    private static uint ResolveSampleDurationMilliseconds(
+        IReadOnlyList<EncodedVideoPacket> packets,
+        int index)
+    {
+        var packet = packets[index];
+        if (packet.Duration > TimeSpan.Zero)
+            return MillisecondsAtLeastOne(packet.Duration);
+
+        if (index + 1 < packets.Count &&
+            packets[index + 1].PresentationTime > packet.PresentationTime)
+        {
+            return MillisecondsAtLeastOne(packets[index + 1].PresentationTime - packet.PresentationTime);
+        }
+
+        return 1_000u / 30u;
+    }
+
+    private static uint MillisecondsAtLeastOne(TimeSpan value) =>
+        (uint)Math.Max(1, (int)Math.Round(value.TotalMilliseconds, MidpointRounding.AwayFromZero));
+
+    private static bool TryFindParameterSets(
+        IReadOnlyList<EncodedVideoPacket> packets,
+        out byte[] sps,
+        out byte[] pps)
+    {
+        sps = [];
+        pps = [];
+
+        foreach (var packet in packets.OrderByDescending(static packet => packet.IsKeyFrame))
+        {
+            foreach (var nal in H264NalUtilities.ExtractAnnexBNalUnits(packet.Data.Span))
+            {
+                if (nal.Length == 0)
+                    continue;
+
+                var nalType = nal[0] & 0x1F;
+                if (nalType == 7 && sps.Length == 0)
+                    sps = nal;
+                else if (nalType == 8 && pps.Length == 0)
+                    pps = nal;
+
+                if (sps.Length > 0 && pps.Length > 0)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private static byte[] WrapBox(string type, byte[] content)

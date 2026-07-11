@@ -38,6 +38,10 @@ Complete foundations:
 - Encoded output sinks are separated from render output sinks:
   `RecordingMp4PacketSink` and `RtmpPacketSink` consume `EncodedVideoPacket`
   only, while render sinks remain surface consumers.
+- Encoded packet metadata is explicit: H.264 packets declare Annex-B or AVCC
+  bitstream format, optional duration, and optional codec configuration. The
+  prototype MP4/RTMP consumers reject unknown bitstream format and do not
+  fabricate codec configuration.
 - Media Foundation file decode now has an explicit product session boundary:
   real D3D11VA decode reports unavailable, while placeholder texture output is
   isolated in the prototype bridge.
@@ -226,9 +230,9 @@ Current truth table:
 | Decode-to-render proof | Blocked until real decode backend is validated |
 | Windows encode | Done:Prototype; product backend explicitly unavailable |
 | Encoder format conversion | Done:BackendCallSucceeded for D3D11 VideoProcessor path when supported; product encode remains blocked on real MF packet validation |
-| Packet sink boundary | Done:Contract |
-| MP4 writer | Done:Prototype |
-| RTMP transport | Done:Prototype |
+| Packet sink boundary | Done:Contract with explicit bitstream metadata |
+| MP4 writer | Done:Prototype; rejects unknown bitstream/config |
+| RTMP transport | Done:Prototype; rejects unknown bitstream |
 | RenderGraph | Done:Contract/resource bridge; not a GPU pass executor |
 | Color correction effect | Done:ProductValidated for Vulkan source-layer shader |
 | Blur effect | Done:ProductValidated for Vulkan source-layer shader/intermediate passes |
