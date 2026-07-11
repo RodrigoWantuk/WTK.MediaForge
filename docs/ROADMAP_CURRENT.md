@@ -32,8 +32,9 @@ Complete foundations:
   reports real backend output as unavailable before GPU export or packet
   production, while the canned packet bridge remains internal prototype opt-in.
 - Encoder format conversion has an explicit contract. Vulkan/D3D11 export now
-  requires pixel-format compatibility, and BGRA/RGBA to NV12 remains unavailable
-  until a real GPU conversion pass lands; CPU staging fallback is prohibited.
+  requires pixel-format compatibility, and BGRA/RGBA to NV12 conversion has a
+  D3D11 VideoProcessor GPU path with explicit unavailable diagnostics for
+  unsupported devices/sources; CPU staging fallback is prohibited.
 - Encoded output sinks are separated from render output sinks:
   `RecordingMp4PacketSink` and `RtmpPacketSink` consume `EncodedVideoPacket`
   only, while render sinks remain surface consumers.
@@ -224,7 +225,7 @@ Current truth table:
 | Windows decode | Done:Prototype; product backend explicitly unavailable |
 | Decode-to-render proof | Blocked until real decode backend is validated |
 | Windows encode | Done:Prototype; product backend explicitly unavailable |
-| Encoder format conversion | Done:Contract; BGRA/RGBA to NV12 unavailable until GPU pass |
+| Encoder format conversion | Done:BackendCallSucceeded for D3D11 VideoProcessor path when supported; product encode remains blocked on real MF packet validation |
 | Packet sink boundary | Done:Contract |
 | MP4 writer | Done:Prototype |
 | RTMP transport | Done:Prototype |

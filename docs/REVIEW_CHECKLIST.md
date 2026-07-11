@@ -136,6 +136,7 @@ Before considering a change complete, verify:
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
 - [ ] Commit 06 GPU export proof passed before hardware MP4 is marked Supported.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
+- [ ] BGRA/RGBA -> NV12 encoder format conversion uses a GPU backend path or records explicit unavailable diagnostics; no CPU staging fallback.
 - [ ] Capability report is consumable via `GetCapabilityReportAsync` with status and reason per feature.
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.

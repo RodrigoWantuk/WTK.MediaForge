@@ -18,6 +18,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
     private readonly HardwareEncoderInputRequirement _inputRequirement;
     private readonly ID3D11Device _device;
     private readonly bool _allowPrototypeEncoding;
+    private readonly IHardwareEncoderFormatConverter? _formatConverter;
     private PrototypeMediaFoundationH264EncoderSession? _prototypeSession;
     private MediaFoundationHardwareH264EncoderSession? _hardwareSession;
     private long _frameNumber;
@@ -38,9 +39,27 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int height,
         string pixelFormat,
         bool allowPrototypeEncoding)
+        : this(
+            device,
+            width,
+            height,
+            pixelFormat,
+            allowPrototypeEncoding,
+            formatConverter: new D3D11BgraToNv12Converter(device))
+    {
+    }
+
+    internal MediaFoundationHardwareVideoEncoder(
+        ID3D11Device device,
+        int width,
+        int height,
+        string pixelFormat,
+        bool allowPrototypeEncoding,
+        IHardwareEncoderFormatConverter? formatConverter)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _allowPrototypeEncoding = allowPrototypeEncoding;
+        _formatConverter = formatConverter;
         _info = new HardwareEncoderInfo
         {
             Name = "Media Foundation H.264 Hardware MFT",
@@ -133,11 +152,12 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         context.CancellationToken.ThrowIfCancellationRequested();
 
         var descriptor = textureLease.ToGpuVideoFrameDescriptor();
-        if (!frameExporter.CanExport(descriptor, _inputRequirement))
-            throw new InvalidOperationException("GPU frame exporter cannot export the provided texture lease.");
-
-        using var inputLease = await frameExporter
-            .ExportForEncoderAsync(descriptor, auditSink, context.CancellationToken)
+        using var inputLease = await CreateEncoderInputLeaseAsync(
+                textureLease,
+                descriptor,
+                frameExporter,
+                auditSink,
+                context.CancellationToken)
             .ConfigureAwait(false);
 
         var encodeContext = new EncodeFrameContext
@@ -149,6 +169,32 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         };
 
         return await EncodeAsync(encodeContext, auditSink).ConfigureAwait(false);
+    }
+
+    private async ValueTask<HardwareEncoderInputLease> CreateEncoderInputLeaseAsync(
+        GpuTextureLease textureLease,
+        GpuVideoFrameDescriptor descriptor,
+        IGpuFrameExporter frameExporter,
+        IMediaTransportAuditSink auditSink,
+        CancellationToken cancellationToken)
+    {
+        if (frameExporter.CanExport(descriptor, _inputRequirement))
+        {
+            return await frameExporter
+                .ExportForEncoderAsync(descriptor, auditSink, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (_formatConverter is not null &&
+            _formatConverter.CanConvert(descriptor, _inputRequirement))
+        {
+            return await _formatConverter
+                .ConvertAsync(textureLease, _inputRequirement, auditSink, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        throw new InvalidOperationException(
+            "GPU frame exporter cannot export the provided texture lease and no compatible GPU format converter is available.");
     }
 
     public ValueTask DisposeAsync()

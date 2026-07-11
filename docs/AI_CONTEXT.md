@@ -115,9 +115,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   its audit evidence must remain `Prototype`.
 - Encoder input export now requires pixel-format compatibility. If an encoder
   requires NV12 and the renderer produced BGRA/RGBA, the path must go through an
-  `IHardwareEncoderFormatConverter`; `D3D11BgraToNv12Converter` currently
-  reports unavailable and records `GpuFormatConversionUnavailable` without CPU
-  readback or staging.
+  `IHardwareEncoderFormatConverter`; `D3D11BgraToNv12Converter` uses the D3D11
+  VideoProcessor path when a D3D11 shared texture source/device is available
+  and records `GpuFormatConversionSucceeded` only after a backend blit succeeds.
+  Unsupported devices/sources record `GpuFormatConversionUnavailable`; CPU
+  readback or staging remains prohibited.
 - Recording and streaming outputs are packet-sink responsibilities, not render
   sink responsibilities. `IEncodedPacketSink`, `RecordingMp4PacketSink`, and
   `RtmpPacketSink` consume `EncodedVideoPacket`; `IRenderOutputSink` consumers

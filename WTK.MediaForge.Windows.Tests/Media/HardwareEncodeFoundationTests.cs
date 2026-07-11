@@ -1,4 +1,6 @@
+using Vortice.Direct3D11;
 using Vortice.DXGI;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
@@ -154,6 +156,74 @@ public sealed class HardwareEncodeFoundationTests
     }
 
     [Fact]
+    public async Task Encoder_uses_gpu_format_converter_when_exporter_cannot_match_encoder_format()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+        factory.EnumAdapters1(0, out var adapter).CheckError();
+        using var gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
+
+        var audit = new CollectingMediaTransportAuditSink();
+        var exporter = new RejectingFrameExporter();
+        var converter = new D3D11BgraToNv12Converter(gpuDevice.Device);
+        await using var encoder = new MediaFoundationHardwareVideoEncoder(
+            gpuDevice.Device,
+            width: 320,
+            height: 180,
+            pixelFormat: "NV12",
+            allowPrototypeEncoding: true,
+            formatConverter: converter);
+
+        using var pool = new GpuResourcePool(new D3D11SharedTextureTestFactory(gpuDevice.Device));
+        using var textureLease = pool.AcquireTexture(new GpuTextureDescriptor
+        {
+            Width = 320,
+            Height = 180,
+            Format = "B8G8R8A8_UNORM",
+            Usage = GpuTextureUsage.OffscreenColor
+        });
+
+        var context = new HardwareEncodeFrameContext
+        {
+            FrameId = 1,
+            PresentationTime = TimeSpan.Zero,
+            FrameBudget = TimeSpan.FromMilliseconds(33),
+            CancellationToken = CancellationToken.None
+        };
+
+        try
+        {
+            _ = await encoder.SubmitFrameAsync(textureLease, context, exporter, audit);
+        }
+        catch (InvalidOperationException)
+        {
+            // Prototype encoder availability varies by test host. The converter decision must already be visible.
+        }
+        catch (NotSupportedException)
+        {
+            // Some adapters expose the device but not the required VideoProcessor conversion.
+        }
+
+        Assert.True(exporter.CanExportCalled);
+        Assert.False(exporter.ExportCalled);
+        Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuFormatConversionStarted));
+        Assert.False(audit.Contains(MediaTransportAuditEventKind.CpuReadbackAttempted));
+        Assert.False(audit.Contains(MediaTransportAuditEventKind.StagingBufferCreated));
+
+        if (audit.Contains(MediaTransportAuditEventKind.GpuFormatConversionSucceeded))
+        {
+            Assert.True(audit.Contains(MediaTransportAuditEventKind.HardwareEncoderInputLeaseCreated));
+            Assert.False(audit.Contains(MediaTransportAuditEventKind.GpuFormatConversionUnavailable));
+        }
+        else
+        {
+            Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuFormatConversionUnavailable));
+        }
+    }
+
+    [Fact]
     public async Task Scheduler_coordinates_render_and_encode_without_sink_render_call()
     {
         var audit = new CollectingMediaTransportAuditSink();
@@ -261,6 +331,70 @@ public sealed class HardwareEncodeFoundationTests
             cancellationToken.ThrowIfCancellationRequested();
             ExportCalled = true;
             return ValueTask.FromResult(HardwareEncoderInputLease.Create(descriptor));
+        }
+    }
+
+    private sealed class RejectingFrameExporter : IGpuFrameExporter
+    {
+        public bool CanExportCalled { get; private set; }
+
+        public bool ExportCalled { get; private set; }
+
+        public bool CanExport(GpuVideoFrameDescriptor descriptor, HardwareEncoderInputRequirement requirement)
+        {
+            _ = descriptor;
+            _ = requirement;
+            CanExportCalled = true;
+            return false;
+        }
+
+        public ValueTask<HardwareEncoderInputLease> ExportForEncoderAsync(
+            GpuVideoFrameDescriptor descriptor,
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken = default)
+        {
+            _ = descriptor;
+            _ = auditSink;
+            cancellationToken.ThrowIfCancellationRequested();
+            ExportCalled = true;
+            throw new InvalidOperationException("Exporter should not be used when CanExport returned false.");
+        }
+    }
+
+    private sealed class D3D11SharedTextureTestFactory(ID3D11Device device) : IGpuTextureFactory
+    {
+        public IGpuPhysicalResource CreateTexture(GpuTextureDescriptor descriptor) =>
+            new D3D11SharedPhysicalResource(D3D11SharedTextureFactory.CreateSharedTexture(
+                device,
+                (uint)descriptor.Width,
+                (uint)descriptor.Height,
+                ToDxgiFormat(descriptor.Format)));
+
+        private static Format ToDxgiFormat(string format) =>
+            format.Equals("NV12", StringComparison.OrdinalIgnoreCase)
+                ? Format.NV12
+                : Format.B8G8R8A8_UNorm;
+    }
+
+    private sealed class D3D11SharedPhysicalResource(D3D11SharedTextureFrameHandle handle)
+        : IGpuPhysicalResource, IGpuFrameHandleProvider
+    {
+        private readonly TaskCompletionSource _fullyDisposed =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _finalized;
+
+        public Task FullyDisposed => _fullyDisposed.Task;
+
+        public IGpuFrameHandle FrameHandle => handle;
+
+        public bool TryFinalizePhysicalResources()
+        {
+            if (Interlocked.Exchange(ref _finalized, 1) != 0)
+                return _fullyDisposed.Task.IsCompleted;
+
+            handle.Dispose();
+            _fullyDisposed.TrySetResult();
+            return true;
         }
     }
 }
