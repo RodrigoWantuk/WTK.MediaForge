@@ -80,7 +80,8 @@ public static class MediaSourceTypeRegistry
             RequiresHardwareDecode = false,
             AllowsRawCpuException = true,
             RawCpuExceptionKind = RawCpuVideoFrameExceptionKind.WebcamSystemRawInput,
-            SupportStatus = MediaForgeSupportStatus.Experimental
+            SupportStatus = MediaForgeSupportStatus.Planned,
+            UnavailableReason = "Planned until a Windows webcam provider uploads system frames to GPU immediately and is product validated."
         };
         yield return new MediaSourceTypeDescriptor
         {

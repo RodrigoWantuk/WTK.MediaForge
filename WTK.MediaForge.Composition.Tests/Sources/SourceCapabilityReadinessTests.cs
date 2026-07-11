@@ -40,6 +40,24 @@ public sealed class SourceCapabilityReadinessTests
     }
 
     [Fact]
+    public void Webcam_is_not_available_until_gpu_upload_provider_exists()
+    {
+        var report = MediaForgeCapabilityReportBuilder.Build(
+            new HardwareMediaCapabilityReport { Platform = "Test" },
+            MediaSourceTypeRegistry.CreateCapabilityEntries());
+
+        var webcam = Assert.Single(
+            report.Entries,
+            entry => entry.Id == $"source.{MediaSourceTypes.Webcam.Value}");
+
+        Assert.Equal(MediaForgeSupportStatus.Planned, webcam.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.Contract, webcam.ProductReadinessStatus);
+        Assert.Equal(MediaTransportKind.GpuSurface, webcam.TransportKind);
+        Assert.False(report.IsFeatureAvailable(webcam.Id));
+        Assert.Contains("webcam provider", webcam.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Source_capability_entries_do_not_mark_skeleton_or_prototype_as_available()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(

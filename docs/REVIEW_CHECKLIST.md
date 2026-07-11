@@ -120,6 +120,7 @@ Before considering a change complete, verify:
 - [ ] Failed reconnect marks the provider failed and emits diagnostics instead of leaving the source apparently running.
 - [ ] Desktop/window capture reconnect stops and disposes superseded or failed native sessions instead of leaking them.
 - [ ] Window capture is not advertised as available until a real GPU provider exists.
+- [ ] Webcam is not advertised as available until the immediate GPU-upload provider is product validated.
 
 ## D3D11 Ring
 

@@ -229,6 +229,7 @@ Current truth table:
 | Export surface proof | Done:BackendCallSucceeded, not ProductValidated |
 | Decode-to-source frame bridge | Done:Contract |
 | Windows video-file source provider | Done:Prototype, blocked by default |
+| Webcam source | Planned until immediate GPU-upload provider is product validated |
 | Windows decode | Done:Prototype; product backend explicitly unavailable |
 | Decode-to-render proof | Blocked until real decode backend is validated |
 | Windows encode | Done:Prototype; product backend explicitly unavailable |

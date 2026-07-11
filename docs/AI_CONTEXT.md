@@ -94,6 +94,10 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Window capture remains a project/API contract only. Capability reports keep it
   `Planned` until a Windows Graphics Capture provider publishes D3D11 GPU frame
   leases; it must not be shown as available.
+- Webcam remains a project/API contract only. Capability reports keep it
+  `Planned` until a provider validates immediate GPU upload from the
+  registered `WebcamSystemRawInput` boundary; it must not be shown as
+  available.
 - Windows PNG/JPEG static image sources decode once into `StaticCpuAsset`, upload to a D3D11 shared texture, release the CPU pixel copy, and then publish GPU frame leases. WebP remains Planned until decoder/license review.
 - Decode/video resource ownership remains split by purpose: `GpuTextureLease`
   is the internal pooled GPU texture lease, `GpuFrameLease` is the render
