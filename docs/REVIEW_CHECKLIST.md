@@ -122,14 +122,15 @@ Before considering a change complete, verify:
 - [ ] Static image load uses `MediaTransportKind.StaticCpuAsset`; not counted as raw CPU video exception.
 - [ ] `CpuReadbackSink` is not wired as recording, streaming, or primary preview path.
 - [ ] Product recording/streaming sinks consume encoded packets after hardware encode only.
-- [ ] FFmpeg is not used in MP4/RTMP MVP paths.
+- [ ] FFmpeg is not used in first MP4/RTMP product paths.
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
 - [ ] Commit 06 GPU export proof passed before hardware MP4 is marked Supported.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
 - [ ] Capability report is consumable via `GetCapabilityReportAsync` with status and reason per feature.
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
-- [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15–20.
+- [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15-20.
+- [ ] Engine readiness v4 (`verify-engine-readiness-v4.ps1`) passes before promoting prototype/skeleton media paths.
 - [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.
 
 ## FFmpeg / external codec review checklist

@@ -1,6 +1,6 @@
 # WTK MediaForge
 
-**WTK MediaForge** is a high-performance audio and video composition solution focused on real-time media processing, hardware acceleration, and low system overhead.
+**WTK MediaForge** is a high-performance video-first media composition engine focused on real-time processing, hardware acceleration, and low system overhead. Audio routing, mixing, and muxing are planned future product areas, not part of the current engine path.
 
 The project is designed as a GPU-first media compositor: instead of relying heavily on CPU-based frame processing, WTK MediaForge aims to use hardware acceleration together with Vulkan whenever possible to reduce CPU usage, avoid unnecessary raw video transfers through system RAM, and keep the host machine responsive even when working with complex scenes.
 

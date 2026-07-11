@@ -30,7 +30,18 @@ Invoke-Step "prototype media product gates" {
         --verbosity minimal
 }
 
-Invoke-Step "dotnet test" { dotnet test --verbosity minimal }
+Invoke-Step "dotnet test fast-safe projects" {
+    dotnet test WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    dotnet test WTK.MediaForge.Diagnostics.Tests\WTK.MediaForge.Diagnostics.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    dotnet test WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    dotnet test WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
+}
 
 Invoke-Step "Fast tier" { & "$PSScriptRoot/test.ps1" -Tier Fast }
 Invoke-Step "Gpu tier" { & "$PSScriptRoot/test.ps1" -Tier Gpu }

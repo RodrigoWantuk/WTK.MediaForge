@@ -23,7 +23,7 @@ distribution may appear as `Supported` or `Approved`.
 
 ## FFmpeg Policy
 
-**FFmpeg is not used in the first hardware MP4/RTMP MVP.**
+**FFmpeg is not used in the first hardware MP4/RTMP product path.**
 
 Future FFmpeg integration requires:
 
@@ -50,9 +50,9 @@ Future FFmpeg integration requires:
 
 | Format | Decoder | License | Status |
 |--------|---------|---------|--------|
-| PNG | `System.Drawing` / Windows built-in via approved path | OS/API | Approved for MVP |
-| JPEG | `System.Drawing` / Windows built-in via approved path | OS/API | Approved for MVP |
-| WebP | — | — | Planned until decoder license review |
+| PNG | `System.Drawing` / Windows built-in via approved path | OS/API | Approved for product path |
+| JPEG | `System.Drawing` / Windows built-in via approved path | OS/API | Approved for product path |
+| WebP | N/A | N/A | Planned until decoder license review |
 
 Do not add arbitrary NuGet image decoders without updating this table first.
 
@@ -64,11 +64,11 @@ Do not add arbitrary NuGet image decoders without updating this table first.
 | Intel QSV/oneVPL direct | Planned, RequiresLegalReview |
 | AMD AMF direct | Planned, RequiresLegalReview |
 
-Media Foundation hardware MFT is the primary Windows MVP encoder path.
+Media Foundation hardware MFT is the primary Windows hardware encoder path.
 
 ## FFmpeg Libraries Integration Review
 
-FFmpeg is not part of the first MP4/RTMP hardware MVP.
+FFmpeg is not part of the first MP4/RTMP hardware product path.
 
 The engine may evaluate FFmpeg libraries in a future phase only for encoded-packet/container-level work, never as a raw video frame processing path.
 

@@ -43,7 +43,7 @@ public static class MediaForgeCapabilityCatalog
         Entry(CapabilityCategories.License, Ffmpeg, "FFmpeg integration",
             MediaForgeSupportStatus.NotUsedInMvp, MediaForgeLicenseStatus.NotUsedInMvp,
             MediaForgeProductReadinessStatus.Contract,
-            "Not used in first hardware MP4/RTMP MVP."),
+            "Not used in first hardware MP4/RTMP product path."),
 
         Entry(CapabilityCategories.Encode, MfHardwareH264, "Media Foundation hardware MFT H.264",
             MediaForgeSupportStatus.PrototypeOnly, MediaForgeLicenseStatus.RequiresLegalReview,
@@ -59,17 +59,17 @@ public static class MediaForgeCapabilityCatalog
         Entry(CapabilityCategories.Encode, NvencDirect, "NVENC direct",
             MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,
             MediaForgeProductReadinessStatus.Contract,
-            "Post-MF MVP; vendor SDK license review required."),
+            "Post-MF hardware product path; vendor SDK license review required."),
 
         Entry(CapabilityCategories.Encode, QsvDirect, "Intel QSV direct",
             MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,
             MediaForgeProductReadinessStatus.Contract,
-            "Post-MF MVP; vendor SDK license review required."),
+            "Post-MF hardware product path; vendor SDK license review required."),
 
         Entry(CapabilityCategories.Encode, AmfDirect, "AMD AMF direct",
             MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,
             MediaForgeProductReadinessStatus.Contract,
-            "Post-MF MVP; vendor SDK license review required."),
+            "Post-MF hardware product path; vendor SDK license review required."),
 
         Entry(CapabilityCategories.ExportProof, GpuExportProof, "Vulkan to encoder GPU surface export",
             exportProofStatus switch

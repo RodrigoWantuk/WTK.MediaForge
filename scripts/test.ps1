@@ -47,7 +47,7 @@ function Invoke-TestProject {
         if ($joinedOutput -match "No test matches" -or
             $joinedOutput -match "No test is available" -or
             $joinedOutput -match "Nenhum teste corresponde" -or
-            $joinedOutput -match "Nenhum teste.*dispon[ií]vel" -or
+            $joinedOutput -match "Nenhum teste.*dispon.vel" -or
             $joinedOutput -match "Passed!\s+-\s+Failed:\s+0,\s+Passed:\s+0" -or
             $joinedOutput -match "Aprovado!\s+.*Aprovado:\s+0") {
             throw "Required test filter '$Filter' did not execute any tests for project '$Project'."

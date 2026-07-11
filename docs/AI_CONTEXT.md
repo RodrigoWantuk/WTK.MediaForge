@@ -143,12 +143,15 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Formal types: `EncodedVideoPacket`, `GpuVideoFrame` (GPU lease), `StaticCpuImageAsset` (load-only), raw CPU video prohibited on product path.
 - Registered raw CPU exceptions use `RawCpuVideoFrameException` with kinds: `PixelTestOnly`, `ManualScreenshotOnly`, `WebcamSystemRawInput`. Static image load is **not** an exception.
 - `CpuReadbackSink` is debug/test only (`DebugOnlyCpuReadback`). Product sinks consume `GpuSurface` or `EncodedPacket` after hardware encode.
-- FFmpeg is not used in the first hardware MP4/RTMP MVP.
+- FFmpeg is not used in the first hardware MP4/RTMP product path.
 - Commit 06 (Vulkan -> D3D11/MF encoder surface export proof) blocks hardware recording until passed.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
   `Prototype` and `Skeleton` readiness entries must never be emitted as
   `Supported` or `Experimental`.
+- `./scripts/verify-engine-readiness-v4.ps1` is the current executable truth
+  gate for product readiness, docs alignment, media transport, license, Fast,
+  Gpu, and Performance validation.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
 
 ## GPU Resource Pool (Phase 2)
@@ -185,8 +188,8 @@ Current Studio state:
 - The current UI milestone is Studio UI product reset v0.2: shared mock
   document state, native vector icons, left-side scenes-only navigation,
   source library dialog, scene-scoped editable canvas, right-side
-  Produção/Saídas cards, explicit scene-to-output routing with transitions,
-  contextual Propriedades panel, bottom Camadas/Saídas da cena workbench,
+  Producao/Saidas cards, explicit scene-to-output routing with transitions,
+  contextual Propriedades panel, bottom Camadas/Saidas da cena workbench,
   localization foundation, and ViewModel/viewport coverage.
 - Fake Studio services own mock project, output, diagnostics, selection, and
   contextual properties behavior. Engine service types may exist internally for
@@ -203,7 +206,7 @@ Allowed in the UI track before runtime gates open:
 - centralized dark theme;
 - mock scenes-only navigation, source library dialog, canvas editor,
   production output cards, contextual properties panel, bottom
-  Camadas/Saídas da cena workbench, explicit output routing with transitions,
+  Camadas/Saidas da cena workbench, explicit output routing with transitions,
   and advanced diagnostics/performance placeholders outside the main workbench;
 - fake Stream/Record UI state driven by configured outputs, not by a visible
   engine toggle;

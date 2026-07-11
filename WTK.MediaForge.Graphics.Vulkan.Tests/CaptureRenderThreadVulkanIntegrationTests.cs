@@ -1,4 +1,5 @@
 using WTK.MediaForge.Capture.DesktopDuplication;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
@@ -21,6 +22,9 @@ public class CaptureRenderThreadVulkanIntegrationTests
             return;
 
         var sourceId = SourceId.New();
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var outputSize = new FrameSize(1280, 720);
         await using var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
         await provider.StartAsync(CancellationToken.None);
 
@@ -35,7 +39,7 @@ public class CaptureRenderThreadVulkanIntegrationTests
             },
             TimeSpan.FromSeconds(5));
 
-        var runtime = new CompositionRuntime();
+        using var runtime = new CompositionRuntime();
         runtime.RegisterFrameProvider(provider);
 
         var guard = new RenderThreadGuard();
@@ -46,7 +50,18 @@ public class CaptureRenderThreadVulkanIntegrationTests
         using var renderThread = new MediaForgeRenderThread(backend, guard, maxFramesInFlight: 2);
         renderThread.Start();
 
-        var projectState = CreateProjectState(sourceId);
+        await renderThread.EnqueueCommandAsync(new BindOutputCommand
+        {
+            Binding = new RenderOutputBindingSnapshot
+            {
+                OutputId = outputId,
+                TargetKind = RenderTargetKind.Offscreen,
+                SurfaceSize = outputSize,
+                BindingVersion = 1
+            }
+        });
+
+        var projectState = CreateProjectState(sourceId, canvasId, outputId, outputSize);
         using var buildResult = RenderFrameSnapshotFactory.Build(projectState, runtime);
         var snapshot = buildResult.TakeSnapshot();
         Assert.NotNull(snapshot);
@@ -56,11 +71,14 @@ public class CaptureRenderThreadVulkanIntegrationTests
         await WaitUntilAsync(() => vulkanBackend.SubmitCount >= 1, TimeSpan.FromSeconds(10));
 
         renderThread.Dispose();
-        runtime.Dispose();
         await provider.StopAsync(CancellationToken.None);
     }
 
-    private static ProjectStateSnapshot CreateProjectState(SourceId sourceId) =>
+    private static ProjectStateSnapshot CreateProjectState(
+        SourceId sourceId,
+        CanvasId canvasId,
+        RenderOutputId outputId,
+        FrameSize outputSize) =>
         new()
         {
             Version = 1,
@@ -68,7 +86,7 @@ public class CaptureRenderThreadVulkanIntegrationTests
             [
                 new CanvasStateSnapshot
                 {
-                    Id = CanvasId.New(),
+                    Id = canvasId,
                     Name = "Main",
                     Size = new FrameSize(1920, 1080),
                     Objects =
@@ -81,6 +99,17 @@ public class CaptureRenderThreadVulkanIntegrationTests
                             Transform = new Transform2D { Size = new CanvasSize(1920, 1080) }
                         }
                     ]
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Program",
+                    TypeId = RenderOutputTypes.Offscreen,
+                    CanvasId = canvasId,
+                    OutputSize = outputSize
                 }
             ]
         };

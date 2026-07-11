@@ -51,4 +51,4 @@ Still blocked until the roadmap opens them:
   contracts.
 - Advanced tools v0.4: diagnostics/performance surfaces behind explicit mode.
 - Runtime bridge v0.5: status/diagnostics bridge without productive preview.
-- Preview MVP v0.6: native preview surface only after reliability criteria pass.
+- Preview milestone v0.6: native preview surface only after reliability criteria pass.

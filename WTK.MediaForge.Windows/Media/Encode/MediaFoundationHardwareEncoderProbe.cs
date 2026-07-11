@@ -22,7 +22,7 @@ public sealed class MediaFoundationHardwareEncoderProbe
             SupportStatus = MediaForgeSupportStatus.Planned,
             LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
-            UnavailableReason = "Vendor SDK direct path; not implemented in MVP.",
+            UnavailableReason = "Vendor SDK direct path; not implemented in the first native hardware encoder track.",
             TransportKind = MediaTransportKind.EncodedPacket
         },
         new CapabilityEntry
@@ -33,7 +33,7 @@ public sealed class MediaFoundationHardwareEncoderProbe
             SupportStatus = MediaForgeSupportStatus.Planned,
             LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
-            UnavailableReason = "Vendor SDK direct path; not implemented in MVP.",
+            UnavailableReason = "Vendor SDK direct path; not implemented in the first native hardware encoder track.",
             TransportKind = MediaTransportKind.EncodedPacket
         },
         new CapabilityEntry
@@ -44,7 +44,7 @@ public sealed class MediaFoundationHardwareEncoderProbe
             SupportStatus = MediaForgeSupportStatus.Planned,
             LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
-            UnavailableReason = "Vendor SDK direct path; not implemented in MVP.",
+            UnavailableReason = "Vendor SDK direct path; not implemented in the first native hardware encoder track.",
             TransportKind = MediaTransportKind.EncodedPacket
         }
     ];

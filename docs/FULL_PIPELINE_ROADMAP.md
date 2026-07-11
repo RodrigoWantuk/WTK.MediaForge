@@ -243,9 +243,9 @@ Static images: `StaticCpuAsset` load-time CPU decode, upload to GPU, release CPU
 
 Exceptions for continuous raw CPU video require `RawCpuVideoFrameException` registration.
 
-FFmpeg is not used in the first hardware MP4/RTMP MVP.
+FFmpeg is not used in the first hardware MP4/RTMP product path.
 
-Windows recording MVP: Media Foundation hardware MFT H.264, packets-only muxer,
+Windows recording product path: Media Foundation hardware MFT H.264, packets-only muxer,
 Vulkan -> D3D11 encoder surface export (Commit 06 gate).
 
 SRT output: Planned/blocked until license and transport design review.

@@ -21,7 +21,7 @@ Complete foundations:
 - `PreviewPanelSink` lifecycle hardening; still experimental pending local reliability.
 - Intermediate target pool and Vulkan readback staging pool.
 - Transform/crop/rotation/pivot support in the Vulkan composition path.
-- Windows PNG/JPEG static image MVP using load-time decode and D3D11 shared texture GPU leases.
+- Windows PNG/JPEG static image product path using load-time decode and D3D11 shared texture GPU leases.
 - Decoded GPU frame to render-source frame bridge, keeping `GpuTextureLease`
   as the internal resource lease and `GpuFrameLease` as the render source
   contract.
@@ -76,15 +76,15 @@ prototype/skeleton work cannot be promoted as product capability by mistake.
 | 07 | Lifecycle rollback hardening | |
 | 08 | Preview reliability gate | |
 | 09 | Transform/crop/rotation/pivot | |
-| 10 | Static image PNG/JPEG MVP | WebP Planned |
-| 11 | Text rendering MVP (glyph atlas GPU) | |
+| 10 | Static image PNG/JPEG product path | WebP Planned |
+| 11 | Text rendering product implementation (glyph atlas GPU) | |
 | 12 | Effect chain GPU (color + blur) | |
 | 13 | Output route transitions | |
 | 14 | Desktop/window capture reliability | |
-| 15 | Webcam MVP (`WebcamSystemRawInput` exception) | |
+| 15 | Webcam product path (`WebcamSystemRawInput` exception) | |
 | 16 | Hardware decode boundary | |
 | 17 | Hardware encoder abstraction (MF probe real) | Requires Commit 06 |
-| 18 | Windows MF H.264 hardware MP4 MVP | No FFmpeg/libx264 |
+| 18 | Windows MF H.264 hardware MP4 product path | No FFmpeg/libx264 |
 | 19 | RTMP experimental (encoded packets) | SRT Planned/blocked |
 | 20 | Output sink compliance | |
 | 21 | Engine media telemetry | |
@@ -95,9 +95,9 @@ prototype/skeleton work cannot be promoted as product capability by mistake.
 ### Blocking rules
 
 - Do not implement hardware MP4/RTMP until Commit 06 export proof passes.
-- Do not use FFmpeg, libx264, or software encode in the MP4/RTMP MVP.
+- Do not use FFmpeg, libx264, or software encode in the first hardware MP4/RTMP product path.
 - Do not treat static image load as a raw CPU video exception.
-- NVENC/QSV/AMF direct SDK paths remain Planned until post-MF MVP license review.
+- NVENC/QSV/AMF direct SDK paths remain Planned until post-MF hardware product path license review.
 - SRT remains Planned/blocked until license and transport design review.
 
 ## Parallel Studio UI Track
@@ -133,11 +133,12 @@ render thread, provider, submission, or GPU export/encode paths, also run:
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-media-transport-rules.ps1
 ./scripts/verify-license-policy.ps1
+./scripts/verify-engine-readiness-v4.ps1
 ```
 
 ## Active Phase 2 Commit Order (GPU Pipeline Completo)
 
-Execute in this exact order after vNext (commits 00–24) is complete. Plan:
+Execute in this exact order after vNext (commits 00-24) is complete. Plan:
 `.cursor/plans/phase2_gpu_engine_evolution.plan.md`.
 
 | # | Commit | Gate | Status |
@@ -145,7 +146,7 @@ Execute in this exact order after vNext (commits 00–24) is complete. Plan:
 | 01 | GPU Resource Lifetime (`GpuResourcePool`, `GpuTextureLease`) | Fast + Gpu | **Done** |
 | 02 | GPU Frame Scheduler | Fast | **Done** |
 | 03 | Asset Manager | Fast | **Done** |
-| 04 | **GPU Surface Export Proof (Real)** | **Blocks 15–17** | **Done** |
+| 04 | **GPU Surface Export Proof (Real)** | **Blocks 15-17** | **Done** |
 | 05 | Hardware Decode Foundation | Fast | **Done** |
 | 06 | Windows Hardware Decode Prototype | Gpu | **PrototypeOnly - needs real decode backend** |
 | 07 | Video Source Runtime | Fast | **Done** |
@@ -226,12 +227,13 @@ Current truth table:
 
 `CapabilityEntry.ProductReadinessStatus` enforces this split: entries marked
 `Prototype` or `Skeleton` cannot be emitted as `Supported` or `Experimental`.
+The executable guard for this truth table is `./scripts/verify-engine-readiness-v4.ps1`.
 
-## Future Phase — FFmpeg Libraries Integration Review
+## Future Phase - FFmpeg Libraries Integration Review
 
-This phase is intentionally scheduled **after** the first native hardware MP4/RTMP MVP.
+This phase is intentionally scheduled **after** the first native hardware MP4/RTMP product path.
 
-FFmpeg is not used in the first recording or streaming MVP. The first MVP must prove the native GPU-safe media path:
+FFmpeg is not used in the first recording or streaming product path. The first product path must prove the native GPU-safe media path:
 
 ```text
 GPU rendered output
@@ -275,7 +277,7 @@ This phase cannot start until all of the following are true:
 - media transport guard rails are active;
 - license policy guard rails are active;
 - hardware encoder path is proven;
-- MP4 recording MVP works through hardware encode or is honestly marked unavailable;
+- MP4 recording product path works through hardware encode or is honestly marked unavailable;
 - RTMP experimental output uses hardware encoded packets only;
 - capability matrix exposes FFmpeg/libav entries as Planned / RequiresLegalReview / Prohibited;
 - `docs/MEDIA_LICENSE_POLICY.md` contains the authoritative FFmpeg policy.

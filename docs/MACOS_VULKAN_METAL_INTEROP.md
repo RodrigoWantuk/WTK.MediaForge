@@ -16,7 +16,7 @@ Enable GPU-first media on macOS by sharing surfaces between:
 
 - No uncompressed continuous video frames in CPU/RAM on the product path
 - VideoToolbox and CVPixelBuffer are platform boundaries only; Core defines contracts
-- FFmpeg is not used in the hardware MP4/RTMP MVP
+- FFmpeg is not used in the first hardware MP4/RTMP product path
 - Software decode/encode fallback is prohibited for continuous video
 
 ## Planned flow

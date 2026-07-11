@@ -21,7 +21,7 @@ internal sealed class WindowsStaticImageAssetDecoder : IStaticImageAssetDecoder
         if (!StaticImageAssetFormats.IsSupportedExtension(path))
         {
             throw new NotSupportedException(
-                $"Image format '{Path.GetExtension(path)}' is not supported. PNG and JPEG are approved for MVP.");
+                $"Image format '{Path.GetExtension(path)}' is not supported. PNG and JPEG are approved for product use.");
         }
 
         using var bitmap = new Bitmap(path);

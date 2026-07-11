@@ -24,13 +24,13 @@ Prototype bridges are excluded from product capability reports.
 | Desktop capture | GpuSurface | Experimental | D3D11 shared texture |
 | Window capture | GpuSurface | Experimental | |
 | Webcam | GpuSurface | Experimental | Raw CPU input possible at boundary only |
-| Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows MVP | Load-time CPU decode; CPU copy released after GPU upload |
-| Static image WebP | — | Planned | Blocked until license review |
+| Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows product path | Load-time CPU decode; CPU copy released after GPU upload |
+| Static image WebP | N/A | Planned | Blocked until license review |
 | Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly | Real decode backend and decode-to-render proof are not validated |
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
-| Animated GIF/APNG/WebP | — | Planned | Blocked until GPU-safe strategy |
-| Lottie | — | Planned | Blocked until GPU-safe rasterization |
-| NDI input | — | Unsupported | License + GPU path required |
+| Animated GIF/APNG/WebP | N/A | Planned | Blocked until GPU-safe strategy |
+| Lottie | N/A | Planned | Blocked until GPU-safe rasterization |
+| NDI input | N/A | Unsupported | License + GPU path required |
 
 ## Output Types
 
@@ -40,9 +40,9 @@ Prototype bridges are excluded from product capability reports.
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
 | Recording MP4 H.264 | EncodedPacket | PrototypeOnly | Real MF hardware encoder and production MP4 muxing are not complete |
 | RTMP H.264 | EncodedPacket | PrototypeOnly | Current transport is in-memory only, not network RTMP |
-| SRT | — | Planned | Blocked by license/transport review |
-| NDI output | — | Unsupported | |
-| Virtual camera | — | Unsupported | |
+| SRT | N/A | Planned | Blocked by license/transport review |
+| NDI output | N/A | Unsupported | |
+| Virtual camera | N/A | Unsupported | |
 
 ## Encoder Paths
 
@@ -53,7 +53,7 @@ Prototype bridges are excluded from product capability reports.
 | Intel QSV direct | Planned | RequiresLegalReview |
 | AMD AMF direct | Planned | RequiresLegalReview |
 | libx264 / software H.264 | Prohibited | |
-| FFmpeg (future) | NotUsedInMvp | Future LGPL-only with review |
+| FFmpeg (future) | NotUsedInMvp | Future LGPL-only with review; enum name is legacy wording |
 
 ## Export Proof Gate
 
@@ -86,9 +86,9 @@ must not satisfy this gate.
 
 ## FFmpeg / libav Capability Status
 
-FFmpeg is **not used** in the first MP4/RTMP hardware MVP.
+FFmpeg is **not used** in the first MP4/RTMP hardware product path.
 
-The first recording/streaming MVP must prove the native GPU media path:
+The first recording/streaming product path must prove the native GPU media path:
 
 ```text
 GPU rendered output

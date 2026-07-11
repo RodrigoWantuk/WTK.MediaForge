@@ -25,14 +25,14 @@ $checks = @(
         Required = $true
     },
     @{
-        Name = "FFmpeg not used in MVP"
+        Name = "FFmpeg not used in first product path"
         Pattern = "NotUsedInMvp"
         File = $catalog
         Required = $true
     },
     @{
-        Name = "Policy documents FFmpeg MVP exclusion"
-        Pattern = "not used in the first hardware MP4/RTMP MVP"
+        Name = "Policy documents FFmpeg first product path exclusion"
+        Pattern = "not used in the first hardware MP4/RTMP product path"
         File = $policy
         Required = $true
     },

@@ -10,6 +10,7 @@ dotnet test
 ./scripts/test.ps1 -Tier Fast
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-phase2-readiness.ps1
+./scripts/verify-engine-readiness-v4.ps1
 ```
 
 ## Commit gates
@@ -35,7 +36,7 @@ dotnet test
 | 17 | RTMP Output Prototype | `EncodedOutputPipelineTests.Rtmp_sink_receives_flv_tags_from_shared_encoder` |
 | 18 | Synthetic Performance Validation | `WTK.MediaForge.Diagnostics.Tests/Performance/PerformanceValidationSuiteTests.cs` and `WTK.MediaForge.Composition.Tests/Performance/CompositionPerformanceGateTests.cs` |
 | 19 | Fault Recovery | `WTK.MediaForge.Composition.Tests/Recovery/FaultRecoveryCoordinatorTests.cs` |
-| 20 | Engine Readiness Gate | `./scripts/verify-phase2-readiness.ps1` |
+| 20 | Engine Readiness Gate | `./scripts/verify-phase2-readiness.ps1` and `./scripts/verify-engine-readiness-v4.ps1` |
 
 ## Blocking rules verified
 
