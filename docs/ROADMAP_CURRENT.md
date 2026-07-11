@@ -62,8 +62,10 @@ Complete foundations:
   source layer is rendered to a pooled intermediate target, blurred with
   horizontal/vertical shader passes, and composited back into the canvas.
 - Vulkan text rendering now uses a rasterized glyph atlas uploaded to GPU
-  texture memory; current product validation covers Windows Vulkan text layers
-  with explicit `FontFamily` snapshot/API propagation.
+  texture memory; the Vulkan project owns atlas upload/rendering only, while
+  OS-specific adapters own font rasterization. Current product validation
+  covers Windows Vulkan text layers through the Windows rasterizer adapter with
+  explicit `FontFamily` snapshot/API propagation.
 - Output route transitions now support product-validated cut/fade behavior for
   routed output changes. The current Vulkan implementation crossfades previous
   and current canvas targets in the output pass and is covered by pixel tests.
@@ -82,6 +84,12 @@ Acceptance records:
 Execute in this exact order. One commit unit per implementation session.
 Before resuming Commit 11, execute the **Active vNext v3 Truth Gate** below so
 prototype/skeleton work cannot be promoted as product capability by mistake.
+
+Hardware decode and encode are mandatory for continuous video. The product path
+must keep decompressed frames in GPU/VRAM; if Windows, Linux, or macOS cannot
+provide a validated hardware path for a codec/device, that capability remains
+unavailable instead of using software fallback. OS-specific media adapters must
+stay in OS-specific projects.
 
 | # | Commit | Gate |
 |---|--------|------|
@@ -115,6 +123,10 @@ prototype/skeleton work cannot be promoted as product capability by mistake.
 
 - Do not implement hardware MP4/RTMP until Commit 06 export proof passes.
 - Do not use FFmpeg, libx264, or software encode in the first hardware MP4/RTMP product path.
+- Do not use software decode/encode fallback for continuous video on any platform.
+- Do not mark a vendor/backend as available unless runtime probing validates
+  GPU surface input/output and the capability report includes non-prototype
+  readiness.
 - Do not treat static image load as a raw CPU video exception.
 - NVENC/QSV/AMF direct SDK paths remain Planned until post-MF hardware product path license review.
 - SRT remains Planned/blocked until license and transport design review.
@@ -152,7 +164,7 @@ render thread, provider, submission, or GPU export/encode paths, also run:
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-media-transport-rules.ps1
 ./scripts/verify-license-policy.ps1
-./scripts/verify-engine-readiness-v4.ps1
+./scripts/verify-engine-readiness-v5.ps1
 ```
 
 ## Active Phase 2 Commit Order (GPU Pipeline Completo)
@@ -248,7 +260,7 @@ Current truth table:
 
 `CapabilityEntry.ProductReadinessStatus` enforces this split: entries marked
 `Prototype` or `Skeleton` cannot be emitted as `Supported` or `Experimental`.
-The executable guard for this truth table is `./scripts/verify-engine-readiness-v4.ps1`.
+The executable guard for this truth table is `./scripts/verify-engine-readiness-v5.ps1`.
 
 ## Future Phase - FFmpeg Libraries Integration Review
 

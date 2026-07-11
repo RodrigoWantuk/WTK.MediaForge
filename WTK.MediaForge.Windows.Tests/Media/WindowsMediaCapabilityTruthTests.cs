@@ -20,6 +20,20 @@ public sealed class WindowsMediaCapabilityTruthTests
         Assert.False(report.RequiresCpuStaging);
         Assert.Equal(GpuExportProofStatus.Pending, report.ExportProofStatus);
         Assert.Contains("not completed", report.ExportProofReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(report.BackendCapabilities, backend =>
+            backend.Id == "windows.mf.d3d11va.decode.h264" &&
+            backend.SupportStatus == MediaForgeSupportStatus.PrototypeOnly &&
+            backend.ProductReadinessStatus == MediaForgeProductReadinessStatus.Prototype);
+        Assert.Contains(report.BackendCapabilities, backend =>
+            backend.Id == "windows.mf.hardware_mft.encode.h264" &&
+            backend.SupportStatus == MediaForgeSupportStatus.PrototypeOnly &&
+            backend.ProductReadinessStatus == MediaForgeProductReadinessStatus.Prototype);
+        Assert.Contains(report.BackendCapabilities, backend =>
+            backend.Id == "linux.vaapi.drm.decode_encode" &&
+            backend.SupportStatus == MediaForgeSupportStatus.Planned);
+        Assert.Contains(report.BackendCapabilities, backend =>
+            backend.Id == "macos.videotoolbox.decode_encode" &&
+            backend.SupportStatus == MediaForgeSupportStatus.Planned);
     }
 
     [Fact]

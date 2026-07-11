@@ -35,7 +35,21 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         RenderThreadGuard threadGuard,
         IMediaForgeDiagnosticsSink? diagnostics,
         IVulkanRendererFaultInjector faultInjector)
-        : this(threadGuard, VulkanHeadlessDevice.Create(), diagnostics, faultInjector)
+        : this(threadGuard, diagnostics, faultInjector, fontAtlasRasterizer: null)
+    {
+    }
+
+    internal MediaForgeVulkanRenderer(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        IVulkanRendererFaultInjector faultInjector,
+        IFontAtlasRasterizer? fontAtlasRasterizer)
+        : this(
+            threadGuard,
+            VulkanHeadlessDevice.Create(),
+            diagnostics,
+            faultInjector,
+            fontAtlasRasterizer: fontAtlasRasterizer)
     {
     }
 
@@ -45,7 +59,8 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         IMediaForgeDiagnosticsSink? diagnostics,
         IVulkanRendererFaultInjector faultInjector,
         Func<VulkanHeadlessDevice, FrameSize, IVulkanOffscreenRenderTarget>? offscreenTargetFactory = null,
-        Action? disposeDevice = null)
+        Action? disposeDevice = null,
+        IFontAtlasRasterizer? fontAtlasRasterizer = null)
     {
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
@@ -57,7 +72,9 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         _gpuResourcePool = new VulkanGpuResourcePool(_deviceContext);
         _textureRegistry = new VulkanExternalTextureRegistry(_deviceContext, diagnostics);
         _compositionPipelines = new VulkanCompositionShaderPipelines(_deviceContext, diagnostics, _gpuResourcePool);
-        _compositionPipelines.SetFontAtlasBridge(new VulkanFontAtlasBridge(_deviceContext));
+        _compositionPipelines.SetFontAtlasBridge(new VulkanFontAtlasBridge(
+            _deviceContext,
+            fontAtlasRasterizer: fontAtlasRasterizer));
     }
 
     internal VulkanExternalTextureRegistry TextureRegistry => _textureRegistry;
@@ -165,6 +182,14 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
         RenderThreadGuard threadGuard,
         IMediaForgeDiagnosticsSink? diagnostics,
         IVulkanRendererFaultInjector faultInjector,
+        out MediaForgeVulkanRenderer? renderer) =>
+        TryCreate(threadGuard, diagnostics, faultInjector, fontAtlasRasterizer: null, out renderer);
+
+    internal static bool TryCreate(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        IVulkanRendererFaultInjector faultInjector,
+        IFontAtlasRasterizer? fontAtlasRasterizer,
         out MediaForgeVulkanRenderer? renderer)
     {
         ArgumentNullException.ThrowIfNull(threadGuard);
@@ -172,7 +197,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
         try
         {
-            renderer = new MediaForgeVulkanRenderer(threadGuard, diagnostics, faultInjector);
+            renderer = new MediaForgeVulkanRenderer(threadGuard, diagnostics, faultInjector, fontAtlasRasterizer);
             return true;
         }
         catch

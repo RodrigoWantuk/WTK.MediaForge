@@ -78,10 +78,25 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Engine_readiness_v4_script_runs_required_gates()
+    public void Engine_truth_docs_require_hardware_decode_encode_without_software_fallback()
     {
         var repoRoot = FindRepositoryRoot();
-        var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v4.ps1"));
+        var aiContext = File.ReadAllText(Path.Combine(repoRoot, "docs", "AI_CONTEXT.md"));
+        var roadmap = File.ReadAllText(Path.Combine(repoRoot, "docs", "ROADMAP_CURRENT.md"));
+        var supportMatrix = File.ReadAllText(Path.Combine(repoRoot, "docs", "GPU_MEDIA_SUPPORT_MATRIX.md"));
+        var publicApi = File.ReadAllText(Path.Combine(repoRoot, "docs", "PUBLIC_API.md"));
+
+        Assert.Contains("Continuous video decode and encode must use platform hardware acceleration", aiContext, StringComparison.Ordinal);
+        Assert.Contains("Do not use software decode/encode fallback for continuous video", roadmap, StringComparison.Ordinal);
+        Assert.Contains("Hardware acceleration is mandatory for continuous video decode and encode", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("HardwareMediaBackendCapability", publicApi, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Engine_readiness_v5_script_runs_required_gates()
+    {
+        var repoRoot = FindRepositoryRoot();
+        var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v5.ps1"));
         var testScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "test.ps1"));
 
         Assert.Contains("verify-media-transport-rules.ps1", script, StringComparison.Ordinal);
@@ -90,6 +105,9 @@ public sealed class DocsProductTruthTests
         Assert.Contains("ProductReadinessStatusTests", script, StringComparison.Ordinal);
         Assert.Contains("CapabilityReportTests", script, StringComparison.Ordinal);
         Assert.Contains("DocsProductTruthTests", script, StringComparison.Ordinal);
+        Assert.Contains("WindowsGpuExportEndToEndProofTests", script, StringComparison.Ordinal);
+        Assert.Contains("RenderedOutputEncodeFrameAdapterTests", script, StringComparison.Ordinal);
+        Assert.Contains("WindowsSystemDrawingFontAtlasRasterizerTests", script, StringComparison.Ordinal);
         Assert.Contains("-Tier Fast", script, StringComparison.Ordinal);
         Assert.Contains("-Tier Gpu", script, StringComparison.Ordinal);
         Assert.Contains("-Tier Performance", script, StringComparison.Ordinal);

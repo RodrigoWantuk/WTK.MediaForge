@@ -11,7 +11,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Sources;
 
-internal sealed class VideoSourceRuntime : IDisposable
+internal sealed class VideoSourceRuntime : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan DefaultDisposeCleanupTimeout = TimeSpan.FromSeconds(5);
 
@@ -263,16 +263,33 @@ internal sealed class VideoSourceRuntime : IDisposable
                 .GetAwaiter()
                 .GetResult();
         }
-        catch (TimeoutException ex)
+        catch (Exception ex)
         {
             MediaForgeDiagnostics.Report(
                 _diagnostics,
                 MediaForgeDiagnosticSeverity.Error,
-                "source.video.dispose_timeout",
+                ex is TimeoutException ? "source.video.dispose_timeout" : "source.video.dispose_failed",
                 ex.Message,
                 nameof(VideoSourceRuntime),
                 ex);
-            throw;
+        }
+        finally
+        {
+            StreamQueue.Dispose();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
+        try
+        {
+            await StopCoreAsync(CancellationToken.None, DisposeCleanupTimeout)
+                .ConfigureAwait(false);
         }
         finally
         {

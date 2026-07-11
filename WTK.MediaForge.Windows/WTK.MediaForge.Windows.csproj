@@ -11,6 +11,7 @@
     <PackageReference Include="System.Drawing.Common" />
     <PackageReference Include="Vortice.Direct3D11" />
     <PackageReference Include="Vortice.DXGI" />
+    <PackageReference Include="Vortice.MediaFoundation" />
   </ItemGroup>
 
   <ItemGroup>

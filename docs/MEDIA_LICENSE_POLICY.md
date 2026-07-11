@@ -5,6 +5,11 @@
 Only formats, SDKs, libraries, and codecs compatible with commercial product
 distribution may appear as `Supported` or `Approved`.
 
+Continuous video decode and encode must use platform hardware acceleration.
+If a GPU/driver/OS backend cannot provide a validated GPU surface path, the
+feature must report unavailable instead of falling back to software decode,
+software encode, CPU staging, or raw video pipes.
+
 ## Prohibited by Default
 
 - GPL/AGPL components in the distributed product binary

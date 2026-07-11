@@ -13,6 +13,7 @@ public static class MediaForgeCapabilityReportBuilder
         EnsureUniqueCapabilityIds(entries);
         EnsureReadinessDoesNotOverstateProductAvailability(entries);
         EnsureUnavailableEntriesHaveReasons(entries);
+        EnsureHardwareBackendsDoNotOverstateAvailability(hardware.BackendCapabilities);
 
         return new MediaForgeCapabilityReport
         {
@@ -59,6 +60,35 @@ public static class MediaForgeCapabilityReportBuilder
             {
                 throw new InvalidOperationException(
                     $"Capability '{entry.Id}' is marked {entry.SupportStatus} but does not provide an unavailable reason.");
+            }
+        }
+    }
+
+    private static void EnsureHardwareBackendsDoNotOverstateAvailability(
+        IReadOnlyList<HardwareMediaBackendCapability> backendCapabilities)
+    {
+        foreach (var backend in backendCapabilities)
+        {
+            if (backend.RequiresCpuStaging && IsUserAvailable(backend.SupportStatus))
+            {
+                throw new InvalidOperationException(
+                    $"Hardware media backend '{backend.Id}' is marked {backend.SupportStatus} but requires CPU staging.");
+            }
+
+            if (IsUserAvailable(backend.SupportStatus) &&
+                backend.ProductReadinessStatus is
+                    MediaForgeProductReadinessStatus.Prototype or
+                    MediaForgeProductReadinessStatus.Skeleton)
+            {
+                throw new InvalidOperationException(
+                    $"Hardware media backend '{backend.Id}' is marked {backend.SupportStatus} but readiness is {backend.ProductReadinessStatus}.");
+            }
+
+            if (!IsUserAvailable(backend.SupportStatus) &&
+                string.IsNullOrWhiteSpace(backend.UnavailableReason))
+            {
+                throw new InvalidOperationException(
+                    $"Hardware media backend '{backend.Id}' is marked {backend.SupportStatus} but does not provide an unavailable reason.");
             }
         }
     }

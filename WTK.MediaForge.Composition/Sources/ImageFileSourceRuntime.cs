@@ -82,13 +82,13 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         frame = null;
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (!_gpuUploaded)
+        if (State != MediaSourceState.Running || !_gpuUploaded || _uploadedHandle is null)
             return false;
 
         frame = new GpuFrameReference
         {
             SourceId = _sourceId,
-            Backend = _uploadedHandle?.Backend ?? GpuFrameBackend.Unknown,
+            Backend = _uploadedHandle.Backend,
             Handle = _uploadedHandle,
             FrameNumber = context.FrameNumber,
             Timestamp = new MediaTime((long)(context.PresentationTime.TotalSeconds * 1_000_000_000)),
@@ -124,8 +124,9 @@ internal sealed class ImageFileSourceRuntime : IDisposable
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
+        cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ClearGpuUploadState();
         State = MediaSourceState.Stopped;
         return Task.CompletedTask;
     }
@@ -138,9 +139,15 @@ internal sealed class ImageFileSourceRuntime : IDisposable
         _disposed = true;
         _textureHandle?.Dispose();
         _textureHandle = null;
+        ClearGpuUploadState();
+        State = MediaSourceState.Stopped;
+    }
+
+    private void ClearGpuUploadState()
+    {
         _uploadedSize = null;
         _uploadedFormat = null;
         _uploadedHandle = null;
-        State = MediaSourceState.Stopped;
+        _gpuUploaded = false;
     }
 }

@@ -8,16 +8,19 @@ namespace WTK.MediaForge.Graphics.Vulkan.Text;
 internal sealed class VulkanFontAtlasBridge : IDisposable
 {
     private readonly AssetManager _assetManager;
+    private readonly IFontAtlasRasterizer _rasterizer;
     private readonly VulkanTextRenderer _textRenderer;
     private readonly VulkanTextAtlasUploader _uploader;
     private bool _disposed;
 
     public VulkanFontAtlasBridge(
         VulkanHeadlessDevice device,
-        AssetManager? assetManager = null)
+        AssetManager? assetManager = null,
+        IFontAtlasRasterizer? fontAtlasRasterizer = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         _assetManager = assetManager ?? AssetManager.Shared;
+        _rasterizer = fontAtlasRasterizer ?? UnsupportedFontAtlasRasterizer.Instance;
         _textRenderer = new VulkanTextRenderer(device);
         _uploader = new VulkanTextAtlasUploader(device);
     }
@@ -80,6 +83,6 @@ internal sealed class VulkanFontAtlasBridge : IDisposable
     internal static string CreateTextKey(string text, string fontFamily, float fontSizePx) =>
         $"{fontFamily}|{fontSizePx:0.###}|{text}";
 
-    private static FontAtlasAsset CreateFontAtlasAsset(string text, string fontFamily, float fontSizePx) =>
-        VulkanFontAtlasRasterizer.Rasterize(text, fontFamily, fontSizePx);
+    private FontAtlasAsset CreateFontAtlasAsset(string text, string fontFamily, float fontSizePx) =>
+        _rasterizer.Rasterize(text, fontFamily, fontSizePx);
 }

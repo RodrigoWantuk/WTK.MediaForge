@@ -5,6 +5,13 @@ Windows media probes intentionally do not advertise H.264 decode/encode codecs
 until real Media Foundation enumeration and backend output validation land.
 Prototype bridges are excluded from product capability reports.
 
+Hardware acceleration is mandatory for continuous video decode and encode.
+If a backend cannot keep decompressed frames on GPU/VRAM, the capability is
+`Unsupported`, `Planned`, or `Unavailable`; it must not fall back to software
+decode/encode or CPU staging. Vendor names such as NVIDIA, AMD/Radeon, Intel,
+or Apple describe possible adapters only after runtime probing confirms the
+actual OS API, codec, surface type, and validation evidence.
+
 ## Platform Backends
 
 | Platform | Decode GPU | Encode GPU | GPU interop | Priority | Initial status |
@@ -16,6 +23,23 @@ Prototype bridges are excluded from product capability reports.
 | Linux NVIDIA | NVDEC | NVENC | CUDA/Vulkan interop | Medium | Planned |
 | macOS | VideoToolbox | VideoToolbox | CVPixelBuffer/IOSurface/Metal | Medium | Planned |
 | Vulkan Video | Vulkan Video decode/encode | Vulkan-native | Vulkan-native | Experimental | Planned |
+
+## Backend Capability Truth
+
+The public capability report includes backend capability entries for
+OS-specific hardware media paths. These entries are runtime facts, not feature
+marketing:
+
+- Windows backend work lives in `WTK.MediaForge.Windows` and uses
+  D3D11/D3D11VA/Media Foundation first.
+- Linux backend work must live in a Linux-specific project and target
+  VAAPI/DRM/DMABUF, Vulkan Video, or approved vendor interop.
+- macOS backend work must live in a macOS-specific project and target
+  VideoToolbox/CVPixelBuffer/IOSurface/Metal.
+- A backend that requires CPU staging for continuous decoded/encoded frames
+  cannot be reported as `Supported` or `Experimental`.
+- `Prototype` and `Skeleton` backend readiness cannot be reported as
+  user-available, even if the OS or GPU advertises a compatible codec.
 
 ## Source Types
 
@@ -48,7 +72,7 @@ Prototype bridges are excluded from product capability reports.
 
 | Encoder | Status | Notes |
 |---------|--------|-------|
-| Media Foundation hardware MFT H.264 | PrototypeOnly / RequiresLegalReview | Real hardware MFT enumeration and validated backend output still required |
+| Media Foundation hardware MFT H.264 | PrototypeOnly / RequiresLegalReview | Windows session attempts real hardware MFT enumeration and packet output, but product availability still requires validated export/encode proof on the target machine |
 | NVENC direct | Planned | RequiresLegalReview |
 | Intel QSV direct | Planned | RequiresLegalReview |
 | AMD AMF direct | Planned | RequiresLegalReview |

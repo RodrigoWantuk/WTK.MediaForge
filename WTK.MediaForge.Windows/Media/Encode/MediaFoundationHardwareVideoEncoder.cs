@@ -97,11 +97,41 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (!_allowPrototypeEncoding)
-            EnsureProductBackendAvailable();
-
         if (context.InputLease.BackendSurface is not D3D11SharedTextureFrameHandle surface)
+        {
+            if (!_allowPrototypeEncoding)
+            {
+                throw MediaFoundationHardwareH264EncoderSession.CreateUnavailableException(
+                    new InvalidOperationException("Encoder requires a D3D11 shared texture backend surface."));
+            }
+
             throw new InvalidOperationException("Encoder requires a D3D11 shared texture backend surface.");
+        }
+
+        if (!_allowPrototypeEncoding)
+        {
+            var result = EnsureProductBackendAvailable()
+                .TryEncodeSurface(
+                    surface,
+                    Interlocked.Increment(ref _frameNumber),
+                    context.PresentationTime,
+                    auditSink);
+
+            if (result is null)
+                return ValueTask.FromResult<EncodedVideoPacket?>(null);
+
+            return ValueTask.FromResult<EncodedVideoPacket?>(new EncodedVideoPacket
+            {
+                Data = result.Value.Data,
+                Codec = EncodedVideoCodec.H264,
+                BitstreamFormat = H264NalUtilities.ContainsValidStartCode(result.Value.Data.Span)
+                    ? EncodedVideoBitstreamFormat.AnnexB
+                    : EncodedVideoBitstreamFormat.Avcc,
+                PresentationTime = context.PresentationTime,
+                Duration = TimeSpan.FromMilliseconds(33),
+                IsKeyFrame = result.Value.IsKeyFrame
+            });
+        }
 
         _prototypeSession ??= CreatePrototypeSession();
 
@@ -212,7 +242,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         return ValueTask.CompletedTask;
     }
 
-    private void EnsureProductBackendAvailable()
+    private MediaFoundationHardwareH264EncoderSession EnsureProductBackendAvailable()
     {
         _hardwareSession ??= new MediaFoundationHardwareH264EncoderSession(
             _device,
@@ -220,6 +250,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             _inputRequirement.Height,
             _inputRequirement.PixelFormat);
         _hardwareSession.Initialize();
+        return _hardwareSession;
     }
 
     private PrototypeMediaFoundationH264EncoderSession CreatePrototypeSession()

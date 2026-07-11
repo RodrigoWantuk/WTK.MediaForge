@@ -3,6 +3,7 @@ using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.Mathematics;
 using Silk.NET.Vulkan;
+using WTK.MediaForge.Composition.Assets;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
@@ -15,6 +16,7 @@ using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Graphics.D3D11;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
+using WTK.MediaForge.Graphics.Vulkan.Text;
 using Xunit;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Tests;
@@ -304,7 +306,12 @@ internal static class VulkanCompositionTestHarness
         RenderDrawObjectSnapshot drawObject)
     {
         var diagnostics = new InMemoryDiagnosticsSink();
-        if (!TryCreateRenderer(out var context, diagnostics: diagnostics))
+        if (!TryCreateRenderer(
+                out var context,
+                diagnostics: diagnostics,
+                fontAtlasRasterizer: drawObject is RenderTextDrawObjectSnapshot
+                    ? new TestFontAtlasRasterizer()
+                    : null))
             return null;
 
         using (context)
@@ -684,14 +691,15 @@ internal static class VulkanCompositionTestHarness
     internal static bool TryCreateCompositionContext(
         out CompositionTestContext? context,
         IVulkanRendererFaultInjector? faultInjector = null,
-        IMediaForgeDiagnosticsSink? diagnostics = null)
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        IFontAtlasRasterizer? fontAtlasRasterizer = null)
     {
         context = null;
 
         if (!TryCreateSharedTexture(out var device, out var sharedHandle))
             return false;
 
-        if (!TryCreateRenderer(out var renderer, faultInjector, diagnostics))
+        if (!TryCreateRenderer(out var renderer, faultInjector, diagnostics, fontAtlasRasterizer))
         {
             sharedHandle.Dispose();
             device.Dispose();
@@ -711,7 +719,8 @@ internal static class VulkanCompositionTestHarness
     internal static bool TryCreateRenderer(
         out TestRendererContext? context,
         IVulkanRendererFaultInjector? faultInjector = null,
-        IMediaForgeDiagnosticsSink? diagnostics = null)
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        IFontAtlasRasterizer? fontAtlasRasterizer = null)
     {
         context = null;
 
@@ -722,6 +731,7 @@ internal static class VulkanCompositionTestHarness
                 guard,
                 diagnostics,
                 faultInjector ?? NullVulkanRendererFaultInjector.Instance,
+                fontAtlasRasterizer,
                 out var backend) ||
                 backend is null)
             {
@@ -750,6 +760,38 @@ internal static class VulkanCompositionTestHarness
         public MediaForgeVulkanRenderer Backend { get; }
 
         public void Dispose() => Backend.Dispose();
+    }
+
+    private sealed class TestFontAtlasRasterizer : IFontAtlasRasterizer
+    {
+        public FontAtlasAsset Rasterize(string text, string fontFamily, float fontSizePx)
+        {
+            const int width = 16;
+            const int height = 16;
+            var pixels = new byte[width * height * 4];
+
+            for (var y = 2; y < 14; y++)
+            {
+                for (var x = 2; x < 14; x++)
+                {
+                    var offset = (y * width + x) * 4;
+                    pixels[offset] = 255;
+                    pixels[offset + 1] = 255;
+                    pixels[offset + 2] = 255;
+                    pixels[offset + 3] = 255;
+                }
+            }
+
+            return new FontAtlasAsset
+            {
+                Text = text,
+                FontFamily = fontFamily,
+                SizePx = fontSizePx,
+                Width = width,
+                Height = height,
+                AtlasPixels = pixels
+            };
+        }
     }
 
     public sealed class CompositionTestContext : IDisposable

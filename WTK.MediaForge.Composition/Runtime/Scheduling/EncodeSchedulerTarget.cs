@@ -19,14 +19,17 @@ internal sealed class ScheduledRenderedFrame : IDisposable
 
     public required FrameExecutionContext Context { get; init; }
 
-    public required GpuTextureLease TextureLease { get; init; }
+    public GpuTextureLease? TextureLease { get; init; }
+
+    public HardwareEncoderInputLease? EncoderInputLease { get; init; }
 
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        TextureLease.Dispose();
+        TextureLease?.Dispose();
+        EncoderInputLease?.Dispose();
     }
 }
 
@@ -88,7 +91,14 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(frame.Context);
-        ArgumentNullException.ThrowIfNull(frame.TextureLease);
+
+        if ((frame.TextureLease is null) == (frame.EncoderInputLease is null))
+        {
+            frame.Dispose();
+            throw new ArgumentException(
+                "A scheduled rendered frame must provide exactly one GPU texture lease or pre-exported encoder input lease.",
+                nameof(frame));
+        }
 
         if (Volatile.Read(ref _disposed) != 0)
         {
@@ -202,7 +212,6 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
 
             using var renderedFrame = scheduledFrame!;
             var frameContext = renderedFrame.Context;
-            var textureLease = renderedFrame.TextureLease;
 
             try
             {
@@ -217,9 +226,21 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     CancellationToken = linked.Token
                 };
 
-                var packet = await _encoder
-                    .SubmitFrameAsync(textureLease, encodeContext, _frameExporter, _auditSink)
-                    .ConfigureAwait(false);
+                var packet = renderedFrame.EncoderInputLease is not null
+                    ? await _encoder
+                        .EncodeAsync(
+                            new EncodeFrameContext
+                            {
+                                InputLease = renderedFrame.EncoderInputLease,
+                                FrameNumber = frameContext.FrameId,
+                                PresentationTime = frameContext.PresentationTime,
+                                CancellationToken = linked.Token
+                            },
+                            _auditSink)
+                        .ConfigureAwait(false)
+                    : await _encoder
+                        .SubmitFrameAsync(renderedFrame.TextureLease!, encodeContext, _frameExporter, _auditSink)
+                        .ConfigureAwait(false);
 
                 if (packet is not null)
                 {

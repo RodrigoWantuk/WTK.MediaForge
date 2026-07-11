@@ -63,4 +63,38 @@ public sealed class RawCpuFrameGuardRailTests
 
         Assert.Empty(productViolations);
     }
+
+    [Fact]
+    public void Vulkan_product_project_does_not_reference_SystemDrawing()
+    {
+        var projectRoot = Path.Combine(FindRepositoryRoot(), "WTK.MediaForge.Graphics.Vulkan");
+        var files = Directory.EnumerateFiles(projectRoot, "*.*", SearchOption.AllDirectories)
+            .Where(path =>
+                !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
+                !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
+                (path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                 path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+
+        var violations = files
+            .Where(path => File.ReadAllText(path).Contains("System.Drawing", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(FindRepositoryRoot(), path))
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "WTK.MediaForge.sln")))
+                return directory.FullName;
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate WTK.MediaForge.sln from the test output directory.");
+    }
 }

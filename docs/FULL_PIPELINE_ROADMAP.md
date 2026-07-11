@@ -11,6 +11,13 @@ WTK MediaForge is a hardware-first, GPU/VRAM-first media engine for live
 production, scene composition, preview/program routing, recording, streaming,
 and future audio mux/mix.
 
+Continuous video decode and encode are hardware-only product paths. Any path
+that would move decompressed video frames through CPU/RAM, use software
+decode/encode fallback, or hide unsupported hardware behind a CPU path is out
+of scope for product runtime. Windows, Linux, and macOS media adapters must be
+implemented in OS-specific projects and surfaced through runtime capability
+reports.
+
 The core product model is:
 
 ```text
@@ -204,7 +211,8 @@ Finish product composition primitives before broad media I/O:
 
 1. Full transform, crop, and rotation.
 2. Text rendering. Current status: product-validated for Windows Vulkan glyph
-   atlas text layers.
+   atlas text layers. Vulkan owns atlas upload/rendering; font rasterization is
+   supplied by OS-specific adapters.
 3. Color correction. Current status: product-validated in the Vulkan
    source-layer shader.
 4. Blur. Current status: product-validated for Vulkan source-layer blur using

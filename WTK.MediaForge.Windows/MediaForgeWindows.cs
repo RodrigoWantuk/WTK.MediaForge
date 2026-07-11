@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Graphics.Vulkan;
 using WTK.MediaForge.Windows.Media;
+using WTK.MediaForge.Windows.Media.Text;
 
 namespace WTK.MediaForge.Windows;
 
@@ -19,12 +20,12 @@ public static class MediaForgeWindows
 
         return new MediaForgeEngine(
             new CompositeMediaSourceProviderFactory(
-                new WindowsDesktopSourceProviderFactory(options.Diagnostics),
-                new WindowsImageSourceProviderFactory(options.Diagnostics),
-                new WindowsUnavailableLiveSourceProviderFactory(options.Diagnostics),
-                new WindowsVideoFileSourceProviderFactory(options.Diagnostics)),
+            new WindowsDesktopSourceProviderFactory(options.Diagnostics),
+            new WindowsImageSourceProviderFactory(options.Diagnostics),
+            new WindowsUnavailableLiveSourceProviderFactory(options.Diagnostics),
+            new WindowsVideoFileSourceProviderFactory(options.Diagnostics)),
             new WindowsRenderOutputSinkFactory(),
-            new MediaForgeVulkanRenderBackendFactory(),
+            new MediaForgeVulkanRenderBackendFactory(new WindowsSystemDrawingFontAtlasRasterizer()),
             options.Diagnostics)
         {
             StartTimeout = options.StartTimeout,

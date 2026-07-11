@@ -1,4 +1,7 @@
 using Vortice.Direct3D11;
+using Vortice.MediaFoundation;
+using SharpGen.Runtime;
+using System.Runtime.InteropServices;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Graphics.D3D11;
 
@@ -84,7 +87,11 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private readonly int _width;
     private readonly int _height;
     private readonly string _pixelFormat;
+    private IMFDXGIDeviceManager? _deviceManager;
+    private IMFTransform? _transform;
+    private string? _transformName;
     private bool _disposed;
+    private bool _initialized;
 
     public MediaFoundationHardwareH264EncoderSession(
         ID3D11Device device,
@@ -110,11 +117,26 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     public void Initialize()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _ = _device;
-        _ = _width;
-        _ = _height;
-        _ = _pixelFormat;
-        throw CreateUnavailableException();
+        if (_initialized)
+            return;
+
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("Media Foundation hardware encoder requires Windows.");
+
+        try
+        {
+            MediaFactory.MFStartup(true).CheckError();
+            _deviceManager = MediaFactory.MFCreateDXGIDeviceManager();
+            _deviceManager.ResetDevice(_device).CheckError();
+            _transform = CreateHardwareTransform();
+            ConfigureTransform(_transform);
+            _initialized = true;
+        }
+        catch (Exception ex) when (ex is not ObjectDisposedException)
+        {
+            DisposeTransformResources();
+            throw CreateUnavailableException(ex);
+        }
     }
 
     public EncodedSurfaceResult? TryEncodeSurface(
@@ -126,14 +148,214 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _ = frameNumber;
-        _ = presentationTime;
-        throw CreateUnavailableException();
+        Initialize();
+
+        if (_transform is null)
+            throw CreateUnavailableException();
+
+        IMFSample? inputSample = null;
+        IMFSample? outputSample = null;
+        IMFMediaBuffer? outputBuffer = null;
+
+        try
+        {
+            inputSample = CreateInputSample(surface, presentationTime);
+            _transform.ProcessInput(0, inputSample, 0);
+
+            auditSink.Record(new MediaTransportAuditEvent
+            {
+                Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
+                Source = nameof(MediaFoundationHardwareH264EncoderSession),
+                EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated,
+                Detail = $"Media Foundation hardware MFT accepted D3D11 surface input ({_transformName ?? "unknown MFT"})."
+            });
+
+            outputSample = MediaFactory.MFCreateSample();
+            var outputInfo = _transform.GetOutputStreamInfo(0);
+            outputBuffer = MediaFactory.MFCreateMemoryBuffer(Math.Max(outputInfo.Size, 1_048_576));
+            outputSample.AddBuffer(outputBuffer);
+
+            var outputData = new OutputDataBuffer
+            {
+                StreamID = 0,
+                Sample = outputSample
+            };
+
+            var processStatus = ProcessOutputStatus.ProcessOutputStatusNewStreams;
+            var result = _transform.ProcessOutput(ProcessOutputFlags.None, 1, ref outputData, out processStatus);
+            if (result.Failure)
+            {
+                throw CreateUnavailableException(
+                    new InvalidOperationException(
+                        $"Media Foundation hardware encoder did not produce an output packet. HRESULT={result.Code:X8} {result.Description}"));
+            }
+
+            var packet = ReadEncodedPacket(outputData.Sample ?? outputSample);
+            if (packet.IsEmpty)
+                return null;
+
+            auditSink.Record(new MediaTransportAuditEvent
+            {
+                Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
+                Source = nameof(MediaFoundationHardwareH264EncoderSession),
+                EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated,
+                Detail = $"Media Foundation hardware MFT produced a real H.264 packet ({packet.Length} bytes)."
+            });
+
+            return new EncodedSurfaceResult
+            {
+                Data = packet,
+                IsKeyFrame = frameNumber == 1
+            };
+        }
+        catch (Exception ex) when (ex is not ObjectDisposedException)
+        {
+            throw CreateUnavailableException(ex);
+        }
+        finally
+        {
+            outputBuffer?.Dispose();
+            outputSample?.Dispose();
+            inputSample?.Dispose();
+        }
     }
 
-    public static NotSupportedException CreateUnavailableException() =>
-        new(
-            "Real Media Foundation H.264 hardware encoder output is unavailable until GPU surface input, MFT selection, format conversion, and backend packet validation are implemented. The prototype canned-packet bridge is not a product encoder backend.");
+    private IMFTransform CreateHardwareTransform()
+    {
+        var inputType = new RegisterTypeInfo
+        {
+            GuidMajorType = MediaTypeGuids.Video,
+            GuidSubtype = ToVideoSubtype(_pixelFormat)
+        };
+        var outputType = new RegisterTypeInfo
+        {
+            GuidMajorType = MediaTypeGuids.Video,
+            GuidSubtype = VideoFormatGuids.H264
+        };
 
-    public void Dispose() => _disposed = true;
+        using var activations = MediaFactory.MFTEnumEx(
+            TransformCategoryGuids.VideoEncoder,
+            (uint)(EnumFlag.EnumFlagHardware | EnumFlag.EnumFlagSortandfilter),
+            inputType,
+            outputType);
+
+        var activation = activations.FirstOrDefault()
+            ?? throw new InvalidOperationException("No Media Foundation hardware H.264 encoder MFT accepted the requested GPU input/output type.");
+
+        _transformName = TryGetTransformName(activation);
+        return activation.ActivateObject<IMFTransform>();
+    }
+
+    private void ConfigureTransform(IMFTransform transform)
+    {
+        transform.ProcessMessage(TMessageType.MessageSetD3DManager, (UIntPtr)_deviceManager!.NativePointer);
+
+        var outputType = MediaFactory.MFCreateMediaType();
+        outputType.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.Subtype, VideoFormatGuids.H264).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.AvgBitrate, 8_000_000u).CheckError();
+        MediaFactory.MFSetAttributeSize(outputType, MediaTypeAttributeKeys.FrameSize, (uint)_width, (uint)_height).CheckError();
+        MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.FrameRate, 60, 1).CheckError();
+        MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.PixelAspectRatio, 1, 1).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive).CheckError();
+        transform.SetOutputType(0, outputType, 0);
+
+        var inputType = MediaFactory.MFCreateMediaType();
+        inputType.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video).CheckError();
+        inputType.Set(MediaTypeAttributeKeys.Subtype, ToVideoSubtype(_pixelFormat)).CheckError();
+        MediaFactory.MFSetAttributeSize(inputType, MediaTypeAttributeKeys.FrameSize, (uint)_width, (uint)_height).CheckError();
+        MediaFactory.MFSetAttributeRatio(inputType, MediaTypeAttributeKeys.FrameRate, 60, 1).CheckError();
+        MediaFactory.MFSetAttributeRatio(inputType, MediaTypeAttributeKeys.PixelAspectRatio, 1, 1).CheckError();
+        inputType.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive).CheckError();
+        transform.SetInputType(0, inputType, 0);
+
+        transform.ProcessMessage(TMessageType.MessageNotifyBeginStreaming, UIntPtr.Zero);
+        transform.ProcessMessage(TMessageType.MessageNotifyStartOfStream, UIntPtr.Zero);
+    }
+
+    private static IMFSample CreateInputSample(D3D11SharedTextureFrameHandle surface, TimeSpan presentationTime)
+    {
+        var buffer = MediaFactory.MFCreateDXGISurfaceBuffer(
+            typeof(ID3D11Texture2D).GUID,
+            surface.Texture,
+            0,
+            false);
+
+        var sample = MediaFactory.MFCreateSample();
+        sample.AddBuffer(buffer);
+        sample.SampleTime = presentationTime.Ticks;
+        sample.SampleDuration = TimeSpan.FromMilliseconds(33).Ticks;
+        buffer.Dispose();
+        return sample;
+    }
+
+    private static ReadOnlyMemory<byte> ReadEncodedPacket(IMFSample sample)
+    {
+        using var buffer = sample.ConvertToContiguousBuffer();
+        var currentLength = buffer.CurrentLength;
+        if (currentLength <= 0)
+            return ReadOnlyMemory<byte>.Empty;
+
+        nint dataPointer = 0;
+        var maxLength = 0;
+        var lockedLength = 0;
+        buffer.Lock(out dataPointer, out maxLength, out lockedLength);
+        try
+        {
+            var bytes = new byte[currentLength];
+            Marshal.Copy(dataPointer, bytes, 0, currentLength);
+            return bytes;
+        }
+        finally
+        {
+            buffer.Unlock();
+        }
+    }
+
+    private static Guid ToVideoSubtype(string pixelFormat)
+    {
+        if (pixelFormat.Equals("NV12", StringComparison.OrdinalIgnoreCase))
+            return VideoFormatGuids.NV12;
+
+        if (pixelFormat.Equals("B8G8R8A8_UNORM", StringComparison.OrdinalIgnoreCase) ||
+            pixelFormat.Equals("R8G8B8A8_UNORM", StringComparison.OrdinalIgnoreCase))
+            return VideoFormatGuids.Rgb32;
+
+        throw new NotSupportedException($"Media Foundation hardware H.264 encoder does not support input pixel format '{pixelFormat}' yet.");
+    }
+
+    private static string? TryGetTransformName(IMFActivate activation)
+    {
+        try
+        {
+            return activation.GetString(TransformAttributeKeys.MftFriendlyNameAttribute);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static NotSupportedException CreateUnavailableException(Exception? innerException = null) =>
+        new(
+            "Real Media Foundation H.264 hardware encoder output is unavailable on this machine or driver. Product encoding requires a hardware MFT that accepts GPU surface input and produces backend-validated packets; the prototype canned-packet bridge is not a product encoder backend.",
+            innerException);
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        DisposeTransformResources();
+    }
+
+    private void DisposeTransformResources()
+    {
+        _transform?.Dispose();
+        _transform = null;
+        _deviceManager?.Dispose();
+        _deviceManager = null;
+        _initialized = false;
+    }
 }

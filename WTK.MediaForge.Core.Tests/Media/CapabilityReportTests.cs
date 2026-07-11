@@ -86,6 +86,57 @@ public sealed class CapabilityReportTests
     }
 
     [Fact]
+    public void Capability_report_rejects_available_backend_that_requires_cpu_staging()
+    {
+        var backend = new HardwareMediaBackendCapability
+        {
+            Id = "test.software.decode",
+            DisplayName = "Software decode",
+            Platform = "Test",
+            DecodeCodecs = ["H264"],
+            RequiresCpuStaging = true,
+            SupportStatus = MediaForgeSupportStatus.Experimental,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            MediaForgeCapabilityReportBuilder.Build(
+                new HardwareMediaCapabilityReport
+                {
+                    Platform = "Test",
+                    BackendCapabilities = [backend]
+                }));
+
+        Assert.Contains(backend.Id, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CPU staging", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Capability_report_rejects_available_prototype_backend()
+    {
+        var backend = new HardwareMediaBackendCapability
+        {
+            Id = "test.prototype.encoder",
+            DisplayName = "Prototype encoder",
+            Platform = "Test",
+            EncodeCodecs = ["H264"],
+            SupportStatus = MediaForgeSupportStatus.Supported,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Prototype
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            MediaForgeCapabilityReportBuilder.Build(
+                new HardwareMediaCapabilityReport
+                {
+                    Platform = "Test",
+                    BackendCapabilities = [backend]
+                }));
+
+        Assert.Contains(backend.Id, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Prototype", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void RawCpuVideoFrameExceptionKind_has_only_three_values()
     {
         var names = Enum.GetNames(typeof(RawCpuVideoFrameExceptionKind));

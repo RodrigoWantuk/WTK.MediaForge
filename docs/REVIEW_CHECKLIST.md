@@ -137,6 +137,8 @@ Before considering a change complete, verify:
 - [ ] Product recording/streaming sinks consume encoded packets after hardware encode only.
 - [ ] Encoded H.264 packets declare Annex-B/AVCC format and sinks reject unknown bitstreams instead of guessing.
 - [ ] FFmpeg is not used in first MP4/RTMP product paths.
+- [ ] Continuous video decode/encode paths use validated hardware acceleration or report unavailable; no software fallback or CPU staging is introduced.
+- [ ] OS-specific media adapters stay in OS-specific projects and capability reports expose runtime-detected backend/vendor status.
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
 - [ ] Commit 06 GPU export proof passed before hardware MP4 is marked Supported.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
@@ -146,7 +148,7 @@ Before considering a change complete, verify:
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
 - [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15-20.
-- [ ] Engine readiness v4 (`verify-engine-readiness-v4.ps1`) passes before promoting prototype/skeleton media paths.
+- [ ] Engine readiness v5 (`verify-engine-readiness-v5.ps1`) passes before promoting prototype/skeleton media paths.
 - [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.
 
 ## FFmpeg / external codec review checklist

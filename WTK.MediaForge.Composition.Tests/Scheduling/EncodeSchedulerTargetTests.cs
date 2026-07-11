@@ -59,9 +59,9 @@ public sealed class EncodeSchedulerTargetTests
 
         var expected = new[]
         {
-            new EncodedFrameRecord(1, TimeSpan.FromMilliseconds(33), frameA.TextureLease.TextureId),
-            new EncodedFrameRecord(2, TimeSpan.FromMilliseconds(66), frameB.TextureLease.TextureId),
-            new EncodedFrameRecord(3, TimeSpan.FromMilliseconds(99), frameC.TextureLease.TextureId)
+            new EncodedFrameRecord(1, TimeSpan.FromMilliseconds(33), frameA.TextureLease!.TextureId),
+            new EncodedFrameRecord(2, TimeSpan.FromMilliseconds(66), frameB.TextureLease!.TextureId),
+            new EncodedFrameRecord(3, TimeSpan.FromMilliseconds(99), frameC.TextureLease!.TextureId)
         };
 
         target.OnRenderedFrame(frameA);
@@ -118,7 +118,7 @@ public sealed class EncodeSchedulerTargetTests
 
         var second = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
         var third = CreateRenderedFrame(pool, 3, TimeSpan.FromMilliseconds(99));
-        var rejectedLease = third.TextureLease;
+        var rejectedLease = third.TextureLease!;
 
         target.OnRenderedFrame(second);
         target.OnRenderedFrame(third);
@@ -153,7 +153,7 @@ public sealed class EncodeSchedulerTargetTests
 
         var second = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
         var third = CreateRenderedFrame(pool, 3, TimeSpan.FromMilliseconds(99));
-        var replacedLease = second.TextureLease;
+        var replacedLease = second.TextureLease!;
 
         target.OnRenderedFrame(second);
         target.OnRenderedFrame(third);
@@ -184,9 +184,9 @@ public sealed class EncodeSchedulerTargetTests
         var first = CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33));
         var second = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
         var third = CreateRenderedFrame(pool, 3, TimeSpan.FromMilliseconds(99));
-        var firstLease = first.TextureLease;
-        var secondLease = second.TextureLease;
-        var thirdLease = third.TextureLease;
+        var firstLease = first.TextureLease!;
+        var secondLease = second.TextureLease!;
+        var thirdLease = third.TextureLease!;
 
         target.OnRenderedFrame(first);
         await WaitForConditionAsync(() => encoder.Started, TimeSpan.FromSeconds(2));
@@ -198,6 +198,41 @@ public sealed class EncodeSchedulerTargetTests
         Assert.Equal(default, firstLease.TextureId);
         Assert.Equal(default, secondLease.TextureId);
         Assert.Equal(default, thirdLease.TextureId);
+    }
+
+    [Fact]
+    public async Task Encode_scheduler_uses_pre_exported_encoder_input_without_frame_exporter()
+    {
+        var packets = new List<EncodedVideoPacket>();
+        var encoder = new PreExportedInputRecordingEncoder();
+        var audit = new CollectingMediaTransportAuditSink();
+
+        await using var target = new EncodeSchedulerTarget(
+            encoder,
+            new ThrowingGpuFrameExporter(),
+            audit,
+            packets.Add,
+            encodeTimeout: TimeSpan.FromSeconds(1));
+
+        using var inputLease = HardwareEncoderInputLease.Create(new GpuVideoFrameDescriptor
+        {
+            Width = 320,
+            Height = 180,
+            Format = "B8G8R8A8_UNORM",
+            TransportKind = MediaTransportKind.GpuSurface
+        });
+
+        target.OnRenderedFrame(new ScheduledRenderedFrame
+        {
+            Context = CreateContext(1, TimeSpan.FromMilliseconds(33)),
+            EncoderInputLease = inputLease
+        });
+
+        await WaitForConditionAsync(() => packets.Count == 1, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(1, encoder.EncodeAsyncCalls);
+        Assert.Equal(0, encoder.SubmitFrameAsyncCalls);
+        Assert.Equal(TimeSpan.FromMilliseconds(33), packets[0].PresentationTime);
     }
 
     private static FrameExecutionContext CreateContext(long frameId, TimeSpan presentationTime) =>
@@ -360,6 +395,68 @@ public sealed class EncodeSchedulerTargetTests
             IMediaTransportAuditSink auditSink,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(HardwareEncoderInputLease.Create(descriptor));
+    }
+
+    private sealed class ThrowingGpuFrameExporter : IGpuFrameExporter
+    {
+        public bool CanExport(GpuVideoFrameDescriptor descriptor, HardwareEncoderInputRequirement requirement) =>
+            throw new InvalidOperationException("Pre-exported encoder input should not use the frame exporter.");
+
+        public ValueTask<HardwareEncoderInputLease> ExportForEncoderAsync(
+            GpuVideoFrameDescriptor descriptor,
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Pre-exported encoder input should not use the frame exporter.");
+    }
+
+    private sealed class PreExportedInputRecordingEncoder : IHardwareVideoEncoder
+    {
+        public int EncodeAsyncCalls { get; private set; }
+
+        public int SubmitFrameAsyncCalls { get; private set; }
+
+        public HardwareEncoderInfo Info { get; } = new()
+        {
+            Name = "PreExported",
+            Codec = EncodedVideoCodec.H264,
+            Backend = "Test",
+            AcceptsGpuSurfaceInput = true
+        };
+
+        public HardwareEncoderInputRequirement InputRequirement { get; } = new()
+        {
+            Width = 320,
+            Height = 180,
+            PixelFormat = "B8G8R8A8_UNORM",
+            RequiresGpuSurface = true
+        };
+
+        public ValueTask<EncodedVideoPacket?> EncodeAsync(
+            EncodeFrameContext context,
+            IMediaTransportAuditSink auditSink)
+        {
+            EncodeAsyncCalls++;
+            context.CancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<EncodedVideoPacket?>(new EncodedVideoPacket
+            {
+                Data = new byte[] { 4, 5, 6 },
+                Codec = EncodedVideoCodec.H264,
+                PresentationTime = context.PresentationTime,
+                IsKeyFrame = context.FrameNumber == 1
+            });
+        }
+
+        public ValueTask<EncodedVideoPacket?> SubmitFrameAsync(
+            GpuTextureLease textureLease,
+            HardwareEncodeFrameContext context,
+            IGpuFrameExporter frameExporter,
+            IMediaTransportAuditSink auditSink)
+        {
+            SubmitFrameAsyncCalls++;
+            return ValueTask.FromResult<EncodedVideoPacket?>(null);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class FakeGpuTextureFactory : IGpuTextureFactory

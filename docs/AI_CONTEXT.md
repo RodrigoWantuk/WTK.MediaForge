@@ -165,9 +165,12 @@ The legacy WinForms preview path has been removed as a product path because it u
   intermediate-pool reuse tests.
 - `TextDrawObject` includes `FontFamily`; snapshots propagate it into the Vulkan
   renderer. Text rendering uses a rasterized glyph atlas uploaded to a Vulkan
-  sampled image. Current validation covers Windows Vulkan text layers and
-  verifies that atlas content is keyed by text/family/size rather than by font
-  size alone.
+  sampled image. The Vulkan project owns atlas upload/rendering only. Font
+  rasterization is supplied by OS-specific adapters, currently the Windows
+  `System.Drawing` adapter in `WTK.MediaForge.Windows`; Linux/macOS must add
+  their own adapters instead of adding platform dependencies to Vulkan.
+  Current validation covers Windows Vulkan text layers and verifies that atlas
+  content is keyed by text/family/size rather than by font size alone.
 - `MediaForgeRenderOutput.RouteTransition` describes the route transition for
   an output. `OutputRouteTransitionRuntime` advances progress from explicit
   frame delta time only. Vulkan output composition supports cut and fade by
@@ -177,19 +180,31 @@ The legacy WinForms preview path has been removed as a product path because it u
 ## GPU Media Transport Law (vNext)
 
 - Uncompressed continuous video frames must stay in GPU/VRAM on the product path.
+- Continuous video decode and encode must use platform hardware acceleration.
+  If the GPU/hardware path is unavailable, the feature is `Unsupported`,
+  `Planned`, or `Unavailable`; it must not fall back to software decode/encode.
 - CPU/RAM carries encoded packets, static asset load buffers, metadata, and registered exceptions only.
 - Formal types: `EncodedVideoPacket`, `GpuVideoFrame` (GPU lease), `StaticCpuImageAsset` (load-only), raw CPU video prohibited on product path.
 - Registered raw CPU exceptions use `RawCpuVideoFrameException` with kinds: `PixelTestOnly`, `ManualScreenshotOnly`, `WebcamSystemRawInput`. Static image load is **not** an exception.
 - `CpuReadbackSink` is debug/test only (`DebugOnlyCpuReadback`). Product sinks consume `GpuSurface` or `EncodedPacket` after hardware encode.
 - FFmpeg is not used in the first hardware MP4/RTMP product path.
+- Platform media adapters stay in their own assemblies: Windows uses
+  D3D11/D3D11VA/Media Foundation first; Linux targets VAAPI/DRM/DMABUF,
+  Vulkan Video, or approved vendor interop in Linux-specific projects; macOS
+  targets VideoToolbox/CVPixelBuffer/IOSurface/Metal in macOS-specific
+  projects.
+- NVIDIA, AMD/Radeon, Intel integrated/discrete, Apple, VAAPI, Vulkan Video,
+  and future vendor SDK paths must be runtime-detected through capability
+  reports. GPU vendor names alone must never imply support.
 - Commit 06 (Vulkan -> D3D11/MF encoder surface export proof) blocks hardware recording until passed.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
   `Prototype` and `Skeleton` readiness entries must never be emitted as
   `Supported` or `Experimental`.
-- `./scripts/verify-engine-readiness-v4.ps1` is the current executable truth
+- `./scripts/verify-engine-readiness-v5.ps1` is the current executable truth
   gate for product readiness, docs alignment, media transport, license, Fast,
-  Gpu, and Performance validation.
+  Gpu, Performance, export-proof, decode/encode boundary, and platform font
+  adapter validation.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
 
 ## GPU Resource Pool (Phase 2)

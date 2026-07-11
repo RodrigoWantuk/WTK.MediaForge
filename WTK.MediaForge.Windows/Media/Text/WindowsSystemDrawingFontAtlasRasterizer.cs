@@ -2,15 +2,16 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
 using WTK.MediaForge.Composition.Assets;
+using WTK.MediaForge.Graphics.Vulkan.Text;
 
-namespace WTK.MediaForge.Graphics.Vulkan.Text;
+namespace WTK.MediaForge.Windows.Media.Text;
 
-internal static class VulkanFontAtlasRasterizer
+internal sealed class WindowsSystemDrawingFontAtlasRasterizer : IFontAtlasRasterizer
 {
     private const int MaxAtlasSide = 4096;
     private const int PaddingPx = 2;
 
-    public static FontAtlasAsset Rasterize(
+    public FontAtlasAsset Rasterize(
         string text,
         string fontFamily,
         float fontSizePx)
@@ -25,7 +26,7 @@ internal static class VulkanFontAtlasRasterizer
             throw new ArgumentOutOfRangeException(nameof(fontSizePx), "Font size must be a positive finite value.");
 
         if (!OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException("Vulkan text glyph rasterization currently requires Windows System.Drawing support.");
+            throw new PlatformNotSupportedException("Windows font atlas rasterization requires System.Drawing support on Windows.");
 
         return RasterizeWindows(text, fontFamily, fontSizePx);
     }
@@ -148,3 +149,4 @@ internal static class VulkanFontAtlasRasterizer
         public const string Value = "Segoe UI";
     }
 }
+

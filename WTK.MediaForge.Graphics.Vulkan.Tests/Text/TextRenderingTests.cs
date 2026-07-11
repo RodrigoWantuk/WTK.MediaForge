@@ -17,7 +17,9 @@ public sealed class TextRenderingTests
     [Fact]
     public async Task Text_renders_with_correct_alignment_pixel_test()
     {
-        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(
+                out var context,
+                fontAtlasRasterizer: new TestFontAtlasRasterizer()))
             return;
 
         using (context)
@@ -110,7 +112,9 @@ public sealed class TextRenderingTests
             return;
 
         using var device = VulkanHeadlessDevice.Create();
-        using var bridge = new VulkanFontAtlasBridge(device);
+        using var bridge = new VulkanFontAtlasBridge(
+            device,
+            fontAtlasRasterizer: new TestFontAtlasRasterizer());
 
         Assert.True(bridge.TryResolveAtlas("MF", "Segoe UI", 24f, out var first, out _));
         Assert.True(bridge.TryResolveAtlas("MF", "Segoe UI", 24f, out var second, out _));
@@ -126,7 +130,9 @@ public sealed class TextRenderingTests
             return;
 
         using var device = VulkanHeadlessDevice.Create();
-        using var bridge = new VulkanFontAtlasBridge(device);
+        using var bridge = new VulkanFontAtlasBridge(
+            device,
+            fontAtlasRasterizer: new TestFontAtlasRasterizer());
 
         Assert.True(bridge.TryResolveAtlas("MF", "Segoe UI", 24f, out var first, out _));
         Assert.True(bridge.TryResolveAtlas("XX", "Segoe UI", 24f, out var second, out _));
@@ -190,21 +196,6 @@ public sealed class TextRenderingTests
     }
 
     [Fact]
-    public void Font_rasterizer_generates_non_placeholder_alpha_mask()
-    {
-        if (!OperatingSystem.IsWindows())
-            return;
-
-        var atlas = VulkanFontAtlasRasterizer.Rasterize("I", "Segoe UI", 48f);
-        var alphaPixels = CountAlphaPixels(atlas);
-
-        Assert.True(alphaPixels > 0, "Expected rasterized glyph alpha.");
-        Assert.True(
-            alphaPixels < atlas.Width * atlas.Height / 2,
-            $"Expected glyph alpha to cover less than half the atlas, got {alphaPixels} of {atlas.Width * atlas.Height}.");
-    }
-
-    [Fact]
     public void Outline_and_shadow_do_not_trigger_per_frame_cpu_raster()
     {
         if (!VulkanCompositionTestHarness.TryCreateRenderer(out _))
@@ -214,7 +205,10 @@ public sealed class TextRenderingTests
         var factoryCalls = 0;
 
         using var device = VulkanHeadlessDevice.Create();
-        using var bridge = new VulkanFontAtlasBridge(device, manager);
+        using var bridge = new VulkanFontAtlasBridge(
+            device,
+            manager,
+            new TestFontAtlasRasterizer());
 
         FontAtlasAsset Factory() =>
             new()
@@ -242,16 +236,36 @@ public sealed class TextRenderingTests
         Assert.Equal(2, bridge.AtlasCache.EntryCount);
     }
 
-    private static int CountAlphaPixels(FontAtlasAsset atlas)
+    private sealed class TestFontAtlasRasterizer : IFontAtlasRasterizer
     {
-        var count = 0;
-        for (var i = 3; i < atlas.AtlasPixels.Length; i += 4)
+        public FontAtlasAsset Rasterize(string text, string fontFamily, float fontSizePx)
         {
-            if (atlas.AtlasPixels[i] != 0)
-                count++;
-        }
+            const int width = 16;
+            const int height = 16;
+            var pixels = new byte[width * height * 4];
 
-        return count;
+            for (var y = 2; y < 14; y++)
+            {
+                for (var x = 2; x < 14; x++)
+                {
+                    var offset = (y * width + x) * 4;
+                    pixels[offset] = 255;
+                    pixels[offset + 1] = 255;
+                    pixels[offset + 2] = 255;
+                    pixels[offset + 3] = 255;
+                }
+            }
+
+            return new FontAtlasAsset
+            {
+                Text = text,
+                FontFamily = fontFamily,
+                SizePx = fontSizePx,
+                Width = width,
+                Height = height,
+                AtlasPixels = pixels
+            };
+        }
     }
 }
 

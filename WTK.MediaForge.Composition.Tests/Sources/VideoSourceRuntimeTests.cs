@@ -7,6 +7,7 @@ using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Decode;
 using WTK.MediaForge.Composition.Tests.Gpu;
 using WTK.MediaForge.Core.Sources;
+using WTK.MediaForge.Diagnostics;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests.Sources;
@@ -154,6 +155,43 @@ public sealed class VideoSourceRuntimeTests
         try
         {
             var decoder = new HangingFlushDecoder();
+            var diagnostics = new ListDiagnosticsSink();
+            var runtime = new VideoSourceRuntime(
+                new VideoFileSourceSettings { Path = path },
+                _ => decoder,
+                diagnostics)
+            {
+                DisposeCleanupTimeout = TimeSpan.FromMilliseconds(50)
+            };
+
+            await runtime.OpenAsync(CancellationToken.None);
+
+            var started = Environment.TickCount64;
+            runtime.Dispose();
+            var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
+            Assert.True(elapsed < TimeSpan.FromSeconds(2));
+            Assert.True(decoder.DisposeCalled);
+            Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+                diagnostic.Code == "source.video.dispose_timeout" &&
+                diagnostic.Message.Contains("flush", StringComparison.OrdinalIgnoreCase));
+
+            decoder.ReleaseFlush();
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task VideoSourceRuntime_dispose_async_reports_timeout_to_caller()
+    {
+        var path = CreateTempVideoPath();
+        try
+        {
+            var decoder = new HangingFlushDecoder();
             var runtime = new VideoSourceRuntime(
                 new VideoFileSourceSettings { Path = path },
                 _ => decoder,
@@ -164,12 +202,10 @@ public sealed class VideoSourceRuntimeTests
 
             await runtime.OpenAsync(CancellationToken.None);
 
-            var started = Environment.TickCount64;
-            var ex = Assert.Throws<TimeoutException>(runtime.Dispose);
-            var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+            var exception = await Assert.ThrowsAsync<TimeoutException>(async () =>
+                await runtime.DisposeAsync());
 
-            Assert.True(elapsed < TimeSpan.FromSeconds(2));
-            Assert.Contains("flush", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("flush", exception.Message, StringComparison.OrdinalIgnoreCase);
             Assert.True(decoder.DisposeCalled);
 
             decoder.ReleaseFlush();

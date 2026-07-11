@@ -177,6 +177,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Core.Media.GpuExportProofStatus",
                 "WTK.MediaForge.Core.Media.GpuVideoFrameDescriptor",
                 "WTK.MediaForge.Core.Media.GpuVideoFrameLease",
+                "WTK.MediaForge.Core.Media.HardwareMediaBackendCapability",
                 "WTK.MediaForge.Core.Media.HardwareMediaCapabilityReport",
                 "WTK.MediaForge.Core.Media.IHardwareMediaCapabilityProbe",
                 "WTK.MediaForge.Core.Media.Interop.GpuExternalFrameDescriptor",
