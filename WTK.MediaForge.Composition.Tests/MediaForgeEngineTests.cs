@@ -311,6 +311,38 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Scheduled_frame_submits_render_graph_execution_with_acquired_source_frame()
+    {
+        var providerFactory = new GpuFrameSlotRingSourceProviderFactory();
+        var backendFactory = new ManualRecordingRenderBackendFactory();
+        await using var engine = CreateEngine(providerFactory, backendFactory);
+        engine.RenderFramesPerSecond = 1;
+        var project = CreateValidProject();
+        var sourceId = project.SourceDefinitions[0].Id;
+
+        await engine.LoadProjectAsync(project);
+        await engine.StartAsync();
+
+        await WaitUntilAsync(
+            () => backendFactory.Backend!.LastRenderGraphExecution is { ExecutedNodeKeys.Count: > 0 },
+            TimeSpan.FromSeconds(5));
+
+        var execution = backendFactory.Backend!.LastRenderGraphExecution;
+        Assert.NotNull(execution);
+
+        Assert.Contains($"source:{sourceId}", execution!.ExecutedNodeKeys);
+        var outputKey = Assert.Single(
+            execution.ExecutedNodeKeys,
+            key => key.StartsWith("output:", StringComparison.Ordinal));
+
+        var outputResult = execution.NodeResults[outputKey];
+        Assert.False(outputResult.WasSkipped);
+        Assert.Equal(sourceId, outputResult.SourceFrame?.SourceId);
+
+        backendFactory.Backend.CompleteAllPending();
+    }
+
+    [Fact]
     public async Task BindOutputAsync_requires_matching_type()
     {
         await using var engine = CreateEngine();

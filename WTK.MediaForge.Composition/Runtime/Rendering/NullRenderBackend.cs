@@ -17,6 +17,8 @@ internal sealed class NullRenderBackend : IRenderBackend
 
     public long LastProjectStateVersion => Volatile.Read(ref _lastProjectStateVersion);
 
+    public RenderGraphExecutionResult? LastRenderGraphExecution { get; private set; }
+
     private int _renderCount;
     private long _lastProjectStateVersion;
 
@@ -59,6 +61,7 @@ internal sealed class NullRenderBackend : IRenderBackend
 
         Interlocked.Increment(ref _renderCount);
         Volatile.Write(ref _lastProjectStateVersion, snapshot.ProjectStateVersion);
+        LastRenderGraphExecution = snapshot.RenderGraphExecution;
         return new ImmediateRenderFrameSubmission(snapshot);
     }
 

@@ -135,9 +135,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   staging evidence. Prototype decoder frames cannot satisfy this proof.
 - The logical `RenderGraphExecutor` now carries renderable `GpuFrameReference`
   resources through source/effect/canvas/output nodes and skips downstream work
-  when a source frame is unavailable. It still does not allocate Vulkan
-  intermediate targets or execute GPU passes; `GpuTextureLease` output resources
-  are reserved for that future bridge.
+  when a source frame is unavailable. The engine attaches the per-frame graph
+  execution result to `RenderFrameSnapshot` after source leases are acquired,
+  so backends can audit/consume the DAG for the submitted frame. It still does
+  not allocate Vulkan intermediate targets or execute GPU passes;
+  `GpuTextureLease` output resources are reserved for that future bridge.
 - `ColorCorrectionEffect` is implemented in the Vulkan source-layer fragment
   shader for brightness, contrast, saturation, and hue. The shader applies
   source sample -> color correction -> chroma key -> opacity.

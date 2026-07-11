@@ -158,6 +158,37 @@ public sealed class RenderGraphExecutorTests
     }
 
     [Fact]
+    public void Execution_result_contains_stable_node_results_snapshot()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
+            .OffscreenOutput("Program", scene, 1920, 1080, out _)
+            .BuildValidated();
+
+        var plan = MediaForgeRenderGraphCompiler.Compile(project);
+        var context = new RenderGraphContext
+        {
+            FrameContext = new FrameExecutionContext
+            {
+                FrameId = 7,
+                FrameBudget = TimeSpan.FromSeconds(1d / 60d)
+            },
+            SourceFrames = CreateSourceFrames(source.Id)
+        };
+
+        var result = RenderGraphExecutor.Execute(plan, context);
+
+        Assert.NotEmpty(result.NodeResults);
+        Assert.Equal(context.NodeResults.Count, result.NodeResults.Count);
+
+        context.NodeResults.Clear();
+
+        Assert.NotEmpty(result.NodeResults);
+    }
+
+    [Fact]
     public void Canvas_uses_available_source_frame_when_another_source_is_missing()
     {
         var project = MediaForgeProjectBuilder.Create()

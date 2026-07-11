@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using WTK.MediaForge.Composition.Runtime;
+using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Diagnostics;
 
@@ -21,6 +22,8 @@ internal sealed class RenderFrameSnapshot : IDisposable
         ImmutableArray<GpuFrameLease>.Empty;
 
     public RenderFrameContext Context { get; init; }
+
+    internal RenderGraphExecutionResult? RenderGraphExecution { get; set; }
 
     internal IMediaForgeDiagnosticsSink? Diagnostics { get; init; }
 

@@ -88,6 +88,7 @@ Before considering a change complete, verify:
 - [ ] Same source across scenes/layers is acquired once per frame where the runtime graph can share it.
 - [ ] Reusable source effect-chain nodes are keyed by semantic source/effect configuration, not by runtime object identity.
 - [ ] Different output sizes reuse the same canvas render where possible and split only output-fit/presentation passes.
+- [ ] Submitted render snapshots carry graph execution computed after source-frame acquisition, not a pre-acquisition dry run.
 - [ ] Package JSON contains schema version, ids, type ids, typed settings, transforms, effects, canvas graph, routes, and metadata only.
 - [ ] Package JSON does not contain runtime leases, native handles, Vulkan/D3D11 objects, command buffers, fences, backend worker state, sink queues, or secrets by default.
 - [ ] Import validates schema, ids, missing references, output routes, unsupported types, migrations, and canvas cycles before returning an applied candidate.

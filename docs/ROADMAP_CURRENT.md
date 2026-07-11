@@ -44,8 +44,10 @@ Complete foundations:
   hardware decode, source-frame adaptation, and renderer submission all provide
   `BackendOutputValidated` evidence.
 - RenderGraph execution now propagates available source-frame resources and
-  explicit skip reasons through the logical graph; real GPU pass execution and
-  output texture production remain future work.
+  explicit skip reasons through the logical graph, and submitted
+  `RenderFrameSnapshot` instances carry the graph execution result computed
+  after source leases are acquired; real GPU pass execution and output texture
+  production remain future work.
 - Vulkan source-layer color correction now applies brightness, contrast,
   saturation, and hue in the shader before chroma key.
 - Vulkan source-layer blur is product-validated for the current scope: a

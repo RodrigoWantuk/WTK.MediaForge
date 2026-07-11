@@ -557,6 +557,8 @@ internal sealed class ManualNullRenderBackend : IRenderBackend
 
     public int SubmitCount => Volatile.Read(ref _submitCount);
 
+    public RenderGraphExecutionResult? LastRenderGraphExecution { get; private set; }
+
     public int PendingBackendSubmissionCount
     {
         get
@@ -580,6 +582,7 @@ internal sealed class ManualNullRenderBackend : IRenderBackend
         ArgumentNullException.ThrowIfNull(snapshot);
 
         Interlocked.Increment(ref _submitCount);
+        LastRenderGraphExecution = snapshot.RenderGraphExecution;
         var submission = new ManualRenderFrameSubmission(snapshot);
 
         lock (_pending)

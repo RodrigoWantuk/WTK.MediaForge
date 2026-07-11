@@ -12,6 +12,7 @@ using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Composition.Validation;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Diagnostics;
 using PublicRenderOutputSink = WTK.MediaForge.Composition.Outputs.IRenderOutputSink;
@@ -649,21 +650,40 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             CancellationToken.None);
 
         var sceneSnapshot = _sceneRuntime.CreateSnapshot();
-        _ = RenderGraphExecutor.Execute(
-            sceneSnapshot.CachedRenderGraphPlan!,
-            new RenderGraphContext
-            {
-                FrameContext = executionContext,
-                SceneSnapshot = sceneSnapshot
-            });
-
         using var buildResult = _sceneRuntime.BuildRenderSnapshot(_runtime, context, _diagnostics);
         var snapshot = buildResult.TakeSnapshot();
 
         if (snapshot is null)
             return;
 
-        _renderThread.PublishFrame(snapshot);
+        try
+        {
+            snapshot.RenderGraphExecution = RenderGraphExecutor.Execute(
+                sceneSnapshot.CachedRenderGraphPlan!,
+                new RenderGraphContext
+                {
+                    FrameContext = executionContext,
+                    SceneSnapshot = sceneSnapshot,
+                    SourceFrames = CreateSourceFrameMap(snapshot)
+                });
+
+            _renderThread.PublishFrame(snapshot);
+            snapshot = null;
+        }
+        finally
+        {
+            snapshot?.Dispose();
+        }
+    }
+
+    private static IReadOnlyDictionary<SourceId, GpuFrameReference> CreateSourceFrameMap(
+        RenderFrameSnapshot snapshot)
+    {
+        var sourceFrames = new Dictionary<SourceId, GpuFrameReference>();
+        foreach (var lease in snapshot.FrameLeases)
+            sourceFrames.TryAdd(lease.Frame.SourceId, lease.Frame);
+
+        return sourceFrames;
     }
 
     private async Task EnsureSurfaceBindingsForAttachedSinksAsync(
