@@ -10,6 +10,7 @@ Before considering a change complete, verify:
 - [ ] Tests added for every lifetime change.
 - [ ] Runtime/GPU/snapshot internals are not exposed as public product API.
 - [ ] Public API changes update `docs/PUBLIC_API.md` and `Public_api_matches_approved_allowlist`.
+- [ ] Prototype, planned, blocked, unsupported, debug-only, or non-product capabilities/sinks have user-visible unavailable reasons.
 - [ ] CP2, nested canvas, preview, NDI, encoder, webcam, RTSP, MP4, streaming, or audio work starts only after the roadmap explicitly opens that track.
 - [ ] New source/output types are introduced first as product contracts, not hidden runtime integrations.
 - [ ] `dotnet test` passes.
@@ -141,6 +142,7 @@ Before considering a change complete, verify:
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
 - [ ] BGRA/RGBA -> NV12 encoder format conversion uses a GPU backend path or records explicit unavailable diagnostics; no CPU staging fallback.
 - [ ] Capability report is consumable via `GetCapabilityReportAsync` with status and reason per feature.
+- [ ] `Supported` and `Experimental` capability entries are the only user-available states; every unavailable entry includes a non-empty reason.
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
 - [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15-20.

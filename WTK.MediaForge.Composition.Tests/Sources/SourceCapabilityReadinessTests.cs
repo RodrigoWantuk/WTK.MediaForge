@@ -74,4 +74,20 @@ public sealed class SourceCapabilityReadinessTests
             }
         }
     }
+
+    [Fact]
+    public void Unavailable_source_capabilities_have_user_visible_reasons()
+    {
+        var report = MediaForgeCapabilityReportBuilder.Build(
+            new HardwareMediaCapabilityReport { Platform = "Test" },
+            MediaSourceTypeRegistry.CreateCapabilityEntries());
+
+        foreach (var entry in report.Entries.Where(entry => entry.Category == CapabilityCategories.Source))
+        {
+            if (report.IsFeatureAvailable(entry.Id))
+                continue;
+
+            Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));
+        }
+    }
 }

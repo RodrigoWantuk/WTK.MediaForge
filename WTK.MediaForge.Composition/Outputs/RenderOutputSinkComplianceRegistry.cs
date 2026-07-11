@@ -13,6 +13,8 @@ public sealed class RenderOutputSinkComplianceEntry
     public required bool IsProductSink { get; init; }
 
     public required MediaForgeSupportStatus SupportStatus { get; init; }
+
+    public string? UnavailableReason { get; init; }
 }
 
 public static class RenderOutputSinkComplianceRegistry
@@ -25,7 +27,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.Preview,
             Transport = MediaTransportKind.GpuSurface,
             IsProductSink = true,
-            SupportStatus = MediaForgeSupportStatus.Experimental
+            SupportStatus = MediaForgeSupportStatus.Experimental,
+            UnavailableReason = "Experimental until the PreviewPanelSink local reliability gate is complete."
         },
         new()
         {
@@ -33,7 +36,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.CpuReadback,
             Transport = MediaTransportKind.DebugOnlyCpuReadback,
             IsProductSink = false,
-            SupportStatus = MediaForgeSupportStatus.Supported
+            SupportStatus = MediaForgeSupportStatus.Supported,
+            UnavailableReason = "Debug/sample/validation only; not a product preview, recording, or streaming sink."
         },
         new()
         {
@@ -41,7 +45,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.File,
             Transport = MediaTransportKind.EncodedPacket,
             IsProductSink = false,
-            SupportStatus = MediaForgeSupportStatus.PrototypeOnly
+            SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
+            UnavailableReason = "Prototype only until real hardware encoder output and production MP4 muxing are validated."
         },
         new()
         {
@@ -49,7 +54,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.Streaming,
             Transport = MediaTransportKind.EncodedPacket,
             IsProductSink = false,
-            SupportStatus = MediaForgeSupportStatus.PrototypeOnly
+            SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
+            UnavailableReason = "Prototype only until a real network RTMP transport is implemented and validated."
         },
         new()
         {
@@ -57,7 +63,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.Streaming,
             Transport = MediaTransportKind.EncodedPacket,
             IsProductSink = false,
-            SupportStatus = MediaForgeSupportStatus.Planned
+            SupportStatus = MediaForgeSupportStatus.Planned,
+            UnavailableReason = "Planned after license and transport design review."
         },
         new()
         {
@@ -65,7 +72,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.Ndi,
             Transport = MediaTransportKind.GpuSurface,
             IsProductSink = false,
-            SupportStatus = MediaForgeSupportStatus.Unsupported
+            SupportStatus = MediaForgeSupportStatus.Unsupported,
+            UnavailableReason = "Unsupported until NDI SDK licensing and a GPU-safe path are approved."
         },
         new()
         {
@@ -73,7 +81,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.Custom,
             Transport = MediaTransportKind.GpuSurface,
             IsProductSink = false,
-            SupportStatus = MediaForgeSupportStatus.Unsupported
+            SupportStatus = MediaForgeSupportStatus.Unsupported,
+            UnavailableReason = "Unsupported until a platform virtual camera path is designed and validated."
         }
     ];
 

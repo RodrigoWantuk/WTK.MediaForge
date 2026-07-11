@@ -64,6 +64,28 @@ public sealed class CapabilityReportTests
     }
 
     [Fact]
+    public void Capability_report_rejects_unavailable_entries_without_reason()
+    {
+        var entry = new CapabilityEntry
+        {
+            Id = "test.planned.missing_reason",
+            Category = CapabilityCategories.Source,
+            DisplayName = "Missing reason",
+            SupportStatus = MediaForgeSupportStatus.Planned,
+            LicenseStatus = MediaForgeLicenseStatus.Approved,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            MediaForgeCapabilityReportBuilder.Build(
+                new HardwareMediaCapabilityReport { Platform = "Test" },
+                [entry]));
+
+        Assert.Contains(entry.Id, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("unavailable reason", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void RawCpuVideoFrameExceptionKind_has_only_three_values()
     {
         var names = Enum.GetNames(typeof(RawCpuVideoFrameExceptionKind));

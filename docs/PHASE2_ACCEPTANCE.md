@@ -22,7 +22,7 @@ dotnet test
 | 03 | Asset Manager | `WTK.MediaForge.Composition.Tests/Assets/AssetManagerTests.cs` |
 | 04 | GPU Surface Export Proof | `WTK.MediaForge.Windows.Tests/Media/WindowsGpuExportProofTests.cs` |
 | 05 | Hardware Decode Foundation | `WTK.MediaForge.Core.Tests/Media/DecodedGpuFrameTests.cs` |
-| 06 | Windows Hardware Decode Prototype | `WTK.MediaForge.Windows.Tests/Media/WindowsHardwareDecodeMvpTests.cs` |
+| 06 | Windows Hardware Decode Prototype | Windows hardware decode prototype tests in `WTK.MediaForge.Windows.Tests/Media` |
 | 07 | Video Source Runtime | `WTK.MediaForge.Composition.Tests/Sources/VideoSourceRuntimeTests.cs` |
 | 08 | Texture Streaming | `WTK.MediaForge.Composition.Tests/Streaming/TextureLeaseQueueTests.cs` |
 | 09 | Renderer Video Integration | `WTK.MediaForge.Graphics.Vulkan.Tests/VideoPreviewIntegrationTests.cs` |

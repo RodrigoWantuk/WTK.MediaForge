@@ -40,6 +40,8 @@ public class RenderOutputSinkComplianceRegistryTests
         Assert.False(rtmp.IsProductSink);
         Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, mp4.SupportStatus);
         Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, rtmp.SupportStatus);
+        Assert.Contains("Prototype", mp4.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Prototype", rtmp.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -57,5 +59,22 @@ public class RenderOutputSinkComplianceRegistryTests
         Assert.False(srt.IsProductSink);
         Assert.False(ndi.IsProductSink);
         Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);
+        Assert.False(string.IsNullOrWhiteSpace(srt.UnavailableReason));
+        Assert.False(string.IsNullOrWhiteSpace(ndi.UnavailableReason));
+    }
+
+    [Fact]
+    public void Non_product_or_unavailable_sinks_have_user_visible_reasons()
+    {
+        foreach (var entry in RenderOutputSinkComplianceRegistry.All)
+        {
+            if (entry.IsProductSink &&
+                entry.SupportStatus is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Experimental)
+            {
+                continue;
+            }
+
+            Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));
+        }
     }
 }

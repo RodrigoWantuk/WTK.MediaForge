@@ -46,6 +46,12 @@ public sealed class DocsProductTruthTests
         Assert.DoesNotContain("Windows Hardware Decode MVP", roadmap, StringComparison.Ordinal);
         Assert.DoesNotContain("MP4 Recording MVP | Gpu | **PrototypeOnly", roadmap, StringComparison.Ordinal);
         Assert.DoesNotContain("RTMP Output MVP | Gpu | **PrototypeOnly", roadmap, StringComparison.Ordinal);
+
+        foreach (var relativePath in EngineTruthDocs)
+        {
+            var text = File.ReadAllText(Path.Combine(repoRoot, relativePath));
+            Assert.DoesNotContain("MVP", text, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Fact]
@@ -76,6 +82,7 @@ public sealed class DocsProductTruthTests
     {
         var repoRoot = FindRepositoryRoot();
         var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v4.ps1"));
+        var testScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "test.ps1"));
 
         Assert.Contains("verify-media-transport-rules.ps1", script, StringComparison.Ordinal);
         Assert.Contains("verify-license-policy.ps1", script, StringComparison.Ordinal);
@@ -87,6 +94,22 @@ public sealed class DocsProductTruthTests
         Assert.Contains("-Tier Gpu", script, StringComparison.Ordinal);
         Assert.Contains("-Tier Performance", script, StringComparison.Ordinal);
         Assert.Contains("RunConfiguration.MaxCpuCount=1", script, StringComparison.Ordinal);
+        Assert.Contains("Invoke-TestProject -Project $diagnosticsTests -Filter $performanceFilter -RequireTests", testScript, StringComparison.Ordinal);
+        Assert.Contains("Invoke-TestProject -Project $compositionTests -Filter $performanceFilter -RequireTests", testScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Preview_panel_acceptance_keeps_sink_experimental_until_local_reliability_gate()
+    {
+        var repoRoot = FindRepositoryRoot();
+        var roadmap = File.ReadAllText(Path.Combine(repoRoot, "docs", "ROADMAP_CURRENT.md"));
+        var acceptance = File.ReadAllText(Path.Combine(repoRoot, "docs", "PREVIEW_PANEL_ACCEPTANCE.md"));
+
+        Assert.Contains("docs/PREVIEW_PANEL_ACCEPTANCE.md", roadmap, StringComparison.Ordinal);
+        Assert.Contains("PreviewPanelSink", acceptance, StringComparison.Ordinal);
+        Assert.Contains("experimental GPU preview sink", acceptance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("no CPU readback", acceptance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Remaining Product Gate", acceptance, StringComparison.Ordinal);
     }
 
     [Fact]

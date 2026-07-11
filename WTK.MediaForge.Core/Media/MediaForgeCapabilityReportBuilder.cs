@@ -12,6 +12,7 @@ public static class MediaForgeCapabilityReportBuilder
 
         EnsureUniqueCapabilityIds(entries);
         EnsureReadinessDoesNotOverstateProductAvailability(entries);
+        EnsureUnavailableEntriesHaveReasons(entries);
 
         return new MediaForgeCapabilityReport
         {
@@ -43,6 +44,21 @@ public static class MediaForgeCapabilityReportBuilder
             {
                 throw new InvalidOperationException(
                     $"Capability '{entry.Id}' is marked {entry.SupportStatus} but readiness is {entry.ProductReadinessStatus}.");
+            }
+        }
+    }
+
+    private static void EnsureUnavailableEntriesHaveReasons(IReadOnlyList<CapabilityEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (IsUserAvailable(entry.SupportStatus))
+                continue;
+
+            if (string.IsNullOrWhiteSpace(entry.UnavailableReason))
+            {
+                throw new InvalidOperationException(
+                    $"Capability '{entry.Id}' is marked {entry.SupportStatus} but does not provide an unavailable reason.");
             }
         }
     }

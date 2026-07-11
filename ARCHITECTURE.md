@@ -234,7 +234,7 @@ and explicitly registered exceptions only.
 
 ### FFmpeg and external media libraries
 
-FFmpeg is not part of the first MP4/RTMP hardware MVP.
+FFmpeg is not part of the first MP4/RTMP hardware product path.
 
 Future FFmpeg library usage is allowed only after the dedicated **FFmpeg Libraries Integration Review** phase and only for encoded-packet/container-level operations.
 
@@ -294,7 +294,7 @@ Static image load is **not** an exception; it uses `MediaTransportKind.StaticCpu
 
 ### FFmpeg policy
 
-FFmpeg is **not used** in the first hardware MP4/RTMP MVP. Future FFmpeg
+FFmpeg is **not used** in the first hardware MP4/RTMP product path. Future FFmpeg
 integration requires LGPL-only build, no GPL components, no libx264/libx265,
 no rawvideo pipe, and license review.
 

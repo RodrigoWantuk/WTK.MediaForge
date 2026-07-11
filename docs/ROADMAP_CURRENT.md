@@ -75,6 +75,7 @@ Acceptance records:
 - `docs/CP3_SOLID_ACCEPTANCE.md`
 - `docs/CP3_NESTED_ACCEPTANCE.md`
 - `docs/CP3_CHROMA_ACCEPTANCE.md`
+- `docs/PREVIEW_PANEL_ACCEPTANCE.md`
 
 ## Active vNext Commit Order (GPU Media Law)
 

@@ -53,7 +53,7 @@ Prototype bridges are excluded from product capability reports.
 | Intel QSV direct | Planned | RequiresLegalReview |
 | AMD AMF direct | Planned | RequiresLegalReview |
 | libx264 / software H.264 | Prohibited | |
-| FFmpeg (future) | NotUsedInMvp | Future LGPL-only with review; enum name is legacy wording |
+| FFmpeg (future) | Planned / Not used in first product path | Future LGPL-only with review; never a raw video frame product path |
 
 ## Export Proof Gate
 

@@ -182,6 +182,7 @@ Capability and license status are queryable without starting the engine:
 - `MediaForgeWindows.GetCapabilityReportAsync(CancellationToken)` - must not block the UI thread; probing runs via `IHardwareMediaCapabilityProbe.ProbeAsync`.
 - `MediaForgeCapabilityReport`, `CapabilityEntry`, `MediaForgeSupportStatus`, `MediaForgeLicenseStatus`, `MediaForgeProductReadinessStatus`
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.
+- Capability entries that are not user-available (`PrototypeOnly`, `Planned`, `Unsupported`, `Blocked`, `Prohibited`, or equivalent non-product states) must include a non-empty `UnavailableReason` suitable for UI and diagnostics.
 - `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.
 - `IHardwareFileVideoDecoder` and `FileDecodeFrameContext` represent file decoders that own demux/decode internally; file-video runtimes must not pass empty packets into packet decoders.
 - `IStaticImageAssetDecoder`, `StaticCpuAsset`, and `StaticImageAssetFormats` define load-time static image decode contracts. Platform assemblies provide decoder implementations; Composition does not own `System.Drawing` or any platform image decoder. On Windows, `MediaForgeWindows.CreateEngine()` wires PNG/JPEG image sources through load-time decode, D3D11 shared texture upload, and GPU frame leases; provider wiring remains internal.
@@ -189,6 +190,10 @@ Capability and license status are queryable without starting the engine:
 Studio and host apps must use capability status to disable or label features that are PrototypeOnly, Planned, Unsupported, or Blocked.
 
 Productive preview shells, NDI, MP4/encoded file, streaming, virtual camera, and audio outputs remain blocked until the owning roadmap track opens and capability report reflects Supported status.
+
+Sink compliance metadata follows the same rule: sinks that are debug-only,
+prototype-only, planned, unsupported, blocked, or otherwise not product-ready
+must expose a user-visible reason instead of relying on silent disablement.
 
 ## 5. Public Package And Preset Serialization
 
