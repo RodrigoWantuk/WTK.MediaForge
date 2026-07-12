@@ -10,7 +10,7 @@ dotnet test
 ./scripts/test.ps1 -Tier Fast
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-phase2-readiness.ps1
-./scripts/verify-engine-readiness-v5.ps1
+./scripts/verify-engine-readiness-v6.ps1
 ```
 
 ## Commit gates
@@ -32,11 +32,11 @@ dotnet test
 | 13 | Transform Effects | `WTK.MediaForge.Graphics.Vulkan.Tests/Effects/TransformEffectTests.cs` |
 | 14 | Text Rendering | `WTK.MediaForge.Graphics.Vulkan.Tests/Text/TextRenderingTests.cs` |
 | 15 | Hardware Encode Foundation | `WTK.MediaForge.Windows.Tests/Media/HardwareEncodeFoundationTests.cs` |
-| 16 | MP4 Recording Prototype | `WTK.MediaForge.Composition.Tests/Media/EncodedOutputPipelineTests.cs` |
+| 16 | MP4 Recording Packet Boundary | `WTK.MediaForge.Composition.Tests/Media/EncodedOutputPipelineTests.cs` |
 | 17 | RTMP Output Prototype | `EncodedOutputPipelineTests.Rtmp_sink_receives_flv_tags_from_shared_encoder` |
 | 18 | Synthetic Performance Validation | `WTK.MediaForge.Diagnostics.Tests/Performance/PerformanceValidationSuiteTests.cs` and `WTK.MediaForge.Composition.Tests/Performance/CompositionPerformanceGateTests.cs` |
 | 19 | Fault Recovery | `WTK.MediaForge.Composition.Tests/Recovery/FaultRecoveryCoordinatorTests.cs` |
-| 20 | Engine Readiness Gate | `./scripts/verify-phase2-readiness.ps1` and `./scripts/verify-engine-readiness-v5.ps1` |
+| 20 | Engine Readiness Gate | `./scripts/verify-phase2-readiness.ps1` and `./scripts/verify-engine-readiness-v6.ps1` |
 
 ## Blocking rules verified
 
@@ -75,8 +75,12 @@ Current interpretation:
 - GPU resource lifetime, scheduler, asset manager, source runtime, scene runtime,
   texture streaming, and fault recovery are `Done:Contract`.
 - GPU surface export proof is `Done:BackendCallSucceeded`.
-- Windows hardware decode, Windows hardware encode, MP4 recording, and RTMP
-  output are `Done:Prototype`.
+- Windows hardware decode, Windows hardware encode, MP4 recording end-to-end,
+  and RTMP output are `Done:Prototype`.
+- The MP4 packet writer boundary is `Done:Contract`: the public recording sink
+  now requires `BackendOutputValidated` H.264 packets and rejects prototype or
+  contract-only packets, but product recording remains unavailable until real
+  hardware encoder output is validated.
 - RenderGraph executor has a resource bridge but is not a GPU pass executor yet.
 - `ColorCorrectionEffect` is product-validated in the Vulkan source-layer
   shader, and `BlurEffect` is product-validated for the current Vulkan

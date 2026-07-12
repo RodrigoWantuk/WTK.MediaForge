@@ -1,3 +1,5 @@
+using WTK.MediaForge.Core.Media.Audit;
+
 namespace WTK.MediaForge.Core.Media;
 
 public enum EncodedVideoCodec
@@ -30,6 +32,9 @@ public sealed class EncodedVideoPacket
     public TimeSpan Duration { get; init; }
 
     public bool IsKeyFrame { get; init; }
+
+    public MediaTransportAuditEvidenceKind EvidenceKind { get; init; } =
+        MediaTransportAuditEvidenceKind.ContractOnly;
 
     public ReadOnlyMemory<byte> CodecConfiguration { get; init; } =
         ReadOnlyMemory<byte>.Empty;

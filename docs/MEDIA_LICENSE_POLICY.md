@@ -9,6 +9,9 @@ Continuous video decode and encode must use platform hardware acceleration.
 If a GPU/driver/OS backend cannot provide a validated GPU surface path, the
 feature must report unavailable instead of falling back to software decode,
 software encode, CPU staging, or raw video pipes.
+Even when a codec/backend is legally acceptable, it is not product-supported
+until the matching v6 `HardwareMediaProof` entries pass with
+`BackendOutputValidated` evidence.
 
 ## Prohibited by Default
 

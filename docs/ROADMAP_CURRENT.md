@@ -164,7 +164,7 @@ render thread, provider, submission, or GPU export/encode paths, also run:
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-media-transport-rules.ps1
 ./scripts/verify-license-policy.ps1
-./scripts/verify-engine-readiness-v5.ps1
+./scripts/verify-engine-readiness-v6.ps1
 ```
 
 ## Active Phase 2 Commit Order (GPU Pipeline Completo)
@@ -189,7 +189,7 @@ Execute in this exact order after vNext (commits 00-24) is complete. Plan:
 | 13 | Transform Effects | Gpu | **Done:ProductValidated for Vulkan geometry/shader path; graph nodes remain skeleton** |
 | 14 | Text Rendering | Gpu | **Done:ProductValidated for Windows Vulkan glyph atlas text layers** |
 | 15 | Hardware Encode Foundation | Gpu; requires 04 | **PrototypeOnly - canned packets are not product proof** |
-| 16 | MP4 Recording Prototype | Gpu | **PrototypeOnly - muxer not production-ready** |
+| 16 | MP4 Recording Packet Mux Boundary | Gpu | **Contract/Product boundary - public sink requires BackendOutputValidated packets; end-to-end recording remains blocked by hardware encoder proof** |
 | 17 | RTMP Output Prototype | Gpu | **PrototypeOnly - in-memory transport only** |
 | 18 | Synthetic Performance Validation | Report | **NeedsRealBackend - synthetic workload only** |
 | 19 | Fault Recovery | Gpu stress | **Done:Contract - integration with real failure points pending** |
@@ -221,6 +221,26 @@ Required correction order:
 5. Real decode -> render -> encode proof before MP4/RTMP can become
 Experimental or Supported.
 
+## Active vNext v6 Hardware Media Proof Gate
+
+The executable guard for hardware media truth is
+`./scripts/verify-engine-readiness-v6.ps1`.
+
+The v6 proof set is explicit and capability-driven:
+
+| Proof | Capability id | Required evidence |
+|---|---|---|
+| Render-to-encode proof | `proof.render_to_encode.gpu` | Rendered GPU output reaches encoder input without CPU readback/staging. |
+| Hardware encode proof | `proof.hardware_encode.h264` | Platform H.264 hardware encoder produces `EncodedVideoPacket` with `BackendOutputValidated` evidence. |
+| MP4 recording proof | `proof.recording.mp4.h264` | Public MP4 sink writes a real packet-only MP4 from hardware-validated H.264 packets. |
+| Hardware decode proof | `proof.hardware_decode.h264` | Platform H.264 hardware decoder produces GPU-backed decoded frames with `BackendOutputValidated` evidence. |
+| Decode-to-render proof | `proof.decode_to_render.gpu` | Decoded GPU frame is imported/rendered by the compositor without CPU staging/readback. |
+
+Default CI may report proofs as `Unavailable` with reasons when the hardware
+path is not implemented or not present. Release/readiness machines use
+`./scripts/verify-engine-readiness-v6.ps1 -RequireHardwareMedia`; that mode
+fails unless every v6 hardware media proof is `Passed`.
+
 ## Active vNext v3 Truth Gate
 
 Product readiness is tracked separately from user-facing support status:
@@ -248,7 +268,7 @@ Current truth table:
 | Windows encode | Done:Prototype; product backend explicitly unavailable |
 | Encoder format conversion | Done:BackendCallSucceeded for D3D11 VideoProcessor path when supported; product encode remains blocked on real MF packet validation |
 | Packet sink boundary | Done:Contract with explicit bitstream metadata |
-| MP4 writer | Done:Prototype; rejects unknown bitstream/config |
+| MP4 writer | Done:Contract/Product boundary; public path requires BackendOutputValidated H.264 packets and rejects prototype/contract-only packets |
 | RTMP transport | Done:Prototype; rejects unknown bitstream |
 | RenderGraph | Done:Contract/resource bridge; not a GPU pass executor |
 | Color correction effect | Done:ProductValidated for Vulkan source-layer shader |
@@ -260,7 +280,7 @@ Current truth table:
 
 `CapabilityEntry.ProductReadinessStatus` enforces this split: entries marked
 `Prototype` or `Skeleton` cannot be emitted as `Supported` or `Experimental`.
-The executable guard for this truth table is `./scripts/verify-engine-readiness-v5.ps1`.
+The executable guard for this truth table is `./scripts/verify-engine-readiness-v6.ps1`.
 
 ## Future Phase - FFmpeg Libraries Integration Review
 

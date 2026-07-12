@@ -64,6 +64,65 @@ public sealed class CapabilityReportTests
     }
 
     [Fact]
+    public void Capability_report_includes_v6_media_proof_entries()
+    {
+        var report = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
+        {
+            Platform = "Test",
+            Proofs =
+            [
+                new HardwareMediaProof
+                {
+                    Id = MediaForgeCapabilityCatalog.RenderToEncodeProof,
+                    DisplayName = "Render to encode",
+                    Status = HardwareMediaProofStatus.Passed,
+                    Backend = "TestBackend",
+                    Evidence = ["BackendOutputValidated"]
+                },
+                new HardwareMediaProof
+                {
+                    Id = MediaForgeCapabilityCatalog.HardwareDecodeProof,
+                    DisplayName = "Decode",
+                    Status = HardwareMediaProofStatus.Unavailable,
+                    Reason = "No hardware decoder in test."
+                }
+            ]
+        });
+
+        var renderToEncode = Assert.IsType<CapabilityEntry>(
+            report.TryGetEntry(MediaForgeCapabilityCatalog.RenderToEncodeProof));
+        Assert.Equal(MediaForgeSupportStatus.Supported, renderToEncode.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.BackendCallSucceeded, renderToEncode.ProductReadinessStatus);
+
+        var decode = Assert.IsType<CapabilityEntry>(
+            report.TryGetEntry(MediaForgeCapabilityCatalog.HardwareDecodeProof));
+        Assert.Equal(MediaForgeSupportStatus.Unsupported, decode.SupportStatus);
+        Assert.Contains("No hardware decoder", decode.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Capability_report_rejects_non_passed_proof_without_reason()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
+            {
+                Platform = "Test",
+                Proofs =
+                [
+                    new HardwareMediaProof
+                    {
+                        Id = MediaForgeCapabilityCatalog.HardwareEncodeProof,
+                        DisplayName = "Encode",
+                        Status = HardwareMediaProofStatus.Unavailable
+                    }
+                ]
+            }));
+
+        Assert.Contains(MediaForgeCapabilityCatalog.HardwareEncodeProof, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reason", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Capability_report_rejects_unavailable_entries_without_reason()
     {
         var entry = new CapabilityEntry

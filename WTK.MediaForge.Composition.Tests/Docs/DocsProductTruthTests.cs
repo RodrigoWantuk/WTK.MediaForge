@@ -69,8 +69,8 @@ public sealed class DocsProductTruthTests
         Assert.Contains("Output route transitions | Done:ProductValidated for Vulkan cut/fade output pass", roadmap, StringComparison.Ordinal);
         Assert.Contains("Performance validation | Done:Skeleton", roadmap, StringComparison.Ordinal);
 
-        Assert.Contains("Windows hardware decode, Windows hardware encode, MP4 recording, and RTMP", phase2Acceptance, StringComparison.Ordinal);
-        Assert.Contains("output are `Done:Prototype`", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("Windows hardware decode, Windows hardware encode, MP4 recording end-to-end", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("The MP4 packet writer boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
 
         Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly |", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("| Recording MP4 H.264 | EncodedPacket | PrototypeOnly |", supportMatrix, StringComparison.Ordinal);
@@ -93,12 +93,14 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Engine_readiness_v5_script_runs_required_gates()
+    public void Engine_readiness_v6_script_runs_required_gates()
     {
         var repoRoot = FindRepositoryRoot();
-        var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v5.ps1"));
+        var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v6.ps1"));
         var testScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "test.ps1"));
 
+        Assert.Contains("RequireHardwareMedia", script, StringComparison.Ordinal);
+        Assert.Contains("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA", script, StringComparison.Ordinal);
         Assert.Contains("verify-media-transport-rules.ps1", script, StringComparison.Ordinal);
         Assert.Contains("verify-license-policy.ps1", script, StringComparison.Ordinal);
         Assert.Contains("ProductMediaPathsDoNotUsePrototypeEvidenceTests", script, StringComparison.Ordinal);
@@ -114,6 +116,24 @@ public sealed class DocsProductTruthTests
         Assert.Contains("RunConfiguration.MaxCpuCount=1", script, StringComparison.Ordinal);
         Assert.Contains("Invoke-TestProject -Project $diagnosticsTests -Filter $performanceFilter -RequireTests", testScript, StringComparison.Ordinal);
         Assert.Contains("Invoke-TestProject -Project $compositionTests -Filter $performanceFilter -RequireTests", testScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Engine_truth_docs_define_v6_hardware_media_proof_gate()
+    {
+        var repoRoot = FindRepositoryRoot();
+        var aiContext = File.ReadAllText(Path.Combine(repoRoot, "docs", "AI_CONTEXT.md"));
+        var roadmap = File.ReadAllText(Path.Combine(repoRoot, "docs", "ROADMAP_CURRENT.md"));
+        var supportMatrix = File.ReadAllText(Path.Combine(repoRoot, "docs", "GPU_MEDIA_SUPPORT_MATRIX.md"));
+        var publicApi = File.ReadAllText(Path.Combine(repoRoot, "docs", "PUBLIC_API.md"));
+
+        Assert.Contains("verify-engine-readiness-v6.ps1", aiContext, StringComparison.Ordinal);
+        Assert.Contains("HardwareMediaProof", publicApi, StringComparison.Ordinal);
+        Assert.Contains("BackendOutputValidated", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("Render-to-encode proof", roadmap, StringComparison.Ordinal);
+        Assert.Contains("Decode-to-render proof", roadmap, StringComparison.Ordinal);
+        Assert.Contains("MP4 recording proof", roadmap, StringComparison.Ordinal);
+        Assert.Contains("RequireHardwareMedia", roadmap, StringComparison.Ordinal);
     }
 
     [Fact]

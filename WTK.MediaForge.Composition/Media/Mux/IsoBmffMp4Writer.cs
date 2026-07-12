@@ -7,6 +7,11 @@ namespace WTK.MediaForge.Composition.Media.Mux;
 
 internal static class IsoBmffMp4Writer
 {
+    public readonly record struct SampleMetadata(
+        uint DurationMilliseconds,
+        uint Size,
+        bool IsKeyFrame);
+
     public static void WriteMp4(string outputPath, IReadOnlyList<EncodedVideoPacket> packets)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
@@ -20,14 +25,55 @@ internal static class IsoBmffMp4Writer
             out var sampleDurations,
             out var syncSampleIndices,
             out var sampleSizes);
-        var placeholderMoov = BuildMoov(packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset: 0);
+        var avcC = BuildAvcC(packets);
+        var placeholderMoov = BuildMoov(sampleDurations, syncSampleIndices, sampleSizes, avcC, mdatDataOffset: 0);
         var mdatDataOffset = checked((uint)(ftyp.Length + placeholderMoov.Length + 8));
-        var moov = BuildMoov(packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
+        var moov = BuildMoov(sampleDurations, syncSampleIndices, sampleSizes, avcC, mdatDataOffset);
 
         using var stream = File.Create(outputPath);
         stream.Write(ftyp);
         stream.Write(moov);
         stream.Write(mdatBytes);
+    }
+
+    public static void WriteMp4FromAvccSamples(
+        string outputPath,
+        string avccSamplePayloadPath,
+        IReadOnlyList<SampleMetadata> samples,
+        ReadOnlyMemory<byte> avcC)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(avccSamplePayloadPath);
+        ArgumentNullException.ThrowIfNull(samples);
+
+        if (samples.Count == 0)
+            throw new InvalidOperationException("Cannot write MP4 without encoded samples.");
+
+        if (avcC.IsEmpty)
+            throw new InvalidOperationException("Cannot write MP4 without H.264 avcC codec configuration.");
+
+        if (!File.Exists(avccSamplePayloadPath))
+            throw new FileNotFoundException("MP4 sample payload file was not found.", avccSamplePayloadPath);
+
+        var sampleDurations = samples.Select(static sample => sample.DurationMilliseconds).ToArray();
+        var sampleSizes = samples.Select(static sample => sample.Size).ToArray();
+        var syncSampleIndices = samples
+            .Select((sample, index) => (sample, index))
+            .Where(static item => item.sample.IsKeyFrame)
+            .Select(static item => (uint)(item.index + 1))
+            .ToArray();
+        if (syncSampleIndices.Length == 0)
+            syncSampleIndices = [1];
+
+        var ftyp = BuildFtyp();
+        var placeholderMoov = BuildMoov(sampleDurations, syncSampleIndices, sampleSizes, avcC.ToArray(), mdatDataOffset: 0);
+        var mdatDataOffset = checked((uint)(ftyp.Length + placeholderMoov.Length + 8));
+        var moov = BuildMoov(sampleDurations, syncSampleIndices, sampleSizes, avcC.ToArray(), mdatDataOffset);
+
+        using var output = File.Create(outputPath);
+        output.Write(ftyp);
+        output.Write(moov);
+        WriteMdatFromFile(output, avccSamplePayloadPath);
     }
 
     public static bool HasExperimentalBoxStructure(string path)
@@ -54,15 +100,15 @@ internal static class IsoBmffMp4Writer
     }
 
     private static byte[] BuildMoov(
-        IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
         IReadOnlyList<uint> sampleSizes,
+        byte[] avcC,
         uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         WriteMvhd(content, sampleDurations);
-        WriteTrak(content, packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
+        WriteTrak(content, sampleDurations, syncSampleIndices, sampleSizes, avcC, mdatDataOffset);
         return WrapBox("moov", content.ToArray());
     }
 
@@ -90,15 +136,15 @@ internal static class IsoBmffMp4Writer
 
     private static void WriteTrak(
         MemoryStream writer,
-        IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
         IReadOnlyList<uint> sampleSizes,
+        byte[] avcC,
         uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         WriteTkhd(content, sampleDurations);
-        WriteMdia(content, packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
+        WriteMdia(content, sampleDurations, syncSampleIndices, sampleSizes, avcC, mdatDataOffset);
         writer.Write(WrapBox("trak", content.ToArray()));
     }
 
@@ -114,16 +160,16 @@ internal static class IsoBmffMp4Writer
 
     private static void WriteMdia(
         MemoryStream writer,
-        IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
         IReadOnlyList<uint> sampleSizes,
+        byte[] avcC,
         uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         WriteMdhd(content, sampleDurations);
         WriteHdlr(content);
-        WriteMinf(content, packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
+        WriteMinf(content, sampleDurations, syncSampleIndices, sampleSizes, avcC, mdatDataOffset);
         writer.Write(WrapBox("mdia", content.ToArray()));
     }
 
@@ -150,16 +196,16 @@ internal static class IsoBmffMp4Writer
 
     private static void WriteMinf(
         MemoryStream writer,
-        IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
         IReadOnlyList<uint> sampleSizes,
+        byte[] avcC,
         uint mdatDataOffset)
     {
         using var content = new MemoryStream();
         content.Write(WrapBox("vmhd", [0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
         WriteDinf(content);
-        WriteStbl(content, packets, sampleDurations, syncSampleIndices, sampleSizes, mdatDataOffset);
+        WriteStbl(content, sampleDurations, syncSampleIndices, sampleSizes, avcC, mdatDataOffset);
         writer.Write(WrapBox("minf", content.ToArray()));
     }
 
@@ -177,14 +223,14 @@ internal static class IsoBmffMp4Writer
 
     private static void WriteStbl(
         MemoryStream writer,
-        IReadOnlyList<EncodedVideoPacket> packets,
         IReadOnlyList<uint> sampleDurations,
         IReadOnlyList<uint> syncSampleIndices,
         IReadOnlyList<uint> sampleSizes,
+        byte[] avcC,
         uint mdatDataOffset)
     {
         using var content = new MemoryStream();
-        WriteStsd(content, packets);
+        WriteStsd(content, avcC);
         WriteStts(content, sampleDurations);
         WriteStss(content, syncSampleIndices);
         WriteStsc(content);
@@ -193,7 +239,7 @@ internal static class IsoBmffMp4Writer
         writer.Write(WrapBox("stbl", content.ToArray()));
     }
 
-    private static void WriteStsd(MemoryStream writer, IReadOnlyList<EncodedVideoPacket> packets)
+    private static void WriteStsd(MemoryStream writer, byte[] avcCBytes)
     {
         using var content = new MemoryStream();
         content.Write(new byte[4]);
@@ -201,7 +247,7 @@ internal static class IsoBmffMp4Writer
 
         using var avc1 = new MemoryStream();
         avc1.Write(new byte[78]);
-        avc1.Write(WrapBox("avcC", BuildAvcC(packets)));
+        avc1.Write(WrapBox("avcC", avcCBytes));
         content.Write(WrapBox("avc1", avc1.ToArray()));
         writer.Write(WrapBox("stsd", content.ToArray()));
     }
@@ -320,7 +366,7 @@ internal static class IsoBmffMp4Writer
         return WrapBox("mdat", payload.ToArray());
     }
 
-    private static byte[] ConvertAnnexBToAvcc(ReadOnlySpan<byte> annexB)
+    internal static byte[] ConvertAnnexBToAvcc(ReadOnlySpan<byte> annexB)
     {
         using var content = new MemoryStream();
         foreach (var nal in H264NalUtilities.ExtractAnnexBNalUnits(annexB))
@@ -330,6 +376,16 @@ internal static class IsoBmffMp4Writer
         }
 
         return content.ToArray();
+    }
+
+    private static void WriteMdatFromFile(System.IO.Stream output, string avccSamplePayloadPath)
+    {
+        var length = checked((uint)new FileInfo(avccSamplePayloadPath).Length);
+        WriteUInt32(output, checked(length + 8));
+        output.Write(Encoding.ASCII.GetBytes("mdat"));
+
+        using var input = File.OpenRead(avccSamplePayloadPath);
+        input.CopyTo(output);
     }
 
     private static void ValidatePackets(IReadOnlyList<EncodedVideoPacket> packets)
@@ -432,7 +488,7 @@ internal static class IsoBmffMp4Writer
         return box;
     }
 
-    private static void WriteUInt32(MemoryStream stream, uint value)
+    private static void WriteUInt32(System.IO.Stream stream, uint value)
     {
         Span<byte> bytes = stackalloc byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(bytes, value);

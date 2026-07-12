@@ -37,6 +37,57 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
+    public async Task Windows_capability_probe_reports_v6_media_proofs_with_explicit_reasons()
+    {
+        var report = await new WindowsHardwareMediaCapabilityProbe()
+            .ProbeAsync(CancellationToken.None);
+
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.RenderToEncodeProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.HardwareEncodeProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.Mp4RecordingProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.HardwareDecodeProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.DecodeToRenderProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+    }
+
+    [Fact]
+    public async Task Required_hardware_media_release_gate_fails_until_all_v6_proofs_pass()
+    {
+        if (!string.Equals(
+            Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"),
+            "1",
+            StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var report = await new WindowsHardwareMediaCapabilityProbe()
+            .ProbeAsync(CancellationToken.None);
+        var missing = report.Proofs
+            .Where(static proof => proof.Status != HardwareMediaProofStatus.Passed)
+            .Select(static proof => $"{proof.Id}: {proof.Status} - {proof.Reason}")
+            .ToArray();
+
+        Assert.True(
+            missing.Length == 0,
+            "Hardware media release gate requires all v6 proofs to pass: " + string.Join("; ", missing));
+    }
+
+    [Fact]
     public void Media_foundation_encoder_probe_returns_empty_until_real_mft_output_validation_lands()
     {
         var probe = new MediaFoundationHardwareEncoderProbe();

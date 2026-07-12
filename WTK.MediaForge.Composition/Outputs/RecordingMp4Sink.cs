@@ -38,17 +38,13 @@ public sealed class RecordingMp4PacketSink : IEncodedPacketSink
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_allowPrototypeMuxer)
-        {
-            throw new NotSupportedException(
-                "RecordingMp4PacketSink is prototype-only until real hardware encoder output and production MP4 muxing are implemented.");
-        }
-
         if (context.Codec != EncodedVideoCodec.H264)
             throw new NotSupportedException($"MP4 recording currently accepts H.264 packets, not '{context.Codec}'.");
 
         _context = context;
-        _muxer = new PrototypeEncodedPacketMp4Muxer(_outputPath, _auditSink);
+        _muxer = _allowPrototypeMuxer
+            ? new PrototypeEncodedPacketMp4Muxer(_outputPath, _auditSink)
+            : new EncodedPacketMp4Muxer(_outputPath);
         _started = true;
         return ValueTask.CompletedTask;
     }

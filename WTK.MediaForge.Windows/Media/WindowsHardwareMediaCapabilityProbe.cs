@@ -24,7 +24,8 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             RequiresCpuStaging = false,
             ExportProofStatus = GpuExportProofStatus.Pending,
             ExportProofReason = "Real Media Foundation hardware encode/decode output validation has not completed; prototype bridges are excluded.",
-            BackendCapabilities = CreateBackendCapabilities(vendor)
+            BackendCapabilities = CreateBackendCapabilities(vendor),
+            Proofs = CreateProofs(vendor)
         };
 
         return ValueTask.FromResult(report);
@@ -86,6 +87,55 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             SupportStatus = MediaForgeSupportStatus.Planned,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = "VideoToolbox/CVPixelBuffer/IOSurface bridge must live in a macOS-specific project and is not implemented yet."
+        }
+    ];
+
+    private static IReadOnlyList<HardwareMediaProof> CreateProofs(string? vendor) =>
+    [
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.RenderToEncodeProof,
+            DisplayName = "Rendered output to hardware encoder input proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "Vulkan-D3D11-MediaFoundation",
+            Vendor = vendor,
+            Reason = "Render-to-encode proof must be executed by the readiness gate on a hardware validation machine."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.HardwareEncodeProof,
+            DisplayName = "Hardware H.264 encode proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "MediaFoundation-HardwareMft",
+            Vendor = vendor,
+            Reason = "Hardware encode proof has not been validated for this runtime capability report."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.Mp4RecordingProof,
+            DisplayName = "MP4 recording proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "MediaFoundation-HardwareMft+NativeMp4Mux",
+            Vendor = vendor,
+            Reason = "MP4 recording remains unavailable until hardware encode and production mux proof both pass."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.HardwareDecodeProof,
+            DisplayName = "Hardware H.264 decode proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "MediaFoundation-D3D11VA",
+            Vendor = vendor,
+            Reason = "Hardware decode proof has not been validated for this runtime capability report."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.DecodeToRenderProof,
+            DisplayName = "Hardware decode to renderer proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "MediaFoundation-D3D11VA+Vulkan",
+            Vendor = vendor,
+            Reason = "Decode-to-render proof remains unavailable until D3D11VA produces a validated GPU surface submitted to the renderer."
         }
     ];
 

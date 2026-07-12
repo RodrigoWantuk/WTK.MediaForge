@@ -45,6 +45,13 @@ The current technical direction is:
 
 FFmpeg is not part of the first hardware MP4/RTMP product path. Any future FFmpeg/libav usage must pass the dedicated license and GPU media transport review, and may only operate on encoded packets, containers, metadata, or bitstream data.
 
+Product media availability is proof-gated. Continuous decode/encode features
+must pass the v6 hardware media proofs (`HardwareMediaProof` entries for
+render-to-encode, hardware encode, MP4 recording, hardware decode, and
+decode-to-render) before they can be advertised as supported. The default gate is
+`./scripts/verify-engine-readiness-v6.ps1`; release hardware validation uses the
+same script with `-RequireHardwareMedia`.
+
 
 ## Studio UI Direction
 

@@ -14,12 +14,24 @@ namespace WTK.MediaForge.Composition.Tests.Media;
 public sealed class EncodedOutputPipelineTests
 {
     [Fact]
-    public async Task Recording_mp4_public_sink_is_not_enabled_without_prototype_opt_in()
+    public async Task Recording_mp4_public_sink_rejects_packets_without_backend_validation()
     {
-        await using var sink = new RecordingMp4Sink(Path.Combine(Path.GetTempPath(), $"mf_mp4_blocked_{Guid.NewGuid():N}.mp4"));
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_blocked_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            await using var sink = new RecordingMp4Sink(outputPath);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
 
-        await Assert.ThrowsAsync<NotSupportedException>(async () =>
-            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None));
+            var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+                await sink.WritePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None));
+
+            Assert.Contains("BackendOutputValidated", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
     }
 
     [Fact]
@@ -89,6 +101,38 @@ public sealed class EncodedOutputPipelineTests
 
         await rtmpSink.DisposeAsync();
         await router.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Recording_mp4_product_muxer_writes_backend_validated_packets_without_prototype_audit()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_product_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            var audit = new CollectingMediaTransportAuditSink();
+            await using var sink = new RecordingMp4Sink(outputPath, audit);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+
+            var packets = CreateSyntheticH264Packets(
+                frameCount: 60,
+                evidenceKind: MediaTransportAuditEvidenceKind.BackendOutputValidated);
+            foreach (var packet in packets)
+                await sink.WritePacketAsync(packet, CancellationToken.None);
+
+            await sink.StopAsync(CancellationToken.None);
+
+            Assert.True(File.Exists(outputPath));
+            Assert.True(IsoBmffMp4Writer.HasExperimentalBoxStructure(outputPath));
+            Assert.True(new FileInfo(outputPath).Length > 256);
+            Assert.DoesNotContain(
+                audit.Events,
+                static e => e.EvidenceKind == MediaTransportAuditEvidenceKind.Prototype);
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
     }
 
     [Fact]
@@ -249,7 +293,9 @@ public sealed class EncodedOutputPipelineTests
         }
     }
 
-    private static IReadOnlyList<EncodedVideoPacket> CreateSyntheticH264Packets(int frameCount)
+    private static IReadOnlyList<EncodedVideoPacket> CreateSyntheticH264Packets(
+        int frameCount,
+        MediaTransportAuditEvidenceKind evidenceKind = MediaTransportAuditEvidenceKind.ContractOnly)
     {
         var packets = new List<EncodedVideoPacket>(frameCount);
         for (var index = 0; index < frameCount; index++)
@@ -262,7 +308,8 @@ public sealed class EncodedOutputPipelineTests
                 PresentationTime = TimeSpan.FromMilliseconds(index * 33),
                 Duration = TimeSpan.FromMilliseconds(33),
                 IsKeyFrame = isKeyFrame,
-                Data = isKeyFrame ? CreateKeyFrameAnnexB() : CreatePFrameAnnexB()
+                Data = isKeyFrame ? CreateKeyFrameAnnexB() : CreatePFrameAnnexB(),
+                EvidenceKind = evidenceKind
             });
         }
 

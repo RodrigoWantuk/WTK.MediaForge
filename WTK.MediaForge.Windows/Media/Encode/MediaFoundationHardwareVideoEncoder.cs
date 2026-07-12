@@ -129,7 +129,8 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
                     : EncodedVideoBitstreamFormat.Avcc,
                 PresentationTime = context.PresentationTime,
                 Duration = TimeSpan.FromMilliseconds(33),
-                IsKeyFrame = result.Value.IsKeyFrame
+                IsKeyFrame = result.Value.IsKeyFrame,
+                EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated
             });
         }
 
@@ -162,7 +163,8 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             BitstreamFormat = EncodedVideoBitstreamFormat.AnnexB,
             PresentationTime = context.PresentationTime,
             Duration = TimeSpan.FromMilliseconds(33),
-            IsKeyFrame = encoded.Value.IsKeyFrame
+            IsKeyFrame = encoded.Value.IsKeyFrame,
+            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype
         });
     }
 

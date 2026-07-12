@@ -6,7 +6,7 @@ public static class MediaForgeCapabilityReportBuilder
         HardwareMediaCapabilityReport hardware,
         IEnumerable<CapabilityEntry>? additionalEntries = null)
     {
-        var entries = new List<CapabilityEntry>(MediaForgeCapabilityCatalog.CreateDefaultEntries(hardware.ExportProofStatus));
+        var entries = new List<CapabilityEntry>(MediaForgeCapabilityCatalog.CreateDefaultEntries(hardware));
         if (additionalEntries is not null)
             entries.AddRange(additionalEntries);
 
@@ -14,6 +14,7 @@ public static class MediaForgeCapabilityReportBuilder
         EnsureReadinessDoesNotOverstateProductAvailability(entries);
         EnsureUnavailableEntriesHaveReasons(entries);
         EnsureHardwareBackendsDoNotOverstateAvailability(hardware.BackendCapabilities);
+        EnsureProofsHaveReasons(hardware.Proofs);
 
         return new MediaForgeCapabilityReport
         {
@@ -89,6 +90,21 @@ public static class MediaForgeCapabilityReportBuilder
             {
                 throw new InvalidOperationException(
                     $"Hardware media backend '{backend.Id}' is marked {backend.SupportStatus} but does not provide an unavailable reason.");
+            }
+        }
+    }
+
+    private static void EnsureProofsHaveReasons(IReadOnlyList<HardwareMediaProof> proofs)
+    {
+        foreach (var proof in proofs)
+        {
+            if (proof.Status == HardwareMediaProofStatus.Passed)
+                continue;
+
+            if (string.IsNullOrWhiteSpace(proof.Reason))
+            {
+                throw new InvalidOperationException(
+                    $"Hardware media proof '{proof.Id}' is marked {proof.Status} but does not provide a reason.");
             }
         }
     }

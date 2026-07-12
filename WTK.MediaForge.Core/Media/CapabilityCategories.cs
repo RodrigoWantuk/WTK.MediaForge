@@ -10,5 +10,6 @@ public static class CapabilityCategories
     public const string License = "LicenseCapabilities";
     public const string RawCpuException = "RawCpuExceptionCapabilities";
     public const string ExportProof = "ExportProofCapabilities";
+    public const string Proof = "ProofCapabilities";
     public const string Performance = "PerformanceCapabilities";
 }

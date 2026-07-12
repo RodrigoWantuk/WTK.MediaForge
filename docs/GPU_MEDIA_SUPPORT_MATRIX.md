@@ -81,17 +81,20 @@ marketing:
 
 ## Export Proof Gate
 
-Recording MP4 remains **PrototypeOnly** after Phase 2 Commits 15-16:
+Recording MP4 remains **PrototypeOnly** as an end-to-end product feature until
+the v6 hardware media proofs pass:
 
 ```text
-FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> MF H.264 -> PrototypeEncodedPacketMp4Muxer
+FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> hardware H.264 -> EncodedPacketMp4Muxer
 ```
 
-`PrototypeEncodedPacketMp4Muxer` buffers packets in memory and writes an
-experimental ISO BMFF structure only for internal validation. Capability API
-exposes `GpuExportProof` status: Passed / Failed / Pending, but recording
-remains unavailable until real hardware encoder output and production muxing are
-validated.
+`EncodedPacketMp4Muxer` is the packet-only product boundary for MP4 writing: it
+does not accept prototype or contract-only packets, and it requires
+`BackendOutputValidated` H.264 evidence. `PrototypeEncodedPacketMp4Muxer`
+remains internal-test-only. Capability API exposes `HardwareMediaProof` entries
+for render-to-encode, hardware encode, MP4 recording, hardware decode, and
+decode-to-render. Recording remains unavailable until the hardware encoder and
+MP4 recording proofs both pass on the target backend.
 
 ## Decode-To-Render Proof Gate
 

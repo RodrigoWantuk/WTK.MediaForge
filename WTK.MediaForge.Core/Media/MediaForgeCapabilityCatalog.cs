@@ -12,10 +12,28 @@ public static class MediaForgeCapabilityCatalog
     public const string AmfDirect = "encoder.amf.direct";
     public const string MfHardwareH264 = "encoder.mf.hardware.h264";
     public const string GpuExportProof = "interop.gpu.export.proof";
+    public const string RenderToEncodeProof = "proof.render_to_encode.gpu";
+    public const string HardwareEncodeProof = "proof.hardware_encode.h264";
+    public const string Mp4RecordingProof = "proof.recording.mp4.h264";
+    public const string HardwareDecodeProof = "proof.hardware_decode.h264";
+    public const string DecodeToRenderProof = "proof.decode_to_render.gpu";
     public const string VideoFileMp4 = "source.video.file.mp4";
     public const string EnginePerformanceBaseline = "engine.performance.baseline";
 
     public static IReadOnlyList<CapabilityEntry> CreateDefaultEntries(GpuExportProofStatus exportProofStatus) =>
+        CreateDefaultEntries(new HardwareMediaCapabilityReport
+        {
+            Platform = "Unknown",
+            ExportProofStatus = exportProofStatus
+        });
+
+    public static IReadOnlyList<CapabilityEntry> CreateDefaultEntries(HardwareMediaCapabilityReport hardware)
+    {
+        ArgumentNullException.ThrowIfNull(hardware);
+
+        var exportProofStatus = hardware.ExportProofStatus;
+        var proofs = CreateProofMap(hardware);
+        return
     [
         Entry(CapabilityCategories.Sink, RecordingMp4H264, "Recording MP4 H.264",
             MediaForgeSupportStatus.PrototypeOnly,
@@ -90,6 +108,36 @@ public static class MediaForgeCapabilityCatalog
             },
             MediaTransportKind.GpuSurface),
 
+        ProofEntry(
+            RenderToEncodeProof,
+            "Rendered output to hardware encoder input proof",
+            GetProof(proofs, RenderToEncodeProof),
+            MediaForgeProductReadinessStatus.BackendCallSucceeded),
+
+        ProofEntry(
+            HardwareEncodeProof,
+            "Hardware H.264 encode proof",
+            GetProof(proofs, HardwareEncodeProof),
+            MediaForgeProductReadinessStatus.BackendCallSucceeded),
+
+        ProofEntry(
+            Mp4RecordingProof,
+            "MP4 recording proof",
+            GetProof(proofs, Mp4RecordingProof),
+            MediaForgeProductReadinessStatus.ProductValidated),
+
+        ProofEntry(
+            HardwareDecodeProof,
+            "Hardware H.264 decode proof",
+            GetProof(proofs, HardwareDecodeProof),
+            MediaForgeProductReadinessStatus.BackendCallSucceeded),
+
+        ProofEntry(
+            DecodeToRenderProof,
+            "Hardware decode to renderer proof",
+            GetProof(proofs, DecodeToRenderProof),
+            MediaForgeProductReadinessStatus.BackendCallSucceeded),
+
         Entry(CapabilityCategories.Performance, EnginePerformanceBaseline, "Engine performance baseline",
             MediaForgeSupportStatus.PrototypeOnly,
             MediaForgeLicenseStatus.Approved,
@@ -97,6 +145,7 @@ public static class MediaForgeCapabilityCatalog
             "Synthetic performance validation exists, but real render/decode/encode workloads are not product-validated.",
             MediaTransportKind.GpuSurface)
     ];
+    }
 
     private static CapabilityEntry Entry(
         string category,
@@ -118,4 +167,94 @@ public static class MediaForgeCapabilityCatalog
             UnavailableReason = reason,
             TransportKind = transport
         };
+
+    private static CapabilityEntry ProofEntry(
+        string id,
+        string displayName,
+        HardwareMediaProof proof,
+        MediaForgeProductReadinessStatus passedReadiness) =>
+        Entry(
+            CapabilityCategories.Proof,
+            id,
+            displayName,
+            MapProofSupportStatus(proof.Status),
+            MediaForgeLicenseStatus.Approved,
+            proof.Status == HardwareMediaProofStatus.Passed
+                ? passedReadiness
+                : MediaForgeProductReadinessStatus.Contract,
+            BuildProofReason(proof),
+            MediaTransportKind.GpuSurface);
+
+    private static IReadOnlyDictionary<string, HardwareMediaProof> CreateProofMap(
+        HardwareMediaCapabilityReport hardware)
+    {
+        var map = new Dictionary<string, HardwareMediaProof>(StringComparer.OrdinalIgnoreCase);
+        foreach (var proof in hardware.Proofs)
+            map[proof.Id] = proof;
+
+        map.TryAdd(
+            RenderToEncodeProof,
+            PendingProof(RenderToEncodeProof, "Rendered output to hardware encoder input proof"));
+        map.TryAdd(
+            HardwareEncodeProof,
+            PendingProof(HardwareEncodeProof, "Hardware H.264 encode proof"));
+        map.TryAdd(
+            Mp4RecordingProof,
+            PendingProof(Mp4RecordingProof, "MP4 recording proof"));
+        map.TryAdd(
+            HardwareDecodeProof,
+            PendingProof(HardwareDecodeProof, "Hardware H.264 decode proof"));
+        map.TryAdd(
+            DecodeToRenderProof,
+            PendingProof(DecodeToRenderProof, "Hardware decode to renderer proof"));
+
+        return map;
+    }
+
+    private static HardwareMediaProof PendingProof(string id, string displayName) =>
+        new()
+        {
+            Id = id,
+            DisplayName = displayName,
+            Status = HardwareMediaProofStatus.Pending,
+            Reason = "Proof has not been executed."
+        };
+
+    private static HardwareMediaProof GetProof(
+        IReadOnlyDictionary<string, HardwareMediaProof> proofs,
+        string id) =>
+        proofs.TryGetValue(id, out var proof)
+            ? proof
+            : PendingProof(id, id);
+
+    private static MediaForgeSupportStatus MapProofSupportStatus(HardwareMediaProofStatus status) =>
+        status switch
+        {
+            HardwareMediaProofStatus.Passed => MediaForgeSupportStatus.Supported,
+            HardwareMediaProofStatus.Failed => MediaForgeSupportStatus.Blocked,
+            HardwareMediaProofStatus.Unavailable => MediaForgeSupportStatus.Unsupported,
+            HardwareMediaProofStatus.Skipped => MediaForgeSupportStatus.Planned,
+            _ => MediaForgeSupportStatus.Planned
+        };
+
+    private static string BuildProofReason(HardwareMediaProof proof) =>
+        proof.Status == HardwareMediaProofStatus.Passed
+            ? $"Proof passed{FormatBackend(proof)}."
+            : string.IsNullOrWhiteSpace(proof.Reason)
+                ? $"Proof is {proof.Status}."
+                : proof.Reason!;
+
+    private static string FormatBackend(HardwareMediaProof proof)
+    {
+        if (string.IsNullOrWhiteSpace(proof.Backend) && string.IsNullOrWhiteSpace(proof.Vendor))
+            return string.Empty;
+
+        if (string.IsNullOrWhiteSpace(proof.Vendor))
+            return $" on {proof.Backend}";
+
+        if (string.IsNullOrWhiteSpace(proof.Backend))
+            return $" on {proof.Vendor}";
+
+        return $" on {proof.Backend}/{proof.Vendor}";
+    }
 }

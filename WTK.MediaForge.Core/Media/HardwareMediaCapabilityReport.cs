@@ -19,6 +19,9 @@ public sealed class HardwareMediaCapabilityReport
     public IReadOnlyList<HardwareMediaBackendCapability> BackendCapabilities { get; init; } =
         Array.Empty<HardwareMediaBackendCapability>();
 
+    public IReadOnlyList<HardwareMediaProof> Proofs { get; init; } =
+        Array.Empty<HardwareMediaProof>();
+
     public bool AcceptsGpuSurfaceInput { get; init; }
 
     public bool RequiresCpuStaging { get; init; }
@@ -58,4 +61,30 @@ public enum GpuExportProofStatus
     Pending,
     Passed,
     Failed
+}
+
+public sealed class HardwareMediaProof
+{
+    public required string Id { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public required HardwareMediaProofStatus Status { get; init; }
+
+    public string? Backend { get; init; }
+
+    public string? Vendor { get; init; }
+
+    public string? Reason { get; init; }
+
+    public IReadOnlyList<string> Evidence { get; init; } = Array.Empty<string>();
+}
+
+public enum HardwareMediaProofStatus
+{
+    Pending,
+    Passed,
+    Failed,
+    Unavailable,
+    Skipped
 }
