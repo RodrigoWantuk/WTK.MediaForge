@@ -136,6 +136,60 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Backend = "MediaFoundation-D3D11VA+Vulkan",
             Vendor = vendor,
             Reason = "Decode-to-render proof remains unavailable until D3D11VA produces a validated GPU surface submitted to the renderer."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.Mp4OutputProductProof,
+            DisplayName = "MP4 output product proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "Vulkan-D3D11-MediaFoundation+NativeMp4Mux",
+            Vendor = vendor,
+            Reason = "MP4 output remains unavailable until render-to-encode, hardware encode, and packet-only MP4 mux proofs pass together."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.Mp4InputProductProof,
+            DisplayName = "MP4 input product proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "MediaFoundation-D3D11VA+Vulkan",
+            Vendor = vendor,
+            Reason = "MP4 input remains unavailable until real file demux, hardware decode, decoded GPU frame adaptation, and renderer submission are validated."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.WebcamInputProductProof,
+            DisplayName = "Webcam input product proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "MediaFoundation-Webcam-D3D11Upload",
+            Vendor = vendor,
+            Reason = "Webcam input remains unavailable until system frames are uploaded immediately to GPU with bounded KeepLatest backpressure and product validation."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.RtmpNetworkOutputProof,
+            DisplayName = "RTMP network output proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "NativeRtmpTransport",
+            Vendor = vendor,
+            Reason = "RTMP output remains unavailable until a real network RTMP transport publishes hardware-encoded packets without blocking the render thread."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.NdiInputProductProof,
+            DisplayName = "NDI input product proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "NDI-SDK",
+            Vendor = vendor,
+            Reason = "NDI input is unsupported until SDK licensing is approved and a GPU-safe input path is validated."
+        },
+        new HardwareMediaProof
+        {
+            Id = MediaForgeCapabilityCatalog.NdiOutputProductProof,
+            DisplayName = "NDI output product proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "NDI-SDK",
+            Vendor = vendor,
+            Reason = "NDI output is unsupported until SDK licensing is approved and output avoids continuous CPU readback."
         }
     ];
 

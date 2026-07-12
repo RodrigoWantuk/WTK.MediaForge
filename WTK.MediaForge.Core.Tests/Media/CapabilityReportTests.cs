@@ -64,7 +64,7 @@ public sealed class CapabilityReportTests
     }
 
     [Fact]
-    public void Capability_report_includes_v7_media_proof_entries()
+    public void Capability_report_includes_v8_media_proof_entries()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
         {
@@ -98,6 +98,13 @@ public sealed class CapabilityReportTests
             report.TryGetEntry(MediaForgeCapabilityCatalog.HardwareDecodeProof));
         Assert.Equal(MediaForgeSupportStatus.Unsupported, decode.SupportStatus);
         Assert.Contains("No hardware decoder", decode.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+
+        Assert.NotNull(report.TryGetEntry(MediaForgeCapabilityCatalog.Mp4OutputProductProof));
+        Assert.NotNull(report.TryGetEntry(MediaForgeCapabilityCatalog.Mp4InputProductProof));
+        Assert.NotNull(report.TryGetEntry(MediaForgeCapabilityCatalog.WebcamInputProductProof));
+        Assert.NotNull(report.TryGetEntry(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof));
+        Assert.NotNull(report.TryGetEntry(MediaForgeCapabilityCatalog.NdiInputProductProof));
+        Assert.NotNull(report.TryGetEntry(MediaForgeCapabilityCatalog.NdiOutputProductProof));
     }
 
     [Fact]
@@ -142,6 +149,36 @@ public sealed class CapabilityReportTests
             }));
 
         Assert.Contains(MediaForgeCapabilityCatalog.HardwareEncodeProof, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BackendOutputValidated", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(MediaForgeCapabilityCatalog.Mp4OutputProductProof)]
+    [InlineData(MediaForgeCapabilityCatalog.Mp4InputProductProof)]
+    [InlineData(MediaForgeCapabilityCatalog.WebcamInputProductProof)]
+    [InlineData(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof)]
+    [InlineData(MediaForgeCapabilityCatalog.NdiInputProductProof)]
+    [InlineData(MediaForgeCapabilityCatalog.NdiOutputProductProof)]
+    public void V8_media_io_product_proofs_require_backend_output_validated_evidence(string proofId)
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
+            {
+                Platform = "Test",
+                Proofs =
+                [
+                    new HardwareMediaProof
+                    {
+                        Id = proofId,
+                        DisplayName = proofId,
+                        Status = HardwareMediaProofStatus.Passed,
+                        Backend = "TestBackend",
+                        Evidence = ["BackendCallSucceeded"]
+                    }
+                ]
+            }));
+
+        Assert.Contains(proofId, exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("BackendOutputValidated", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 

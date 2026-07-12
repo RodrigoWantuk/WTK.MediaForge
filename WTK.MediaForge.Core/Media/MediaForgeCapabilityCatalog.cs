@@ -17,6 +17,12 @@ public static class MediaForgeCapabilityCatalog
     public const string Mp4RecordingProof = "proof.recording.mp4.h264";
     public const string HardwareDecodeProof = "proof.hardware_decode.h264";
     public const string DecodeToRenderProof = "proof.decode_to_render.gpu";
+    public const string Mp4OutputProductProof = "proof.media_io.mp4_output.product";
+    public const string Mp4InputProductProof = "proof.media_io.mp4_input.product";
+    public const string WebcamInputProductProof = "proof.media_io.webcam_input.product";
+    public const string RtmpNetworkOutputProof = "proof.media_io.rtmp_output.network";
+    public const string NdiInputProductProof = "proof.media_io.ndi_input.product";
+    public const string NdiOutputProductProof = "proof.media_io.ndi_output.product";
     public const string VideoFileMp4 = "source.video.file.mp4";
     public const string EnginePerformanceBaseline = "engine.performance.baseline";
 
@@ -118,13 +124,15 @@ public static class MediaForgeCapabilityCatalog
             HardwareEncodeProof,
             "Hardware H.264 encode proof",
             GetProof(proofs, HardwareEncodeProof),
-            MediaForgeProductReadinessStatus.BackendCallSucceeded),
+            MediaForgeProductReadinessStatus.BackendCallSucceeded,
+            MediaTransportKind.EncodedPacket),
 
         ProofEntry(
             Mp4RecordingProof,
             "MP4 recording proof",
             GetProof(proofs, Mp4RecordingProof),
-            MediaForgeProductReadinessStatus.ProductValidated),
+            MediaForgeProductReadinessStatus.ProductValidated,
+            MediaTransportKind.EncodedPacket),
 
         ProofEntry(
             HardwareDecodeProof,
@@ -137,6 +145,44 @@ public static class MediaForgeCapabilityCatalog
             "Hardware decode to renderer proof",
             GetProof(proofs, DecodeToRenderProof),
             MediaForgeProductReadinessStatus.BackendCallSucceeded),
+
+        ProofEntry(
+            Mp4OutputProductProof,
+            "MP4 output product proof",
+            GetProof(proofs, Mp4OutputProductProof),
+            MediaForgeProductReadinessStatus.ProductValidated,
+            MediaTransportKind.EncodedPacket),
+
+        ProofEntry(
+            Mp4InputProductProof,
+            "MP4 input product proof",
+            GetProof(proofs, Mp4InputProductProof),
+            MediaForgeProductReadinessStatus.ProductValidated),
+
+        ProofEntry(
+            WebcamInputProductProof,
+            "Webcam input product proof",
+            GetProof(proofs, WebcamInputProductProof),
+            MediaForgeProductReadinessStatus.ProductValidated),
+
+        ProofEntry(
+            RtmpNetworkOutputProof,
+            "RTMP network output proof",
+            GetProof(proofs, RtmpNetworkOutputProof),
+            MediaForgeProductReadinessStatus.ProductValidated,
+            MediaTransportKind.EncodedPacket),
+
+        ProofEntry(
+            NdiInputProductProof,
+            "NDI input product proof",
+            GetProof(proofs, NdiInputProductProof),
+            MediaForgeProductReadinessStatus.ProductValidated),
+
+        ProofEntry(
+            NdiOutputProductProof,
+            "NDI output product proof",
+            GetProof(proofs, NdiOutputProductProof),
+            MediaForgeProductReadinessStatus.ProductValidated),
 
         Entry(CapabilityCategories.Performance, EnginePerformanceBaseline, "Engine performance baseline",
             MediaForgeSupportStatus.PrototypeOnly,
@@ -172,7 +218,8 @@ public static class MediaForgeCapabilityCatalog
         string id,
         string displayName,
         HardwareMediaProof proof,
-        MediaForgeProductReadinessStatus passedReadiness) =>
+        MediaForgeProductReadinessStatus passedReadiness,
+        MediaTransportKind transport = MediaTransportKind.GpuSurface) =>
         Entry(
             CapabilityCategories.Proof,
             id,
@@ -183,7 +230,7 @@ public static class MediaForgeCapabilityCatalog
                 ? passedReadiness
                 : MediaForgeProductReadinessStatus.Contract,
             BuildProofReason(proof),
-            MediaTransportKind.GpuSurface);
+            transport);
 
     private static IReadOnlyDictionary<string, HardwareMediaProof> CreateProofMap(
         HardwareMediaCapabilityReport hardware)
@@ -207,6 +254,24 @@ public static class MediaForgeCapabilityCatalog
         map.TryAdd(
             DecodeToRenderProof,
             PendingProof(DecodeToRenderProof, "Hardware decode to renderer proof"));
+        map.TryAdd(
+            Mp4OutputProductProof,
+            PendingProof(Mp4OutputProductProof, "MP4 output product proof"));
+        map.TryAdd(
+            Mp4InputProductProof,
+            PendingProof(Mp4InputProductProof, "MP4 input product proof"));
+        map.TryAdd(
+            WebcamInputProductProof,
+            PendingProof(WebcamInputProductProof, "Webcam input product proof"));
+        map.TryAdd(
+            RtmpNetworkOutputProof,
+            PendingProof(RtmpNetworkOutputProof, "RTMP network output proof"));
+        map.TryAdd(
+            NdiInputProductProof,
+            PendingProof(NdiInputProductProof, "NDI input product proof"));
+        map.TryAdd(
+            NdiOutputProductProof,
+            PendingProof(NdiOutputProductProof, "NDI output product proof"));
 
         return map;
     }

@@ -93,23 +93,31 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Engine_readiness_v7_script_runs_required_gates()
+    public void Engine_readiness_v8_script_runs_required_gates()
     {
         var repoRoot = FindRepositoryRoot();
-        var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v7.ps1"));
-        var baselineScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v6.ps1"));
-        var effectiveScript = script + Environment.NewLine + baselineScript;
+        var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v8.ps1"));
+        var v7Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v7.ps1"));
+        var v6Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v6.ps1"));
+        var effectiveScript = script + Environment.NewLine + v7Script + Environment.NewLine + v6Script;
         var testScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "test.ps1"));
 
         Assert.Contains("RequireHardwareMedia", script, StringComparison.Ordinal);
         Assert.Contains("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA", script, StringComparison.Ordinal);
-        Assert.Contains("verify-engine-readiness-v6.ps1", script, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v7.ps1", script, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v6.ps1", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("verify-media-transport-rules.ps1", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("verify-license-policy.ps1", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("ProductMediaPathsDoNotUsePrototypeEvidenceTests", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("ProductReadinessStatusTests", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("CapabilityReportTests", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("DocsProductTruthTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("MediaSourceTypeCatalogTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("SourceCapabilityReadinessTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("RenderOutputTypeCatalogTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("RenderOutputSinkComplianceRegistryTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("WindowsUnavailableLiveSourceProviderFactoryTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("WindowsVideoFileSourceProviderFactoryTests", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("WindowsGpuExportEndToEndProofTests", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("WindowsHardwareDecodeBoundaryTests", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("RenderedOutputEncodeFrameAdapterTests", effectiveScript, StringComparison.Ordinal);
@@ -123,7 +131,7 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Engine_truth_docs_define_v7_hardware_media_proof_gate()
+    public void Engine_truth_docs_define_v8_hardware_media_proof_gate()
     {
         var repoRoot = FindRepositoryRoot();
         var aiContext = File.ReadAllText(Path.Combine(repoRoot, "docs", "AI_CONTEXT.md"));
@@ -131,12 +139,17 @@ public sealed class DocsProductTruthTests
         var supportMatrix = File.ReadAllText(Path.Combine(repoRoot, "docs", "GPU_MEDIA_SUPPORT_MATRIX.md"));
         var publicApi = File.ReadAllText(Path.Combine(repoRoot, "docs", "PUBLIC_API.md"));
 
-        Assert.Contains("verify-engine-readiness-v7.ps1", aiContext, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v8.ps1", aiContext, StringComparison.Ordinal);
         Assert.Contains("HardwareMediaProof", publicApi, StringComparison.Ordinal);
         Assert.Contains("BackendOutputValidated", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("Render-to-encode proof", roadmap, StringComparison.Ordinal);
         Assert.Contains("Decode-to-render proof", roadmap, StringComparison.Ordinal);
         Assert.Contains("MP4 recording proof", roadmap, StringComparison.Ordinal);
+        Assert.Contains("MP4 output product proof", roadmap, StringComparison.Ordinal);
+        Assert.Contains("MP4 input product proof", roadmap, StringComparison.Ordinal);
+        Assert.Contains("Webcam input product proof", roadmap, StringComparison.Ordinal);
+        Assert.Contains("RTMP network output proof", roadmap, StringComparison.Ordinal);
+        Assert.Contains("NDI output product proof", roadmap, StringComparison.Ordinal);
         Assert.Contains("RequireHardwareMedia", roadmap, StringComparison.Ordinal);
     }
 

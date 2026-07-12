@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Engine;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Media;
@@ -50,7 +51,8 @@ public static class MediaForgeWindows
         var hardware = await probe.ProbeAsync(cancellationToken).ConfigureAwait(false);
         return MediaForgeCapabilityReportBuilder.Build(
             hardware,
-            MediaSourceTypeRegistry.CreateCapabilityEntries());
+            MediaSourceTypeRegistry.CreateCapabilityEntries()
+                .Concat(RenderOutputTypeRegistry.CreateCapabilityEntries()));
     }
 
     private static void ValidateOptions(MediaForgeEngineOptions options)

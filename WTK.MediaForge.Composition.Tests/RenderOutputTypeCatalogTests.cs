@@ -3,6 +3,7 @@ using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Media;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests;
@@ -102,5 +103,31 @@ public class RenderOutputTypeCatalogTests
         var validation = MediaForgeProjectValidator.Validate(project);
         Assert.False(validation.IsValid);
         Assert.Contains(validation.Issues, i => i.Code == "output.rtmp.url");
+    }
+
+    [Fact]
+    public void Output_capabilities_mark_media_outputs_unavailable_until_product_proofs_pass()
+    {
+        var entries = RenderOutputTypeRegistry.CreateCapabilityEntries();
+
+        var offscreen = Assert.Single(entries, entry => entry.Id == $"output.{RenderOutputTypes.Offscreen.Value}");
+        Assert.Equal(MediaForgeSupportStatus.Supported, offscreen.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.ProductValidated, offscreen.ProductReadinessStatus);
+        Assert.Equal(MediaTransportKind.GpuSurface, offscreen.TransportKind);
+
+        var mp4 = Assert.Single(entries, entry => entry.Id == $"output.{RenderOutputTypes.RecordingMp4.Value}");
+        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, mp4.SupportStatus);
+        Assert.Equal(MediaTransportKind.EncodedPacket, mp4.TransportKind);
+        Assert.Contains("proof", mp4.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+
+        var rtmp = Assert.Single(entries, entry => entry.Id == $"output.{RenderOutputTypes.StreamingRtmp.Value}");
+        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, rtmp.SupportStatus);
+        Assert.Equal(MediaTransportKind.EncodedPacket, rtmp.TransportKind);
+        Assert.Contains("network RTMP", rtmp.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+
+        var ndi = Assert.Single(entries, entry => entry.Id == $"output.{RenderOutputTypes.Ndi.Value}");
+        Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);
+        Assert.Equal(MediaForgeLicenseStatus.RequiresLegalReview, ndi.LicenseStatus);
+        Assert.Contains("NDI SDK", ndi.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 }

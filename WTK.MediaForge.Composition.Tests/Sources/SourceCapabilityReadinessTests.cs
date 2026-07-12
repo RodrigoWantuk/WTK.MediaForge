@@ -58,6 +58,23 @@ public sealed class SourceCapabilityReadinessTests
     }
 
     [Fact]
+    public void Ndi_input_is_unsupported_until_license_and_gpu_path_are_validated()
+    {
+        var report = MediaForgeCapabilityReportBuilder.Build(
+            new HardwareMediaCapabilityReport { Platform = "Test" },
+            MediaSourceTypeRegistry.CreateCapabilityEntries());
+
+        var ndi = Assert.Single(
+            report.Entries,
+            entry => entry.Id == $"source.{MediaSourceTypes.NdiInput.Value}");
+
+        Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.Contract, ndi.ProductReadinessStatus);
+        Assert.False(report.IsFeatureAvailable(ndi.Id));
+        Assert.Contains("license", ndi.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Source_capability_entries_do_not_mark_skeleton_or_prototype_as_available()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(

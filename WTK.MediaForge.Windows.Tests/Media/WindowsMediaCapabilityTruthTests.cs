@@ -1,4 +1,5 @@
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Windows.Media;
 using WTK.MediaForge.Windows.Media.Decode;
 using WTK.MediaForge.Windows.Media.Encode;
@@ -37,7 +38,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Windows_capability_probe_reports_v7_media_proofs_with_explicit_reasons()
+    public async Task Windows_capability_probe_reports_v8_media_proofs_with_explicit_reasons()
     {
         var report = await new WindowsHardwareMediaCapabilityProbe()
             .ProbeAsync(CancellationToken.None);
@@ -62,10 +63,34 @@ public sealed class WindowsMediaCapabilityTruthTests
             proof.Id == MediaForgeCapabilityCatalog.DecodeToRenderProof &&
             proof.Status == HardwareMediaProofStatus.Unavailable &&
             !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.Mp4OutputProductProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.Mp4InputProductProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.WebcamInputProductProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.RtmpNetworkOutputProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.NdiInputProductProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.NdiOutputProductProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
     }
 
     [Fact]
-    public async Task Required_hardware_media_release_gate_fails_until_all_v7_proofs_pass()
+    public async Task Required_hardware_media_release_gate_fails_until_all_v8_proofs_pass()
     {
         if (!string.Equals(
             Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"),
@@ -84,7 +109,7 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         Assert.True(
             missing.Length == 0,
-            "Hardware media release gate requires all v7 proofs to pass: " + string.Join("; ", missing));
+            "Hardware media release gate requires all v8 proofs to pass: " + string.Join("; ", missing));
     }
 
     [Fact]
@@ -101,5 +126,26 @@ public sealed class WindowsMediaCapabilityTruthTests
         var probe = new WindowsHardwareVideoDecoderProbe();
 
         Assert.Empty(probe.Probe());
+    }
+
+    [Fact]
+    public async Task Public_windows_capability_report_includes_media_io_outputs_as_unavailable()
+    {
+        var report = await MediaForgeWindows.GetCapabilityReportAsync(CancellationToken.None);
+
+        var mp4 = Assert.IsType<CapabilityEntry>(
+            report.TryGetEntry($"output.{RenderOutputTypes.RecordingMp4.Value}"));
+        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, mp4.SupportStatus);
+        Assert.False(report.IsFeatureAvailable(mp4.Id));
+
+        var rtmp = Assert.IsType<CapabilityEntry>(
+            report.TryGetEntry($"output.{RenderOutputTypes.StreamingRtmp.Value}"));
+        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, rtmp.SupportStatus);
+        Assert.False(report.IsFeatureAvailable(rtmp.Id));
+
+        var ndi = Assert.IsType<CapabilityEntry>(
+            report.TryGetEntry($"output.{RenderOutputTypes.Ndi.Value}"));
+        Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);
+        Assert.False(report.IsFeatureAvailable(ndi.Id));
     }
 }

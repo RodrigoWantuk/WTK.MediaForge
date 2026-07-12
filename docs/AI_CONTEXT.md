@@ -199,20 +199,22 @@ The legacy WinForms preview path has been removed as a product path because it u
 - NVIDIA, AMD/Radeon, Intel integrated/discrete, Apple, VAAPI, Vulkan Video,
   and future vendor SDK paths must be runtime-detected through capability
   reports. GPU vendor names alone must never imply support.
-- Hardware media promotion is blocked by the v7 proof set: render-to-encode,
+- Hardware media promotion is blocked by the v8 proof set: render-to-encode,
   hardware H.264 encode, MP4 recording packet output, hardware H.264 decode,
-  and decode-to-render. Each proof is represented by `HardwareMediaProof` and
+  decode-to-render, MP4 output, MP4 input, webcam input, RTMP network output,
+  and NDI input/output. Each proof is represented by `HardwareMediaProof` and
   must be `Passed` before a product capability can advertise support.
 - Commit 06 (Vulkan -> D3D11/MF encoder surface export proof) blocks hardware recording until passed.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
   `Prototype` and `Skeleton` readiness entries must never be emitted as
   `Supported` or `Experimental`.
-- `./scripts/verify-engine-readiness-v7.ps1` is the current executable truth
+- `./scripts/verify-engine-readiness-v8.ps1` is the current executable truth
   gate for product readiness, docs alignment, media transport, license, Fast,
-  Gpu, Performance, export-proof, decode/encode boundary, and platform font
-  adapter validation. `-RequireHardwareMedia` additionally fails release
-  validation unless all v7 hardware media proofs pass on the target machine.
+  Gpu, Performance, export-proof, decode/encode boundary, media I/O boundary,
+  and platform font adapter validation. `-RequireHardwareMedia` additionally
+  fails release validation unless all v8 hardware media proofs pass on the
+  target machine.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
 
 ## GPU Resource Pool (Phase 2)

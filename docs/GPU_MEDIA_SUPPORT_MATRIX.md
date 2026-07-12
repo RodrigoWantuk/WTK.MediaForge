@@ -79,10 +79,10 @@ marketing:
 | libx264 / software H.264 | Prohibited | |
 | FFmpeg (future) | Planned / Not used in first product path | Future LGPL-only with review; never a raw video frame product path |
 
-## Export Proof Gate
+## v8 Media I/O Proof Gate
 
 Recording MP4 remains **PrototypeOnly** as an end-to-end product feature until
-the v7 hardware media proofs pass:
+the v8 hardware media proofs pass:
 
 ```text
 FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> hardware H.264 -> EncodedPacketMp4Muxer
@@ -94,9 +94,22 @@ trusted `BackendOutputValidated` H.264 packet evidence created by an
 implementation backend, not by public packet initializers.
 `PrototypeEncodedPacketMp4Muxer` remains internal-test-only. Capability API
 exposes `HardwareMediaProof` entries for render-to-encode, hardware encode, MP4
-recording, hardware decode, and decode-to-render. Passed proofs must identify
-the backend and carry the required evidence. Recording remains unavailable until
-the hardware encoder and MP4 recording proofs both pass on the target backend.
+recording, hardware decode, decode-to-render, MP4 output, MP4 input, webcam
+input, RTMP network output, and NDI input/output. Passed proofs must identify
+the backend and carry the required evidence.
+
+Product availability requires the matching product proof, not only an internal
+codec/backend proof:
+
+- MP4 output requires render-to-encode, hardware encode, MP4 recording, and
+  `proof.media_io.mp4_output.product`.
+- MP4 input requires hardware decode, decode-to-render, and
+  `proof.media_io.mp4_input.product`.
+- Webcam input requires `proof.media_io.webcam_input.product`.
+- RTMP output requires hardware encode and
+  `proof.media_io.rtmp_output.network`.
+- NDI input/output require license approval plus their matching NDI product
+  proofs.
 
 ## Decode-To-Render Proof Gate
 

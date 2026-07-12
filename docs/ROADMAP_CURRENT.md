@@ -164,7 +164,7 @@ render thread, provider, submission, or GPU export/encode paths, also run:
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-media-transport-rules.ps1
 ./scripts/verify-license-policy.ps1
-./scripts/verify-engine-readiness-v7.ps1
+./scripts/verify-engine-readiness-v8.ps1
 ```
 
 ## Active Phase 2 Commit Order (GPU Pipeline Completo)
@@ -221,12 +221,14 @@ Required correction order:
 5. Real decode -> render -> encode proof before MP4/RTMP can become
 Experimental or Supported.
 
-## Active vNext v7 Hardware Media Proof Gate
+## Active vNext v8 Hardware Media And I/O Proof Gate
 
 The executable guard for hardware media truth is
-`./scripts/verify-engine-readiness-v7.ps1`.
+`./scripts/verify-engine-readiness-v8.ps1`.
 
-The v7 proof set is explicit and capability-driven:
+The v8 proof set is explicit and capability-driven. It keeps codec/backend
+proofs separate from product I/O proofs so MP4, RTMP, webcam, and NDI cannot be
+advertised as ready merely because one internal prototype path exists.
 
 | Proof | Capability id | Required evidence |
 |---|---|---|
@@ -235,11 +237,17 @@ The v7 proof set is explicit and capability-driven:
 | MP4 recording proof | `proof.recording.mp4.h264` | Public MP4 sink writes a real packet-only MP4 from hardware-validated H.264 packets. |
 | Hardware decode proof | `proof.hardware_decode.h264` | Platform H.264 hardware decoder produces GPU-backed decoded frames with `BackendOutputValidated` evidence. |
 | Decode-to-render proof | `proof.decode_to_render.gpu` | Decoded GPU frame is imported/rendered by the compositor without CPU staging/readback. |
+| MP4 output product proof | `proof.media_io.mp4_output.product` | Rendered output is hardware-encoded and muxed into a real MP4 file with backend-validated packet evidence. |
+| MP4 input product proof | `proof.media_io.mp4_input.product` | A real MP4 file is demuxed/decoded by hardware into GPU surfaces and rendered without CPU frame transport. |
+| Webcam input product proof | `proof.media_io.webcam_input.product` | Webcam frames cross any required OS raw boundary once, immediately upload to GPU, use bounded live buffering, and publish GPU leases. |
+| RTMP network output proof | `proof.media_io.rtmp_output.network` | Hardware-encoded packets are packetized and sent through a real network RTMP transport without blocking the render thread. |
+| NDI input product proof | `proof.media_io.ndi_input.product` | NDI licensing is approved and the input path is GPU-safe without continuous CPU frame transport. |
+| NDI output product proof | `proof.media_io.ndi_output.product` | NDI licensing is approved and output avoids continuous CPU readback while preserving sink backpressure/lifetime contracts. |
 
 Default CI may report proofs as `Unavailable` with reasons when the hardware
 path is not implemented or not present. Release/readiness machines use
-`./scripts/verify-engine-readiness-v7.ps1 -RequireHardwareMedia`; that mode
-fails unless every v7 hardware media proof is `Passed`.
+`./scripts/verify-engine-readiness-v8.ps1 -RequireHardwareMedia`; that mode
+fails unless every v8 hardware media proof is `Passed`.
 
 ## Active vNext v3 Truth Gate
 
@@ -280,7 +288,7 @@ Current truth table:
 
 `CapabilityEntry.ProductReadinessStatus` enforces this split: entries marked
 `Prototype` or `Skeleton` cannot be emitted as `Supported` or `Experimental`.
-The executable guard for this truth table is `./scripts/verify-engine-readiness-v7.ps1`.
+The executable guard for this truth table is `./scripts/verify-engine-readiness-v8.ps1`.
 
 ## Future Phase - FFmpeg Libraries Integration Review
 
