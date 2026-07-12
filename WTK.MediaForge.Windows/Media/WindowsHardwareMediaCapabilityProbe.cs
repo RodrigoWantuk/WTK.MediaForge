@@ -171,7 +171,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Status = HardwareMediaProofStatus.Unavailable,
             Backend = "NativeRtmpTransport",
             Vendor = vendor,
-            Reason = "RTMP output remains unavailable until a real network RTMP transport publishes hardware-encoded packets without blocking the render thread."
+            Reason = "TCP RTMP transport exists; proof remains unavailable until hardware-encoded packets from the render-output encode pipeline publish without blocking the render thread."
         },
         new HardwareMediaProof
         {

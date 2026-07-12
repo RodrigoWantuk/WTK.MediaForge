@@ -1,5 +1,8 @@
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Runtime;
+using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
@@ -15,14 +18,32 @@ internal sealed class RenderedOutputFrameBatch
     public RenderedOutputFrameBatch(
         IReadOnlyList<RenderedOutputFrame> frames,
         Func<ValueTask>? leaseReleased = null)
+        : this(
+            frames,
+            CreateFrameExecutionContext(
+                RenderFrameSnapshotFactory.CreateDefaultContext(),
+                (frames ?? throw new ArgumentNullException(nameof(frames)))
+                    .Select(static frame => frame.OutputId)
+                    .ToArray()),
+            leaseReleased)
+    {
+    }
+
+    public RenderedOutputFrameBatch(
+        IReadOnlyList<RenderedOutputFrame> frames,
+        FrameExecutionContext frameContext,
+        Func<ValueTask>? leaseReleased = null)
     {
         Frames = frames ?? throw new ArgumentNullException(nameof(frames));
+        FrameContext = frameContext ?? throw new ArgumentNullException(nameof(frameContext));
         _leaseReleased = leaseReleased;
         if (frames.Count == 0)
             _allLeasesReleased.TrySetResult();
     }
 
     public IReadOnlyList<RenderedOutputFrame> Frames { get; }
+
+    public FrameExecutionContext FrameContext { get; }
 
     public bool HasOutstandingLeases => Volatile.Read(ref _leaseCount) > 0;
 
@@ -41,11 +62,16 @@ internal sealed class RenderedOutputFrameBatch
                 backendKind))
             .ToArray();
 
-        return new RenderedOutputFrameBatch(frames);
+        return new RenderedOutputFrameBatch(
+            frames,
+            CreateFrameExecutionContext(
+                snapshot.Context,
+                frames.Select(static frame => frame.OutputId).ToArray()));
     }
 
     public static RenderedOutputFrameBatch FromRenderedSurfaces(
-        IReadOnlyList<IRenderedOutputSurfaceLease> surfaces)
+        IReadOnlyList<IRenderedOutputSurfaceLease> surfaces,
+        RenderFrameContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(surfaces);
 
@@ -58,7 +84,12 @@ internal sealed class RenderedOutputFrameBatch
                 surface))
             .ToArray();
 
-        return new RenderedOutputFrameBatch(frames);
+        var renderContext = context ?? RenderFrameSnapshotFactory.CreateDefaultContext();
+        return new RenderedOutputFrameBatch(
+            frames,
+            CreateFrameExecutionContext(
+                renderContext,
+                frames.Select(static frame => frame.OutputId).ToArray()));
     }
 
     public RenderOutputFrameLease CreateLease(
@@ -144,4 +175,15 @@ internal sealed class RenderedOutputFrameBatch
         if (releaseError is not null)
             throw releaseError;
     }
+
+    private static FrameExecutionContext CreateFrameExecutionContext(
+        RenderFrameContext context,
+        IReadOnlyList<RenderOutputId> targetOutputs) =>
+        new()
+        {
+            FrameId = context.FrameNumber,
+            PresentationTime = context.PresentationTime,
+            FrameBudget = context.DeltaTime,
+            TargetOutputs = targetOutputs
+        };
 }

@@ -33,6 +33,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     private SourceRuntimeManager? _sourceRuntimeManager;
     private CompositionRuntime? _runtime;
+    private MediaPipelineRuntime? _mediaPipelineRuntime;
     private SceneRuntime? _sceneRuntime;
     private FaultRecoveryCoordinator? _faultRecoveryCoordinator;
     private RenderThreadGuard? _renderThreadGuard;
@@ -120,6 +121,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     internal CompositionRuntime? RuntimeForTests => _runtime;
 
+    internal MediaPipelineRuntime? MediaPipelineRuntimeForTests => _mediaPipelineRuntime;
+
     internal MediaForgeRenderThread? RenderThreadForTests => _renderThread;
 
     internal FrameScheduler? FrameSchedulerForTests => _renderPump?.Scheduler;
@@ -205,6 +208,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
                 _sourceRuntimeManager = new SourceRuntimeManager(_diagnostics);
                 _runtime = new CompositionRuntime(_sourceRuntimeManager);
+                _mediaPipelineRuntime = new MediaPipelineRuntime(_diagnostics);
                 _renderThreadGuard = new RenderThreadGuard();
 
                 if (!_backendFactory.TryCreate(_renderThreadGuard, _diagnostics, out var backend) || backend is null)
@@ -216,6 +220,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     _renderThreadGuard,
                     diagnostics: _diagnostics,
                     sinkDispatcher: _sinkDispatcher,
+                    outputFrameConsumers: [_mediaPipelineRuntime],
                     joinTimeout: RenderThreadJoinTimeout,
                     submissionShutdownTimeout: RenderThreadSubmissionShutdownTimeout);
 
@@ -791,6 +796,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             _renderPump is null &&
             _renderThread is null &&
             _backend is null &&
+            _mediaPipelineRuntime is null &&
             (_sourceRuntimeManager?.Count ?? 0) == 0 &&
             _runtime is null &&
             _projectState is null)
@@ -922,6 +928,28 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     MediaForgeDiagnosticSeverity.Fatal,
                     "engine.backend_dispose_skipped_render_thread_alive",
                     ex.Message,
+                    nameof(MediaForgeEngine),
+                    ex);
+            }
+        }
+
+        var mediaPipelineRuntime = _mediaPipelineRuntime;
+        _mediaPipelineRuntime = null;
+
+        if (mediaPipelineRuntime is not null)
+        {
+            try
+            {
+                await mediaPipelineRuntime.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                cleanupErrors.Add(ex);
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "engine.media_pipeline_dispose_failed",
+                    "Failed to dispose media pipeline runtime during engine cleanup.",
                     nameof(MediaForgeEngine),
                     ex);
             }

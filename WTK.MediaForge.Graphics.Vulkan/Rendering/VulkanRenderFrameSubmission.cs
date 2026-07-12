@@ -29,7 +29,9 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
-        _outputFrames = RenderedOutputFrameBatch.FromRenderedSurfaces(renderedOutputSurfaces);
+        _outputFrames = RenderedOutputFrameBatch.FromRenderedSurfaces(
+            renderedOutputSurfaces,
+            snapshot.Context);
         CommandBuffer = commandBuffer;
         Fence = fence;
         _textureLeases = textureLeases.ToList();

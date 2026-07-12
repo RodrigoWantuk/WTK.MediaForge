@@ -4,14 +4,15 @@ using WTK.MediaForge.Core.Media;
 namespace WTK.MediaForge.Composition.Outputs;
 
 /// <summary>
-/// Experimental RTMP packet sink using hardware-encoded H.264 packets only.
+/// RTMP packet sink using hardware-encoded H.264 packets only.
 /// </summary>
 public sealed class RtmpPacketSink : IEncodedPacketSink
 {
     private readonly string _url;
     private readonly bool _allowPrototypeTransport;
     private readonly FlvPacketizer _packetizer = new();
-    private RtmpTransport? _transport;
+    private IRtmpTransport? _transport;
+    private bool _codecConfigurationSent;
     private bool _started;
 
     public RtmpPacketSink(string url)
@@ -26,25 +27,35 @@ public sealed class RtmpPacketSink : IEncodedPacketSink
         _allowPrototypeTransport = allowPrototypeTransport;
     }
 
-    internal IReadOnlyList<FlvPacket> SentPacketsForTests => _transport?.SentPackets ?? Array.Empty<FlvPacket>();
+    internal IReadOnlyList<FlvPacket> SentPacketsForTests =>
+        _transport is InMemoryRtmpTransport inMemoryTransport
+            ? inMemoryTransport.SentPackets
+            : Array.Empty<FlvPacket>();
 
-    public ValueTask StartAsync(EncodedPacketSinkContext context, CancellationToken cancellationToken)
+    public async ValueTask StartAsync(EncodedPacketSinkContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_allowPrototypeTransport)
-        {
-            throw new NotSupportedException(
-                "RtmpPacketSink is prototype-only until a real network RTMP transport is implemented.");
-        }
-
         if (context.Codec != EncodedVideoCodec.H264)
             throw new NotSupportedException($"RTMP currently accepts H.264 packets, not '{context.Codec}'.");
 
-        _transport = new RtmpTransport(_url);
-        _started = true;
-        return _transport.ConnectAsync(cancellationToken);
+        _transport = _allowPrototypeTransport
+            ? new InMemoryRtmpTransport(_url)
+            : new TcpRtmpTransport(_url);
+        _codecConfigurationSent = false;
+        try
+        {
+            await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
+            _started = true;
+        }
+        catch
+        {
+            _transport.Dispose();
+            _transport = null;
+            _started = false;
+            throw;
+        }
     }
 
     public async ValueTask WritePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
@@ -61,8 +72,12 @@ public sealed class RtmpPacketSink : IEncodedPacketSink
         if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.Unknown)
             throw new NotSupportedException("RTMP requires packets with an explicit H.264 bitstream format.");
 
-        var flvPacket = _packetizer.Packetize(packet);
-        await _transport.SendAsync(flvPacket, cancellationToken).ConfigureAwait(false);
+        var flvPackets = _packetizer.Packetize(packet, includeCodecConfiguration: !_codecConfigurationSent);
+        foreach (var flvPacket in flvPackets)
+        {
+            await _transport.SendAsync(flvPacket, cancellationToken).ConfigureAwait(false);
+            _codecConfigurationSent |= flvPacket.IsCodecConfiguration;
+        }
     }
 
     public ValueTask StopAsync(CancellationToken cancellationToken)
@@ -77,6 +92,7 @@ public sealed class RtmpPacketSink : IEncodedPacketSink
         _transport?.Dispose();
         _transport = null;
         _started = false;
+        _codecConfigurationSent = false;
         return ValueTask.CompletedTask;
     }
 }

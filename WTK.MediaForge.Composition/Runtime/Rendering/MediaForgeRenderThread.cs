@@ -31,6 +31,7 @@ internal sealed class MediaForgeRenderThread : IDisposable
         int maxFramesInFlight = 2,
         IMediaForgeDiagnosticsSink? diagnostics = null,
         RenderOutputSinkDispatcher? sinkDispatcher = null,
+        IEnumerable<IRenderedOutputFrameConsumer>? outputFrameConsumers = null,
         TimeSpan? joinTimeout = null,
         TimeSpan? submissionShutdownTimeout = null)
     {
@@ -40,7 +41,8 @@ internal sealed class MediaForgeRenderThread : IDisposable
         _pendingTracker = pendingTracker ?? new PendingRenderSubmissionTracker(
             maxFramesInFlight,
             diagnostics,
-            sinkDispatcher);
+            sinkDispatcher,
+            outputFrameConsumers);
         _joinTimeout = joinTimeout ?? TimeSpan.FromSeconds(10);
         _submissionShutdownTimeout = submissionShutdownTimeout ?? TimeSpan.FromSeconds(10);
         _thread = new Thread(RenderLoop)

@@ -8,6 +8,9 @@ using WTK.MediaForge.Core.Media.Encode;
 using WTK.MediaForge.Core.Media.Interop;
 using Xunit;
 using System.Buffers.Binary;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 
 namespace WTK.MediaForge.Composition.Tests.Media;
 
@@ -35,12 +38,23 @@ public sealed class EncodedOutputPipelineTests
     }
 
     [Fact]
-    public async Task Rtmp_public_sink_is_not_enabled_without_prototype_opt_in()
+    public async Task Rtmp_public_sink_connects_publishes_and_sends_flv_video_over_tcp()
     {
-        var sink = new RtmpSink("rtmp://127.0.0.1/live/blocked");
+        await using var server = new FakeRtmpServer();
+        await using var sink = new RtmpSink(server.Url);
 
-        await Assert.ThrowsAsync<NotSupportedException>(async () =>
-            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None));
+        await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+        await sink.WritePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        await server.WaitForVideoPacketsAsync(2, TimeSpan.FromSeconds(5));
+
+        Assert.Contains("connect", server.CommandNames);
+        Assert.Contains("createStream", server.CommandNames);
+        Assert.Contains("publish", server.CommandNames);
+        Assert.Equal(2, server.VideoPacketPayloads.Count);
+        Assert.Equal(0x17, server.VideoPacketPayloads[0][0]);
+        Assert.Equal(0, server.VideoPacketPayloads[0][1]);
+        Assert.Equal(0x17, server.VideoPacketPayloads[1][0]);
+        Assert.Equal(1, server.VideoPacketPayloads[1][1]);
     }
 
     [Fact]
@@ -96,9 +110,15 @@ public sealed class EncodedOutputPipelineTests
         await router.RoutePacketAsync(packet, CancellationToken.None);
         await router.FlushAsync(CancellationToken.None);
 
-        Assert.NotEmpty(rtmpSink.SentPacketsForTests);
-        Assert.Equal(packet.Data, rtmpSink.SentPacketsForTests[0].Data);
-        Assert.Equal(packet.BitstreamFormat, rtmpSink.SentPacketsForTests[0].BitstreamFormat);
+        Assert.Equal(2, rtmpSink.SentPacketsForTests.Count);
+        Assert.True(rtmpSink.SentPacketsForTests[0].IsCodecConfiguration);
+        Assert.Equal(EncodedVideoBitstreamFormat.Avcc, rtmpSink.SentPacketsForTests[0].BitstreamFormat);
+        Assert.Equal(0x17, rtmpSink.SentPacketsForTests[0].Data.Span[0]);
+        Assert.Equal(0, rtmpSink.SentPacketsForTests[0].Data.Span[1]);
+        Assert.False(rtmpSink.SentPacketsForTests[1].IsCodecConfiguration);
+        Assert.Equal(EncodedVideoBitstreamFormat.Avcc, rtmpSink.SentPacketsForTests[1].BitstreamFormat);
+        Assert.Equal(0x17, rtmpSink.SentPacketsForTests[1].Data.Span[0]);
+        Assert.Equal(1, rtmpSink.SentPacketsForTests[1].Data.Span[1]);
 
         await rtmpSink.DisposeAsync();
         await router.DisposeAsync();
@@ -579,6 +599,275 @@ public sealed class EncodedOutputPipelineTests
         }
 
         throw new TimeoutException("Condition was not met before timeout.");
+    }
+
+    private sealed class FakeRtmpServer : IAsyncDisposable
+    {
+        private readonly TcpListener _listener;
+        private readonly CancellationTokenSource _stop = new();
+        private readonly Task _serverTask;
+        private readonly object _gate = new();
+        private readonly List<string> _commandNames = [];
+        private readonly List<byte[]> _videoPacketPayloads = [];
+        private TcpClient? _client;
+        private Exception? _failure;
+        private int _chunkSize = 128;
+
+        public FakeRtmpServer()
+        {
+            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+            var endpoint = (IPEndPoint)_listener.LocalEndpoint;
+            Url = $"rtmp://127.0.0.1:{endpoint.Port}/live/test";
+            _serverTask = Task.Run(RunAsync);
+        }
+
+        public string Url { get; }
+
+        public IReadOnlyList<string> CommandNames
+        {
+            get
+            {
+                lock (_gate)
+                    return _commandNames.ToArray();
+            }
+        }
+
+        public IReadOnlyList<byte[]> VideoPacketPayloads
+        {
+            get
+            {
+                lock (_gate)
+                    return _videoPacketPayloads.ToArray();
+            }
+        }
+
+        public async Task WaitForVideoPacketsAsync(int count, TimeSpan timeout)
+        {
+            await WaitForConditionAsync(
+                    () =>
+                    {
+                        ThrowIfFailed();
+                        lock (_gate)
+                            return _videoPacketPayloads.Count >= count;
+                    },
+                    timeout)
+                .ConfigureAwait(false);
+            ThrowIfFailed();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stop.CancelAsync().ConfigureAwait(false);
+            _listener.Stop();
+            _client?.Dispose();
+
+            try
+            {
+                await _serverTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (SocketException)
+            {
+            }
+
+            _stop.Dispose();
+        }
+
+        private async Task RunAsync()
+        {
+            try
+            {
+                _client = await _listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false);
+                await using var stream = _client.GetStream();
+                await PerformHandshakeAsync(stream, _stop.Token).ConfigureAwait(false);
+
+                while (!_stop.IsCancellationRequested)
+                {
+                    var message = await ReadMessageAsync(stream, _stop.Token).ConfigureAwait(false);
+                    if (message is null)
+                        return;
+
+                    if (message.Value.MessageTypeId == 1 && message.Value.Payload.Length == 4)
+                    {
+                        _chunkSize = (int)BinaryPrimitives.ReadUInt32BigEndian(message.Value.Payload);
+                    }
+                    else if (message.Value.MessageTypeId == 20)
+                    {
+                        CaptureCommandNames(message.Value.Payload);
+                        if (PayloadContains(message.Value.Payload, "connect"))
+                            await WriteCommandResponseAsync(stream, transactionId: 1, numericResult: null, _stop.Token).ConfigureAwait(false);
+                        else if (PayloadContains(message.Value.Payload, "createStream"))
+                            await WriteCommandResponseAsync(stream, transactionId: 2, numericResult: 1, _stop.Token).ConfigureAwait(false);
+                    }
+                    else if (message.Value.MessageTypeId == 9)
+                    {
+                        lock (_gate)
+                            _videoPacketPayloads.Add(message.Value.Payload);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (_stop.IsCancellationRequested)
+            {
+            }
+            catch (ObjectDisposedException) when (_stop.IsCancellationRequested)
+            {
+            }
+            catch (SocketException) when (_stop.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                _failure = ex;
+            }
+        }
+
+        private static async ValueTask PerformHandshakeAsync(NetworkStream stream, CancellationToken cancellationToken)
+        {
+            var c0c1 = new byte[1 + 1536];
+            await stream.ReadExactlyAsync(c0c1, cancellationToken).ConfigureAwait(false);
+            Assert.Equal(3, c0c1[0]);
+
+            var s0s1s2 = new byte[1 + 1536 + 1536];
+            s0s1s2[0] = 3;
+            BinaryPrimitives.WriteUInt32BigEndian(s0s1s2.AsSpan(1, 4), (uint)Environment.TickCount);
+            c0c1.AsSpan(1, 1536).CopyTo(s0s1s2.AsSpan(1 + 1536));
+            await stream.WriteAsync(s0s1s2, cancellationToken).ConfigureAwait(false);
+
+            var c2 = new byte[1536];
+            await stream.ReadExactlyAsync(c2, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async ValueTask<RtmpMessage?> ReadMessageAsync(
+            NetworkStream stream,
+            CancellationToken cancellationToken)
+        {
+            var firstByte = new byte[1];
+            var bytesRead = await stream.ReadAsync(firstByte, cancellationToken).ConfigureAwait(false);
+            if (bytesRead == 0)
+                return null;
+
+            var fmt = firstByte[0] >> 6;
+            if (fmt != 0)
+                throw new InvalidOperationException($"Fake RTMP server expected a full chunk header, got fmt={fmt}.");
+
+            var header = new byte[11];
+            await stream.ReadExactlyAsync(header, cancellationToken).ConfigureAwait(false);
+            var timestamp = ReadUInt24BigEndian(header.AsSpan(0, 3));
+            var length = (int)ReadUInt24BigEndian(header.AsSpan(3, 3));
+            var messageTypeId = header[6];
+            if (timestamp == 0xFFFFFF)
+            {
+                var extendedTimestamp = new byte[4];
+                await stream.ReadExactlyAsync(extendedTimestamp, cancellationToken).ConfigureAwait(false);
+            }
+
+            var payload = new byte[length];
+            var offset = 0;
+            while (offset < length)
+            {
+                var count = Math.Min(_chunkSize, length - offset);
+                await stream.ReadExactlyAsync(payload.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
+                offset += count;
+
+                if (offset < length)
+                {
+                    var continuationHeader = new byte[1];
+                    await stream.ReadExactlyAsync(continuationHeader, cancellationToken).ConfigureAwait(false);
+                    if (timestamp == 0xFFFFFF)
+                    {
+                        var extendedTimestamp = new byte[4];
+                        await stream.ReadExactlyAsync(extendedTimestamp, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+
+            return new RtmpMessage(messageTypeId, payload);
+        }
+
+        private void CaptureCommandNames(byte[] payload)
+        {
+            var text = Encoding.UTF8.GetString(payload);
+            lock (_gate)
+            {
+                if (text.Contains("connect", StringComparison.Ordinal))
+                    _commandNames.Add("connect");
+                if (text.Contains("createStream", StringComparison.Ordinal))
+                    _commandNames.Add("createStream");
+                if (text.Contains("publish", StringComparison.Ordinal))
+                    _commandNames.Add("publish");
+            }
+        }
+
+        private static bool PayloadContains(byte[] payload, string value) =>
+            Encoding.UTF8.GetString(payload).Contains(value, StringComparison.Ordinal);
+
+        private static async ValueTask WriteCommandResponseAsync(
+            NetworkStream stream,
+            double transactionId,
+            double? numericResult,
+            CancellationToken cancellationToken)
+        {
+            using var payload = new MemoryStream();
+            WriteAmfString(payload, "_result");
+            WriteAmfNumber(payload, transactionId);
+            WriteAmfNull(payload);
+            if (numericResult.HasValue)
+                WriteAmfNumber(payload, numericResult.Value);
+            else
+                WriteAmfNull(payload);
+
+            var data = payload.ToArray();
+            var header = new byte[12];
+            header[0] = 3;
+            WriteUInt24BigEndian(header.AsSpan(1, 3), 0);
+            WriteUInt24BigEndian(header.AsSpan(4, 3), (uint)data.Length);
+            header[7] = 20;
+            BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8, 4), 0);
+
+            await stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
+            await stream.WriteAsync(data, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static void WriteAmfString(Stream output, string value)
+        {
+            output.WriteByte(0x02);
+            var bytes = Encoding.UTF8.GetBytes(value);
+            Span<byte> length = stackalloc byte[2];
+            BinaryPrimitives.WriteUInt16BigEndian(length, (ushort)bytes.Length);
+            output.Write(length);
+            output.Write(bytes);
+        }
+
+        private static void WriteAmfNumber(Stream output, double value)
+        {
+            output.WriteByte(0x00);
+            Span<byte> bytes = stackalloc byte[8];
+            BinaryPrimitives.WriteInt64BigEndian(bytes, BitConverter.DoubleToInt64Bits(value));
+            output.Write(bytes);
+        }
+
+        private static void WriteAmfNull(Stream output) => output.WriteByte(0x05);
+
+        private void ThrowIfFailed()
+        {
+            if (_failure is not null)
+                throw new InvalidOperationException("Fake RTMP server failed.", _failure);
+        }
+
+        private static uint ReadUInt24BigEndian(ReadOnlySpan<byte> source) =>
+            ((uint)source[0] << 16) | ((uint)source[1] << 8) | source[2];
+
+        private static void WriteUInt24BigEndian(Span<byte> destination, uint value)
+        {
+            destination[0] = (byte)(value >> 16);
+            destination[1] = (byte)(value >> 8);
+            destination[2] = (byte)value;
+        }
+
+        private readonly record struct RtmpMessage(byte MessageTypeId, byte[] Payload);
     }
 
     private sealed class TestHardwareVideoEncoder : IHardwareVideoEncoder

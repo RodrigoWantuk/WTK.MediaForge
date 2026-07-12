@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
@@ -46,6 +47,37 @@ public class PendingRenderSubmissionTrackerTests
         manual.Complete();
         tracker.PollCompleted();
         Assert.Equal(0, tracker.PendingCount);
+    }
+
+    [Fact]
+    public async Task PollCompleted_keeps_submission_pending_until_output_frame_consumer_releases_lease()
+    {
+        var outputId = RenderOutputId.New();
+        var consumer = new HoldingRenderedOutputFrameConsumer();
+        var tracker = new PendingRenderSubmissionTracker(frameConsumers: [consumer]);
+        var surface = new TrackingRenderedOutputSurfaceLease(outputId, new FrameSize(320, 180));
+        var submission = new RenderedSurfaceSubmission(
+            RenderedOutputFrameBatch.FromRenderedSurfaces(
+                [surface],
+                new RenderFrameContext(
+                    FrameNumber: 9,
+                    PresentationTime: TimeSpan.FromMilliseconds(297),
+                    DeltaTime: TimeSpan.FromMilliseconds(33),
+                    TargetFps: 30,
+                    CancellationToken.None)));
+
+        tracker.Add(submission);
+        tracker.PollCompleted();
+
+        Assert.Equal(1, tracker.PendingCount);
+        Assert.True(submission.HasOutstandingOutputFrameLeases);
+        Assert.Equal(0, surface.DisposeCount);
+
+        await consumer.ReleaseAsync();
+        tracker.PollCompleted();
+
+        Assert.Equal(0, tracker.PendingCount);
+        Assert.Equal(1, surface.DisposeCount);
     }
 
     [Fact]
@@ -629,6 +661,96 @@ public class PendingRenderSubmissionTrackerTests
         {
             if (Interlocked.Increment(ref _disposeAttempts) == 1)
                 throw new InvalidOperationException("Simulated first dispose failure.");
+        }
+    }
+
+    private sealed class RenderedSurfaceSubmission(RenderedOutputFrameBatch outputFrames)
+        : IRenderFrameSubmission
+    {
+        private int _outputFramesAcquired;
+        private int _disposed;
+
+        public bool IsCompleted => true;
+
+        public bool OutputFramesAcquired => Volatile.Read(ref _outputFramesAcquired) != 0;
+
+        public bool HasOutstandingOutputFrameLeases => outputFrames.HasOutstandingLeases;
+
+        public RenderedOutputFrameBatch AcquireOutputFrames()
+        {
+            Interlocked.Exchange(ref _outputFramesAcquired, 1);
+            return outputFrames;
+        }
+
+        public ValueTask WaitForOutputFrameLeasesAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            outputFrames.WaitForLeasesReleasedAsync(timeout, cancellationToken);
+
+        public ValueTask WaitForCompletionAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public void DisposeCompleted()
+        {
+            if (HasOutstandingOutputFrameLeases)
+                throw new InvalidOperationException("Submission still has outstanding output frame leases.");
+
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            outputFrames.DisposeSurfaces();
+        }
+    }
+
+    private sealed class HoldingRenderedOutputFrameConsumer : IRenderedOutputFrameConsumer
+    {
+        private RenderOutputFrameLease? _lease;
+
+        public void PublishCompletedFrames(RenderedOutputFrameBatch frameBatch)
+        {
+            var frame = Assert.Single(frameBatch.Frames);
+            _lease = frameBatch.CreateLease(
+                frame,
+                new RenderOutputFrameInfo(
+                    frame.OutputId,
+                    RenderOutputSinkId.New(),
+                    frameBatch.FrameContext.FrameId,
+                    frameBatch.FrameContext.PresentationTime,
+                    frame.Size,
+                    frame.Format,
+                    frame.BackendKind));
+        }
+
+        public async Task ReleaseAsync()
+        {
+            var lease = Interlocked.Exchange(ref _lease, null)
+                ?? throw new InvalidOperationException("No lease was captured.");
+
+            await lease.DisposeAsync();
+        }
+    }
+
+    private sealed class TrackingRenderedOutputSurfaceLease(
+        RenderOutputId outputId,
+        FrameSize size)
+        : IRenderedOutputSurfaceLease
+    {
+        private int _disposeCount;
+
+        public RenderOutputId OutputId { get; } = outputId;
+
+        public FrameSize Size { get; } = size;
+
+        public RenderPixelFormat Format => RenderPixelFormat.Rgba8Unorm;
+
+        public RenderBackendKind BackendKind => RenderBackendKind.Vulkan;
+
+        public object? BackendSurface { get; } = new object();
+
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            return ValueTask.CompletedTask;
         }
     }
 }

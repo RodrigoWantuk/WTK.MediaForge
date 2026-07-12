@@ -63,7 +63,7 @@ marketing:
 | Preview panel | GpuSurface | Experimental | No CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
 | Recording MP4 H.264 | EncodedPacket | PrototypeOnly | Real MF hardware encoder and production MP4 muxing are not complete |
-| RTMP H.264 | EncodedPacket | PrototypeOnly | Current transport is in-memory only, not network RTMP |
+| RTMP H.264 | EncodedPacket | PrototypeOnly | TCP RTMP handshake/publish and FLV H.264 packetization exist; product support still requires hardware-validated packets from render-output encode |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | N/A | Unsupported | |
 | Virtual camera | N/A | Unsupported | |

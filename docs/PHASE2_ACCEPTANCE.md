@@ -33,7 +33,7 @@ dotnet test
 | 14 | Text Rendering | `WTK.MediaForge.Graphics.Vulkan.Tests/Text/TextRenderingTests.cs` |
 | 15 | Hardware Encode Foundation | `WTK.MediaForge.Windows.Tests/Media/HardwareEncodeFoundationTests.cs` |
 | 16 | MP4 Recording Packet Boundary | `WTK.MediaForge.Composition.Tests/Media/EncodedOutputPipelineTests.cs` |
-| 17 | RTMP Output Prototype | `EncodedOutputPipelineTests.Rtmp_sink_receives_flv_tags_from_shared_encoder` |
+| 17 | RTMP Network Transport Boundary | `EncodedOutputPipelineTests.Rtmp_public_sink_connects_publishes_and_sends_flv_video_over_tcp` and `EncodedOutputPipelineTests.Rtmp_sink_receives_flv_tags_from_shared_encoder` |
 | 18 | Synthetic Performance Validation | `WTK.MediaForge.Diagnostics.Tests/Performance/PerformanceValidationSuiteTests.cs` and `WTK.MediaForge.Composition.Tests/Performance/CompositionPerformanceGateTests.cs` |
 | 19 | Fault Recovery | `WTK.MediaForge.Composition.Tests/Recovery/FaultRecoveryCoordinatorTests.cs` |
 | 20 | Engine Readiness Gate | `./scripts/verify-phase2-readiness.ps1` and `./scripts/verify-engine-readiness-v8.ps1` |

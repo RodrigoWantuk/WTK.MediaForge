@@ -51,7 +51,7 @@ public static class MediaForgeCapabilityCatalog
         Entry(CapabilityCategories.Sink, RtmpH264, "RTMP H.264 streaming",
             MediaForgeSupportStatus.PrototypeOnly, MediaForgeLicenseStatus.RequiresLegalReview,
             MediaForgeProductReadinessStatus.Prototype,
-            "Prototype only: current transport is in-memory and not a network RTMP implementation.",
+            "Prototype only: TCP RTMP transport and FLV/H.264 packetization exist, but product support requires validated hardware-encoded packets from the render-output encode pipeline.",
             MediaTransportKind.EncodedPacket),
 
         Entry(CapabilityCategories.Sink, SrtOutput, "SRT streaming",

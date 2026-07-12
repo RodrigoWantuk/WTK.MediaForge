@@ -190,7 +190,7 @@ Execute in this exact order after vNext (commits 00-24) is complete. Plan:
 | 14 | Text Rendering | Gpu | **Done:ProductValidated for Windows Vulkan glyph atlas text layers** |
 | 15 | Hardware Encode Foundation | Gpu; requires 04 | **PrototypeOnly - canned packets are not product proof** |
 | 16 | MP4 Recording Packet Mux Boundary | Gpu | **Contract/Product boundary - public sink requires BackendOutputValidated packets; end-to-end recording remains blocked by hardware encoder proof** |
-| 17 | RTMP Output Prototype | Gpu | **PrototypeOnly - in-memory transport only** |
+| 17 | RTMP Network Transport Boundary | Gpu | **Contract/Product boundary - TCP RTMP handshake/publish and FLV H.264 packetization implemented; end-to-end streaming remains blocked by hardware encoder proof** |
 | 18 | Synthetic Performance Validation | Report | **NeedsRealBackend - synthetic workload only** |
 | 19 | Fault Recovery | Gpu stress | **Done:Contract - integration with real failure points pending** |
 | 20 | Engine Readiness Gate | Fast + Gpu + verify | **Done:Contract** |

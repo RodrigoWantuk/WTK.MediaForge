@@ -23,13 +23,15 @@ internal class PendingRenderSubmissionTracker : IDisposable
     private readonly HashSet<IRenderFrameSubmission> _cleanupFailureReported =
         new(SubmissionReferenceEqualityComparer.Instance);
     private readonly RenderOutputSinkDispatcher? _sinkDispatcher;
+    private readonly IReadOnlyList<IRenderedOutputFrameConsumer> _frameConsumers;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private PendingTrackerState _state = PendingTrackerState.Active;
 
     public PendingRenderSubmissionTracker(
         int maxFramesInFlight = 2,
         IMediaForgeDiagnosticsSink? diagnostics = null,
-        RenderOutputSinkDispatcher? sinkDispatcher = null)
+        RenderOutputSinkDispatcher? sinkDispatcher = null,
+        IEnumerable<IRenderedOutputFrameConsumer>? frameConsumers = null)
     {
         if (maxFramesInFlight < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFramesInFlight));
@@ -37,6 +39,7 @@ internal class PendingRenderSubmissionTracker : IDisposable
         MaxFramesInFlight = maxFramesInFlight;
         _diagnostics = diagnostics;
         _sinkDispatcher = sinkDispatcher;
+        _frameConsumers = frameConsumers?.ToArray() ?? Array.Empty<IRenderedOutputFrameConsumer>();
     }
 
     public int MaxFramesInFlight { get; }
@@ -293,6 +296,24 @@ internal class PendingRenderSubmissionTracker : IDisposable
             return;
 
         var frames = submission.AcquireOutputFrames();
+        foreach (var consumer in _frameConsumers)
+        {
+            try
+            {
+                consumer.PublishCompletedFrames(frames);
+            }
+            catch (Exception ex)
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "render.output_frame_consumer_failed",
+                    "A rendered output frame consumer failed while accepting completed frames.",
+                    nameof(PendingRenderSubmissionTracker),
+                    ex);
+            }
+        }
+
         _sinkDispatcher?.PublishCompletedFrames(frames);
     }
 

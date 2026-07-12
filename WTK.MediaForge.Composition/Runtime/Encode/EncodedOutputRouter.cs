@@ -37,15 +37,19 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
         _consumers.Add(new EncodedPacketConsumerWorker(consumer, _consumerQueueCapacity));
     }
 
-    public ValueTask RoutePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
+    public void RoutePacket(EncodedVideoPacket packet)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(packet);
-        cancellationToken.ThrowIfCancellationRequested();
 
         foreach (var consumer in _consumers)
             consumer.Enqueue(packet);
+    }
 
+    public ValueTask RoutePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RoutePacket(packet);
         return ValueTask.CompletedTask;
     }
 
@@ -207,6 +211,17 @@ internal sealed class RtmpPacketConsumer : IEncodedPacketConsumer
     private readonly IEncodedPacketSink _sink;
 
     public RtmpPacketConsumer(IEncodedPacketSink sink) =>
+        _sink = sink ?? throw new ArgumentNullException(nameof(sink));
+
+    public ValueTask WriteEncodedPacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken) =>
+        _sink.WritePacketAsync(packet, cancellationToken);
+}
+
+internal sealed class EncodedPacketSinkConsumer : IEncodedPacketConsumer
+{
+    private readonly IEncodedPacketSink _sink;
+
+    public EncodedPacketSinkConsumer(IEncodedPacketSink sink) =>
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
 
     public ValueTask WriteEncodedPacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken) =>
