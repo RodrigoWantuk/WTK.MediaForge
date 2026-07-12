@@ -63,7 +63,7 @@ marketing:
 | Preview panel | GpuSurface | Experimental | No CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
 | Recording MP4 H.264 | EncodedPacket | PrototypeOnly | Real MF hardware encoder and production MP4 muxing are not complete |
-| RTMP H.264 | EncodedPacket | PrototypeOnly | TCP RTMP handshake/publish and FLV H.264 packetization exist; product support still requires hardware-validated packets from render-output encode |
+| RTMP H.264 | EncodedPacket | PrototypeOnly | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink now rejects packets without trusted BackendOutputValidated evidence, and product support still requires hardware-validated packets from render-output encode |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | N/A | Unsupported | |
 | Virtual camera | N/A | Unsupported | |
@@ -79,10 +79,11 @@ marketing:
 | libx264 / software H.264 | Prohibited | |
 | FFmpeg (future) | Planned / Not used in first product path | Future LGPL-only with review; never a raw video frame product path |
 
-## v8 Media I/O Proof Gate
+## v8 Media I/O Proof Set and v9/v10 Readiness Gates
 
-Recording MP4 remains **PrototypeOnly** as an end-to-end product feature until
-the v8 hardware media proofs pass:
+Recording MP4 and RTMP remain **PrototypeOnly** as end-to-end product features
+until the v8 hardware media proofs pass and the v9/v10 readiness scripts are
+green:
 
 ```text
 FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> hardware H.264 -> EncodedPacketMp4Muxer
@@ -110,6 +111,10 @@ codec/backend proof:
   `proof.media_io.rtmp_output.network`.
 - NDI input/output require license approval plus their matching NDI product
   proofs.
+
+`./scripts/verify-engine-readiness-v9.ps1` is the default product-boundary gate.
+`./scripts/verify-engine-readiness-v10.ps1` adds GPU and Performance tiers for
+full local readiness before promotion.
 
 ## Decode-To-Render Proof Gate
 

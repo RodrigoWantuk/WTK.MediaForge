@@ -50,8 +50,9 @@ media I/O features must pass the v8 hardware media proofs (`HardwareMediaProof`
 entries for render-to-encode, hardware encode, MP4 recording, hardware decode,
 decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI
 input/output) before they can be advertised as supported. The default gate is
-`./scripts/verify-engine-readiness-v8.ps1`; release hardware validation uses the
-same script with `-RequireHardwareMedia`.
+`./scripts/verify-engine-readiness-v9.ps1`; the full local readiness gate is
+`./scripts/verify-engine-readiness-v10.ps1`. Release hardware validation uses
+the readiness scripts with `-RequireHardwareMedia`.
 
 
 ## Studio UI Direction

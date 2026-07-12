@@ -45,6 +45,20 @@ Complete foundations:
   bitstream format, optional duration, and optional codec configuration. The
   prototype MP4/RTMP consumers reject unknown bitstream format and do not
   fabricate codec configuration.
+- Public RTMP packet sinks now follow the same product evidence rule as MP4:
+  they reject packets without trusted `BackendOutputValidated` evidence unless
+  a test-only prototype transport is explicitly opted in.
+- Encoded packet fanout has per-consumer backpressure policies and write
+  timeouts. Recording paths use bounded backpressure; network paths fail the
+  affected output instead of blocking render or encode threads indefinitely.
+- Rendered-output-to-encoder input preparation is explicit. A rendered surface
+  is exported directly only when the encoder requirement matches; otherwise the
+  path must use a GPU-only conversion step such as BGRA/RGBA -> NV12. If no
+  GPU converter exists, the product path fails instead of staging through CPU.
+- Hardware media proof execution now has a session registry that can run
+  concrete proof runners and merge their results into the capability report.
+  This keeps static capability declarations separate from proof results
+  observed on the current machine.
 - Media Foundation file decode now has an explicit product session boundary:
   real D3D11VA decode reports unavailable, while placeholder texture output is
   isolated in the prototype bridge.
@@ -164,7 +178,14 @@ render thread, provider, submission, or GPU export/encode paths, also run:
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-media-transport-rules.ps1
 ./scripts/verify-license-policy.ps1
-./scripts/verify-engine-readiness-v8.ps1
+./scripts/verify-engine-readiness-v9.ps1
+```
+
+Before promoting media transport, encoder, decoder, render-output encode, sink,
+or capability work, run the full product boundary suite:
+
+```powershell
+./scripts/verify-engine-readiness-v10.ps1
 ```
 
 ## Active Phase 2 Commit Order (GPU Pipeline Completo)
@@ -221,10 +242,11 @@ Required correction order:
 5. Real decode -> render -> encode proof before MP4/RTMP can become
 Experimental or Supported.
 
-## Active vNext v8 Hardware Media And I/O Proof Gate
+## Active vNext v8 Hardware Media And I/O Proof Set
 
-The executable guard for hardware media truth is
-`./scripts/verify-engine-readiness-v8.ps1`.
+The hardware media proof set is implemented by
+`./scripts/verify-engine-readiness-v8.ps1` and is included from the newer v9/v10
+readiness gates.
 
 The v8 proof set is explicit and capability-driven. It keeps codec/backend
 proofs separate from product I/O proofs so MP4, RTMP, webcam, and NDI cannot be
@@ -245,9 +267,9 @@ advertised as ready merely because one internal prototype path exists.
 | NDI output product proof | `proof.media_io.ndi_output.product` | NDI licensing is approved and output avoids continuous CPU readback while preserving sink backpressure/lifetime contracts. |
 
 Default CI may report proofs as `Unavailable` with reasons when the hardware
-path is not implemented or not present. Release/readiness machines use
-`./scripts/verify-engine-readiness-v8.ps1 -RequireHardwareMedia`; that mode
-fails unless every v8 hardware media proof is `Passed`.
+path is not implemented or not present. Release/readiness machines use the
+current readiness gate with `-RequireHardwareMedia`; that mode fails unless
+every required v8 hardware media proof is `Passed`.
 
 ## Active vNext v3 Truth Gate
 
@@ -277,7 +299,7 @@ Current truth table:
 | Encoder format conversion | Done:BackendCallSucceeded for D3D11 VideoProcessor path when supported; product encode remains blocked on real MF packet validation |
 | Packet sink boundary | Done:Contract with explicit bitstream metadata |
 | MP4 writer | Done:Contract/Product boundary; public path requires trusted BackendOutputValidated H.264 packet evidence and rejects prototype/contract-only packets |
-| RTMP transport | Done:Prototype; rejects unknown bitstream |
+| RTMP transport | Done:Contract/Product boundary; public path requires trusted BackendOutputValidated H.264 packet evidence, rejects prototype/contract-only packets, and keeps prototype transport behind explicit test opt-in |
 | RenderGraph | Done:Contract/resource bridge; not a GPU pass executor |
 | Color correction effect | Done:ProductValidated for Vulkan source-layer shader |
 | Blur effect | Done:ProductValidated for Vulkan source-layer shader/intermediate passes |
@@ -288,7 +310,28 @@ Current truth table:
 
 `CapabilityEntry.ProductReadinessStatus` enforces this split: entries marked
 `Prototype` or `Skeleton` cannot be emitted as `Supported` or `Experimental`.
-The executable guard for this truth table is `./scripts/verify-engine-readiness-v8.ps1`.
+The executable guard for this truth table is now
+`./scripts/verify-engine-readiness-v9.ps1`. Use
+`./scripts/verify-engine-readiness-v10.ps1` for the full local readiness run
+that includes GPU and Performance tiers. Release hardware validation still uses
+`-RequireHardwareMedia`; hardware proof absence must remain explicit
+`Unavailable` and must never become software fallback.
+
+## Active vNext v9/v10 Product Boundary Gates
+
+`./scripts/verify-engine-readiness-v9.ps1` is the default product-boundary
+gate. It runs build, Fast tier, media transport guard rails, license guard
+rails, and product-boundary tests for capability truth, render-output encode
+preparation, encoded sink evidence, Windows media boundaries, and docs.
+
+`./scripts/verify-engine-readiness-v10.ps1` extends v9 with GPU and Performance
+tiers. Use it before promoting any media transport, encoder, decoder, render,
+sink, or capability work beyond contract/prototype status.
+
+Hardware proof runners are registered through `HardwareMediaProofRegistry`.
+They may report `Unavailable` on developer/CI machines without required
+hardware, but product release validation must run with `-RequireHardwareMedia`
+and fail unless required proof entries are `Passed`.
 
 ## Future Phase - FFmpeg Libraries Integration Review
 

@@ -20,10 +20,13 @@ internal interface IRenderedOutputEncoderSurfaceExporter
 
 internal sealed class RenderedOutputEncodeFrameAdapter
 {
-    private readonly IRenderedOutputEncoderSurfaceExporter _surfaceExporter;
+    private readonly IRenderedOutputEncoderInputPreparer _inputPreparer;
 
     public RenderedOutputEncodeFrameAdapter(IRenderedOutputEncoderSurfaceExporter surfaceExporter) =>
-        _surfaceExporter = surfaceExporter ?? throw new ArgumentNullException(nameof(surfaceExporter));
+        _inputPreparer = new RenderedOutputEncoderInputPreparer(surfaceExporter);
+
+    public RenderedOutputEncodeFrameAdapter(IRenderedOutputEncoderInputPreparer inputPreparer) =>
+        _inputPreparer = inputPreparer ?? throw new ArgumentNullException(nameof(inputPreparer));
 
     public async ValueTask<ScheduledRenderedFrame> CreateScheduledFrameAsync(
         RenderedOutputFrame frame,
@@ -38,14 +41,8 @@ internal sealed class RenderedOutputEncodeFrameAdapter
         ArgumentNullException.ThrowIfNull(auditSink);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_surfaceExporter.CanExport(frame.SurfaceLease, requirement))
-        {
-            throw new NotSupportedException(
-                $"Rendered output {frame.OutputId} cannot be exported to the hardware encoder without a GPU-only surface path.");
-        }
-
-        var encoderInputLease = await _surfaceExporter
-            .ExportAsync(frame.SurfaceLease, requirement, auditSink, cancellationToken)
+        var encoderInputLease = await _inputPreparer
+            .PrepareAsync(frame.SurfaceLease, requirement, auditSink, cancellationToken)
             .ConfigureAwait(false);
 
         return new ScheduledRenderedFrame
@@ -78,14 +75,8 @@ internal sealed class RenderedOutputEncodeFrameAdapter
 
         try
         {
-            if (!_surfaceExporter.CanExport(surface, requirement))
-            {
-                throw new NotSupportedException(
-                    $"Rendered output {lease.OutputId} cannot be exported to the hardware encoder without a GPU-only surface path.");
-            }
-
-            var encoderInputLease = await _surfaceExporter
-                .ExportAsync(surface, requirement, auditSink, cancellationToken)
+            var encoderInputLease = await _inputPreparer
+                .PrepareAsync(surface, requirement, auditSink, cancellationToken)
                 .ConfigureAwait(false);
 
             return new ScheduledRenderedFrame

@@ -142,15 +142,16 @@ Before considering a change complete, verify:
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
 - [ ] v8 render-to-encode, hardware encode, MP4 recording, MP4 input/output, webcam input, RTMP network output, and NDI input/output proofs pass before those media I/O paths are marked Supported.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
-- [ ] Product MP4 recording rejects packets without trusted `BackendOutputValidated` evidence; public callers cannot forge that evidence through packet initializers.
+- [ ] Product MP4 recording and public RTMP streaming reject packets without trusted `BackendOutputValidated` evidence; public callers cannot forge that evidence through packet initializers.
 - [ ] BGRA/RGBA -> NV12 encoder format conversion uses a GPU backend path or records explicit unavailable diagnostics; no CPU staging fallback.
 - [ ] Capability report is consumable via `GetCapabilityReportAsync` with status and reason per feature.
 - [ ] `Supported` and `Experimental` capability entries are the only user-available states; every unavailable entry includes a non-empty reason.
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
 - [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15-20.
-- [ ] Engine readiness v8 (`verify-engine-readiness-v8.ps1`) passes before promoting prototype/skeleton media paths.
-- [ ] Release hardware media readiness uses `verify-engine-readiness-v8.ps1 -RequireHardwareMedia`.
+- [ ] Engine readiness v9 (`verify-engine-readiness-v9.ps1`) passes before promoting prototype/skeleton media paths.
+- [ ] Engine readiness v10 (`verify-engine-readiness-v10.ps1`) passes before promoting media transport, encoder, decoder, render-output encode, sink, or capability work.
+- [ ] Release hardware media readiness uses the current readiness script with `-RequireHardwareMedia`.
 - [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.
 
 ## FFmpeg / external codec review checklist

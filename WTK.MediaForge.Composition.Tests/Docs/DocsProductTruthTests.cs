@@ -69,8 +69,9 @@ public sealed class DocsProductTruthTests
         Assert.Contains("Output route transitions | Done:ProductValidated for Vulkan cut/fade output pass", roadmap, StringComparison.Ordinal);
         Assert.Contains("Performance validation | Done:Skeleton", roadmap, StringComparison.Ordinal);
 
-        Assert.Contains("Windows hardware decode, Windows hardware encode, MP4 recording end-to-end", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("Windows hardware decode, Windows hardware encode, and MP4 recording", phase2Acceptance, StringComparison.Ordinal);
         Assert.Contains("The MP4 packet writer boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("The RTMP network boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
 
         Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly |", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("| Recording MP4 H.264 | EncodedPacket | PrototypeOnly |", supportMatrix, StringComparison.Ordinal);
@@ -139,7 +140,9 @@ public sealed class DocsProductTruthTests
         var supportMatrix = File.ReadAllText(Path.Combine(repoRoot, "docs", "GPU_MEDIA_SUPPORT_MATRIX.md"));
         var publicApi = File.ReadAllText(Path.Combine(repoRoot, "docs", "PUBLIC_API.md"));
 
-        Assert.Contains("verify-engine-readiness-v8.ps1", aiContext, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v9.ps1", aiContext, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v10.ps1", aiContext, StringComparison.Ordinal);
+        Assert.Contains("v8 hardware media proofs", aiContext, StringComparison.Ordinal);
         Assert.Contains("HardwareMediaProof", publicApi, StringComparison.Ordinal);
         Assert.Contains("BackendOutputValidated", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("Render-to-encode proof", roadmap, StringComparison.Ordinal);
@@ -151,6 +154,33 @@ public sealed class DocsProductTruthTests
         Assert.Contains("RTMP network output proof", roadmap, StringComparison.Ordinal);
         Assert.Contains("NDI output product proof", roadmap, StringComparison.Ordinal);
         Assert.Contains("RequireHardwareMedia", roadmap, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Engine_readiness_v9_and_v10_scripts_define_current_product_boundary_gates()
+    {
+        var repoRoot = FindRepositoryRoot();
+        var v9Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v9.ps1"));
+        var v10Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v10.ps1"));
+        var productBoundaryScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-product-boundary.ps1"));
+
+        Assert.Contains("dotnet build", v9Script, StringComparison.Ordinal);
+        Assert.Contains("test.ps1", v9Script, StringComparison.Ordinal);
+        Assert.Contains("-Tier Fast", v9Script, StringComparison.Ordinal);
+        Assert.Contains("verify-media-transport-rules.ps1", v9Script, StringComparison.Ordinal);
+        Assert.Contains("verify-license-policy.ps1", v9Script, StringComparison.Ordinal);
+        Assert.Contains("verify-product-boundary.ps1", v9Script, StringComparison.Ordinal);
+        Assert.Contains("RequireHardwareMedia", v9Script, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v8.ps1", v9Script, StringComparison.Ordinal);
+
+        Assert.Contains("verify-engine-readiness-v9.ps1", v10Script, StringComparison.Ordinal);
+        Assert.Contains("-Tier Gpu", v10Script, StringComparison.Ordinal);
+        Assert.Contains("-Tier Performance", v10Script, StringComparison.Ordinal);
+
+        Assert.Contains("RenderedOutputEncodeFrameAdapterTests", productBoundaryScript, StringComparison.Ordinal);
+        Assert.Contains("EncodedOutputPipelineTests", productBoundaryScript, StringComparison.Ordinal);
+        Assert.Contains("WindowsHardwareDecodeBoundaryTests", productBoundaryScript, StringComparison.Ordinal);
+        Assert.Contains("HardwareEncodeFoundationTests", productBoundaryScript, StringComparison.Ordinal);
     }
 
     [Fact]

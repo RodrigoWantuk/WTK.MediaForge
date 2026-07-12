@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition.Media.Stream;
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Core.Media.Audit;
 
 namespace WTK.MediaForge.Composition.Outputs;
 
@@ -8,6 +9,8 @@ namespace WTK.MediaForge.Composition.Outputs;
 /// </summary>
 public sealed class RtmpPacketSink : IEncodedPacketSink
 {
+    private static readonly TimeSpan DefaultOperationTimeout = TimeSpan.FromSeconds(5);
+
     private readonly string _url;
     private readonly bool _allowPrototypeTransport;
     private readonly FlvPacketizer _packetizer = new();
@@ -46,7 +49,19 @@ public sealed class RtmpPacketSink : IEncodedPacketSink
         _codecConfigurationSent = false;
         try
         {
-            await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
+            using var timeout = new CancellationTokenSource(DefaultOperationTimeout);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+            try
+            {
+                await _transport.ConnectAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (
+                timeout.IsCancellationRequested &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"RTMP connect/publish did not complete within {DefaultOperationTimeout}.", ex);
+            }
+
             _started = true;
         }
         catch
@@ -72,10 +87,29 @@ public sealed class RtmpPacketSink : IEncodedPacketSink
         if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.Unknown)
             throw new NotSupportedException("RTMP requires packets with an explicit H.264 bitstream format.");
 
+        if (!_allowPrototypeTransport &&
+            packet.EvidenceKind != MediaTransportAuditEvidenceKind.BackendOutputValidated)
+        {
+            throw new NotSupportedException(
+                "Product RTMP output requires packets with BackendOutputValidated evidence.");
+        }
+
         var flvPackets = _packetizer.Packetize(packet, includeCodecConfiguration: !_codecConfigurationSent);
         foreach (var flvPacket in flvPackets)
         {
-            await _transport.SendAsync(flvPacket, cancellationToken).ConfigureAwait(false);
+            using var timeout = new CancellationTokenSource(DefaultOperationTimeout);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+            try
+            {
+                await _transport.SendAsync(flvPacket, linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (
+                timeout.IsCancellationRequested &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"RTMP packet write did not complete within {DefaultOperationTimeout}.", ex);
+            }
+
             _codecConfigurationSent |= flvPacket.IsCodecConfiguration;
         }
     }
@@ -84,6 +118,9 @@ public sealed class RtmpPacketSink : IEncodedPacketSink
     {
         cancellationToken.ThrowIfCancellationRequested();
         _started = false;
+        _codecConfigurationSent = false;
+        _transport?.Dispose();
+        _transport = null;
         return ValueTask.CompletedTask;
     }
 

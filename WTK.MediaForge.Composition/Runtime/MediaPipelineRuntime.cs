@@ -82,9 +82,13 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                 startedSinks.Add(sink);
             }
 
-            router = new EncodedOutputRouter(encoder, sinkQueueCapacity);
+            router = new EncodedOutputRouter(encoder, sinkQueueCapacity, _diagnostics);
             foreach (var sink in startedSinks)
-                router.RegisterConsumer(new EncodedPacketSinkConsumer(sink));
+            {
+                router.RegisterConsumer(
+                    new EncodedPacketSinkConsumer(sink),
+                    CreateConsumerOptionsForSink(sink));
+            }
 
             scheduler = new EncodeSchedulerTarget(
                 encoder,
@@ -244,6 +248,29 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
         if (errors is not null)
             throw new AggregateException("Failed to stop one or more encoded packet sinks.", errors);
     }
+
+    private static EncodedPacketConsumerOptions CreateConsumerOptionsForSink(IEncodedPacketSink sink) =>
+        sink switch
+        {
+            RecordingMp4Sink or RecordingMp4PacketSink => new EncodedPacketConsumerOptions
+            {
+                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.Backpressure,
+                WriteTimeout = TimeSpan.FromSeconds(10),
+                DisplayName = sink.GetType().Name
+            },
+            RtmpSink or RtmpPacketSink => new EncodedPacketConsumerOptions
+            {
+                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.FailOutput,
+                WriteTimeout = TimeSpan.FromSeconds(5),
+                DisplayName = sink.GetType().Name
+            },
+            _ => new EncodedPacketConsumerOptions
+            {
+                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.FailOutput,
+                WriteTimeout = TimeSpan.FromSeconds(5),
+                DisplayName = sink.GetType().Name
+            }
+        };
 
     private sealed class EncodedRenderOutputRoute(
         RenderOutputId outputId,

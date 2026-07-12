@@ -10,7 +10,8 @@ dotnet test
 ./scripts/test.ps1 -Tier Fast
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-phase2-readiness.ps1
-./scripts/verify-engine-readiness-v8.ps1
+./scripts/verify-engine-readiness-v9.ps1
+./scripts/verify-engine-readiness-v10.ps1
 ```
 
 ## Commit gates
@@ -36,7 +37,7 @@ dotnet test
 | 17 | RTMP Network Transport Boundary | `EncodedOutputPipelineTests.Rtmp_public_sink_connects_publishes_and_sends_flv_video_over_tcp` and `EncodedOutputPipelineTests.Rtmp_sink_receives_flv_tags_from_shared_encoder` |
 | 18 | Synthetic Performance Validation | `WTK.MediaForge.Diagnostics.Tests/Performance/PerformanceValidationSuiteTests.cs` and `WTK.MediaForge.Composition.Tests/Performance/CompositionPerformanceGateTests.cs` |
 | 19 | Fault Recovery | `WTK.MediaForge.Composition.Tests/Recovery/FaultRecoveryCoordinatorTests.cs` |
-| 20 | Engine Readiness Gate | `./scripts/verify-phase2-readiness.ps1` and `./scripts/verify-engine-readiness-v8.ps1` |
+| 20 | Engine Readiness Gate | `./scripts/verify-phase2-readiness.ps1`, `./scripts/verify-engine-readiness-v9.ps1`, and `./scripts/verify-engine-readiness-v10.ps1` |
 
 ## Blocking rules verified
 
@@ -75,12 +76,16 @@ Current interpretation:
 - GPU resource lifetime, scheduler, asset manager, source runtime, scene runtime,
   texture streaming, and fault recovery are `Done:Contract`.
 - GPU surface export proof is `Done:BackendCallSucceeded`.
-- Windows hardware decode, Windows hardware encode, MP4 recording end-to-end,
-  and RTMP output are `Done:Prototype`.
+- Windows hardware decode, Windows hardware encode, and MP4 recording
+  end-to-end are `Done:Prototype`.
 - The MP4 packet writer boundary is `Done:Contract`: the public recording sink
   now requires trusted `BackendOutputValidated` H.264 packet evidence and
   rejects prototype or contract-only packets, but product recording remains
   unavailable until real hardware encoder output is validated.
+- The RTMP network boundary is `Done:Contract`: TCP handshake/publish and FLV
+  H.264 packetization exist, and the public sink now requires trusted
+  `BackendOutputValidated` packet evidence. Product streaming remains
+  unavailable until real render-output hardware encoder output is validated.
 - RenderGraph executor has a resource bridge but is not a GPU pass executor yet.
 - `ColorCorrectionEffect` is product-validated in the Vulkan source-layer
   shader, and `BlurEffect` is product-validated for the current Vulkan

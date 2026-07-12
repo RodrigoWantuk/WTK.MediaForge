@@ -44,7 +44,9 @@ public sealed class EncodedOutputPipelineTests
         await using var sink = new RtmpSink(server.Url);
 
         await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
-        await sink.WritePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        await sink.WritePacketAsync(
+            CreateSyntheticH264Packets(1, CreateBackendValidatedRtmpEvidence()).Single(),
+            CancellationToken.None);
         await server.WaitForVideoPacketsAsync(2, TimeSpan.FromSeconds(5));
 
         Assert.Contains("connect", server.CommandNames);
@@ -55,6 +57,20 @@ public sealed class EncodedOutputPipelineTests
         Assert.Equal(0, server.VideoPacketPayloads[0][1]);
         Assert.Equal(0x17, server.VideoPacketPayloads[1][0]);
         Assert.Equal(1, server.VideoPacketPayloads[1][1]);
+    }
+
+    [Fact]
+    public async Task Rtmp_public_sink_rejects_packets_without_backend_validation()
+    {
+        await using var server = new FakeRtmpServer();
+        await using var sink = new RtmpSink(server.Url);
+
+        await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await sink.WritePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None));
+
+        Assert.Contains("BackendOutputValidated", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -487,10 +503,37 @@ public sealed class EncodedOutputPipelineTests
         await WaitForConditionAsync(() => slow.StartedCount == 1, TimeSpan.FromSeconds(2));
         await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
+        var exception = Assert.Throws<AggregateException>(() =>
             router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None).AsTask().GetAwaiter().GetResult());
 
-        Assert.Contains("backpressure", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            exception.InnerExceptions,
+            inner => inner.Message.Contains("backpressure", StringComparison.OrdinalIgnoreCase));
+        slow.Release();
+    }
+
+    [Fact]
+    public async Task Encoded_output_router_drop_policy_isolates_slow_consumer_from_fast_consumer()
+    {
+        var encoder = new TestHardwareVideoEncoder();
+        await using var router = new EncodedOutputRouter(encoder, consumerQueueCapacity: 1);
+        var slow = new BlockingPacketConsumer();
+        var fast = new RecordingPacketConsumer();
+        router.RegisterConsumer(slow, new EncodedPacketConsumerOptions
+        {
+            BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.DropOutput,
+            DisplayName = "slow-drop"
+        });
+        router.RegisterConsumer(fast);
+
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        await WaitForConditionAsync(() => slow.StartedCount == 1, TimeSpan.FromSeconds(2));
+
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        await WaitForConditionAsync(() => fast.Packets.Count == 2, TimeSpan.FromSeconds(2));
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+
+        await WaitForConditionAsync(() => fast.Packets.Count == 3, TimeSpan.FromSeconds(2));
         slow.Release();
     }
 
@@ -554,6 +597,12 @@ public sealed class EncodedOutputPipelineTests
             nameof(EncodedOutputPipelineTests),
             "TestBackend",
             MediaForgeCapabilityCatalog.Mp4RecordingProof);
+
+    private static EncodedVideoPacketEvidence CreateBackendValidatedRtmpEvidence() =>
+        EncodedVideoPacketEvidence.CreateBackendOutputValidated(
+            nameof(EncodedOutputPipelineTests),
+            "TestBackend",
+            MediaForgeCapabilityCatalog.RtmpNetworkOutputProof);
 
     private static int FindBoxTypeOffset(byte[] bytes, string type)
     {

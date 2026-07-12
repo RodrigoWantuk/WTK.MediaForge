@@ -133,13 +133,23 @@ The legacy WinForms preview path has been removed as a product path because it u
   sink responsibilities. `IEncodedPacketSink`, `RecordingMp4PacketSink`, and
   `RtmpPacketSink` consume `EncodedVideoPacket`; `IRenderOutputSink` consumers
   receive rendered surfaces only.
+- Encoded packet fanout runs through `EncodedOutputRouter` with explicit
+  per-consumer backpressure policy and write timeout. Recording consumers use
+  bounded backpressure; network consumers fail the affected output path instead
+  of blocking render or encode threads indefinitely.
 - `EncodedVideoPacket` carries explicit codec, bitstream format, presentation
   time, optional duration, and optional codec configuration bytes. MP4/RTMP
   packet sinks must reject unknown H.264 bitstream format instead of accepting
   opaque bytes. Backend-output-validated packet evidence is observable but not
   publicly forgeable; it is created only by trusted implementation assemblies
-  after a real backend produces output. The prototype MP4 writer no longer
-  fabricates SPS/PPS data.
+  after a real backend produces output. Public MP4 and RTMP packet sinks reject
+  prototype or contract-only packets; test-only prototype transports require an
+  explicit opt-in. The prototype MP4 writer no longer fabricates SPS/PPS data.
+- Rendered-output encoder input preparation is a separate GPU-only step:
+  direct export is allowed only when the encoder requirement matches the
+  rendered surface; otherwise a GPU converter must produce the requested
+  encoder input format. Missing conversion records an unavailable audit event
+  and fails instead of using CPU staging.
 - `MediaFoundationHardwareVideoDecoder` has a separate product decode session
   boundary (`MediaFoundationFileHardwareVideoDecoderSession`) from the
   placeholder prototype bridge. The public/non-opt-in path reports real
@@ -209,12 +219,13 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
   `Prototype` and `Skeleton` readiness entries must never be emitted as
   `Supported` or `Experimental`.
-- `./scripts/verify-engine-readiness-v8.ps1` is the current executable truth
-  gate for product readiness, docs alignment, media transport, license, Fast,
-  Gpu, Performance, export-proof, decode/encode boundary, media I/O boundary,
-  and platform font adapter validation. `-RequireHardwareMedia` additionally
-  fails release validation unless all v8 hardware media proofs pass on the
-  target machine.
+- `./scripts/verify-engine-readiness-v9.ps1` is the current default executable
+  product-boundary gate for product readiness, docs alignment, media transport,
+  license, Fast tier, encode input preparation, encoded sink evidence, and
+  media I/O boundary tests. `./scripts/verify-engine-readiness-v10.ps1` adds
+  GPU and Performance tiers for full local readiness. `-RequireHardwareMedia`
+  additionally fails release validation unless all v8 hardware media proofs
+  pass on the target machine.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
 
 ## GPU Resource Pool (Phase 2)

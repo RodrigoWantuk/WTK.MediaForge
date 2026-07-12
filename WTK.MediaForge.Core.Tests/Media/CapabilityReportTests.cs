@@ -432,4 +432,55 @@ public sealed class CapabilityReportTests
                 Assert.Contains("Prototype", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
             });
     }
+
+    [Fact]
+    public async Task Hardware_media_proof_registry_updates_session_capability_report_after_proof_passes()
+    {
+        var baseline = new HardwareMediaCapabilityReport
+        {
+            Platform = "Test",
+            Proofs =
+            [
+                new HardwareMediaProof
+                {
+                    Id = MediaForgeCapabilityCatalog.RtmpNetworkOutputProof,
+                    DisplayName = "RTMP network proof",
+                    Status = HardwareMediaProofStatus.Unavailable,
+                    Reason = "Proof has not run."
+                }
+            ]
+        };
+        var before = MediaForgeCapabilityReportBuilder.Build(baseline);
+        Assert.Equal(
+            MediaForgeSupportStatus.Unsupported,
+            before.TryGetEntry(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof)!.SupportStatus);
+
+        var registry = new HardwareMediaProofRegistry();
+        registry.Register(new PassingProofRunner(
+            MediaForgeCapabilityCatalog.RtmpNetworkOutputProof,
+            "RTMP network proof"));
+
+        var results = await registry.RunAsync(baseline, CancellationToken.None);
+        var updatedHardware = HardwareMediaProofRegistry.ApplyResults(baseline, results);
+        var after = MediaForgeCapabilityReportBuilder.Build(updatedHardware);
+
+        var proofEntry = after.TryGetEntry(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof)!;
+        Assert.Equal(MediaForgeSupportStatus.Supported, proofEntry.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.ProductValidated, proofEntry.ProductReadinessStatus);
+        Assert.Contains("Proof passed", proofEntry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class PassingProofRunner(string id, string displayName)
+        : HardwareMediaProofRunner(id, displayName)
+    {
+        public override ValueTask<HardwareMediaProofResult> RunAsync(
+            HardwareMediaCapabilityReport baseline,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(Passed(
+                backend: "TestBackend",
+                evidence: [nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated)]));
+        }
+    }
 }
