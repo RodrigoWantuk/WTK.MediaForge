@@ -84,7 +84,7 @@ public static class MediaTransportAuditRules
 
     public static bool IsExportProofPathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>
         IsProductPathValid(events)
-        && HasEvidence(events, MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface, MediaTransportAuditEvidenceKind.BackendOutputValidated)
+        && HasEvidence(events, MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface, MediaTransportAuditEvidenceKind.BackendCallSucceeded)
         && HasEvidence(events, MediaTransportAuditEventKind.EncodedPacketProduced, MediaTransportAuditEvidenceKind.BackendOutputValidated);
 
     public static bool IsDecodePathValid(IReadOnlyList<MediaTransportAuditEvent> events) =>

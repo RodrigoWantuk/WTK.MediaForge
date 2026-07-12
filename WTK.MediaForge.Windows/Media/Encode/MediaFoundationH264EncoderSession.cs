@@ -166,7 +166,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             {
                 Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
                 Source = nameof(MediaFoundationHardwareH264EncoderSession),
-                EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated,
+                EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
                 Detail = $"Media Foundation hardware MFT accepted D3D11 surface input ({_transformName ?? "unknown MFT"})."
             });
 

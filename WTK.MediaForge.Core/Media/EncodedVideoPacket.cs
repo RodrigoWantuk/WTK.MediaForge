@@ -33,8 +33,10 @@ public sealed class EncodedVideoPacket
 
     public bool IsKeyFrame { get; init; }
 
-    public MediaTransportAuditEvidenceKind EvidenceKind { get; init; } =
-        MediaTransportAuditEvidenceKind.ContractOnly;
+    public EncodedVideoPacketEvidence Evidence { get; init; } =
+        EncodedVideoPacketEvidence.ContractOnly;
+
+    public MediaTransportAuditEvidenceKind EvidenceKind => Evidence.Kind;
 
     public ReadOnlyMemory<byte> CodecConfiguration { get; init; } =
         ReadOnlyMemory<byte>.Empty;

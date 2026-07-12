@@ -16,6 +16,8 @@ public sealed class RecordingMp4PacketSink : IEncodedPacketSink
     private IMp4Muxer? _muxer;
     private EncodedPacketSinkContext? _context;
     private bool _started;
+    private bool _stopped;
+    private bool _disposed;
 
     public RecordingMp4PacketSink(string outputPath, IMediaTransportAuditSink? auditSink = null)
         : this(outputPath, auditSink, allowPrototypeMuxer: false)
@@ -37,14 +39,24 @@ public sealed class RecordingMp4PacketSink : IEncodedPacketSink
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (context.Codec != EncodedVideoCodec.H264)
             throw new NotSupportedException($"MP4 recording currently accepts H.264 packets, not '{context.Codec}'.");
 
+        if (context.Size.IsEmpty)
+            throw new InvalidOperationException("MP4 recording requires a non-empty output size.");
+
+        if (_started)
+            throw new InvalidOperationException("Recording MP4 packet sink is already started.");
+
+        if (_stopped)
+            throw new InvalidOperationException("Recording MP4 packet sink cannot be restarted after Stop; create a new sink instance.");
+
         _context = context;
         _muxer = _allowPrototypeMuxer
             ? new PrototypeEncodedPacketMp4Muxer(_outputPath, _auditSink)
-            : new EncodedPacketMp4Muxer(_outputPath);
+            : new EncodedPacketMp4Muxer(_outputPath, context.Size.Width, context.Size.Height);
         _started = true;
         return ValueTask.CompletedTask;
     }
@@ -53,6 +65,7 @@ public sealed class RecordingMp4PacketSink : IEncodedPacketSink
     {
         ArgumentNullException.ThrowIfNull(packet);
         cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (!_started || _muxer is null)
             throw new InvalidOperationException("Recording MP4 packet sink has not been started.");
@@ -68,14 +81,24 @@ public sealed class RecordingMp4PacketSink : IEncodedPacketSink
 
     public async ValueTask StopAsync(CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (!_started)
+            return;
+
         if (_muxer is not null)
             await _muxer.FinalizeAsync(cancellationToken).ConfigureAwait(false);
 
         _started = false;
+        _stopped = true;
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+            return;
+
+        _disposed = true;
         if (_muxer is not null)
             await _muxer.DisposeAsync().ConfigureAwait(false);
 

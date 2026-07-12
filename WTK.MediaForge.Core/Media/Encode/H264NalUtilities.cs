@@ -11,12 +11,54 @@ public static class H264NalUtilities
     {
         nalType = -1;
 
-        var units = ExtractAnnexBNalUnits(data);
-        if (units.Count == 0 || units[0].Length == 0)
+        if (!TryReadNextAnnexBNalUnit(data, 0, out _, out _, out var nalOffset, out var nalLength) ||
+            nalLength == 0)
             return false;
 
-        nalType = units[0][0] & 0x1F;
+        nalType = data[nalOffset] & 0x1F;
         return true;
+    }
+
+    internal static bool ContainsAnnexBNalPayload(ReadOnlySpan<byte> data) =>
+        TryReadNextAnnexBNalUnit(data, 0, out _, out _, out _, out _);
+
+    internal static bool TryReadNextAnnexBNalUnit(
+        ReadOnlySpan<byte> data,
+        int searchOffset,
+        out int nextSearchOffset,
+        out int startCodeLength,
+        out int nalOffset,
+        out int nalLength)
+    {
+        nextSearchOffset = data.Length;
+        startCodeLength = 0;
+        nalOffset = -1;
+        nalLength = 0;
+
+        var offset = searchOffset;
+        while (TryFindStartCode(data, offset, out var startCodeOffset, out startCodeLength))
+        {
+            var nalStart = startCodeOffset + startCodeLength;
+            if (nalStart >= data.Length)
+                return false;
+
+            var nextStartCodeOffset = TryFindStartCode(data, nalStart, out var nextStartCode, out _)
+                ? nextStartCode
+                : data.Length;
+
+            var nalEnd = TrimTrailingZeroBytes(data, nalStart, nextStartCodeOffset);
+            nextSearchOffset = nextStartCodeOffset;
+            if (nalEnd > nalStart)
+            {
+                nalOffset = nalStart;
+                nalLength = nalEnd - nalStart;
+                return true;
+            }
+
+            offset = nextStartCodeOffset;
+        }
+
+        return false;
     }
 
     public static IReadOnlyList<byte[]> ExtractAnnexBNalUnits(ReadOnlySpan<byte> data)
@@ -24,26 +66,16 @@ public static class H264NalUtilities
         var units = new List<byte[]>();
         var searchOffset = 0;
 
-        while (TryFindStartCode(data, searchOffset, out var startCodeOffset, out var startCodeLength))
+        while (TryReadNextAnnexBNalUnit(
+            data,
+            searchOffset,
+            out var nextSearchOffset,
+            out _,
+            out var nalOffset,
+            out var nalLength))
         {
-            var nalStart = startCodeOffset + startCodeLength;
-            if (nalStart >= data.Length)
-                break;
-
-            var nextSearchOffset = nalStart;
-            var nextStartCodeOffset = TryFindStartCode(
-                data,
-                nextSearchOffset,
-                out var nextStartCode,
-                out _)
-                    ? nextStartCode
-                    : data.Length;
-
-            var nalEnd = TrimTrailingZeroBytes(data, nalStart, nextStartCodeOffset);
-            if (nalEnd > nalStart)
-                units.Add(data[nalStart..nalEnd].ToArray());
-
-            searchOffset = nextStartCodeOffset;
+            units.Add(data[nalOffset..(nalOffset + nalLength)].ToArray());
+            searchOffset = nextSearchOffset;
         }
 
         return units;

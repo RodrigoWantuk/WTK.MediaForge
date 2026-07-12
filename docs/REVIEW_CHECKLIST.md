@@ -142,7 +142,7 @@ Before considering a change complete, verify:
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
 - [ ] v6 render-to-encode, hardware encode, and MP4 recording proofs pass before hardware MP4 is marked Supported.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
-- [ ] Product MP4 recording rejects packets without `BackendOutputValidated` evidence.
+- [ ] Product MP4 recording rejects packets without trusted `BackendOutputValidated` evidence; public callers cannot forge that evidence through packet initializers.
 - [ ] BGRA/RGBA -> NV12 encoder format conversion uses a GPU backend path or records explicit unavailable diagnostics; no CPU staging fallback.
 - [ ] Capability report is consumable via `GetCapabilityReportAsync` with status and reason per feature.
 - [ ] `Supported` and `Experimental` capability entries are the only user-available states; every unavailable entry includes a non-empty reason.

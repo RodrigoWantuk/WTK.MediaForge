@@ -136,7 +136,10 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `EncodedVideoPacket` carries explicit codec, bitstream format, presentation
   time, optional duration, and optional codec configuration bytes. MP4/RTMP
   packet sinks must reject unknown H.264 bitstream format instead of accepting
-  opaque bytes. The prototype MP4 writer no longer fabricates SPS/PPS data.
+  opaque bytes. Backend-output-validated packet evidence is observable but not
+  publicly forgeable; it is created only by trusted implementation assemblies
+  after a real backend produces output. The prototype MP4 writer no longer
+  fabricates SPS/PPS data.
 - `MediaFoundationHardwareVideoDecoder` has a separate product decode session
   boundary (`MediaFoundationFileHardwareVideoDecoderSession`) from the
   placeholder prototype bridge. The public/non-opt-in path reports real

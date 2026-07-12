@@ -90,11 +90,13 @@ FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> hardware H.264 ->
 
 `EncodedPacketMp4Muxer` is the packet-only product boundary for MP4 writing: it
 does not accept prototype or contract-only packets, and it requires
-`BackendOutputValidated` H.264 evidence. `PrototypeEncodedPacketMp4Muxer`
-remains internal-test-only. Capability API exposes `HardwareMediaProof` entries
-for render-to-encode, hardware encode, MP4 recording, hardware decode, and
-decode-to-render. Recording remains unavailable until the hardware encoder and
-MP4 recording proofs both pass on the target backend.
+trusted `BackendOutputValidated` H.264 packet evidence created by an
+implementation backend, not by public packet initializers.
+`PrototypeEncodedPacketMp4Muxer` remains internal-test-only. Capability API
+exposes `HardwareMediaProof` entries for render-to-encode, hardware encode, MP4
+recording, hardware decode, and decode-to-render. Passed proofs must identify
+the backend and carry the required evidence. Recording remains unavailable until
+the hardware encoder and MP4 recording proofs both pass on the target backend.
 
 ## Decode-To-Render Proof Gate
 

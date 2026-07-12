@@ -36,7 +36,7 @@ Invoke-Step "verify-license-policy" { & "$PSScriptRoot/verify-license-policy.ps1
 Invoke-Step "hardware capability and proof truth tests" {
     dotnet test `
         WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
-        --filter "FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~CapabilityReportTests" `
+        --filter "FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~CapabilityReportTests|FullyQualifiedName~EncodedVideoPacketEvidenceTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
 }

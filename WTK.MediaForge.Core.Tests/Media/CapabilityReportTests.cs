@@ -123,6 +123,29 @@ public sealed class CapabilityReportTests
     }
 
     [Fact]
+    public void Capability_report_rejects_passed_proof_without_backend_validated_evidence()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
+            {
+                Platform = "Test",
+                Proofs =
+                [
+                    new HardwareMediaProof
+                    {
+                        Id = MediaForgeCapabilityCatalog.HardwareEncodeProof,
+                        DisplayName = "Encode",
+                        Status = HardwareMediaProofStatus.Passed,
+                        Backend = "TestBackend"
+                    }
+                ]
+            }));
+
+        Assert.Contains(MediaForgeCapabilityCatalog.HardwareEncodeProof, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BackendOutputValidated", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Capability_report_rejects_unavailable_entries_without_reason()
     {
         var entry = new CapabilityEntry
@@ -314,7 +337,7 @@ public sealed class CapabilityReportTests
         {
             Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
             Source = "real-encoder",
-            EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded
         });
         audit.Record(new MediaTransportAuditEvent
         {

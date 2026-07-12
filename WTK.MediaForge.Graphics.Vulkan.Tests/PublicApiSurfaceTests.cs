@@ -172,6 +172,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Core.Media.EncodedVideoBitstreamFormat",
                 "WTK.MediaForge.Core.Media.EncodedVideoCodec",
                 "WTK.MediaForge.Core.Media.EncodedVideoPacket",
+                "WTK.MediaForge.Core.Media.EncodedVideoPacketEvidence",
                 "WTK.MediaForge.Core.Media.EncodedVideoPacketLease",
                 "WTK.MediaForge.Core.Media.FrameRate",
                 "WTK.MediaForge.Core.Media.GpuExportProofStatus",

@@ -78,9 +78,9 @@ Current interpretation:
 - Windows hardware decode, Windows hardware encode, MP4 recording end-to-end,
   and RTMP output are `Done:Prototype`.
 - The MP4 packet writer boundary is `Done:Contract`: the public recording sink
-  now requires `BackendOutputValidated` H.264 packets and rejects prototype or
-  contract-only packets, but product recording remains unavailable until real
-  hardware encoder output is validated.
+  now requires trusted `BackendOutputValidated` H.264 packet evidence and
+  rejects prototype or contract-only packets, but product recording remains
+  unavailable until real hardware encoder output is validated.
 - RenderGraph executor has a resource bridge but is not a GPU pass executor yet.
 - `ColorCorrectionEffect` is product-validated in the Vulkan source-layer
   shader, and `BlurEffect` is product-validated for the current Vulkan

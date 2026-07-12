@@ -7,8 +7,10 @@ namespace WTK.MediaForge.Composition.Media.Mux;
 internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
 {
     private readonly string _outputPath;
+    private readonly string _temporaryOutputPath;
     private readonly string _payloadPath;
     private readonly FileStream _payloadStream;
+    private readonly IsoBmffMp4Writer.TrackMetadata _track;
     private readonly List<IsoBmffMp4Writer.SampleMetadata> _samples = [];
     private byte[] _avcC = [];
     private byte[] _sps = [];
@@ -16,13 +18,33 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
     private EncodedVideoBitstreamFormat? _bitstreamFormat;
     private bool _finalized;
     private bool _disposed;
+    private bool _payloadClosed;
 
-    public EncodedPacketMp4Muxer(string outputPath)
+    public EncodedPacketMp4Muxer(string outputPath, uint width, uint height)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        _outputPath = outputPath;
-        _payloadPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_payload_{Guid.NewGuid():N}.bin");
-        _payloadStream = File.Create(_payloadPath);
+        if (width == 0)
+            throw new ArgumentOutOfRangeException(nameof(width), "MP4 track width must be positive.");
+
+        if (height == 0)
+            throw new ArgumentOutOfRangeException(nameof(height), "MP4 track height must be positive.");
+
+        _track = new IsoBmffMp4Writer.TrackMetadata(width, height);
+        _outputPath = Path.GetFullPath(outputPath);
+        var outputDirectory = Path.GetDirectoryName(_outputPath);
+        if (string.IsNullOrWhiteSpace(outputDirectory))
+            outputDirectory = Directory.GetCurrentDirectory();
+
+        Directory.CreateDirectory(outputDirectory);
+        var token = Guid.NewGuid().ToString("N");
+        _temporaryOutputPath = Path.Combine(outputDirectory, $".{Path.GetFileName(_outputPath)}.{token}.tmp");
+        _payloadPath = Path.Combine(outputDirectory, $".{Path.GetFileName(_outputPath)}.{token}.payload");
+        _payloadStream = new FileStream(
+            _payloadPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 64 * 1024);
     }
 
     public ValueTask WritePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken = default)
@@ -43,14 +65,20 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
         if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.Avcc && _avcC.Length == 0)
             throw new NotSupportedException("AVCC H.264 packets require codec configuration data for MP4 recording.");
 
-        var sampleBytes = packet.BitstreamFormat == EncodedVideoBitstreamFormat.AnnexB
-            ? IsoBmffMp4Writer.ConvertAnnexBToAvcc(packet.Data.Span)
-            : packet.Data.ToArray();
+        uint sampleSize;
+        if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.AnnexB)
+        {
+            sampleSize = IsoBmffMp4Writer.WriteAnnexBAsAvccSample(_payloadStream, packet.Data.Span);
+        }
+        else
+        {
+            _payloadStream.Write(packet.Data.Span);
+            sampleSize = checked((uint)packet.Data.Length);
+        }
 
-        _payloadStream.Write(sampleBytes);
         _samples.Add(new IsoBmffMp4Writer.SampleMetadata(
             ResolveSampleDurationMilliseconds(packet),
-            checked((uint)sampleBytes.Length),
+            sampleSize,
             packet.IsKeyFrame || (H264NalUtilities.TryGetFirstNalType(packet.Data.Span, out var nalType) && nalType == 5)));
 
         return ValueTask.CompletedTask;
@@ -64,12 +92,48 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
         if (_finalized)
             return ValueTask.CompletedTask;
 
-        _finalized = true;
-        _payloadStream.Flush(flushToDisk: true);
-        _payloadStream.Dispose();
+        if (_samples.Count == 0)
+            throw new InvalidOperationException("Cannot finalize MP4 without encoded packets.");
 
         var avcC = ResolveAvcC();
-        IsoBmffMp4Writer.WriteMp4FromAvccSamples(_outputPath, _payloadPath, _samples, avcC);
+        if (!_payloadClosed)
+        {
+            _payloadStream.Flush(flushToDisk: true);
+            _payloadStream.Dispose();
+            _payloadClosed = true;
+        }
+
+        try
+        {
+            if (File.Exists(_temporaryOutputPath))
+                File.Delete(_temporaryOutputPath);
+
+            IsoBmffMp4Writer.WriteMp4FromAvccSamples(
+                _temporaryOutputPath,
+                _payloadPath,
+                _samples,
+                avcC,
+                _track);
+
+            if (!IsoBmffMp4Writer.HasValidH264BoxStructure(
+                _temporaryOutputPath,
+                _track,
+                _samples.Count))
+            {
+                throw new InvalidOperationException("MP4 muxer wrote an invalid H.264 box structure.");
+            }
+
+            File.Move(_temporaryOutputPath, _outputPath, overwrite: true);
+            _finalized = true;
+        }
+        catch
+        {
+            if (File.Exists(_temporaryOutputPath))
+                File.Delete(_temporaryOutputPath);
+
+            throw;
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -79,9 +143,14 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
             return ValueTask.CompletedTask;
 
         _disposed = true;
-        _payloadStream.Dispose();
+        if (!_payloadClosed)
+            _payloadStream.Dispose();
+
         if (File.Exists(_payloadPath))
             File.Delete(_payloadPath);
+
+        if (File.Exists(_temporaryOutputPath))
+            File.Delete(_temporaryOutputPath);
 
         _samples.Clear();
         return ValueTask.CompletedTask;
@@ -111,6 +180,12 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
         {
             throw new InvalidOperationException("Annex-B H.264 packet does not contain a valid start code.");
         }
+
+        if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.AnnexB &&
+            !H264NalUtilities.ContainsAnnexBNalPayload(packet.Data.Span))
+        {
+            throw new InvalidOperationException("Annex-B H.264 packet does not contain a NAL payload.");
+        }
     }
 
     private void CaptureCodecConfiguration(EncodedVideoPacket packet)
@@ -125,16 +200,24 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
             return;
         }
 
-        foreach (var nal in H264NalUtilities.ExtractAnnexBNalUnits(packet.Data.Span))
+        var searchOffset = 0;
+        while (H264NalUtilities.TryReadNextAnnexBNalUnit(
+            packet.Data.Span,
+            searchOffset,
+            out searchOffset,
+            out _,
+            out var nalOffset,
+            out var nalLength))
         {
-            if (nal.Length == 0)
+            if (nalLength == 0)
                 continue;
 
+            var nal = packet.Data.Span.Slice(nalOffset, nalLength);
             var nalType = nal[0] & 0x1F;
             if (nalType == 7 && _sps.Length == 0)
-                _sps = nal;
+                _sps = nal.ToArray();
             else if (nalType == 8 && _pps.Length == 0)
-                _pps = nal;
+                _pps = nal.ToArray();
         }
     }
 

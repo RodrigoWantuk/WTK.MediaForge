@@ -1,3 +1,5 @@
+using WTK.MediaForge.Core.Media.Audit;
+
 namespace WTK.MediaForge.Core.Media;
 
 public static class MediaForgeCapabilityReportBuilder
@@ -14,7 +16,7 @@ public static class MediaForgeCapabilityReportBuilder
         EnsureReadinessDoesNotOverstateProductAvailability(entries);
         EnsureUnavailableEntriesHaveReasons(entries);
         EnsureHardwareBackendsDoNotOverstateAvailability(hardware.BackendCapabilities);
-        EnsureProofsHaveReasons(hardware.Proofs);
+        EnsureProofsHaveReasonsAndEvidence(hardware.Proofs);
 
         return new MediaForgeCapabilityReport
         {
@@ -94,18 +96,46 @@ public static class MediaForgeCapabilityReportBuilder
         }
     }
 
-    private static void EnsureProofsHaveReasons(IReadOnlyList<HardwareMediaProof> proofs)
+    private static void EnsureProofsHaveReasonsAndEvidence(IReadOnlyList<HardwareMediaProof> proofs)
     {
         foreach (var proof in proofs)
         {
             if (proof.Status == HardwareMediaProofStatus.Passed)
+            {
+                EnsurePassedProofHasEvidence(proof);
                 continue;
+            }
 
             if (string.IsNullOrWhiteSpace(proof.Reason))
             {
                 throw new InvalidOperationException(
                     $"Hardware media proof '{proof.Id}' is marked {proof.Status} but does not provide a reason.");
             }
+        }
+    }
+
+    private static void EnsurePassedProofHasEvidence(HardwareMediaProof proof)
+    {
+        if (string.IsNullOrWhiteSpace(proof.Backend))
+        {
+            throw new InvalidOperationException(
+                $"Hardware media proof '{proof.Id}' is marked Passed but does not identify the validated backend.");
+        }
+
+        var minimumEvidence = proof.Id.Equals(MediaForgeCapabilityCatalog.RenderToEncodeProof, StringComparison.OrdinalIgnoreCase)
+            ? MediaTransportAuditEvidenceKind.BackendCallSucceeded
+            : MediaTransportAuditEvidenceKind.BackendOutputValidated;
+
+        var hasRequiredEvidence = proof.Evidence
+            .Select(static value => Enum.TryParse<MediaTransportAuditEvidenceKind>(value, ignoreCase: true, out var parsed)
+                ? parsed
+                : MediaTransportAuditEvidenceKind.ContractOnly)
+            .Any(evidence => evidence >= minimumEvidence);
+
+        if (!hasRequiredEvidence)
+        {
+            throw new InvalidOperationException(
+                $"Hardware media proof '{proof.Id}' is marked Passed but does not include {minimumEvidence} evidence.");
         }
     }
 

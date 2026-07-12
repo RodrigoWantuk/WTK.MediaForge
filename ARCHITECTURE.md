@@ -201,6 +201,9 @@ Rules:
 
 - Sinks never call render; scheduler owns frame ordering.
 - MP4/RTMP consume encoded packets only (no raw GPU surface frames).
+- Product MP4 accepts only `EncodedVideoPacket` instances with trusted
+  backend-output-validated evidence; public callers can observe evidence but
+  cannot mark arbitrary packets as validated.
 - `PrototypeEncodedPacketMp4Muxer` is a prototype-only structural writer and
   does not prove production MP4 recording.
 - No FFmpeg/libx264 on the recording/streaming product path.
@@ -255,7 +258,7 @@ The authoritative policy is defined in:
 
 | Category | Description | Product path |
 |----------|-------------|--------------|
-| `EncodedVideoPacket` | H.264/HEVC/AV1/VP9 NAL units, RTSP/MP4 samples | Allowed in CPU/RAM/network |
+| `EncodedVideoPacket` | H.264/HEVC/AV1/VP9 NAL units, RTSP/MP4 samples | Allowed in CPU/RAM/network as compressed bitstream; product sinks still require trusted evidence |
 | `GpuVideoFrame` | Vulkan image, D3D11 texture, DXGI surface, HW decoder surface | Required for continuous video |
 | `RawCpuVideoFrame` | `byte[]` BGRA/NV12, software `AVFrame`, per-frame CPU bitmap | **Prohibited** on product path |
 | `StaticCpuImageAsset` | PNG/JPEG load decode | Allowed **only at load**; must upload to GPU and release CPU copy |

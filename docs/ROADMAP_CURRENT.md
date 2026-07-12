@@ -230,7 +230,7 @@ The v6 proof set is explicit and capability-driven:
 
 | Proof | Capability id | Required evidence |
 |---|---|---|
-| Render-to-encode proof | `proof.render_to_encode.gpu` | Rendered GPU output reaches encoder input without CPU readback/staging. |
+| Render-to-encode proof | `proof.render_to_encode.gpu` | Rendered GPU output reaches encoder input with `BackendCallSucceeded` evidence and without CPU readback/staging. |
 | Hardware encode proof | `proof.hardware_encode.h264` | Platform H.264 hardware encoder produces `EncodedVideoPacket` with `BackendOutputValidated` evidence. |
 | MP4 recording proof | `proof.recording.mp4.h264` | Public MP4 sink writes a real packet-only MP4 from hardware-validated H.264 packets. |
 | Hardware decode proof | `proof.hardware_decode.h264` | Platform H.264 hardware decoder produces GPU-backed decoded frames with `BackendOutputValidated` evidence. |
@@ -268,7 +268,7 @@ Current truth table:
 | Windows encode | Done:Prototype; product backend explicitly unavailable |
 | Encoder format conversion | Done:BackendCallSucceeded for D3D11 VideoProcessor path when supported; product encode remains blocked on real MF packet validation |
 | Packet sink boundary | Done:Contract with explicit bitstream metadata |
-| MP4 writer | Done:Contract/Product boundary; public path requires BackendOutputValidated H.264 packets and rejects prototype/contract-only packets |
+| MP4 writer | Done:Contract/Product boundary; public path requires trusted BackendOutputValidated H.264 packet evidence and rejects prototype/contract-only packets |
 | RTMP transport | Done:Prototype; rejects unknown bitstream |
 | RenderGraph | Done:Contract/resource bridge; not a GPU pass executor |
 | Color correction effect | Done:ProductValidated for Vulkan source-layer shader |

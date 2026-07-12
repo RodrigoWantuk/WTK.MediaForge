@@ -94,6 +94,7 @@ public sealed class EncodedOutputPipelineTests
 
         var packet = CreateSyntheticH264Packets(1).Single();
         await router.RoutePacketAsync(packet, CancellationToken.None);
+        await router.FlushAsync(CancellationToken.None);
 
         Assert.NotEmpty(rtmpSink.SentPacketsForTests);
         Assert.Equal(packet.Data, rtmpSink.SentPacketsForTests[0].Data);
@@ -104,7 +105,7 @@ public sealed class EncodedOutputPipelineTests
     }
 
     [Fact]
-    public async Task Recording_mp4_product_muxer_writes_backend_validated_packets_without_prototype_audit()
+    public async Task Recording_mp4_product_muxer_writes_trusted_backend_validated_packets_without_prototype_audit()
     {
         var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_product_{Guid.NewGuid():N}.mp4");
         try
@@ -115,14 +116,20 @@ public sealed class EncodedOutputPipelineTests
 
             var packets = CreateSyntheticH264Packets(
                 frameCount: 60,
-                evidenceKind: MediaTransportAuditEvidenceKind.BackendOutputValidated);
+                evidence: EncodedVideoPacketEvidence.CreateBackendOutputValidated(
+                    nameof(EncodedOutputPipelineTests),
+                    "TestBackend",
+                    MediaForgeCapabilityCatalog.Mp4RecordingProof));
             foreach (var packet in packets)
                 await sink.WritePacketAsync(packet, CancellationToken.None);
 
             await sink.StopAsync(CancellationToken.None);
 
             Assert.True(File.Exists(outputPath));
-            Assert.True(IsoBmffMp4Writer.HasExperimentalBoxStructure(outputPath));
+            Assert.True(IsoBmffMp4Writer.HasValidH264BoxStructure(
+                outputPath,
+                new IsoBmffMp4Writer.TrackMetadata(640, 360),
+                minimumSampleCount: 60));
             Assert.True(new FileInfo(outputPath).Length > 256);
             Assert.DoesNotContain(
                 audit.Events,
@@ -163,6 +170,31 @@ public sealed class EncodedOutputPipelineTests
     }
 
     [Fact]
+    public async Task Recording_mp4_sink_rejects_restart_after_stop_and_start_after_dispose()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_lifecycle_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            var sink = new RecordingMp4PacketSink(outputPath, null, allowPrototypeMuxer: true);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+            await sink.WritePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+            await sink.StopAsync(CancellationToken.None);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None));
+
+            await sink.DisposeAsync();
+            await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+                await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None));
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
     public async Task Recording_mp4_rejects_annex_b_without_sps_pps_or_codec_configuration()
     {
         var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_no_config_{Guid.NewGuid():N}.mp4");
@@ -192,6 +224,44 @@ public sealed class EncodedOutputPipelineTests
                 File.Delete(outputPath);
         }
     }
+
+    [Fact]
+    public async Task Recording_mp4_product_muxer_does_not_leave_final_file_when_finalize_fails()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_atomic_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            await using var sink = new RecordingMp4PacketSink(outputPath);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+
+            await sink.WritePacketAsync(
+                new EncodedVideoPacket
+                {
+                    Codec = EncodedVideoCodec.H264,
+                    BitstreamFormat = EncodedVideoBitstreamFormat.AnnexB,
+                    PresentationTime = TimeSpan.Zero,
+                    Duration = TimeSpan.FromMilliseconds(33),
+                    Data = CreatePFrameAnnexB(),
+                    IsKeyFrame = false,
+                    Evidence = EncodedVideoPacketEvidence.CreateBackendOutputValidated(
+                        nameof(EncodedOutputPipelineTests),
+                        "TestBackend",
+                        MediaForgeCapabilityCatalog.Mp4RecordingProof)
+                },
+                CancellationToken.None);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await sink.StopAsync(CancellationToken.None));
+
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
+    }
+
 
     [Fact]
     public void Recording_mp4_writer_rejects_null_packet_with_diagnostic()
@@ -264,7 +334,7 @@ public sealed class EncodedOutputPipelineTests
     public async Task Shared_prototype_packet_router_feeds_mp4_and_rtmp()
     {
         var encoder = new TestHardwareVideoEncoder();
-        var router = new EncodedOutputRouter(encoder);
+        var router = new EncodedOutputRouter(encoder, consumerQueueCapacity: 64);
 
         var mp4Path = Path.Combine(Path.GetTempPath(), $"mf_shared_{Guid.NewGuid():N}.mp4");
         try
@@ -281,6 +351,7 @@ public sealed class EncodedOutputPipelineTests
             foreach (var packet in CreateSyntheticH264Packets(30))
                 await router.RoutePacketAsync(packet, CancellationToken.None);
 
+            await router.FlushAsync(CancellationToken.None);
             await mp4Sink.StopAsync(CancellationToken.None);
             Assert.True(IsoBmffMp4Writer.HasExperimentalBoxStructure(mp4Path));
             Assert.NotEmpty(rtmpSink.SentPacketsForTests);
@@ -293,9 +364,49 @@ public sealed class EncodedOutputPipelineTests
         }
     }
 
+    [Fact]
+    public async Task Encoded_output_router_does_not_block_fast_consumer_behind_slow_sink()
+    {
+        var encoder = new TestHardwareVideoEncoder();
+        await using var router = new EncodedOutputRouter(encoder, consumerQueueCapacity: 2);
+        var slow = new BlockingPacketConsumer();
+        var fast = new RecordingPacketConsumer();
+        router.RegisterConsumer(slow);
+        router.RegisterConsumer(fast);
+
+        var start = Environment.TickCount64;
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - start);
+
+        Assert.True(elapsed < TimeSpan.FromMilliseconds(200));
+        await WaitForConditionAsync(() => fast.Packets.Count == 1, TimeSpan.FromSeconds(2));
+
+        slow.Release();
+        await router.FlushAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Encoded_output_router_reports_backpressure_when_consumer_queue_is_full()
+    {
+        var encoder = new TestHardwareVideoEncoder();
+        await using var router = new EncodedOutputRouter(encoder, consumerQueueCapacity: 1);
+        var slow = new BlockingPacketConsumer();
+        router.RegisterConsumer(slow);
+
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        await WaitForConditionAsync(() => slow.StartedCount == 1, TimeSpan.FromSeconds(2));
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None).AsTask().GetAwaiter().GetResult());
+
+        Assert.Contains("backpressure", exception.Message, StringComparison.OrdinalIgnoreCase);
+        slow.Release();
+    }
+
     private static IReadOnlyList<EncodedVideoPacket> CreateSyntheticH264Packets(
         int frameCount,
-        MediaTransportAuditEvidenceKind evidenceKind = MediaTransportAuditEvidenceKind.ContractOnly)
+        EncodedVideoPacketEvidence? evidence = null)
     {
         var packets = new List<EncodedVideoPacket>(frameCount);
         for (var index = 0; index < frameCount; index++)
@@ -309,7 +420,7 @@ public sealed class EncodedOutputPipelineTests
                 Duration = TimeSpan.FromMilliseconds(33),
                 IsKeyFrame = isKeyFrame,
                 Data = isKeyFrame ? CreateKeyFrameAnnexB() : CreatePFrameAnnexB(),
-                EvidenceKind = evidenceKind
+                Evidence = evidence ?? EncodedVideoPacketEvidence.ContractOnly
             });
         }
 
@@ -368,6 +479,20 @@ public sealed class EncodedOutputPipelineTests
             childBoxOffset < parentBoxOffset + parentSize;
     }
 
+    private static async Task WaitForConditionAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        while (Environment.TickCount64 < deadline)
+        {
+            if (condition())
+                return;
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException("Condition was not met before timeout.");
+    }
+
     private sealed class TestHardwareVideoEncoder : IHardwareVideoEncoder
     {
         public HardwareEncoderInfo Info { get; } = new()
@@ -407,5 +532,46 @@ public sealed class EncodedOutputPipelineTests
                 auditSink);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class BlockingPacketConsumer : IEncodedPacketConsumer
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private int _startedCount;
+
+        public int StartedCount => Volatile.Read(ref _startedCount);
+
+        public async ValueTask WriteEncodedPacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _startedCount);
+            await _release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public void Release() => _release.TrySetResult();
+    }
+
+    private sealed class RecordingPacketConsumer : IEncodedPacketConsumer
+    {
+        private readonly object _gate = new();
+        private readonly List<EncodedVideoPacket> _packets = [];
+
+        public IReadOnlyList<EncodedVideoPacket> Packets
+        {
+            get
+            {
+                lock (_gate)
+                    return _packets.ToArray();
+            }
+        }
+
+        public ValueTask WriteEncodedPacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
+        {
+            lock (_gate)
+                _packets.Add(packet);
+
+            return ValueTask.CompletedTask;
+        }
     }
 }

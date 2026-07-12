@@ -130,7 +130,10 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
                 PresentationTime = context.PresentationTime,
                 Duration = TimeSpan.FromMilliseconds(33),
                 IsKeyFrame = result.Value.IsKeyFrame,
-                EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated
+                Evidence = EncodedVideoPacketEvidence.CreateBackendOutputValidated(
+                    nameof(MediaFoundationHardwareVideoEncoder),
+                    _info.Backend,
+                    MediaForgeCapabilityCatalog.HardwareEncodeProof)
             });
         }
 
@@ -164,7 +167,9 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             PresentationTime = context.PresentationTime,
             Duration = TimeSpan.FromMilliseconds(33),
             IsKeyFrame = encoded.Value.IsKeyFrame,
-            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype
+            Evidence = EncodedVideoPacketEvidence.CreatePrototype(
+                nameof(MediaFoundationHardwareVideoEncoder),
+                _info.Backend)
         });
     }
 
