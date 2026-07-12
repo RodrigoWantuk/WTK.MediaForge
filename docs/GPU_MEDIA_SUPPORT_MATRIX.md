@@ -82,7 +82,7 @@ marketing:
 ## Export Proof Gate
 
 Recording MP4 remains **PrototypeOnly** as an end-to-end product feature until
-the v6 hardware media proofs pass:
+the v7 hardware media proofs pass:
 
 ```text
 FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> hardware H.264 -> EncodedPacketMp4Muxer

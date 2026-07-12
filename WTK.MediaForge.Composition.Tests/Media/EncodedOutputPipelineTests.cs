@@ -143,6 +143,76 @@ public sealed class EncodedOutputPipelineTests
     }
 
     [Fact]
+    public async Task Recording_mp4_product_muxer_writes_avcc_packet_with_codec_configuration()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_avcc_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            await using var sink = new RecordingMp4Sink(outputPath);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+
+            await sink.WritePacketAsync(
+                new EncodedVideoPacket
+                {
+                    Codec = EncodedVideoCodec.H264,
+                    BitstreamFormat = EncodedVideoBitstreamFormat.Avcc,
+                    PresentationTime = TimeSpan.Zero,
+                    Duration = TimeSpan.FromMilliseconds(33),
+                    Data = CreateKeyFrameAvcc(),
+                    CodecConfiguration = CreateAvcCConfiguration(),
+                    IsKeyFrame = true,
+                    Evidence = CreateBackendValidatedMp4Evidence()
+                },
+                CancellationToken.None);
+
+            await sink.StopAsync(CancellationToken.None);
+
+            Assert.True(File.Exists(outputPath));
+            Assert.True(IsoBmffMp4Writer.HasValidH264BoxStructure(
+                outputPath,
+                new IsoBmffMp4Writer.TrackMetadata(640, 360),
+                minimumSampleCount: 1));
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public async Task Recording_mp4_product_muxer_rejects_avcc_packet_without_codec_configuration()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_avcc_no_config_{Guid.NewGuid():N}.mp4");
+        try
+        {
+            await using var sink = new RecordingMp4Sink(outputPath);
+            await sink.StartAsync(CreatePacketSinkContext(), CancellationToken.None);
+
+            var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+                await sink.WritePacketAsync(
+                    new EncodedVideoPacket
+                    {
+                        Codec = EncodedVideoCodec.H264,
+                        BitstreamFormat = EncodedVideoBitstreamFormat.Avcc,
+                        PresentationTime = TimeSpan.Zero,
+                        Duration = TimeSpan.FromMilliseconds(33),
+                        Data = CreateKeyFrameAvcc(),
+                        IsKeyFrame = true,
+                        Evidence = CreateBackendValidatedMp4Evidence()
+                    },
+                    CancellationToken.None));
+
+            Assert.Contains("codec configuration", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
     public async Task Recording_mp4_rejects_h264_packet_without_explicit_bitstream_format()
     {
         var outputPath = Path.Combine(Path.GetTempPath(), $"mf_mp4_unknown_{Guid.NewGuid():N}.mp4");
@@ -446,6 +516,24 @@ public sealed class EncodedOutputPipelineTests
     [
         0x00, 0x00, 0x00, 0x01, 0x41, 0x9A, 0x24, 0x6C, 0x0F
     ];
+
+    private static byte[] CreateKeyFrameAvcc() =>
+    [
+        0x00, 0x00, 0x00, 0x05, 0x65, 0x88, 0x84, 0x00, 0x10
+    ];
+
+    private static byte[] CreateAvcCConfiguration() =>
+    [
+        0x01, 0x42, 0x00, 0x1E, 0xFF, 0xE1,
+        0x00, 0x09, 0x67, 0x42, 0x00, 0x1E, 0xAB, 0x40, 0xF0, 0x28, 0xD3,
+        0x01, 0x00, 0x04, 0x68, 0xCE, 0x3C, 0x80
+    ];
+
+    private static EncodedVideoPacketEvidence CreateBackendValidatedMp4Evidence() =>
+        EncodedVideoPacketEvidence.CreateBackendOutputValidated(
+            nameof(EncodedOutputPipelineTests),
+            "TestBackend",
+            MediaForgeCapabilityCatalog.Mp4RecordingProof);
 
     private static int FindBoxTypeOffset(byte[] bytes, string type)
     {

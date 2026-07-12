@@ -93,33 +93,37 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Engine_readiness_v6_script_runs_required_gates()
+    public void Engine_readiness_v7_script_runs_required_gates()
     {
         var repoRoot = FindRepositoryRoot();
-        var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v6.ps1"));
+        var script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v7.ps1"));
+        var baselineScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v6.ps1"));
+        var effectiveScript = script + Environment.NewLine + baselineScript;
         var testScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "test.ps1"));
 
         Assert.Contains("RequireHardwareMedia", script, StringComparison.Ordinal);
         Assert.Contains("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA", script, StringComparison.Ordinal);
-        Assert.Contains("verify-media-transport-rules.ps1", script, StringComparison.Ordinal);
-        Assert.Contains("verify-license-policy.ps1", script, StringComparison.Ordinal);
-        Assert.Contains("ProductMediaPathsDoNotUsePrototypeEvidenceTests", script, StringComparison.Ordinal);
-        Assert.Contains("ProductReadinessStatusTests", script, StringComparison.Ordinal);
-        Assert.Contains("CapabilityReportTests", script, StringComparison.Ordinal);
-        Assert.Contains("DocsProductTruthTests", script, StringComparison.Ordinal);
-        Assert.Contains("WindowsGpuExportEndToEndProofTests", script, StringComparison.Ordinal);
-        Assert.Contains("RenderedOutputEncodeFrameAdapterTests", script, StringComparison.Ordinal);
-        Assert.Contains("WindowsSystemDrawingFontAtlasRasterizerTests", script, StringComparison.Ordinal);
-        Assert.Contains("-Tier Fast", script, StringComparison.Ordinal);
-        Assert.Contains("-Tier Gpu", script, StringComparison.Ordinal);
-        Assert.Contains("-Tier Performance", script, StringComparison.Ordinal);
-        Assert.Contains("RunConfiguration.MaxCpuCount=1", script, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v6.ps1", script, StringComparison.Ordinal);
+        Assert.Contains("verify-media-transport-rules.ps1", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("verify-license-policy.ps1", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("ProductMediaPathsDoNotUsePrototypeEvidenceTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("ProductReadinessStatusTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("CapabilityReportTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("DocsProductTruthTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("WindowsGpuExportEndToEndProofTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("WindowsHardwareDecodeBoundaryTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("RenderedOutputEncodeFrameAdapterTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("WindowsSystemDrawingFontAtlasRasterizerTests", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("-Tier Fast", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("-Tier Gpu", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("-Tier Performance", effectiveScript, StringComparison.Ordinal);
+        Assert.Contains("RunConfiguration.MaxCpuCount=1", effectiveScript, StringComparison.Ordinal);
         Assert.Contains("Invoke-TestProject -Project $diagnosticsTests -Filter $performanceFilter -RequireTests", testScript, StringComparison.Ordinal);
         Assert.Contains("Invoke-TestProject -Project $compositionTests -Filter $performanceFilter -RequireTests", testScript, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Engine_truth_docs_define_v6_hardware_media_proof_gate()
+    public void Engine_truth_docs_define_v7_hardware_media_proof_gate()
     {
         var repoRoot = FindRepositoryRoot();
         var aiContext = File.ReadAllText(Path.Combine(repoRoot, "docs", "AI_CONTEXT.md"));
@@ -127,7 +131,7 @@ public sealed class DocsProductTruthTests
         var supportMatrix = File.ReadAllText(Path.Combine(repoRoot, "docs", "GPU_MEDIA_SUPPORT_MATRIX.md"));
         var publicApi = File.ReadAllText(Path.Combine(repoRoot, "docs", "PUBLIC_API.md"));
 
-        Assert.Contains("verify-engine-readiness-v6.ps1", aiContext, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v7.ps1", aiContext, StringComparison.Ordinal);
         Assert.Contains("HardwareMediaProof", publicApi, StringComparison.Ordinal);
         Assert.Contains("BackendOutputValidated", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("Render-to-encode proof", roadmap, StringComparison.Ordinal);

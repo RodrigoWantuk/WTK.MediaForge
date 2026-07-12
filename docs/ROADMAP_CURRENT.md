@@ -164,7 +164,7 @@ render thread, provider, submission, or GPU export/encode paths, also run:
 ./scripts/test.ps1 -Tier Gpu
 ./scripts/verify-media-transport-rules.ps1
 ./scripts/verify-license-policy.ps1
-./scripts/verify-engine-readiness-v6.ps1
+./scripts/verify-engine-readiness-v7.ps1
 ```
 
 ## Active Phase 2 Commit Order (GPU Pipeline Completo)
@@ -221,12 +221,12 @@ Required correction order:
 5. Real decode -> render -> encode proof before MP4/RTMP can become
 Experimental or Supported.
 
-## Active vNext v6 Hardware Media Proof Gate
+## Active vNext v7 Hardware Media Proof Gate
 
 The executable guard for hardware media truth is
-`./scripts/verify-engine-readiness-v6.ps1`.
+`./scripts/verify-engine-readiness-v7.ps1`.
 
-The v6 proof set is explicit and capability-driven:
+The v7 proof set is explicit and capability-driven:
 
 | Proof | Capability id | Required evidence |
 |---|---|---|
@@ -238,8 +238,8 @@ The v6 proof set is explicit and capability-driven:
 
 Default CI may report proofs as `Unavailable` with reasons when the hardware
 path is not implemented or not present. Release/readiness machines use
-`./scripts/verify-engine-readiness-v6.ps1 -RequireHardwareMedia`; that mode
-fails unless every v6 hardware media proof is `Passed`.
+`./scripts/verify-engine-readiness-v7.ps1 -RequireHardwareMedia`; that mode
+fails unless every v7 hardware media proof is `Passed`.
 
 ## Active vNext v3 Truth Gate
 
@@ -280,7 +280,7 @@ Current truth table:
 
 `CapabilityEntry.ProductReadinessStatus` enforces this split: entries marked
 `Prototype` or `Skeleton` cannot be emitted as `Supported` or `Experimental`.
-The executable guard for this truth table is `./scripts/verify-engine-readiness-v6.ps1`.
+The executable guard for this truth table is `./scripts/verify-engine-readiness-v7.ps1`.
 
 ## Future Phase - FFmpeg Libraries Integration Review
 

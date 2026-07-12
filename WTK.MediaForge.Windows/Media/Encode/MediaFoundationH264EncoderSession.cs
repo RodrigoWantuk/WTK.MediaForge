@@ -11,6 +11,8 @@ internal readonly struct EncodedSurfaceResult
 {
     public required ReadOnlyMemory<byte> Data { get; init; }
 
+    public ReadOnlyMemory<byte> CodecConfiguration { get; init; }
+
     public bool IsKeyFrame { get; init; }
 }
 
@@ -64,6 +66,7 @@ internal sealed class PrototypeMediaFoundationH264EncoderSession : IDisposable
         return new EncodedSurfaceResult
         {
             Data = packet.Data,
+            CodecConfiguration = packet.CodecConfiguration,
             IsKeyFrame = packet.IsKeyFrame
         };
     }
@@ -90,8 +93,10 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private IMFDXGIDeviceManager? _deviceManager;
     private IMFTransform? _transform;
     private string? _transformName;
+    private ReadOnlyMemory<byte> _codecConfiguration;
     private bool _disposed;
     private bool _initialized;
+    private bool _mediaFoundationStarted;
 
     public MediaFoundationHardwareH264EncoderSession(
         ID3D11Device device,
@@ -126,6 +131,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         try
         {
             MediaFactory.MFStartup(true).CheckError();
+            _mediaFoundationStarted = true;
             _deviceManager = MediaFactory.MFCreateDXGIDeviceManager();
             _deviceManager.ResetDevice(_device).CheckError();
             _transform = CreateHardwareTransform();
@@ -183,6 +189,18 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
             var processStatus = ProcessOutputStatus.ProcessOutputStatusNewStreams;
             var result = _transform.ProcessOutput(ProcessOutputFlags.None, 1, ref outputData, out processStatus);
+            if (result.Code == Vortice.MediaFoundation.ResultCode.TransformNeedMoreInput.Code)
+            {
+                return null;
+            }
+
+            if (result.Code == Vortice.MediaFoundation.ResultCode.TransformStreamChange.Code)
+            {
+                throw CreateUnavailableException(
+                    new InvalidOperationException(
+                        "Media Foundation hardware encoder requested an output stream change. Dynamic output type renegotiation is not accepted by the current product proof path."));
+            }
+
             if (result.Failure)
             {
                 throw CreateUnavailableException(
@@ -205,7 +223,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             return new EncodedSurfaceResult
             {
                 Data = packet,
-                IsKeyFrame = frameNumber == 1
+                CodecConfiguration = TryReadCodecConfiguration(),
+                IsKeyFrame = IsKeyFrame(outputData.Sample ?? outputSample, frameNumber)
             };
         }
         catch (Exception ex) when (ex is not ObjectDisposedException)
@@ -312,6 +331,50 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         }
     }
 
+    private ReadOnlyMemory<byte> TryReadCodecConfiguration()
+    {
+        if (!_codecConfiguration.IsEmpty)
+            return _codecConfiguration;
+
+        if (_transform is null)
+            return ReadOnlyMemory<byte>.Empty;
+
+        try
+        {
+            using var outputType = _transform.GetOutputCurrentType(0);
+            var blob = outputType.GetBlob(MediaTypeAttributeKeys.MpegSequenceHeader);
+            if (blob.Length == 0)
+                return ReadOnlyMemory<byte>.Empty;
+
+            _codecConfiguration = blob;
+            return _codecConfiguration;
+        }
+        catch (SharpGenException)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+        catch (InvalidOperationException)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+    }
+
+    private static bool IsKeyFrame(IMFSample sample, long frameNumber)
+    {
+        try
+        {
+            return sample.GetUInt32(SampleAttributeKeys.CleanPoint) != 0;
+        }
+        catch (SharpGenException)
+        {
+            return frameNumber == 1;
+        }
+        catch (InvalidOperationException)
+        {
+            return frameNumber == 1;
+        }
+    }
+
     private static Guid ToVideoSubtype(string pixelFormat)
     {
         if (pixelFormat.Equals("NV12", StringComparison.OrdinalIgnoreCase))
@@ -356,6 +419,13 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         _transform = null;
         _deviceManager?.Dispose();
         _deviceManager = null;
+        _codecConfiguration = ReadOnlyMemory<byte>.Empty;
         _initialized = false;
+
+        if (_mediaFoundationStarted)
+        {
+            MediaFactory.MFShutdown().CheckError();
+            _mediaFoundationStarted = false;
+        }
     }
 }

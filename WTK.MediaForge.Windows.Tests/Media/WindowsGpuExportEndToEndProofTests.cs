@@ -131,6 +131,12 @@ public sealed class WindowsGpuExportEndToEndProofTests
 
             Assert.False(packet.Data.IsEmpty);
             Assert.Equal(EncodedVideoCodec.H264, packet.Codec);
+            Assert.NotEqual(EncodedVideoBitstreamFormat.Unknown, packet.BitstreamFormat);
+            if (packet.BitstreamFormat == EncodedVideoBitstreamFormat.Avcc)
+            {
+                Assert.False(packet.CodecConfiguration.IsEmpty);
+            }
+
             Assert.True(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
         }
         catch (NotSupportedException ex)

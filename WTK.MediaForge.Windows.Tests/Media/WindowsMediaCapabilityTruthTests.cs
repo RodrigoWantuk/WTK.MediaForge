@@ -37,7 +37,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Windows_capability_probe_reports_v6_media_proofs_with_explicit_reasons()
+    public async Task Windows_capability_probe_reports_v7_media_proofs_with_explicit_reasons()
     {
         var report = await new WindowsHardwareMediaCapabilityProbe()
             .ProbeAsync(CancellationToken.None);
@@ -65,7 +65,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Required_hardware_media_release_gate_fails_until_all_v6_proofs_pass()
+    public async Task Required_hardware_media_release_gate_fails_until_all_v7_proofs_pass()
     {
         if (!string.Equals(
             Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"),
@@ -84,7 +84,7 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         Assert.True(
             missing.Length == 0,
-            "Hardware media release gate requires all v6 proofs to pass: " + string.Join("; ", missing));
+            "Hardware media release gate requires all v7 proofs to pass: " + string.Join("; ", missing));
     }
 
     [Fact]

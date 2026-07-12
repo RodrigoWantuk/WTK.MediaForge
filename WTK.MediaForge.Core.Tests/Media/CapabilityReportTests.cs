@@ -64,7 +64,7 @@ public sealed class CapabilityReportTests
     }
 
     [Fact]
-    public void Capability_report_includes_v6_media_proof_entries()
+    public void Capability_report_includes_v7_media_proof_entries()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
         {

@@ -7,7 +7,7 @@ using Xunit;
 namespace WTK.MediaForge.Windows.Tests.Media;
 
 [Trait("Category", "GPU")]
-public sealed class WindowsHardwareDecodeMvpTests
+public sealed class WindowsHardwareDecodeBoundaryTests
 {
     [Fact]
     public async Task Public_decoder_rejects_placeholder_decode_path()

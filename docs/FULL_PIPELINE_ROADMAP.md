@@ -260,7 +260,7 @@ FFmpeg is not used in the first hardware MP4/RTMP product path.
 
 Windows recording product path: Media Foundation hardware MFT H.264,
 `EncodedPacketMp4Muxer` packet-only muxing, Vulkan -> D3D11 encoder surface
-export, and the v6 `HardwareMediaProof` set. Product recording is unavailable
+export, and the v7 `HardwareMediaProof` set. Product recording is unavailable
 until render-to-encode, hardware encode, and MP4 recording proofs pass with
 trusted `BackendOutputValidated` evidence created by the backend that produced
 the encoded packet.

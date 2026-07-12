@@ -130,6 +130,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
                 PresentationTime = context.PresentationTime,
                 Duration = TimeSpan.FromMilliseconds(33),
                 IsKeyFrame = result.Value.IsKeyFrame,
+                CodecConfiguration = result.Value.CodecConfiguration,
                 Evidence = EncodedVideoPacketEvidence.CreateBackendOutputValidated(
                     nameof(MediaFoundationHardwareVideoEncoder),
                     _info.Backend,
@@ -167,6 +168,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             PresentationTime = context.PresentationTime,
             Duration = TimeSpan.FromMilliseconds(33),
             IsKeyFrame = encoded.Value.IsKeyFrame,
+            CodecConfiguration = encoded.Value.CodecConfiguration,
             Evidence = EncodedVideoPacketEvidence.CreatePrototype(
                 nameof(MediaFoundationHardwareVideoEncoder),
                 _info.Backend)
