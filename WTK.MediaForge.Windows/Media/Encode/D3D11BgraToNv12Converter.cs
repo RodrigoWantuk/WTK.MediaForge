@@ -141,7 +141,7 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
         return ValueTask.FromResult(lease);
     }
 
-    private static void ExecuteVideoProcessorConversion(
+    internal static void ExecuteVideoProcessorConversion(
         ID3D11Device device,
         ID3D11Texture2D source,
         ID3D11Texture2D output,
@@ -239,7 +239,7 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
         });
     }
 
-    private static bool IsBgra(string format) =>
+    internal static bool IsBgra(string format) =>
         format.Equals("B8G8R8A8_UNORM", StringComparison.OrdinalIgnoreCase) ||
         format.Equals("BGRA8_UNORM", StringComparison.OrdinalIgnoreCase) ||
         format.Equals("Bgra8Unorm", StringComparison.OrdinalIgnoreCase) ||
@@ -247,6 +247,6 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
         format.Equals("RGBA8_UNORM", StringComparison.OrdinalIgnoreCase) ||
         format.Equals("Rgba8Unorm", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsNv12(string format) =>
+    internal static bool IsNv12(string format) =>
         format.Equals("NV12", StringComparison.OrdinalIgnoreCase);
 }

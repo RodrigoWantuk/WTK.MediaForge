@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Interop;
 
@@ -69,6 +70,7 @@ internal sealed class RenderedOutputEncoderInputPreparer : IRenderedOutputEncode
             .ExportAsync(surface, sourceRequirement, auditSink, cancellationToken)
             .ConfigureAwait(false);
 
+        var sourceLeaseReleased = false;
         try
         {
             if (_inputConverter is null || !_inputConverter.CanConvert(sourceLease, requirement))
@@ -88,12 +90,32 @@ internal sealed class RenderedOutputEncoderInputPreparer : IRenderedOutputEncode
             var converted = await _inputConverter
                 .ConvertAsync(sourceLease, requirement, auditSink, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (ReferenceEquals(converted, sourceLease))
+            {
+                throw new InvalidOperationException(
+                    "GPU encoder input conversion must return a new lease; in-place conversion would make source and converted lifetimes ambiguous.");
+            }
+
+            if (!string.Equals(converted.Descriptor.Format, requirement.PixelFormat, StringComparison.OrdinalIgnoreCase) ||
+                converted.Descriptor.Width != requirement.Width ||
+                converted.Descriptor.Height != requirement.Height ||
+                converted.Descriptor.TransportKind != MediaTransportKind.GpuSurface)
+            {
+                converted.Dispose();
+                throw new InvalidOperationException(
+                    $"GPU encoder input converter returned an incompatible surface ({converted.Descriptor.Width}x{converted.Descriptor.Height} {converted.Descriptor.Format}).");
+            }
+
             sourceLease.Dispose();
+            sourceLeaseReleased = true;
             return converted;
         }
         catch
         {
-            sourceLease.Dispose();
+            if (!sourceLeaseReleased)
+                sourceLease.Dispose();
+
             throw;
         }
     }

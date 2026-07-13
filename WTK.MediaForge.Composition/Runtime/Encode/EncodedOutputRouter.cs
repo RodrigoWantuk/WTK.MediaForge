@@ -19,10 +19,22 @@ internal sealed class EncodedPacketConsumerOptions
     public EncodedPacketConsumerBackpressurePolicy BackpressurePolicy { get; init; } =
         EncodedPacketConsumerBackpressurePolicy.FailOutput;
 
+    public bool IsProductOutput { get; init; }
+
     public TimeSpan WriteTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
     public string? DisplayName { get; init; }
 }
+
+internal sealed record EncodedPacketConsumerStatistics(
+    string DisplayName,
+    EncodedPacketConsumerBackpressurePolicy BackpressurePolicy,
+    long EnqueuedPackets,
+    long WrittenPackets,
+    long DroppedPackets,
+    long FailedWrites,
+    long TimedOutWrites,
+    string? LastError);
 
 /// <summary>
 /// Routes encoded packets from a single hardware encoder to multiple output sinks.
@@ -49,6 +61,12 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
     }
 
     public IHardwareVideoEncoder Encoder => _encoder;
+
+    public IReadOnlyList<EncodedPacketConsumerStatistics> GetConsumerStatistics()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _consumers.Select(static consumer => consumer.GetStatistics()).ToArray();
+    }
 
     public void RegisterConsumer(
         IEncodedPacketConsumer consumer,
@@ -159,7 +177,12 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
     private readonly EncodedPacketConsumerOptions _options;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private Exception? _failure;
+    private string? _lastError;
+    private long _enqueuedPackets;
+    private long _writtenPackets;
     private long _droppedPackets;
+    private long _failedWrites;
+    private long _timedOutWrites;
 
     public EncodedPacketConsumerWorker(
         IEncodedPacketConsumer consumer,
@@ -171,6 +194,16 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
         _options = options ?? throw new ArgumentNullException(nameof(options));
         if (_options.WriteTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "Consumer write timeout must be positive.");
+
+        if (_options.IsProductOutput &&
+            _options.BackpressurePolicy is
+                EncodedPacketConsumerBackpressurePolicy.DropOutput or
+                EncodedPacketConsumerBackpressurePolicy.KeepLatest)
+        {
+            throw new ArgumentException(
+                "Product encoded outputs cannot use dropping backpressure policies.",
+                nameof(options));
+        }
 
         _diagnostics = diagnostics;
         _queue = Channel.CreateBounded<EncodedPacketConsumerWorkItem>(new BoundedChannelOptions(capacity)
@@ -192,13 +225,27 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
 
     public long DroppedPackets => Volatile.Read(ref _droppedPackets);
 
+    public EncodedPacketConsumerStatistics GetStatistics() =>
+        new(
+            DisplayName,
+            _options.BackpressurePolicy,
+            Volatile.Read(ref _enqueuedPackets),
+            Volatile.Read(ref _writtenPackets),
+            Volatile.Read(ref _droppedPackets),
+            Volatile.Read(ref _failedWrites),
+            Volatile.Read(ref _timedOutWrites),
+            Volatile.Read(ref _lastError));
+
     public void Enqueue(EncodedVideoPacket packet)
     {
         if (_failure is not null)
             throw new InvalidOperationException("Encoded output consumer has failed.", _failure);
 
         if (_queue.Writer.TryWrite(EncodedPacketConsumerWorkItem.FromPacket(packet)))
+        {
+            Interlocked.Increment(ref _enqueuedPackets);
             return;
+        }
 
         if (_options.BackpressurePolicy is
             EncodedPacketConsumerBackpressurePolicy.DropOutput or
@@ -217,7 +264,10 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
         var exception = new InvalidOperationException(
             "Encoded output consumer queue is full; sink backpressure must be handled explicitly.");
         if (_options.BackpressurePolicy == EncodedPacketConsumerBackpressurePolicy.FailOutput)
+        {
             _failure = exception;
+            Volatile.Write(ref _lastError, exception.Message);
+        }
 
         throw exception;
     }
@@ -274,11 +324,13 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
                 try
                 {
                     await Consumer.WriteEncodedPacketAsync(item.Packet!, linked.Token).ConfigureAwait(false);
+                    Interlocked.Increment(ref _writtenPackets);
                 }
                 catch (OperationCanceledException ex) when (
                     timeout.IsCancellationRequested &&
                     !_stop.IsCancellationRequested)
                 {
+                    Interlocked.Increment(ref _timedOutWrites);
                     throw new TimeoutException(
                         $"Encoded packet consumer '{DisplayName}' did not complete a write within {_options.WriteTimeout}.",
                         ex);
@@ -291,6 +343,8 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
         catch (Exception ex)
         {
             _failure = ex;
+            Volatile.Write(ref _lastError, ex.Message);
+            Interlocked.Increment(ref _failedWrites);
             while (_queue.Reader.TryRead(out var item))
                 item.FlushCompletion?.TrySetException(ex);
 

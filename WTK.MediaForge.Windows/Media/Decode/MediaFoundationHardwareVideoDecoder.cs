@@ -1,5 +1,6 @@
 using Vortice.Direct3D11;
 using Vortice.DXGI;
+using Vortice.MediaFoundation;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
@@ -13,6 +14,7 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
 {
     private readonly HardwareDecoderInfo _info;
     private readonly D3D11GpuDevice _gpuDevice;
+    private readonly WindowsDecodeGpuTextureFactory _decodeTextureFactory;
     private readonly GpuResourcePool _resourcePool;
     private readonly bool _allowPrototypeDecoding;
     private MediaFoundationFileHardwareVideoDecoderSession? _hardwareSession;
@@ -35,7 +37,8 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
         using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
         factory.EnumAdapters1(0, out var adapter).CheckError();
         _gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
-        _resourcePool = new GpuResourcePool(new WindowsDecodeGpuTextureFactory(_gpuDevice.Device));
+        _decodeTextureFactory = new WindowsDecodeGpuTextureFactory(_gpuDevice.Device);
+        _resourcePool = new GpuResourcePool(_decodeTextureFactory);
         _allowPrototypeDecoding = allowPrototypeDecoding;
         _info = new HardwareDecoderInfo
         {
@@ -53,7 +56,9 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
     {
         _gpuDevice = gpuDevice ?? throw new ArgumentNullException(nameof(gpuDevice));
         ArgumentNullException.ThrowIfNull(textureFactory);
-        _resourcePool = new GpuResourcePool(textureFactory);
+        _decodeTextureFactory = textureFactory as WindowsDecodeGpuTextureFactory ??
+            new WindowsDecodeGpuTextureFactory(_gpuDevice.Device, fallbackFactory: textureFactory);
+        _resourcePool = new GpuResourcePool(_decodeTextureFactory);
         _allowPrototypeDecoding = allowPrototypeDecoding;
         _info = new HardwareDecoderInfo
         {
@@ -119,6 +124,19 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (_hardwareSession is not null && !_allowPrototypeDecoding)
+        {
+            using var decoded = _hardwareSession.DecodeNextFrame(context, auditSink);
+            if (decoded is null)
+                return ValueTask.FromResult<DecodedGpuFrame?>(null);
+
+            var decodedLease = AcquireDecodedTextureLease(decoded);
+            return ValueTask.FromResult<DecodedGpuFrame?>(new DecodedGpuFrame(
+                decodedLease,
+                decoded.PresentationTime,
+                decoded.Duration));
+        }
+
         if (_sourcePath is null)
             return ValueTask.FromResult<DecodedGpuFrame?>(null);
 
@@ -163,10 +181,10 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
             return ValueTask.CompletedTask;
 
         _disposed = true;
-        _resourcePool.Dispose();
-        _gpuDevice.Dispose();
         _hardwareSession?.Dispose();
         _hardwareSession = null;
+        _resourcePool.Dispose();
+        _gpuDevice.Dispose();
         PrototypeMediaFoundationDecodeBridge.Reset();
         return ValueTask.CompletedTask;
     }
@@ -176,24 +194,78 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
         IMediaTransportAuditSink auditSink)
     {
         _hardwareSession ??= new MediaFoundationFileHardwareVideoDecoderSession(Device);
-        return _hardwareSession.OpenAsync(context, auditSink);
+        _hardwareSession.Open(context, auditSink);
+        return ValueTask.CompletedTask;
+    }
+
+    private GpuTextureLease AcquireDecodedTextureLease(DecodedD3D11VideoFrame decoded)
+    {
+        _decodeTextureFactory.EnqueueDecodedTexture(
+            decoded.Texture,
+            checked((uint)decoded.Width),
+            checked((uint)decoded.Height),
+            decoded.Format);
+
+        return _resourcePool.AcquireTexture(new GpuTextureDescriptor
+        {
+            Width = decoded.Width,
+            Height = decoded.Height,
+            Format = decoded.Format.ToString(),
+            Usage = GpuTextureUsage.ExternalImport,
+            Recyclable = false
+        });
     }
 }
 
 internal sealed class WindowsDecodeGpuTextureFactory : IGpuTextureFactory
 {
     private readonly ID3D11Device _device;
+    private readonly IGpuTextureFactory? _fallbackFactory;
+    private readonly Queue<WindowsDecodeGpuPhysicalTexture> _decodedTextures = new();
+    private readonly object _gate = new();
 
-    public WindowsDecodeGpuTextureFactory(ID3D11Device device) =>
+    public WindowsDecodeGpuTextureFactory(ID3D11Device device, IGpuTextureFactory? fallbackFactory = null)
+    {
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        _fallbackFactory = fallbackFactory;
+    }
 
-    public IGpuPhysicalResource CreateTexture(GpuTextureDescriptor descriptor) =>
-        new WindowsDecodeGpuPhysicalTexture(
+    public void EnqueueDecodedTexture(
+        ID3D11Texture2D decodedTexture,
+        uint width,
+        uint height,
+        Format format)
+    {
+        ArgumentNullException.ThrowIfNull(decodedTexture);
+        var handle = D3D11SharedTextureFactory.CreateSharedTexture(_device, width, height, format);
+        using (var context = _device.ImmediateContext)
+        {
+            context.CopyResource(handle.Texture, decodedTexture);
+            context.Flush();
+        }
+
+        lock (_gate)
+            _decodedTextures.Enqueue(new WindowsDecodeGpuPhysicalTexture(_device, handle));
+    }
+
+    public IGpuPhysicalResource CreateTexture(GpuTextureDescriptor descriptor)
+    {
+        lock (_gate)
+        {
+            if (_decodedTextures.Count > 0)
+                return _decodedTextures.Dequeue();
+        }
+
+        if (_fallbackFactory is not null)
+            return _fallbackFactory.CreateTexture(descriptor);
+
+        return new WindowsDecodeGpuPhysicalTexture(
             _device,
             D3D11SharedTextureFactory.CreateSharedTexture(
                 _device,
                 (uint)descriptor.Width,
                 (uint)descriptor.Height));
+    }
 }
 
 internal sealed class WindowsDecodeGpuPhysicalTexture : IGpuPhysicalResource, IGpuFrameHandleProvider
@@ -226,25 +298,252 @@ internal sealed class WindowsDecodeGpuPhysicalTexture : IGpuPhysicalResource, IG
 internal sealed class MediaFoundationFileHardwareVideoDecoderSession : IDisposable
 {
     private readonly ID3D11Device _device;
+    private MediaFoundationRuntimeLease? _mediaFoundationRuntimeLease;
+    private IMFDXGIDeviceManager? _deviceManager;
+    private IMFSourceReader? _sourceReader;
+    private int _width;
+    private int _height;
+    private TimeSpan _frameDuration = TimeSpan.FromMilliseconds(33);
     private bool _disposed;
 
     public MediaFoundationFileHardwareVideoDecoderSession(ID3D11Device device) =>
         _device = device ?? throw new ArgumentNullException(nameof(device));
 
-    public ValueTask OpenAsync(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink)
+    public void Open(HardwareDecodeOpenContext context, IMediaTransportAuditSink auditSink)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _ = _device;
-        throw CreateUnavailableException();
+        context.CancellationToken.ThrowIfCancellationRequested();
+
+        if (!File.Exists(context.SourcePath))
+            throw new FileNotFoundException("Video file was not found.", context.SourcePath);
+
+        DisposeReaderResources();
+        _mediaFoundationRuntimeLease = MediaFoundationRuntime.Acquire();
+
+        try
+        {
+            _deviceManager = MediaFactory.MFCreateDXGIDeviceManager();
+            _deviceManager.ResetDevice(_device).CheckError();
+
+            using var attributes = MediaFactory.MFCreateAttributes(4);
+            attributes.Set(SourceReaderAttributeKeys.D3DManager, _deviceManager).CheckError();
+            attributes.Set(SourceReaderAttributeKeys.DisableDxva, false).CheckError();
+            attributes.Set(SourceReaderAttributeKeys.EnableVideoProcessing, false).CheckError();
+            attributes.Set(SourceReaderAttributeKeys.EnableAdvancedVideoProcessing, false).CheckError();
+
+            _sourceReader = MediaFactory.MFCreateSourceReaderFromURL(context.SourcePath, attributes);
+            _sourceReader.SetStreamSelection(SourceReaderIndex.AllStreams, false);
+            _sourceReader.SetStreamSelection(SourceReaderIndex.FirstVideoStream, true);
+
+            using var outputType = MediaFactory.MFCreateMediaType();
+            outputType.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video).CheckError();
+            outputType.Set(MediaTypeAttributeKeys.Subtype, VideoFormatGuids.NV12).CheckError();
+            _sourceReader.SetCurrentMediaType(SourceReaderIndex.FirstVideoStream, outputType);
+
+            using var currentType = _sourceReader.GetCurrentMediaType(SourceReaderIndex.FirstVideoStream);
+            (_width, _height) = ReadFrameSize(currentType, context.Session);
+            _frameDuration = ReadFrameDuration(currentType);
+
+            auditSink.Record(new MediaTransportAuditEvent
+            {
+                Kind = MediaTransportAuditEventKind.HardwareDecodeStarted,
+                Source = nameof(MediaFoundationFileHardwareVideoDecoderSession),
+                EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
+                Detail = $"Media Foundation SourceReader opened {Path.GetFileName(context.SourcePath)} as NV12 with D3D11 manager ({_width}x{_height})."
+            });
+        }
+        catch (Exception ex)
+        {
+            DisposeReaderResources();
+            throw CreateUnavailableException(ex);
+        }
+    }
+
+    public DecodedD3D11VideoFrame? DecodeNextFrame(
+        FileDecodeFrameContext context,
+        IMediaTransportAuditSink auditSink)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(auditSink);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        context.CancellationToken.ThrowIfCancellationRequested();
+
+        if (_sourceReader is null)
+            throw new InvalidOperationException("Media Foundation hardware decoder session is not open.");
+
+        var sample = _sourceReader.ReadSample(
+            SourceReaderIndex.FirstVideoStream,
+            SourceReaderControlFlag.None,
+            out _,
+            out var flags,
+            out var timestamp);
+        using (sample)
+        {
+            if ((flags & SourceReaderFlag.EndOfStream) != 0)
+                return null;
+
+            if ((flags & SourceReaderFlag.Error) != 0)
+                throw new InvalidOperationException("Media Foundation SourceReader reported an error while decoding.");
+
+            if (sample is null)
+                return null;
+
+            using var buffer = sample.GetBufferByIndex(0);
+            using var dxgiBuffer = buffer.QueryInterfaceOrNull<IMFDXGIBuffer>();
+            if (dxgiBuffer is null)
+            {
+                auditSink.Record(new MediaTransportAuditEvent
+                {
+                    Kind = MediaTransportAuditEventKind.HardwareDecodeUnavailable,
+                    Source = nameof(MediaFoundationFileHardwareVideoDecoderSession),
+                    EvidenceKind = MediaTransportAuditEvidenceKind.ContractOnly,
+                    Detail = "Media Foundation returned a system-memory sample; CPU decoded samples are prohibited for product decode."
+                });
+
+                throw CreateUnavailableException();
+            }
+
+            var texturePointer = dxgiBuffer.GetResource(typeof(ID3D11Texture2D).GUID);
+            if (texturePointer == IntPtr.Zero)
+                throw CreateUnavailableException();
+
+            var texture = new ID3D11Texture2D(texturePointer);
+            var presentationTime = timestamp >= 0
+                ? TimeSpan.FromTicks(timestamp)
+                : context.PresentationTime;
+            var duration = sample.SampleDuration > 0
+                ? TimeSpan.FromTicks(sample.SampleDuration)
+                : _frameDuration;
+
+            auditSink.Record(new MediaTransportAuditEvent
+            {
+                Kind = MediaTransportAuditEventKind.HardwareDecodeSucceeded,
+                Source = nameof(MediaFoundationFileHardwareVideoDecoderSession),
+                EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated,
+                Detail = "Media Foundation D3D11VA produced an IMFDXGIBuffer-backed NV12 texture."
+            });
+
+            return new DecodedD3D11VideoFrame(
+                texture,
+                _width,
+                _height,
+                Format.NV12,
+                presentationTime,
+                duration);
+        }
     }
 
     public static NotSupportedException CreateUnavailableException() =>
-        new(
-            "Real Media Foundation D3D11VA file decode is unavailable until file demux, hardware MFT selection, decoded GPU surface extraction, and backend output validation are implemented. The placeholder texture bridge is not a product decoder backend.");
+        CreateUnavailableException(null);
 
-    public void Dispose() => _disposed = true;
+    public static NotSupportedException CreateUnavailableException(Exception? innerException) =>
+        new(
+            "Real Media Foundation D3D11VA file decode requires an IMFDXGIBuffer-backed GPU sample. System-memory decoded samples and placeholder texture bridges are not product decoder backends.",
+            innerException);
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        DisposeReaderResources();
+    }
+
+    private void DisposeReaderResources()
+    {
+        _sourceReader?.Dispose();
+        _sourceReader = null;
+        _deviceManager?.Dispose();
+        _deviceManager = null;
+        _mediaFoundationRuntimeLease?.Dispose();
+        _mediaFoundationRuntimeLease = null;
+    }
+
+    private static (int Width, int Height) ReadFrameSize(
+        IMFMediaType mediaType,
+        HardwareDecodeSession fallback)
+    {
+        ulong packed;
+        try
+        {
+            packed = mediaType.GetUInt64(MediaTypeAttributeKeys.FrameSize);
+        }
+        catch
+        {
+            return (fallback.Width, fallback.Height);
+        }
+
+        var width = (int)(packed >> 32);
+        var height = (int)(packed & 0xFFFFFFFF);
+        if (width > 0 && height > 0)
+            return (width, height);
+
+        return (fallback.Width, fallback.Height);
+    }
+
+    private static TimeSpan ReadFrameDuration(IMFMediaType mediaType)
+    {
+        ulong packed;
+        try
+        {
+            packed = mediaType.GetUInt64(MediaTypeAttributeKeys.FrameRate);
+        }
+        catch
+        {
+            return TimeSpan.FromMilliseconds(33);
+        }
+
+        var numerator = (uint)(packed >> 32);
+        var denominator = (uint)(packed & 0xFFFFFFFF);
+        if (numerator == 0)
+            return TimeSpan.FromMilliseconds(33);
+
+        if (denominator == 0)
+            denominator = 1;
+
+        var ticks = checked((long)(TimeSpan.TicksPerSecond * (double)denominator / numerator));
+        return TimeSpan.FromTicks(Math.Max(1, ticks));
+    }
+}
+
+internal sealed class DecodedD3D11VideoFrame : IDisposable
+{
+    public DecodedD3D11VideoFrame(
+        ID3D11Texture2D texture,
+        int width,
+        int height,
+        Format format,
+        TimeSpan presentationTime,
+        TimeSpan duration)
+    {
+        Texture = texture ?? throw new ArgumentNullException(nameof(texture));
+        Width = width;
+        Height = height;
+        Format = format;
+        PresentationTime = presentationTime;
+        Duration = duration;
+    }
+
+    public ID3D11Texture2D Texture { get; private set; }
+
+    public int Width { get; }
+
+    public int Height { get; }
+
+    public Format Format { get; }
+
+    public TimeSpan PresentationTime { get; }
+
+    public TimeSpan Duration { get; }
+
+    public void Dispose()
+    {
+        Texture.Dispose();
+        Texture = null!;
+    }
 }
 
 internal static class PrototypeMediaFoundationDecodeBridge

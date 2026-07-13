@@ -169,6 +169,47 @@ public sealed class RenderedOutputEncodeFrameAdapterTests
         Assert.Contains(audit.Events, e => e.Kind == MediaTransportAuditEventKind.GpuFormatConversionUnavailable);
     }
 
+    [Fact]
+    public async Task Preparer_rejects_converter_that_returns_source_lease()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new TestRenderedOutputSurfaceLease(outputId, new FrameSize(320, 180), canExport: true);
+        var exporter = new FormatAwareRenderedOutputExporter("B8G8R8A8_UNORM");
+        var converter = new SourceLeaseReturningConverter();
+        var preparer = new RenderedOutputEncoderInputPreparer(exporter, converter);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await preparer.PrepareAsync(
+                surface,
+                CreateRequirement("NV12"),
+                new CollectingMediaTransportAuditSink(),
+                CancellationToken.None));
+
+        Assert.Contains("new lease", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, converter.ConvertCount);
+    }
+
+    [Fact]
+    public async Task Preparer_rejects_incompatible_converted_surface_and_releases_both_leases()
+    {
+        var outputId = RenderOutputId.New();
+        var surface = new TestRenderedOutputSurfaceLease(outputId, new FrameSize(320, 180), canExport: true);
+        var exporter = new ReleasingFormatAwareRenderedOutputExporter("B8G8R8A8_UNORM");
+        var converter = new IncompatibleConvertedLeaseConverter();
+        var preparer = new RenderedOutputEncoderInputPreparer(exporter, converter);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await preparer.PrepareAsync(
+                surface,
+                CreateRequirement("NV12"),
+                new CollectingMediaTransportAuditSink(),
+                CancellationToken.None));
+
+        Assert.Contains("incompatible surface", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, exporter.ReleaseCount);
+        Assert.Equal(1, converter.ConvertedReleaseCount);
+    }
+
     private static FrameExecutionContext CreateContext(long frameId) =>
         new()
         {
@@ -307,6 +348,86 @@ public sealed class RenderedOutputEncodeFrameAdapterTests
                 Format = requirement.PixelFormat,
                 TransportKind = MediaTransportKind.GpuSurface
             }));
+        }
+    }
+
+    private sealed class SourceLeaseReturningConverter : IRenderedOutputEncoderInputConverter
+    {
+        private int _convertCount;
+
+        public int ConvertCount => Volatile.Read(ref _convertCount);
+
+        public bool CanConvert(
+            HardwareEncoderInputLease source,
+            HardwareEncoderInputRequirement requirement) =>
+            string.Equals(requirement.PixelFormat, "NV12", StringComparison.OrdinalIgnoreCase);
+
+        public ValueTask<HardwareEncoderInputLease> ConvertAsync(
+            HardwareEncoderInputLease source,
+            HardwareEncoderInputRequirement requirement,
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _convertCount);
+            return ValueTask.FromResult(source);
+        }
+    }
+
+    private sealed class IncompatibleConvertedLeaseConverter : IRenderedOutputEncoderInputConverter
+    {
+        private int _convertedReleaseCount;
+
+        public int ConvertedReleaseCount => Volatile.Read(ref _convertedReleaseCount);
+
+        public bool CanConvert(
+            HardwareEncoderInputLease source,
+            HardwareEncoderInputRequirement requirement) =>
+            true;
+
+        public ValueTask<HardwareEncoderInputLease> ConvertAsync(
+            HardwareEncoderInputLease source,
+            HardwareEncoderInputRequirement requirement,
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(HardwareEncoderInputLease.Create(new GpuVideoFrameDescriptor
+            {
+                Width = requirement.Width,
+                Height = requirement.Height,
+                Format = "B8G8R8A8_UNORM",
+                TransportKind = MediaTransportKind.GpuSurface
+            }, () => Interlocked.Increment(ref _convertedReleaseCount)));
+        }
+    }
+
+    private sealed class ReleasingFormatAwareRenderedOutputExporter(string exportedFormat) : IRenderedOutputEncoderSurfaceExporter
+    {
+        private int _releaseCount;
+
+        public int ReleaseCount => Volatile.Read(ref _releaseCount);
+
+        public bool CanExport(
+            IRenderedOutputSurfaceLease surface,
+            HardwareEncoderInputRequirement requirement) =>
+            surface.BackendSurface is ExportableSurface &&
+            string.Equals(requirement.PixelFormat, exportedFormat, StringComparison.OrdinalIgnoreCase);
+
+        public ValueTask<HardwareEncoderInputLease> ExportAsync(
+            IRenderedOutputSurfaceLease surface,
+            HardwareEncoderInputRequirement requirement,
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(HardwareEncoderInputLease.Create(new GpuVideoFrameDescriptor
+            {
+                Width = checked((int)surface.Size.Width),
+                Height = checked((int)surface.Size.Height),
+                Format = exportedFormat,
+                TransportKind = MediaTransportKind.GpuSurface
+            }, () => Interlocked.Increment(ref _releaseCount)));
         }
     }
 

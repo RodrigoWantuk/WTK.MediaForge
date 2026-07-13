@@ -16,6 +16,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
 {
     private readonly HardwareEncoderInfo _info;
     private readonly HardwareEncoderInputRequirement _inputRequirement;
+    private readonly HardwareVideoEncoderSettings _settings;
     private readonly ID3D11Device _device;
     private readonly bool _allowPrototypeEncoding;
     private readonly IHardwareEncoderFormatConverter? _formatConverter;
@@ -29,7 +30,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int width,
         int height,
         string pixelFormat = "B8G8R8A8_UNORM")
-        : this(device, width, height, pixelFormat, allowPrototypeEncoding: false)
+        : this(device, CreateSettings(width, height, pixelFormat), allowPrototypeEncoding: false)
     {
     }
 
@@ -39,13 +40,22 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int height,
         string pixelFormat,
         bool allowPrototypeEncoding)
-        : this(
-            device,
-            width,
-            height,
-            pixelFormat,
-            allowPrototypeEncoding,
-            formatConverter: new D3D11BgraToNv12Converter(device))
+        : this(device, CreateSettings(width, height, pixelFormat), allowPrototypeEncoding)
+    {
+    }
+
+    public MediaFoundationHardwareVideoEncoder(
+        ID3D11Device device,
+        HardwareVideoEncoderSettings settings)
+        : this(device, settings, allowPrototypeEncoding: false)
+    {
+    }
+
+    internal MediaFoundationHardwareVideoEncoder(
+        ID3D11Device device,
+        HardwareVideoEncoderSettings settings,
+        bool allowPrototypeEncoding)
+        : this(device, settings, allowPrototypeEncoding, formatConverter: new D3D11BgraToNv12Converter(device))
     {
     }
 
@@ -56,8 +66,19 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         string pixelFormat,
         bool allowPrototypeEncoding,
         IHardwareEncoderFormatConverter? formatConverter)
+        : this(device, CreateSettings(width, height, pixelFormat), allowPrototypeEncoding, formatConverter)
+    {
+    }
+
+    internal MediaFoundationHardwareVideoEncoder(
+        ID3D11Device device,
+        HardwareVideoEncoderSettings settings,
+        bool allowPrototypeEncoding,
+        IHardwareEncoderFormatConverter? formatConverter)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _settings.Validate();
         _allowPrototypeEncoding = allowPrototypeEncoding;
         _formatConverter = formatConverter;
         _info = new HardwareEncoderInfo
@@ -70,9 +91,9 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
 
         _inputRequirement = new HardwareEncoderInputRequirement
         {
-            Width = width,
-            Height = height,
-            PixelFormat = pixelFormat,
+            Width = _settings.Width,
+            Height = _settings.Height,
+            PixelFormat = _settings.PixelFormat,
             RequiresGpuSurface = true
         };
     }
@@ -81,7 +102,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int width,
         int height,
         string pixelFormat = "NV12")
-        : this(CreateDefaultDevice(), width, height, pixelFormat, allowPrototypeEncoding: false)
+        : this(CreateDefaultDevice(), CreateSettings(width, height, pixelFormat), allowPrototypeEncoding: false)
     {
     }
 
@@ -128,7 +149,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
                     ? EncodedVideoBitstreamFormat.AnnexB
                     : EncodedVideoBitstreamFormat.Avcc,
                 PresentationTime = context.PresentationTime,
-                Duration = TimeSpan.FromMilliseconds(33),
+                Duration = FrameDuration,
                 IsKeyFrame = result.Value.IsKeyFrame,
                 CodecConfiguration = result.Value.CodecConfiguration,
                 Evidence = EncodedVideoPacketEvidence.CreateBackendOutputValidated(
@@ -166,7 +187,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             Codec = EncodedVideoCodec.H264,
             BitstreamFormat = EncodedVideoBitstreamFormat.AnnexB,
             PresentationTime = context.PresentationTime,
-            Duration = TimeSpan.FromMilliseconds(33),
+            Duration = FrameDuration,
             IsKeyFrame = encoded.Value.IsKeyFrame,
             CodecConfiguration = encoded.Value.CodecConfiguration,
             Evidence = EncodedVideoPacketEvidence.CreatePrototype(
@@ -255,9 +276,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
     {
         _hardwareSession ??= new MediaFoundationHardwareH264EncoderSession(
             _device,
-            _inputRequirement.Width,
-            _inputRequirement.Height,
-            _inputRequirement.PixelFormat);
+            _settings);
         _hardwareSession.Initialize();
         return _hardwareSession;
     }
@@ -271,6 +290,20 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         session.Initialize();
         return session;
     }
+
+    private TimeSpan FrameDuration =>
+        TimeSpan.FromTicks(TimeSpan.TicksPerSecond / _settings.FramesPerSecond);
+
+    private static HardwareVideoEncoderSettings CreateSettings(
+        int width,
+        int height,
+        string pixelFormat) =>
+        new()
+        {
+            Width = width,
+            Height = height,
+            PixelFormat = pixelFormat
+        };
 
     private static ID3D11Device CreateDefaultDevice()
     {

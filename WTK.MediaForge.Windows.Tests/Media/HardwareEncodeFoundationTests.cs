@@ -8,6 +8,7 @@ using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Encode;
 using WTK.MediaForge.Core.Media.Interop;
 using WTK.MediaForge.Graphics.D3D11;
+using WTK.MediaForge.Windows.Media;
 using WTK.MediaForge.Windows.Media.Encode;
 using WTK.MediaForge.Windows.Media.Interop;
 using Xunit;
@@ -17,6 +18,83 @@ namespace WTK.MediaForge.Windows.Tests.Media;
 [Trait("Category", "GPU")]
 public sealed class HardwareEncodeFoundationTests
 {
+    [Fact]
+    public void Media_foundation_runtime_reference_count_allows_overlapping_leases()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var baseline = MediaFoundationRuntime.ReferenceCountForTests;
+        using (MediaFoundationRuntime.Acquire())
+        {
+            Assert.True(MediaFoundationRuntime.ReferenceCountForTests >= baseline + 1);
+            using (MediaFoundationRuntime.Acquire())
+            {
+                Assert.True(MediaFoundationRuntime.ReferenceCountForTests >= baseline + 2);
+            }
+
+            Assert.True(MediaFoundationRuntime.ReferenceCountForTests >= baseline + 1);
+        }
+
+        Assert.True(MediaFoundationRuntime.ReferenceCountForTests >= baseline);
+    }
+
+    [Fact]
+    public async Task Windows_hardware_h264_encode_proof_returns_passed_or_unavailable_without_throwing()
+    {
+        var baseline = new HardwareMediaCapabilityReport
+        {
+            Platform = OperatingSystem.IsWindows() ? "Windows" : "Non-Windows",
+            GpuVendor = "TestVendor"
+        };
+        var result = await new WindowsHardwareH264EncodeProofRunner()
+            .RunAsync(baseline, CancellationToken.None);
+
+        Assert.Equal(MediaForgeCapabilityCatalog.HardwareEncodeProof, result.Id);
+        Assert.True(
+            result.Status is HardwareMediaProofStatus.Passed or HardwareMediaProofStatus.Unavailable,
+            $"Unexpected proof status: {result.Status}");
+
+        if (result.Status == HardwareMediaProofStatus.Passed)
+        {
+            Assert.NotEmpty(result.Evidence);
+            Assert.Contains(nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated), result.Evidence);
+        }
+        else
+        {
+            Assert.False(string.IsNullOrWhiteSpace(result.Reason));
+        }
+    }
+
+    [Fact]
+    public async Task Hardware_encoder_settings_constructor_preserves_input_requirement()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+        factory.EnumAdapters1(0, out var adapter).CheckError();
+        using var gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
+
+        var settings = new HardwareVideoEncoderSettings
+        {
+            Codec = EncodedVideoCodec.H264,
+            Width = 1280,
+            Height = 720,
+            FramesPerSecond = 30,
+            BitrateBitsPerSecond = 6_000_000,
+            KeyFrameIntervalFrames = 60,
+            PixelFormat = "NV12"
+        };
+
+        await using var encoder = new MediaFoundationHardwareVideoEncoder(gpuDevice.Device, settings);
+
+        Assert.Equal(1280, encoder.InputRequirement.Width);
+        Assert.Equal(720, encoder.InputRequirement.Height);
+        Assert.Equal("NV12", encoder.InputRequirement.PixelFormat);
+        Assert.True(encoder.InputRequirement.RequiresGpuSurface);
+    }
+
     [Fact]
     public async Task Public_encoder_rejects_prototype_canned_packet_path()
     {

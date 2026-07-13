@@ -118,10 +118,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   `PrototypeOnly` until real hardware decode is product validated.
 - `MediaFoundationHardwareVideoEncoder` has a separate product session
   boundary (`MediaFoundationHardwareH264EncoderSession`) from the canned
-  prototype bridge. The public/non-opt-in path reports real Media Foundation
-  H.264 output as unavailable before GPU export or packet production. Only
-  internal tests may opt into `PrototypeMediaFoundationH264EncoderSession`, and
-  its audit evidence must remain `Prototype`.
+  prototype bridge. The product path is configured by
+  `HardwareVideoEncoderSettings`, uses a shared `MediaFoundationRuntime` lease,
+  and may be validated on a hardware machine by the Windows H.264 proof runner.
+  Only internal tests may opt into `PrototypeMediaFoundationH264EncoderSession`,
+  and its audit evidence must remain `Prototype`.
 - Encoder input export now requires pixel-format compatibility. If an encoder
   requires NV12 and the renderer produced BGRA/RGBA, the path must go through an
   `IHardwareEncoderFormatConverter`; `D3D11BgraToNv12Converter` uses the D3D11
@@ -149,13 +150,16 @@ The legacy WinForms preview path has been removed as a product path because it u
   direct export is allowed only when the encoder requirement matches the
   rendered surface; otherwise a GPU converter must produce the requested
   encoder input format. Missing conversion records an unavailable audit event
-  and fails instead of using CPU staging.
-- `MediaFoundationHardwareVideoDecoder` has a separate product decode session
-  boundary (`MediaFoundationFileHardwareVideoDecoderSession`) from the
-  placeholder prototype bridge. The public/non-opt-in path reports real
-  MF/D3D11VA file decode as unavailable before producing any decoded GPU frame
-  evidence. Only internal tests may opt into the prototype bridge, and its audit
-  evidence must remain `Prototype`.
+  and fails instead of using CPU staging. Conversion must return a new GPU
+  lease with the exact requested size, format, and transport kind.
+- `MediaFoundationHardwareVideoDecoder` has a real product SourceReader session
+  boundary (`MediaFoundationFileHardwareVideoDecoderSession`) separate from the
+  placeholder prototype bridge. It uses a D3D11 device manager, requests NV12
+  output, and accepts decoded frames only when Media Foundation returns an
+  `IMFDXGIBuffer` GPU texture. That texture is copied on GPU into a D3D11
+  shared texture lease. System-memory decoded samples and placeholder textures
+  remain unavailable for product decode; only internal tests may opt into the
+  prototype bridge, and its audit evidence must remain `Prototype`.
 - Decode-to-render product proof is explicitly gated by
   `MediaTransportAuditRules.IsDecodeToRenderProofPathValid()`. It requires
   `BackendOutputValidated` evidence for hardware decode, decoded-frame to
@@ -214,6 +218,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   decode-to-render, MP4 output, MP4 input, webcam input, RTMP network output,
   and NDI input/output. Each proof is represented by `HardwareMediaProof` and
   must be `Passed` before a product capability can advertise support.
+- `MediaForgeWindows.CreateHardwareMediaProofRegistry()` registers Windows
+  proof runners, currently including the H.264 hardware encode proof runner.
+  `GetCapabilityReportWithHardwareProofsAsync` is explicit because proof
+  execution may touch D3D11/Media Foundation hardware and must not be hidden in
+  cheap UI capability probes.
 - Commit 06 (Vulkan -> D3D11/MF encoder surface export proof) blocks hardware recording until passed.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.

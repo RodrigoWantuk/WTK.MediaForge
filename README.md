@@ -20,7 +20,7 @@ WTK MediaForge is being built around a few core principles:
   The project aims to avoid unnecessary movement of uncompressed video frames through system RAM whenever possible.
 
 * **Hardware acceleration**
-  Capture, decoding, rendering, composition, and encoding should use hardware acceleration when available.
+  Capture, decoding, rendering, composition, and encoding use hardware acceleration on product paths. Continuous video decode/encode is hardware/GPU path or unavailable; there is no software fallback for product media.
 
 * **Modular architecture**
   Capture sources, rendering backends, composition logic, media processing, and output modules should be isolated and replaceable.

@@ -148,4 +148,27 @@ public sealed class WindowsMediaCapabilityTruthTests
         Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);
         Assert.False(report.IsFeatureAvailable(ndi.Id));
     }
+
+    [Fact]
+    public async Task Windows_hardware_proof_report_runs_encode_proof_without_promoting_prototype_paths()
+    {
+        var registry = MediaForgeWindows.CreateHardwareMediaProofRegistry();
+
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.HardwareEncodeProof);
+
+        var report = await MediaForgeWindows.GetCapabilityReportWithHardwareProofsAsync(
+            new WindowsHardwareMediaCapabilityProbe(),
+            registry,
+            CancellationToken.None);
+
+        var encodeProof = Assert.IsType<CapabilityEntry>(
+            report.TryGetEntry(MediaForgeCapabilityCatalog.HardwareEncodeProof));
+
+        Assert.True(
+            encodeProof.SupportStatus is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Unsupported,
+            $"Unexpected support status: {encodeProof.SupportStatus}");
+        Assert.NotEqual(MediaForgeProductReadinessStatus.Prototype, encodeProof.ProductReadinessStatus);
+        Assert.NotEqual(MediaForgeProductReadinessStatus.Skeleton, encodeProof.ProductReadinessStatus);
+    }
 }

@@ -36,7 +36,7 @@ public sealed class WindowsHardwareDecodeBoundaryTests
                     },
                     audit));
 
-            Assert.Contains("Real Media Foundation D3D11VA file decode is unavailable", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("IMFDXGIBuffer-backed GPU sample", ex.Message, StringComparison.Ordinal);
             Assert.False(audit.Contains(MediaTransportAuditEventKind.HardwareDecodeSucceeded));
         }
         finally

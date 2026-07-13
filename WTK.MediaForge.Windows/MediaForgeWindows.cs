@@ -5,6 +5,7 @@ using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Graphics.Vulkan;
 using WTK.MediaForge.Windows.Media;
+using WTK.MediaForge.Windows.Media.Encode;
 using WTK.MediaForge.Windows.Media.Text;
 
 namespace WTK.MediaForge.Windows;
@@ -43,6 +44,17 @@ public static class MediaForgeWindows
         CancellationToken cancellationToken = default) =>
         GetCapabilityReportAsync(DefaultCapabilityProbe, cancellationToken);
 
+    public static HardwareMediaProofRegistry CreateHardwareMediaProofRegistry()
+    {
+        var registry = new HardwareMediaProofRegistry();
+        registry.Register(new WindowsHardwareH264EncodeProofRunner());
+        return registry;
+    }
+
+    public static ValueTask<MediaForgeCapabilityReport> GetCapabilityReportWithHardwareProofsAsync(
+        CancellationToken cancellationToken = default) =>
+        GetCapabilityReportWithHardwareProofsAsync(DefaultCapabilityProbe, CreateHardwareMediaProofRegistry(), cancellationToken);
+
     public static async ValueTask<MediaForgeCapabilityReport> GetCapabilityReportAsync(
         IHardwareMediaCapabilityProbe probe,
         CancellationToken cancellationToken = default)
@@ -51,6 +63,23 @@ public static class MediaForgeWindows
         var hardware = await probe.ProbeAsync(cancellationToken).ConfigureAwait(false);
         return MediaForgeCapabilityReportBuilder.Build(
             hardware,
+            MediaSourceTypeRegistry.CreateCapabilityEntries()
+                .Concat(RenderOutputTypeRegistry.CreateCapabilityEntries()));
+    }
+
+    public static async ValueTask<MediaForgeCapabilityReport> GetCapabilityReportWithHardwareProofsAsync(
+        IHardwareMediaCapabilityProbe probe,
+        HardwareMediaProofRegistry proofRegistry,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        ArgumentNullException.ThrowIfNull(proofRegistry);
+
+        var hardware = await probe.ProbeAsync(cancellationToken).ConfigureAwait(false);
+        var proofResults = await proofRegistry.RunAsync(hardware, cancellationToken).ConfigureAwait(false);
+        var mergedHardware = HardwareMediaProofRegistry.ApplyResults(hardware, proofResults);
+        return MediaForgeCapabilityReportBuilder.Build(
+            mergedHardware,
             MediaSourceTypeRegistry.CreateCapabilityEntries()
                 .Concat(RenderOutputTypeRegistry.CreateCapabilityEntries()));
     }

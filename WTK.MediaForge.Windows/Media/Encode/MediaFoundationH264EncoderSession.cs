@@ -3,7 +3,9 @@ using Vortice.MediaFoundation;
 using SharpGen.Runtime;
 using System.Runtime.InteropServices;
 using WTK.MediaForge.Core.Media.Audit;
+using WTK.MediaForge.Core.Media.Encode;
 using WTK.MediaForge.Graphics.D3D11;
+using WTK.MediaForge.Windows.Media;
 
 namespace WTK.MediaForge.Windows.Media.Encode;
 
@@ -87,36 +89,22 @@ internal sealed class PrototypeMediaFoundationH264EncoderSession : IDisposable
 internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 {
     private readonly ID3D11Device _device;
-    private readonly int _width;
-    private readonly int _height;
-    private readonly string _pixelFormat;
+    private readonly HardwareVideoEncoderSettings _settings;
     private IMFDXGIDeviceManager? _deviceManager;
     private IMFTransform? _transform;
+    private MediaFoundationRuntimeLease? _mediaFoundationRuntimeLease;
     private string? _transformName;
     private ReadOnlyMemory<byte> _codecConfiguration;
     private bool _disposed;
     private bool _initialized;
-    private bool _mediaFoundationStarted;
 
     public MediaFoundationHardwareH264EncoderSession(
         ID3D11Device device,
-        int width,
-        int height,
-        string pixelFormat)
+        HardwareVideoEncoderSettings settings)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
-        if (width <= 0)
-            throw new ArgumentOutOfRangeException(nameof(width), "Encoder width must be positive.");
-
-        if (height <= 0)
-            throw new ArgumentOutOfRangeException(nameof(height), "Encoder height must be positive.");
-
-        if (string.IsNullOrWhiteSpace(pixelFormat))
-            throw new ArgumentException("Encoder pixel format is required.", nameof(pixelFormat));
-
-        _width = width;
-        _height = height;
-        _pixelFormat = pixelFormat;
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _settings.Validate();
     }
 
     public void Initialize()
@@ -130,8 +118,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
         try
         {
-            MediaFactory.MFStartup(true).CheckError();
-            _mediaFoundationStarted = true;
+            _mediaFoundationRuntimeLease = MediaFoundationRuntime.Acquire();
             _deviceManager = MediaFactory.MFCreateDXGIDeviceManager();
             _deviceManager.ResetDevice(_device).CheckError();
             _transform = CreateHardwareTransform();
@@ -170,10 +157,10 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
             auditSink.Record(new MediaTransportAuditEvent
             {
-                Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
-                Source = nameof(MediaFoundationHardwareH264EncoderSession),
-                EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
-                Detail = $"Media Foundation hardware MFT accepted D3D11 surface input ({_transformName ?? "unknown MFT"})."
+            Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
+            Source = nameof(MediaFoundationHardwareH264EncoderSession),
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
+            Detail = $"Media Foundation hardware MFT accepted D3D11 surface input ({_transformName ?? "unknown MFT"}, {_settings.Width}x{_settings.Height}@{_settings.FramesPerSecond}, {_settings.PixelFormat})."
             });
 
             outputSample = MediaFactory.MFCreateSample();
@@ -244,7 +231,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         var inputType = new RegisterTypeInfo
         {
             GuidMajorType = MediaTypeGuids.Video,
-            GuidSubtype = ToVideoSubtype(_pixelFormat)
+            GuidSubtype = ToVideoSubtype(_settings.PixelFormat)
         };
         var outputType = new RegisterTypeInfo
         {
@@ -272,18 +259,19 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         var outputType = MediaFactory.MFCreateMediaType();
         outputType.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video).CheckError();
         outputType.Set(MediaTypeAttributeKeys.Subtype, VideoFormatGuids.H264).CheckError();
-        outputType.Set(MediaTypeAttributeKeys.AvgBitrate, 8_000_000u).CheckError();
-        MediaFactory.MFSetAttributeSize(outputType, MediaTypeAttributeKeys.FrameSize, (uint)_width, (uint)_height).CheckError();
-        MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.FrameRate, 60, 1).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.AvgBitrate, checked((uint)_settings.BitrateBitsPerSecond)).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.MaxKeyframeSpacing, checked((uint)_settings.KeyFrameIntervalFrames)).CheckError();
+        MediaFactory.MFSetAttributeSize(outputType, MediaTypeAttributeKeys.FrameSize, (uint)_settings.Width, (uint)_settings.Height).CheckError();
+        MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.FrameRate, (uint)_settings.FramesPerSecond, 1).CheckError();
         MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.PixelAspectRatio, 1, 1).CheckError();
         outputType.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive).CheckError();
         transform.SetOutputType(0, outputType, 0);
 
         var inputType = MediaFactory.MFCreateMediaType();
         inputType.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video).CheckError();
-        inputType.Set(MediaTypeAttributeKeys.Subtype, ToVideoSubtype(_pixelFormat)).CheckError();
-        MediaFactory.MFSetAttributeSize(inputType, MediaTypeAttributeKeys.FrameSize, (uint)_width, (uint)_height).CheckError();
-        MediaFactory.MFSetAttributeRatio(inputType, MediaTypeAttributeKeys.FrameRate, 60, 1).CheckError();
+        inputType.Set(MediaTypeAttributeKeys.Subtype, ToVideoSubtype(_settings.PixelFormat)).CheckError();
+        MediaFactory.MFSetAttributeSize(inputType, MediaTypeAttributeKeys.FrameSize, (uint)_settings.Width, (uint)_settings.Height).CheckError();
+        MediaFactory.MFSetAttributeRatio(inputType, MediaTypeAttributeKeys.FrameRate, (uint)_settings.FramesPerSecond, 1).CheckError();
         MediaFactory.MFSetAttributeRatio(inputType, MediaTypeAttributeKeys.PixelAspectRatio, 1, 1).CheckError();
         inputType.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive).CheckError();
         transform.SetInputType(0, inputType, 0);
@@ -292,7 +280,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         transform.ProcessMessage(TMessageType.MessageNotifyStartOfStream, UIntPtr.Zero);
     }
 
-    private static IMFSample CreateInputSample(D3D11SharedTextureFrameHandle surface, TimeSpan presentationTime)
+    private IMFSample CreateInputSample(D3D11SharedTextureFrameHandle surface, TimeSpan presentationTime)
     {
         var buffer = MediaFactory.MFCreateDXGISurfaceBuffer(
             typeof(ID3D11Texture2D).GUID,
@@ -303,10 +291,13 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         var sample = MediaFactory.MFCreateSample();
         sample.AddBuffer(buffer);
         sample.SampleTime = presentationTime.Ticks;
-        sample.SampleDuration = TimeSpan.FromMilliseconds(33).Ticks;
+        sample.SampleDuration = FrameDuration.Ticks;
         buffer.Dispose();
         return sample;
     }
+
+    private TimeSpan FrameDuration =>
+        TimeSpan.FromTicks(TimeSpan.TicksPerSecond / _settings.FramesPerSecond);
 
     private static ReadOnlyMemory<byte> ReadEncodedPacket(IMFSample sample)
     {
@@ -421,11 +412,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         _deviceManager = null;
         _codecConfiguration = ReadOnlyMemory<byte>.Empty;
         _initialized = false;
-
-        if (_mediaFoundationStarted)
-        {
-            MediaFactory.MFShutdown().CheckError();
-            _mediaFoundationStarted = false;
-        }
+        _mediaFoundationRuntimeLease?.Dispose();
+        _mediaFoundationRuntimeLease = null;
     }
 }

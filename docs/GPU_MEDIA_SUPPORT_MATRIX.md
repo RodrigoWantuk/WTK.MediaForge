@@ -2,8 +2,9 @@
 
 Support is determined by **runtime-detected capability**, not marketing GPU names.
 Windows media probes intentionally do not advertise H.264 decode/encode codecs
-until real Media Foundation enumeration and backend output validation land.
-Prototype bridges are excluded from product capability reports.
+from static GPU names alone. Media Foundation proof runners may validate real
+hardware output on the current machine, but prototype bridges are excluded from
+product capability reports.
 
 Hardware acceleration is mandatory for continuous video decode and encode.
 If a backend cannot keep decompressed frames on GPU/VRAM, the capability is
@@ -50,7 +51,7 @@ marketing:
 | Webcam | GpuSurface | Planned | Raw CPU input possible at system boundary only; no product GPU-upload provider yet |
 | Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows product path | Load-time CPU decode; CPU copy released after GPU upload |
 | Static image WebP | N/A | Planned | Blocked until license review |
-| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly | Real decode backend and decode-to-render proof are not validated |
+| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly | Windows SourceReader/D3D11VA backend work has started and accepts only IMFDXGIBuffer GPU samples; decode-to-render product proof is not validated |
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
 | Animated GIF/APNG/WebP | N/A | Planned | Blocked until GPU-safe strategy |
 | Lottie | N/A | Planned | Blocked until GPU-safe rasterization |
@@ -62,7 +63,7 @@ marketing:
 |--------|-----------|--------|-------|
 | Preview panel | GpuSurface | Experimental | No CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | PrototypeOnly | Real MF hardware encoder and production MP4 muxing are not complete |
+| Recording MP4 H.264 | EncodedPacket | PrototypeOnly | MF hardware encoder session/settings/proof runner exist; production MP4 output still requires render-to-encode, hardware encode, mux, and output proofs |
 | RTMP H.264 | EncodedPacket | PrototypeOnly | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink now rejects packets without trusted BackendOutputValidated evidence, and product support still requires hardware-validated packets from render-output encode |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | N/A | Unsupported | |
@@ -72,7 +73,7 @@ marketing:
 
 | Encoder | Status | Notes |
 |---------|--------|-------|
-| Media Foundation hardware MFT H.264 | PrototypeOnly / RequiresLegalReview | Windows session attempts real hardware MFT enumeration and packet output, but product availability still requires validated export/encode proof on the target machine |
+| Media Foundation hardware MFT H.264 | Proof-runner gated / not product output by itself | Windows session uses typed settings, D3D11 device manager, shared MF runtime, and backend packet validation. Product MP4/RTMP still requires the full output proof chain. |
 | NVENC direct | Planned | RequiresLegalReview |
 | Intel QSV direct | Planned | RequiresLegalReview |
 | AMD AMF direct | Planned | RequiresLegalReview |
@@ -130,6 +131,12 @@ encoded file/source packet
 
 Prototype decode events, placeholder textures, CPU readback, or staging buffers
 must not satisfy this gate.
+
+The Windows D3D11VA file decode session opens Media Foundation SourceReader
+with a D3D11 device manager and requests NV12 output. It accepts a frame only
+when the sample exposes `IMFDXGIBuffer`; system-memory samples fail as
+unavailable instead of being uploaded as a product fallback. Accepted textures
+are copied by GPU into D3D11 shared texture leases for renderer import.
 
 ## FFmpeg / libav Capability Status
 

@@ -32,8 +32,11 @@ Complete foundations:
   behind an internal prototype opt-in; default Windows engine registration and
   capability reports still keep video file sources unavailable for product use.
 - Media Foundation H.264 encoder product boundary is explicit: the public path
-  reports real backend output as unavailable before GPU export or packet
-  production, while the canned packet bridge remains internal prototype opt-in.
+  now uses typed `HardwareVideoEncoderSettings`, a shared Media Foundation
+  runtime lease, a persistent hardware MFT session, and a Windows H.264 proof
+  runner. Capability reports can merge proof-runner results, but MP4/RTMP
+  product availability still requires the full render-to-encode and output
+  product proofs.
 - Encoder format conversion has an explicit contract. Vulkan/D3D11 export now
   requires pixel-format compatibility, and BGRA/RGBA to NV12 conversion has a
   D3D11 VideoProcessor GPU path with explicit unavailable diagnostics for
@@ -55,13 +58,21 @@ Complete foundations:
   is exported directly only when the encoder requirement matches; otherwise the
   path must use a GPU-only conversion step such as BGRA/RGBA -> NV12. If no
   GPU converter exists, the product path fails instead of staging through CPU.
+- Rendered-output encoder preparation now rejects ambiguous or incompatible
+  conversion results: GPU format conversion must return a new GPU lease with
+  the exact requested size/format, or the product path fails before encoding.
 - Hardware media proof execution now has a session registry that can run
   concrete proof runners and merge their results into the capability report.
   This keeps static capability declarations separate from proof results
-  observed on the current machine.
-- Media Foundation file decode now has an explicit product session boundary:
-  real D3D11VA decode reports unavailable, while placeholder texture output is
-  isolated in the prototype bridge.
+  observed on the current machine. `MediaForgeWindows` registers the Windows
+  H.264 hardware encode proof runner without running it during the cheap
+  static probe.
+- Media Foundation file decode now has a real product session boundary:
+  SourceReader is opened with a D3D11 device manager, DXVA enabled, NV12 output
+  requested, and decoded frames are accepted only when Media Foundation returns
+  an `IMFDXGIBuffer` GPU texture. The texture is copied by GPU into a D3D11
+  shared texture lease for renderer import. System-memory samples and
+  placeholder texture output remain unavailable for product decode.
 - Decode-to-render product proof now has an audit gate and remains blocked until
   hardware decode, source-frame adaptation, and renderer submission all provide
   `BackendOutputValidated` evidence.
@@ -200,7 +211,7 @@ Execute in this exact order after vNext (commits 00-24) is complete. Plan:
 | 03 | Asset Manager | Fast | **Done** |
 | 04 | **GPU Surface Export Proof (Real)** | **Blocks 15-17** | **Done** |
 | 05 | Hardware Decode Foundation | Fast | **Done** |
-| 06 | Windows Hardware Decode Prototype | Gpu | **PrototypeOnly - needs real decode backend** |
+| 06 | Windows Hardware Decode Boundary | Gpu | **Backend work started: SourceReader/D3D11VA session accepts only IMFDXGIBuffer GPU samples; product proof still pending** |
 | 07 | Video Source Runtime | Fast | **Done** |
 | 08 | Texture Streaming | Gpu | **Done** |
 | 09 | Renderer Video Integration | Gpu | **Done** |
@@ -209,7 +220,7 @@ Execute in this exact order after vNext (commits 00-24) is complete. Plan:
 | 12 | GPU Effects Framework | Gpu | **Color correction and source-layer blur ProductValidated in Vulkan source/effect passes** |
 | 13 | Transform Effects | Gpu | **Done:ProductValidated for Vulkan geometry/shader path; graph nodes remain skeleton** |
 | 14 | Text Rendering | Gpu | **Done:ProductValidated for Windows Vulkan glyph atlas text layers** |
-| 15 | Hardware Encode Foundation | Gpu; requires 04 | **PrototypeOnly - canned packets are not product proof** |
+| 15 | Hardware Encode Foundation | Gpu; requires 04 | **Backend work started: MF hardware MFT session/settings/proof runner exist; MP4/RTMP product proof still pending** |
 | 16 | MP4 Recording Packet Mux Boundary | Gpu | **Contract/Product boundary - public sink requires BackendOutputValidated packets; end-to-end recording remains blocked by hardware encoder proof** |
 | 17 | RTMP Network Transport Boundary | Gpu | **Contract/Product boundary - TCP RTMP handshake/publish and FLV H.264 packetization implemented; end-to-end streaming remains blocked by hardware encoder proof** |
 | 18 | Synthetic Performance Validation | Report | **NeedsRealBackend - synthetic workload only** |
@@ -293,9 +304,9 @@ Current truth table:
 | Decode-to-source frame bridge | Done:Contract |
 | Windows video-file source provider | Done:Prototype, blocked by default |
 | Webcam source | Planned until immediate GPU-upload provider is product validated |
-| Windows decode | Done:Prototype; product backend explicitly unavailable |
+| Windows decode | Backend work started; SourceReader/D3D11VA path requires `IMFDXGIBuffer` GPU samples and rejects CPU samples; product proof pending |
 | Decode-to-render proof | Blocked until real decode backend is validated |
-| Windows encode | Done:Prototype; product backend explicitly unavailable |
+| Windows encode | Backend work started; typed settings, MF runtime lease, product MFT session, and Windows H.264 proof runner exist; product output proofs pending |
 | Encoder format conversion | Done:BackendCallSucceeded for D3D11 VideoProcessor path when supported; product encode remains blocked on real MF packet validation |
 | Packet sink boundary | Done:Contract with explicit bitstream metadata |
 | MP4 writer | Done:Contract/Product boundary; public path requires trusted BackendOutputValidated H.264 packet evidence and rejects prototype/contract-only packets |

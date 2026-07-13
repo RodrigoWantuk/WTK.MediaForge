@@ -537,6 +537,58 @@ public sealed class EncodedOutputPipelineTests
         slow.Release();
     }
 
+    [Fact]
+    public async Task Encoded_output_router_rejects_drop_policies_for_product_outputs()
+    {
+        var encoder = new TestHardwareVideoEncoder();
+        await using var router = new EncodedOutputRouter(encoder, consumerQueueCapacity: 1);
+
+        var dropException = Assert.Throws<ArgumentException>(() =>
+            router.RegisterConsumer(new RecordingPacketConsumer(), new EncodedPacketConsumerOptions
+            {
+                IsProductOutput = true,
+                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.DropOutput,
+                DisplayName = "recording"
+            }));
+
+        var keepLatestException = Assert.Throws<ArgumentException>(() =>
+            router.RegisterConsumer(new RecordingPacketConsumer(), new EncodedPacketConsumerOptions
+            {
+                IsProductOutput = true,
+                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.KeepLatest,
+                DisplayName = "stream"
+            }));
+
+        Assert.Contains("Product encoded outputs", dropException.Message, StringComparison.Ordinal);
+        Assert.Contains("Product encoded outputs", keepLatestException.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Encoded_output_router_reports_consumer_statistics()
+    {
+        var encoder = new TestHardwareVideoEncoder();
+        await using var router = new EncodedOutputRouter(encoder, consumerQueueCapacity: 2);
+        var consumer = new RecordingPacketConsumer();
+        router.RegisterConsumer(consumer, new EncodedPacketConsumerOptions
+        {
+            BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.Backpressure,
+            DisplayName = "mp4"
+        });
+
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        await WaitForConditionAsync(() => consumer.Packets.Count == 1, TimeSpan.FromSeconds(2));
+
+        var stats = Assert.Single(router.GetConsumerStatistics());
+        Assert.Equal("mp4", stats.DisplayName);
+        Assert.Equal(EncodedPacketConsumerBackpressurePolicy.Backpressure, stats.BackpressurePolicy);
+        Assert.Equal(1, stats.EnqueuedPackets);
+        Assert.Equal(1, stats.WrittenPackets);
+        Assert.Equal(0, stats.DroppedPackets);
+        Assert.Equal(0, stats.FailedWrites);
+        Assert.Equal(0, stats.TimedOutWrites);
+        Assert.Null(stats.LastError);
+    }
+
     private static IReadOnlyList<EncodedVideoPacket> CreateSyntheticH264Packets(
         int frameCount,
         EncodedVideoPacketEvidence? evidence = null)

@@ -255,12 +255,14 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
             RecordingMp4Sink or RecordingMp4PacketSink => new EncodedPacketConsumerOptions
             {
                 BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.Backpressure,
+                IsProductOutput = true,
                 WriteTimeout = TimeSpan.FromSeconds(10),
                 DisplayName = sink.GetType().Name
             },
             RtmpSink or RtmpPacketSink => new EncodedPacketConsumerOptions
             {
                 BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.FailOutput,
+                IsProductOutput = true,
                 WriteTimeout = TimeSpan.FromSeconds(5),
                 DisplayName = sink.GetType().Name
             },
