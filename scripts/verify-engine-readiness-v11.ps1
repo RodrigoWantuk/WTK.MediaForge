@@ -16,9 +16,34 @@ function Invoke-Step {
 
     Write-Host ">> $Name"
     & $Action
-    if ($LASTEXITCODE -ne 0) {
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 2) {
+        exit 2
+    }
+
+    if ($exitCode -ne 0) {
         throw "Engine readiness v11 check failed: $Name"
     }
+}
+
+Invoke-Step "media proof report" {
+    $reportArgs = @(
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "$PSScriptRoot/generate-media-proof-report.ps1",
+        "-OutputDirectory",
+        "test-reports",
+        "-Format",
+        "both"
+    )
+
+    if ($RequireHardwareMedia) {
+        $reportArgs += "-RequireHardwareMedia"
+    }
+
+    & powershell @reportArgs
 }
 
 Invoke-Step "v10 full product boundary" {
@@ -32,7 +57,7 @@ Invoke-Step "hardware media proof set" {
 }
 
 Invoke-Step "capability proof aggregation tests" {
-    dotnet test .\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj --no-build --filter "FullyQualifiedName~CapabilityReportTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests"
+    dotnet test .\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj --no-build --filter "FullyQualifiedName~CapabilityReportTests|FullyQualifiedName~HardwareMediaValidationReportTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests"
 }
 
 Invoke-Step "encoded output route and runtime status tests" {
@@ -40,7 +65,7 @@ Invoke-Step "encoded output route and runtime status tests" {
 }
 
 Invoke-Step "Windows media proof truth tests" {
-    dotnet test .\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj --no-build --filter "FullyQualifiedName~WindowsMediaCapabilityTruthTests|FullyQualifiedName~HardwareEncodeFoundationTests"
+    dotnet test .\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj --no-build --filter "FullyQualifiedName~WindowsMediaCapabilityTruthTests|FullyQualifiedName~MediaProofReportToolTests|FullyQualifiedName~HardwareEncodeFoundationTests"
 }
 
-Write-Host "Engine readiness v11 checks passed."
+Write-Host "Engine readiness v11 checks passed. Reports: test-reports/media-proof-report.json, test-reports/media-proof-report.md"

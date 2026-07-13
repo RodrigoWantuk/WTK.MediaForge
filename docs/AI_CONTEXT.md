@@ -146,9 +146,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   `KeepLatest`; queue exhaustion becomes observable failure/backpressure, not
   a silent frame drop.
 - `CapabilityProofAggregator` resolves MP4 recording, RTMP streaming, and MP4
-  video-file input capability from required hardware media proofs. These
-  features stay `PrototypeOnly` until the required proof chain passes on the
-  current machine.
+  video-file input capability from required hardware media proofs. MP4 recording
+  requires hardware encode, render-to-encode, MP4 recording, and MP4 output
+  product proofs. MP4 video input requires hardware decode, decode-to-render,
+  and MP4 input product proofs. These features stay `PrototypeOnly` until the
+  required proof chain passes on the current machine.
 - `EncodedVideoPacket` carries explicit codec, bitstream format, presentation
   time, optional duration, and optional codec configuration bytes. MP4/RTMP
   packet sinks must reject unknown H.264 bitstream format instead of accepting
@@ -245,7 +247,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   media I/O boundary tests. `./scripts/verify-engine-readiness-v10.ps1` adds
   GPU and Performance tiers for full local readiness.
   `./scripts/verify-engine-readiness-v11.ps1` adds the encoded route/status,
-  capability proof aggregation, and Windows media proof truth checks on top.
+  capability proof aggregation, Windows media proof truth checks, and an
+  operational media proof report on top. The report is generated at
+  `test-reports/media-proof-report.json` and
+  `test-reports/media-proof-report.md` by
+  `./scripts/generate-media-proof-report.ps1`.
   `-RequireHardwareMedia` additionally fails release validation unless all
   v8 hardware media proofs pass on the target machine.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.

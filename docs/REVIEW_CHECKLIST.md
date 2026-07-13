@@ -141,6 +141,7 @@ Before considering a change complete, verify:
 - [ ] OS-specific media adapters stay in OS-specific projects and capability reports expose runtime-detected backend/vendor status.
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
 - [ ] v8 render-to-encode, hardware encode, MP4 recording, MP4 input/output, webcam input, RTMP network output, and NDI input/output proofs pass before those media I/O paths are marked Supported.
+- [ ] `scripts/generate-media-proof-report.ps1` writes `test-reports/media-proof-report.json` and `test-reports/media-proof-report.md` with explicit reasons for every non-passed proof or feature.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
 - [ ] Product MP4 recording and public RTMP streaming reject packets without trusted `BackendOutputValidated` evidence; public callers cannot forge that evidence through packet initializers.
 - [ ] BGRA/RGBA -> NV12 encoder format conversion uses a GPU backend path or records explicit unavailable diagnostics; no CPU staging fallback.
@@ -151,7 +152,8 @@ Before considering a change complete, verify:
 - [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15-20.
 - [ ] Engine readiness v9 (`verify-engine-readiness-v9.ps1`) passes before promoting prototype/skeleton media paths.
 - [ ] Engine readiness v10 (`verify-engine-readiness-v10.ps1`) passes before promoting media transport, encoder, decoder, render-output encode, sink, or capability work.
-- [ ] Release hardware media readiness uses the current readiness script with `-RequireHardwareMedia`.
+- [ ] Engine readiness v11 (`verify-engine-readiness-v11.ps1`) passes and generates the media proof report before promoting media proof or encoded-route work.
+- [ ] Release hardware media readiness uses the current readiness script with `-RequireHardwareMedia`; missing required proofs must fail with an actionable report, not silent success.
 - [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.
 
 ## FFmpeg / external codec review checklist

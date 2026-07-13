@@ -6,6 +6,7 @@ public sealed class CapabilityProofAggregator
     [
         MediaForgeCapabilityCatalog.HardwareEncodeProof,
         MediaForgeCapabilityCatalog.RenderToEncodeProof,
+        MediaForgeCapabilityCatalog.Mp4RecordingProof,
         MediaForgeCapabilityCatalog.Mp4OutputProductProof
     ];
 
@@ -19,7 +20,8 @@ public sealed class CapabilityProofAggregator
     private static readonly string[] VideoFileProofs =
     [
         MediaForgeCapabilityCatalog.HardwareDecodeProof,
-        MediaForgeCapabilityCatalog.DecodeToRenderProof
+        MediaForgeCapabilityCatalog.DecodeToRenderProof,
+        MediaForgeCapabilityCatalog.Mp4InputProductProof
     ];
 
     public CapabilityEntry ResolveRecordingCapability(HardwareMediaCapabilityReport report)
@@ -34,7 +36,7 @@ public sealed class CapabilityProofAggregator
             MediaForgeProductReadinessStatus.ProductValidated,
             MediaForgeLicenseStatus.Approved,
             RecordingMp4Proofs,
-            "MP4 recording remains unavailable until hardware encode, render-to-encode, and MP4 product output proofs pass.",
+            "MP4 recording remains unavailable until hardware encode, render-to-encode, MP4 recording, and MP4 product output proofs pass.",
             MediaTransportKind.EncodedPacket);
     }
 
@@ -66,7 +68,7 @@ public sealed class CapabilityProofAggregator
             MediaForgeProductReadinessStatus.ProductValidated,
             MediaForgeLicenseStatus.Approved,
             VideoFileProofs,
-            "MP4 video input remains unavailable until hardware decode and decode-to-render proofs pass.",
+            "MP4 video input remains unavailable until hardware decode, decode-to-render, and MP4 input product proofs pass.",
             MediaTransportKind.EncodedPacket);
     }
 

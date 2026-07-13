@@ -190,6 +190,13 @@ Capability and license status are queryable without starting the engine:
 - `MediaForgeWindows.GetCapabilityReportAsync(CancellationToken)` - must not block the UI thread; probing runs via `IHardwareMediaCapabilityProbe.ProbeAsync`.
 - `MediaForgeWindows.CreateHardwareMediaProofRegistry()` and `MediaForgeWindows.GetCapabilityReportWithHardwareProofsAsync(...)` are the explicit Windows entrypoints for running local hardware proof runners and merging observed results into a capability report. They may touch D3D11/Media Foundation hardware and must not be hidden inside cheap UI-thread probes.
 - `MediaForgeCapabilityReport`, `CapabilityEntry`, `MediaForgeSupportStatus`, `MediaForgeLicenseStatus`, `MediaForgeProductReadinessStatus`
+- `HardwareMediaValidationReport`, `HardwareMediaValidationFeature`,
+  `HardwareMediaValidationProof`, `HardwareMediaValidationCapability`,
+  `HardwareMediaValidationStatus`,
+  `HardwareMediaValidationReportBuilder`, and
+  `HardwareMediaValidationReportMarkdownWriter` provide the versioned
+  operational report used by readiness scripts and release validation. The
+  current schema version is `1`.
 - `CapabilityProofAggregator` resolves composite product capabilities such as
   MP4 recording, RTMP streaming, and MP4 video input from required hardware
   media proof results. It must not promote features manually or from prototype
@@ -205,6 +212,15 @@ Capability and license status are queryable without starting the engine:
 - `IStaticImageAssetDecoder`, `StaticCpuAsset`, and `StaticImageAssetFormats` define load-time static image decode contracts. Platform assemblies provide decoder implementations; Composition does not own `System.Drawing` or any platform image decoder. On Windows, `MediaForgeWindows.CreateEngine()` wires PNG/JPEG image sources through load-time decode, D3D11 shared texture upload, and GPU frame leases; provider wiring remains internal.
 
 Studio and host apps must use capability status to disable or label features that are PrototypeOnly, Planned, Unsupported, or Blocked.
+
+Operational validation scripts use
+`./scripts/generate-media-proof-report.ps1` and
+`./scripts/verify-engine-readiness-v11.ps1` to write
+`test-reports/media-proof-report.json` and
+`test-reports/media-proof-report.md`. In normal development, unavailable
+hardware paths are allowed only when the report contains explicit blockers. In
+release mode, `-RequireHardwareMedia` fails unless required hardware media
+features have passed proof chains.
 
 Productive preview shells, NDI, MP4/encoded file, streaming, virtual camera, and audio outputs remain blocked until the owning roadmap track opens and capability report reflects Supported status.
 

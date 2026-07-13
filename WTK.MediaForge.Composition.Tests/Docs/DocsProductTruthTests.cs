@@ -164,6 +164,7 @@ public sealed class DocsProductTruthTests
         var v9Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v9.ps1"));
         var v10Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v10.ps1"));
         var v11Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v11.ps1"));
+        var reportScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "generate-media-proof-report.ps1"));
         var productBoundaryScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-product-boundary.ps1"));
 
         Assert.Contains("dotnet build", v9Script, StringComparison.Ordinal);
@@ -180,10 +181,19 @@ public sealed class DocsProductTruthTests
         Assert.Contains("-Tier Performance", v10Script, StringComparison.Ordinal);
 
         Assert.Contains("verify-engine-readiness-v10.ps1", v11Script, StringComparison.Ordinal);
+        Assert.Contains("generate-media-proof-report.ps1", v11Script, StringComparison.Ordinal);
+        Assert.Contains("test-reports/media-proof-report.json", v11Script, StringComparison.Ordinal);
+        Assert.Contains("test-reports/media-proof-report.md", v11Script, StringComparison.Ordinal);
+        Assert.Contains("exit 2", v11Script, StringComparison.Ordinal);
         Assert.Contains("verify-engine-readiness-v8.ps1", v11Script, StringComparison.Ordinal);
         Assert.Contains("CapabilityReportTests", v11Script, StringComparison.Ordinal);
         Assert.Contains("MediaPipelineRuntimeTests", v11Script, StringComparison.Ordinal);
         Assert.Contains("WindowsMediaCapabilityTruthTests", v11Script, StringComparison.Ordinal);
+
+        Assert.Contains("WTK.MediaForge.Tools.MediaProofReport", reportScript, StringComparison.Ordinal);
+        Assert.Contains("RequireHardwareMedia", reportScript, StringComparison.Ordinal);
+        Assert.Contains("--require-hardware-media", reportScript, StringComparison.Ordinal);
+        Assert.Contains("--format", reportScript, StringComparison.Ordinal);
 
         Assert.Contains("RenderedOutputEncodeFrameAdapterTests", productBoundaryScript, StringComparison.Ordinal);
         Assert.Contains("EncodedOutputPipelineTests", productBoundaryScript, StringComparison.Ordinal);

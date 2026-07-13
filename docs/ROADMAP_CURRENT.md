@@ -61,9 +61,9 @@ Complete foundations:
   semantics and fail observably if frames would be silently dropped.
 - Composite product capability promotion is owned by
   `CapabilityProofAggregator`: MP4 recording requires hardware encode,
-  render-to-encode, and MP4 output product proofs; RTMP requires hardware
-  encode, render-to-encode, and RTMP network proof; MP4 video input requires
-  hardware decode and decode-to-render proofs.
+  render-to-encode, MP4 recording, and MP4 output product proofs; RTMP requires
+  hardware encode, render-to-encode, and RTMP network proof; MP4 video input
+  requires hardware decode, decode-to-render, and MP4 input product proofs.
 - Rendered-output-to-encoder input preparation is explicit. A rendered surface
   is exported directly only when the encoder requirement matches; otherwise the
   path must use a GPU-only conversion step such as BGRA/RGBA -> NV12. If no
@@ -210,6 +210,15 @@ or capability work, run the full product boundary suite:
 ./scripts/verify-engine-readiness-v11.ps1
 ```
 
+`verify-engine-readiness-v11.ps1` generates the operational media proof report
+before running deeper gates. The report is written to
+`test-reports/media-proof-report.json` and
+`test-reports/media-proof-report.md` through
+`./scripts/generate-media-proof-report.ps1`. Normal developer runs may pass
+with honest `Blocked`/`Unavailable` feature status. Release runs use
+`-RequireHardwareMedia`; in that mode missing required proofs produce exit code
+2 and block promotion.
+
 ## Active Phase 2 Commit Order (GPU Pipeline Completo)
 
 Execute in this exact order after vNext (commits 00-24) is complete. Plan:
@@ -352,14 +361,20 @@ sink, or capability work beyond contract/prototype status.
 
 `./scripts/verify-engine-readiness-v11.ps1` extends v10 with the current v6
 media-runtime checks: hardware media proof-set execution, capability proof
-aggregation tests, encoded output route/status/backpressure tests, and Windows
-media proof truth tests. It is the preferred local gate before changing MP4,
-RTMP, decode, encode, or encoded-route capability behavior.
+aggregation tests, encoded output route/status/backpressure tests, Windows
+media proof truth tests, and a generated media proof report. It is the
+preferred local gate before changing MP4, RTMP, decode, encode, or encoded-route
+capability behavior.
 
 Hardware proof runners are registered through `HardwareMediaProofRegistry`.
 They may report `Unavailable` on developer/CI machines without required
 hardware, but product release validation must run with `-RequireHardwareMedia`
 and fail unless required proof entries are `Passed`.
+
+The generated report is the single operational summary for pending proof work.
+It contains schema version 1, platform/device metadata, capability entries,
+all v8 proof results, composite feature status, release-gate failures, and
+human-readable reasons for every non-passed proof or feature.
 
 ## Future Phase - FFmpeg Libraries Integration Review
 

@@ -39,10 +39,12 @@ public sealed class CapabilityReportTests
             [
                 UnavailableProof(MediaForgeCapabilityCatalog.HardwareEncodeProof),
                 UnavailableProof(MediaForgeCapabilityCatalog.RenderToEncodeProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.Mp4RecordingProof),
                 UnavailableProof(MediaForgeCapabilityCatalog.Mp4OutputProductProof),
                 UnavailableProof(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof),
                 UnavailableProof(MediaForgeCapabilityCatalog.HardwareDecodeProof),
-                UnavailableProof(MediaForgeCapabilityCatalog.DecodeToRenderProof)
+                UnavailableProof(MediaForgeCapabilityCatalog.DecodeToRenderProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.Mp4InputProductProof)
             ]
         });
 
@@ -63,10 +65,12 @@ public sealed class CapabilityReportTests
             [
                 PassedProof(MediaForgeCapabilityCatalog.HardwareEncodeProof),
                 PassedProof(MediaForgeCapabilityCatalog.RenderToEncodeProof, "BackendCallSucceeded"),
+                PassedProof(MediaForgeCapabilityCatalog.Mp4RecordingProof),
                 PassedProof(MediaForgeCapabilityCatalog.Mp4OutputProductProof),
                 PassedProof(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof),
                 PassedProof(MediaForgeCapabilityCatalog.HardwareDecodeProof),
-                PassedProof(MediaForgeCapabilityCatalog.DecodeToRenderProof)
+                PassedProof(MediaForgeCapabilityCatalog.DecodeToRenderProof),
+                PassedProof(MediaForgeCapabilityCatalog.Mp4InputProductProof)
             ]
         });
 
