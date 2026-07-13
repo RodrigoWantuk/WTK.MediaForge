@@ -74,8 +74,8 @@ public sealed class DocsProductTruthTests
         Assert.Contains("The RTMP network boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
 
         Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly |", supportMatrix, StringComparison.Ordinal);
-        Assert.Contains("| Recording MP4 H.264 | EncodedPacket | PrototypeOnly |", supportMatrix, StringComparison.Ordinal);
-        Assert.Contains("| RTMP H.264 | EncodedPacket | PrototypeOnly |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| Recording MP4 H.264 | EncodedPacket | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| RTMP H.264 | EncodedPacket | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -142,6 +142,7 @@ public sealed class DocsProductTruthTests
 
         Assert.Contains("verify-engine-readiness-v9.ps1", aiContext, StringComparison.Ordinal);
         Assert.Contains("verify-engine-readiness-v10.ps1", aiContext, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v11.ps1", aiContext, StringComparison.Ordinal);
         Assert.Contains("v8 hardware media proofs", aiContext, StringComparison.Ordinal);
         Assert.Contains("HardwareMediaProof", publicApi, StringComparison.Ordinal);
         Assert.Contains("BackendOutputValidated", supportMatrix, StringComparison.Ordinal);
@@ -157,11 +158,12 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Engine_readiness_v9_and_v10_scripts_define_current_product_boundary_gates()
+    public void Engine_readiness_v9_v10_and_v11_scripts_define_current_product_boundary_gates()
     {
         var repoRoot = FindRepositoryRoot();
         var v9Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v9.ps1"));
         var v10Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v10.ps1"));
+        var v11Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v11.ps1"));
         var productBoundaryScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-product-boundary.ps1"));
 
         Assert.Contains("dotnet build", v9Script, StringComparison.Ordinal);
@@ -176,6 +178,12 @@ public sealed class DocsProductTruthTests
         Assert.Contains("verify-engine-readiness-v9.ps1", v10Script, StringComparison.Ordinal);
         Assert.Contains("-Tier Gpu", v10Script, StringComparison.Ordinal);
         Assert.Contains("-Tier Performance", v10Script, StringComparison.Ordinal);
+
+        Assert.Contains("verify-engine-readiness-v10.ps1", v11Script, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v8.ps1", v11Script, StringComparison.Ordinal);
+        Assert.Contains("CapabilityReportTests", v11Script, StringComparison.Ordinal);
+        Assert.Contains("MediaPipelineRuntimeTests", v11Script, StringComparison.Ordinal);
+        Assert.Contains("WindowsMediaCapabilityTruthTests", v11Script, StringComparison.Ordinal);
 
         Assert.Contains("RenderedOutputEncodeFrameAdapterTests", productBoundaryScript, StringComparison.Ordinal);
         Assert.Contains("EncodedOutputPipelineTests", productBoundaryScript, StringComparison.Ordinal);

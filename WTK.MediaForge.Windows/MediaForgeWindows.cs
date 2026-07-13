@@ -28,7 +28,8 @@ public static class MediaForgeWindows
             new WindowsVideoFileSourceProviderFactory(options.Diagnostics)),
             new WindowsRenderOutputSinkFactory(),
             new MediaForgeVulkanRenderBackendFactory(new WindowsSystemDrawingFontAtlasRasterizer()),
-            options.Diagnostics)
+            options.Diagnostics,
+            new WindowsEncodedOutputRouteFactory(options.Diagnostics))
         {
             StartTimeout = options.StartTimeout,
             CommandTimeout = options.CommandTimeout,
@@ -47,7 +48,12 @@ public static class MediaForgeWindows
     public static HardwareMediaProofRegistry CreateHardwareMediaProofRegistry()
     {
         var registry = new HardwareMediaProofRegistry();
+        registry.Register(new WindowsRenderToH264EncodeProofRunner());
         registry.Register(new WindowsHardwareH264EncodeProofRunner());
+        registry.Register(new WindowsMp4OutputProductProofRunner());
+        registry.Register(new WindowsRtmpNetworkOutputProofRunner());
+        registry.Register(new WindowsHardwareDecodeProofRunner());
+        registry.Register(new WindowsDecodeToRenderProofRunner());
         return registry;
     }
 

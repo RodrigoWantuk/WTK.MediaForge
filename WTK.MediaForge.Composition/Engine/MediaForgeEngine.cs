@@ -24,6 +24,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 {
     private readonly IMediaSourceProviderFactory _sourceProviderFactory;
     private readonly IRenderOutputSinkFactory _outputSinkFactory;
+    private readonly IEncodedOutputRouteFactory? _encodedOutputRouteFactory;
     private readonly IRenderBackendFactory _backendFactory;
     private readonly IMediaForgeDiagnosticsSink? _externalDiagnostics;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
@@ -88,10 +89,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         IMediaSourceProviderFactory sourceProviderFactory,
         IRenderOutputSinkFactory outputSinkFactory,
         IRenderBackendFactory backendFactory,
-        IMediaForgeDiagnosticsSink? diagnostics = null)
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        IEncodedOutputRouteFactory? encodedOutputRouteFactory = null)
     {
         _sourceProviderFactory = sourceProviderFactory ?? throw new ArgumentNullException(nameof(sourceProviderFactory));
         _outputSinkFactory = outputSinkFactory ?? throw new ArgumentNullException(nameof(outputSinkFactory));
+        _encodedOutputRouteFactory = encodedOutputRouteFactory;
         _backendFactory = backendFactory ?? throw new ArgumentNullException(nameof(backendFactory));
         _externalDiagnostics = diagnostics;
         _diagnostics = new EngineDiagnosticsSink(diagnostics, RaiseDiagnosticReported);
@@ -114,6 +117,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     public event EventHandler<MediaForgeEngineStateChangedEventArgs>? StateChanged;
 
     public event EventHandler<MediaForgeFrameDroppedEventArgs>? FrameDropped;
+
+    public IReadOnlyList<EncodedOutputRuntimeSnapshot> GetEncodedOutputRuntimeSnapshots() =>
+        _mediaPipelineRuntime?.GetEncodedOutputRuntimeSnapshots()
+        ?? Array.Empty<EncodedOutputRuntimeSnapshot>();
 
     internal SceneRuntime? SceneRuntimeForTests => _sceneRuntime;
 
@@ -257,6 +264,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     await EnqueueBindOutputAsync(output, entry.Sink, entry.Target, cancellationToken)
                         .ConfigureAwait(false);
                 }
+
+                await RegisterEncodedOutputRoutesAsync(_currentProject, cancellationToken)
+                    .ConfigureAwait(false);
 
                 _renderPump = new MediaForgeRenderPump(
                     RenderFramesPerSecond,
@@ -699,6 +709,31 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         {
             if (_sinkDispatcher.HasSinks(output.Id))
                 await EnsureAutomaticSurfaceBindingAsync(output, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RegisterEncodedOutputRoutesAsync(
+        MediaForgeProject project,
+        CancellationToken cancellationToken)
+    {
+        if (_encodedOutputRouteFactory is null || _mediaPipelineRuntime is null)
+            return;
+
+        foreach (var output in project.Outputs)
+        {
+            if (!_encodedOutputRouteFactory.CanCreate(output.TypeId))
+                continue;
+
+            var createdBinding = await EnsureAutomaticSurfaceBindingAsync(output, cancellationToken).ConfigureAwait(false);
+            if (createdBinding && _outputSinks.TryGetValue(output.Id, out var entry))
+            {
+                await EnqueueBindOutputAsync(output, entry.Sink, entry.Target, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await _encodedOutputRouteFactory
+                .RegisterAsync(project, output, _mediaPipelineRuntime, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

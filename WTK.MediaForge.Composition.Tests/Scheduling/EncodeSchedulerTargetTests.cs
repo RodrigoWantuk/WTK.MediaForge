@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Runtime.Scheduling;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
@@ -129,6 +130,9 @@ public sealed class EncodeSchedulerTargetTests
 
         Assert.True(target.PendingFrameCount <= 1);
         Assert.Equal(default, rejectedLease.TextureId);
+        Assert.Equal(EncodedOutputRuntimeStatus.Failed, target.Status);
+        Assert.Contains("does not allow frame drops", target.StatusReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, target.FramesDropped);
     }
 
     [Fact]

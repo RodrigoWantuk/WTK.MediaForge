@@ -258,6 +258,12 @@ Exceptions for continuous raw CPU video require `RawCpuVideoFrameException` regi
 
 FFmpeg is not used in the first hardware MP4/RTMP product path.
 
+Encoded output routing now has a product boundary in the runtime: project
+outputs for MP4 recording and RTMP streaming are recognized as encoded routes,
+but the Windows route factory refuses to start them until capability proofs
+validate the composed hardware path. `CapabilityProofAggregator` is the only
+place that promotes those capabilities from proof results.
+
 Windows recording product path: Media Foundation hardware MFT H.264,
 `EncodedPacketMp4Muxer` packet-only muxing, Vulkan -> D3D11 encoder surface
 export, and the v8 `HardwareMediaProof` set. Product recording is unavailable

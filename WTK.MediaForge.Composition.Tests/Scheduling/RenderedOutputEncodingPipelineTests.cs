@@ -107,6 +107,54 @@ public sealed class RenderedOutputEncodingPipelineTests
         await first.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
     }
 
+    [Fact]
+    public async Task Recording_policy_marks_pipeline_failed_when_export_queue_is_full()
+    {
+        var outputId = RenderOutputId.New();
+        var diagnostics = new ListDiagnosticsSink();
+        var exporter = new BlockingRenderedOutputExporter();
+        var encoder = new PreExportedInputRecordingEncoder();
+
+        await using var scheduler = new EncodeSchedulerTarget(
+            encoder,
+            new ThrowingGpuFrameExporter(),
+            new CollectingMediaTransportAuditSink(),
+            _ => { },
+            encodeTimeout: TimeSpan.FromSeconds(5));
+
+        await using var pipeline = new RenderedOutputEncodingPipeline(diagnostics);
+        pipeline.RegisterOutput(
+            outputId,
+            new RenderedOutputEncodeFrameAdapter(exporter),
+            scheduler,
+            CreateRequirement(),
+            new CollectingMediaTransportAuditSink(),
+            queueCapacity: 1,
+            backpressurePolicy: EncodedOutputBackpressurePolicy.Recording());
+
+        var first = CreateBatch(outputId, frameNumber: 1);
+        var second = CreateBatch(outputId, frameNumber: 2);
+        var third = CreateBatch(outputId, frameNumber: 3);
+
+        pipeline.PublishCompletedFrames(first);
+        await exporter.WaitUntilExportStartedAsync(TimeSpan.FromSeconds(2));
+        pipeline.PublishCompletedFrames(second);
+        pipeline.PublishCompletedFrames(third);
+
+        await WaitForConditionAsync(
+            () => pipeline.TryGetSnapshot(outputId, out var snapshot) &&
+                  snapshot.Status == EncodedOutputRuntimeStatus.Failed,
+            TimeSpan.FromSeconds(2));
+
+        Assert.True(pipeline.TryGetSnapshot(outputId, out var failedSnapshot));
+        Assert.Equal(EncodedOutputRuntimeStatus.Failed, failedSnapshot.Status);
+        Assert.Contains("does not allow frame drops", failedSnapshot.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.True(failedSnapshot.FramesDropped >= 1);
+
+        exporter.ReleaseExport();
+        await first.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+    }
+
     private static RenderedOutputFrameBatch CreateBatch(RenderOutputId outputId, long frameNumber) =>
         RenderedOutputFrameBatch.FromRenderedSurfaces(
             [new TrackingRenderedOutputSurfaceLease(outputId, new FrameSize(320, 180))],

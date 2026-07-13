@@ -79,6 +79,8 @@ Current public runtime types:
 - `MediaForgeDiagnosticEventArgs`
 - `MediaForgeEngineStateChangedEventArgs`
 - `MediaForgeFrameDroppedEventArgs`
+- `EncodedOutputRuntimeStatus`
+- `EncodedOutputRuntimeSnapshot`
 
 The engine API now has product-level public entry through `MediaForgeWindows.CreateEngine`.
 Engine operations are observable:
@@ -95,6 +97,9 @@ Engine operations are observable:
 - shutdown skips backend disposal if the render thread is still alive
 - sink detach/dispose uses an explicit timeout; a hung sink is reported instead of blocking engine shutdown indefinitely
 - diagnostics, state changes, and frame drops are exposed as events
+- `GetEncodedOutputRuntimeSnapshots()` exposes high-level encoded output state
+  (`Running`, `Backpressure`, `Failed`, etc.) and counters without exposing
+  encoder workers, GPU surfaces, command buffers, or native handles
 
 Applications must not manually wire `CompositionRuntime`, `MediaForgeRenderThread`, `RenderThreadGuard`, `IRenderBackendFactory`, `IRenderOutputSinkFactory`, or `IMediaSourceProviderFactory`.
 
@@ -165,6 +170,8 @@ Current public sink contracts:
 - `EncodedVideoPacketLease`
 - `EncodedVideoCodec`
 - `EncodedVideoBitstreamFormat`
+- `EncodedOutputRuntimeStatus`
+- `EncodedOutputRuntimeSnapshot`
 
 The product architecture is:
 
@@ -183,6 +190,10 @@ Capability and license status are queryable without starting the engine:
 - `MediaForgeWindows.GetCapabilityReportAsync(CancellationToken)` - must not block the UI thread; probing runs via `IHardwareMediaCapabilityProbe.ProbeAsync`.
 - `MediaForgeWindows.CreateHardwareMediaProofRegistry()` and `MediaForgeWindows.GetCapabilityReportWithHardwareProofsAsync(...)` are the explicit Windows entrypoints for running local hardware proof runners and merging observed results into a capability report. They may touch D3D11/Media Foundation hardware and must not be hidden inside cheap UI-thread probes.
 - `MediaForgeCapabilityReport`, `CapabilityEntry`, `MediaForgeSupportStatus`, `MediaForgeLicenseStatus`, `MediaForgeProductReadinessStatus`
+- `CapabilityProofAggregator` resolves composite product capabilities such as
+  MP4 recording, RTMP streaming, and MP4 video input from required hardware
+  media proof results. It must not promote features manually or from prototype
+  evidence.
 - `HardwareMediaBackendCapability` reports runtime-detected OS/vendor backend facts for hardware decode/encode. A backend that requires CPU staging for continuous video, or is only `Prototype`/`Skeleton`, must not be reported as `Supported` or `Experimental`.
 - `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v8 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` is the session runner registry used to execute proof runners and merge observed proof results into capability reports. Non-passed proofs must include a user-visible reason. Passed proofs must identify the validated backend and include evidence at the required level: `BackendCallSucceeded` for render-to-encode input acceptance, `BackendOutputValidated` for encoded packets, MP4 recording/output, hardware decode, decode-to-render output, MP4 input, webcam input, RTMP network output, and NDI input/output.
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
@@ -53,6 +55,12 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
     private readonly EncodeSchedulerBackpressurePolicy _backpressurePolicy;
     private int _queueSignalSet;
     private int _disposed;
+    private long _framesSubmitted;
+    private long _framesDropped;
+    private long _packetsProduced;
+    private long _lastPacketLatencyTicks;
+    private volatile EncodedOutputRuntimeStatus _status = EncodedOutputRuntimeStatus.Starting;
+    private string? _statusReason;
 
     public EncodeSchedulerTarget(
         IHardwareVideoEncoder encoder,
@@ -76,6 +84,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
         _backpressurePolicy = backpressurePolicy;
         _encodeTimeout = encodeTimeout ?? TimeSpan.FromSeconds(2);
         _encodeLoop = Task.Run(ProcessEncodeQueueAsync);
+        _status = EncodedOutputRuntimeStatus.Running;
     }
 
     public int PendingFrameCount
@@ -86,6 +95,18 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                 return _pendingFrames.Count;
         }
     }
+
+    public EncodedOutputRuntimeStatus Status => _status;
+
+    public string? StatusReason => Volatile.Read(ref _statusReason);
+
+    public long FramesSubmitted => Interlocked.Read(ref _framesSubmitted);
+
+    public long FramesDropped => Interlocked.Read(ref _framesDropped);
+
+    public long PacketsProduced => Interlocked.Read(ref _packetsProduced);
+
+    public TimeSpan LastPacketLatency => TimeSpan.FromTicks(Interlocked.Read(ref _lastPacketLatencyTicks));
 
     public void OnRenderedFrame(ScheduledRenderedFrame frame)
     {
@@ -106,9 +127,16 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             return;
         }
 
+        if (_status == EncodedOutputRuntimeStatus.Failed)
+        {
+            frame.Dispose();
+            return;
+        }
+
         var dropped = 0;
         var enqueued = false;
         List<ScheduledRenderedFrame>? droppedFrames = null;
+        string? failedReason = null;
 
         lock (_queueGate)
         {
@@ -133,6 +161,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                 {
                     AddDropped(frame);
                     dropped = 1;
+                    failedReason = "Encode queue is full and this route does not allow frame drops.";
                 }
             }
             else
@@ -152,7 +181,13 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             ReportFrameDroppedBackpressure(dropped);
 
         if (enqueued)
+        {
+            Interlocked.Increment(ref _framesSubmitted);
             SignalQueue();
+        }
+
+        if (failedReason is not null)
+            SetFailed(failedReason);
 
         void AddDropped(ScheduledRenderedFrame droppedFrame)
         {
@@ -217,6 +252,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             {
                 using var timeoutCts = new CancellationTokenSource(_encodeTimeout);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, timeoutCts.Token);
+                var started = Stopwatch.GetTimestamp();
 
                 var encodeContext = new HardwareEncodeFrameContext
                 {
@@ -245,7 +281,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                 if (packet is not null)
                 {
                     _onPacketProduced(packet);
-                    ReportPacketProduced(frameContext.FrameId);
+                    ReportPacketProduced(frameContext.FrameId, Stopwatch.GetElapsedTime(started));
                 }
             }
             catch (OperationCanceledException) when (_stop.IsCancellationRequested)
@@ -262,6 +298,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     nameof(EncodeSchedulerTarget),
                     ex,
                     frameNumber: frameContext.FrameId);
+                SetFailed("Hardware encode timed out.");
             }
             catch (InvalidOperationException ex)
             {
@@ -273,6 +310,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     nameof(EncodeSchedulerTarget),
                     ex,
                     frameNumber: frameContext.FrameId);
+                SetFailed(ex.Message);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -284,6 +322,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     nameof(EncodeSchedulerTarget),
                     ex,
                     frameNumber: frameContext.FrameId);
+                SetFailed(ex.Message);
             }
         }
     }
@@ -327,6 +366,14 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
 
     private void ReportFrameDroppedBackpressure(int dropped)
     {
+        Interlocked.Add(ref _framesDropped, dropped);
+        if (_backpressurePolicy == EncodeSchedulerBackpressurePolicy.KeepLatest &&
+            _status != EncodedOutputRuntimeStatus.Failed)
+        {
+            _status = EncodedOutputRuntimeStatus.Backpressure;
+            Volatile.Write(ref _statusReason, "Encode queue dropped frame(s) because live output policy keeps the latest frame.");
+        }
+
         MediaForgeDiagnostics.Report(
             _diagnostics,
             MediaForgeDiagnosticSeverity.Warning,
@@ -335,8 +382,16 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             nameof(EncodeSchedulerTarget));
     }
 
-    private void ReportPacketProduced(long frameId)
+    private void ReportPacketProduced(long frameId, TimeSpan latency)
     {
+        Interlocked.Increment(ref _packetsProduced);
+        Interlocked.Exchange(ref _lastPacketLatencyTicks, latency.Ticks);
+        if (_status != EncodedOutputRuntimeStatus.Failed)
+        {
+            _status = EncodedOutputRuntimeStatus.Running;
+            Volatile.Write(ref _statusReason, null);
+        }
+
         MediaForgeDiagnostics.Report(
             _diagnostics,
             MediaForgeDiagnosticSeverity.Info,
@@ -344,5 +399,11 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             "Encode scheduler produced an encoded packet.",
             nameof(EncodeSchedulerTarget),
             frameNumber: frameId);
+    }
+
+    private void SetFailed(string reason)
+    {
+        _status = EncodedOutputRuntimeStatus.Failed;
+        Volatile.Write(ref _statusReason, reason);
     }
 }

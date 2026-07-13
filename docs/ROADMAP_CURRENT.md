@@ -54,6 +54,16 @@ Complete foundations:
 - Encoded packet fanout has per-consumer backpressure policies and write
   timeouts. Recording paths use bounded backpressure; network paths fail the
   affected output instead of blocking render or encode threads indefinitely.
+- Encoded output routes now have an explicit factory boundary and runtime
+  status snapshots. The Windows facade recognizes MP4 recording and RTMP as
+  encoded routes, but refuses to start them until the composed hardware media
+  proofs promote the capability. Recording routes use queue/backpressure
+  semantics and fail observably if frames would be silently dropped.
+- Composite product capability promotion is owned by
+  `CapabilityProofAggregator`: MP4 recording requires hardware encode,
+  render-to-encode, and MP4 output product proofs; RTMP requires hardware
+  encode, render-to-encode, and RTMP network proof; MP4 video input requires
+  hardware decode and decode-to-render proofs.
 - Rendered-output-to-encoder input preparation is explicit. A rendered surface
   is exported directly only when the encoder requirement matches; otherwise the
   path must use a GPU-only conversion step such as BGRA/RGBA -> NV12. If no
@@ -197,6 +207,7 @@ or capability work, run the full product boundary suite:
 
 ```powershell
 ./scripts/verify-engine-readiness-v10.ps1
+./scripts/verify-engine-readiness-v11.ps1
 ```
 
 ## Active Phase 2 Commit Order (GPU Pipeline Completo)
@@ -328,7 +339,7 @@ that includes GPU and Performance tiers. Release hardware validation still uses
 `-RequireHardwareMedia`; hardware proof absence must remain explicit
 `Unavailable` and must never become software fallback.
 
-## Active vNext v9/v10 Product Boundary Gates
+## Active vNext v9/v10/v11 Product Boundary Gates
 
 `./scripts/verify-engine-readiness-v9.ps1` is the default product-boundary
 gate. It runs build, Fast tier, media transport guard rails, license guard
@@ -338,6 +349,12 @@ preparation, encoded sink evidence, Windows media boundaries, and docs.
 `./scripts/verify-engine-readiness-v10.ps1` extends v9 with GPU and Performance
 tiers. Use it before promoting any media transport, encoder, decoder, render,
 sink, or capability work beyond contract/prototype status.
+
+`./scripts/verify-engine-readiness-v11.ps1` extends v10 with the current v6
+media-runtime checks: hardware media proof-set execution, capability proof
+aggregation tests, encoded output route/status/backpressure tests, and Windows
+media proof truth tests. It is the preferred local gate before changing MP4,
+RTMP, decode, encode, or encoded-route capability behavior.
 
 Hardware proof runners are registered through `HardwareMediaProofRegistry`.
 They may report `Unavailable` on developer/CI machines without required

@@ -63,8 +63,8 @@ marketing:
 |--------|-----------|--------|-------|
 | Preview panel | GpuSurface | Experimental | No CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | PrototypeOnly | MF hardware encoder session/settings/proof runner exist; production MP4 output still requires render-to-encode, hardware encode, mux, and output proofs |
-| RTMP H.264 | EncodedPacket | PrototypeOnly | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink now rejects packets without trusted BackendOutputValidated evidence, and product support still requires hardware-validated packets from render-output encode |
+| Recording MP4 H.264 | EncodedPacket | PrototypeOnly until composite proofs pass | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. Product support requires hardware encode, render-to-encode, and MP4 output product proofs. |
+| RTMP H.264 | EncodedPacket | PrototypeOnly until composite proofs pass | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. Product support requires hardware encode, render-to-encode, and RTMP network output proofs. |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | N/A | Unsupported | |
 | Virtual camera | N/A | Unsupported | |
@@ -103,7 +103,7 @@ the backend and carry the required evidence.
 Product availability requires the matching product proof, not only an internal
 codec/backend proof:
 
-- MP4 output requires render-to-encode, hardware encode, MP4 recording, and
+- MP4 output requires render-to-encode, hardware encode, and
   `proof.media_io.mp4_output.product`.
 - MP4 input requires hardware decode, decode-to-render, and
   `proof.media_io.mp4_input.product`.
@@ -115,7 +115,9 @@ codec/backend proof:
 
 `./scripts/verify-engine-readiness-v9.ps1` is the default product-boundary gate.
 `./scripts/verify-engine-readiness-v10.ps1` adds GPU and Performance tiers for
-full local readiness before promotion.
+full local readiness before promotion. `./scripts/verify-engine-readiness-v11.ps1`
+adds encoded route/status/backpressure tests and capability proof aggregation
+checks.
 
 ## Decode-To-Render Proof Gate
 

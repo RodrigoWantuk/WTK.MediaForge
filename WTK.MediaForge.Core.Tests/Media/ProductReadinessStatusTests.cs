@@ -106,7 +106,7 @@ public sealed class ProductReadinessStatusTests
         Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, entry.SupportStatus);
         Assert.Equal(MediaForgeProductReadinessStatus.Prototype, entry.ProductReadinessStatus);
         Assert.False(report.IsFeatureAvailable(id));
-        Assert.Contains("Prototype", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));
     }
 
     private static void AssertUnavailableReadinessRejected(

@@ -32,7 +32,6 @@ public sealed class ProductMediaPathsDoNotUsePrototypeEvidenceTests
             Assert.False(report.IsFeatureAvailable(id));
             Assert.False(IsUserAvailable(entry.SupportStatus));
             Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));
-            Assert.Contains("Prototype", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
         });
     }
 

@@ -39,20 +39,12 @@ public static class MediaForgeCapabilityCatalog
 
         var exportProofStatus = hardware.ExportProofStatus;
         var proofs = CreateProofMap(hardware);
+        var proofAggregator = new CapabilityProofAggregator();
         return
     [
-        Entry(CapabilityCategories.Sink, RecordingMp4H264, "Recording MP4 H.264",
-            MediaForgeSupportStatus.PrototypeOnly,
-            MediaForgeLicenseStatus.RequiresLegalReview,
-            MediaForgeProductReadinessStatus.Prototype,
-            "Prototype only: current path does not yet prove real Media Foundation hardware encode or production MP4 muxing.",
-            MediaTransportKind.EncodedPacket),
+        proofAggregator.ResolveRecordingCapability(hardware),
 
-        Entry(CapabilityCategories.Sink, RtmpH264, "RTMP H.264 streaming",
-            MediaForgeSupportStatus.PrototypeOnly, MediaForgeLicenseStatus.RequiresLegalReview,
-            MediaForgeProductReadinessStatus.Prototype,
-            "Prototype only: TCP RTMP transport and FLV/H.264 packetization exist, but product support requires validated hardware-encoded packets from the render-output encode pipeline.",
-            MediaTransportKind.EncodedPacket),
+        proofAggregator.ResolveStreamingCapability(hardware),
 
         Entry(CapabilityCategories.Sink, SrtOutput, "SRT streaming",
             MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,
@@ -74,11 +66,7 @@ public static class MediaForgeCapabilityCatalog
             MediaForgeProductReadinessStatus.Prototype,
             "Prototype only until real hardware MFT enumeration and backend output validation are implemented."),
 
-        Entry(CapabilityCategories.Source, VideoFileMp4, "Video file MP4",
-            MediaForgeSupportStatus.PrototypeOnly, MediaForgeLicenseStatus.RequiresLegalReview,
-            MediaForgeProductReadinessStatus.Prototype,
-            "Prototype only: current Windows decode bridge does not decode actual media content into a GPU surface.",
-            MediaTransportKind.EncodedPacket),
+        proofAggregator.ResolveVideoFileInputCapability(hardware),
 
         Entry(CapabilityCategories.Encode, NvencDirect, "NVENC direct",
             MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,

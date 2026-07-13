@@ -138,6 +138,17 @@ The legacy WinForms preview path has been removed as a product path because it u
   per-consumer backpressure policy and write timeout. Recording consumers use
   bounded backpressure; network consumers fail the affected output path instead
   of blocking render or encode threads indefinitely.
+- Encoded outputs are registered through an explicit route factory boundary.
+  `MediaPipelineRuntime` owns render-output-to-encode routes, applies
+  per-output backpressure policy, and exposes high-level
+  `EncodedOutputRuntimeSnapshot` state/counters for API and Studio use without
+  exposing encoder workers or backend surfaces. Recording policies do not use
+  `KeepLatest`; queue exhaustion becomes observable failure/backpressure, not
+  a silent frame drop.
+- `CapabilityProofAggregator` resolves MP4 recording, RTMP streaming, and MP4
+  video-file input capability from required hardware media proofs. These
+  features stay `PrototypeOnly` until the required proof chain passes on the
+  current machine.
 - `EncodedVideoPacket` carries explicit codec, bitstream format, presentation
   time, optional duration, and optional codec configuration bytes. MP4/RTMP
   packet sinks must reject unknown H.264 bitstream format instead of accepting
@@ -232,9 +243,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   product-boundary gate for product readiness, docs alignment, media transport,
   license, Fast tier, encode input preparation, encoded sink evidence, and
   media I/O boundary tests. `./scripts/verify-engine-readiness-v10.ps1` adds
-  GPU and Performance tiers for full local readiness. `-RequireHardwareMedia`
-  additionally fails release validation unless all v8 hardware media proofs
-  pass on the target machine.
+  GPU and Performance tiers for full local readiness.
+  `./scripts/verify-engine-readiness-v11.ps1` adds the encoded route/status,
+  capability proof aggregation, and Windows media proof truth checks on top.
+  `-RequireHardwareMedia` additionally fails release validation unless all
+  v8 hardware media proofs pass on the target machine.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
 
 ## GPU Resource Pool (Phase 2)

@@ -14,6 +14,7 @@ internal enum RenderedOutputEncodingRuntimeStatus
     Stopped,
     Starting,
     Running,
+    Backpressure,
     Failed
 }
 
@@ -42,7 +43,8 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
         EncodeSchedulerTarget schedulerTarget,
         HardwareEncoderInputRequirement inputRequirement,
         IMediaTransportAuditSink auditSink,
-        int queueCapacity = 2)
+        int queueCapacity = 2,
+        EncodedOutputBackpressurePolicy? backpressurePolicy = null)
     {
         if (outputId.IsEmpty)
             throw new ArgumentException("Output id cannot be empty.", nameof(outputId));
@@ -68,7 +70,8 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                     inputRequirement,
                     auditSink,
                     _diagnostics,
-                    queueCapacity));
+                    queueCapacity,
+                    backpressurePolicy ?? EncodedOutputBackpressurePolicy.Diagnostics()));
         }
     }
 
@@ -86,6 +89,31 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
         }
 
         status = RenderedOutputEncodingRuntimeStatus.Stopped;
+        return false;
+    }
+
+    public bool TryGetSnapshot(
+        RenderOutputId outputId,
+        out EncodedOutputRuntimeSnapshot snapshot)
+    {
+        lock (_gate)
+        {
+            if (_outputs.TryGetValue(outputId, out var runtime))
+            {
+                snapshot = runtime.GetSnapshot();
+                return true;
+            }
+        }
+
+        snapshot = new EncodedOutputRuntimeSnapshot(
+            outputId,
+            EncodedOutputRuntimeStatus.Stopped,
+            null,
+            0,
+            0,
+            0,
+            0,
+            TimeSpan.Zero);
         return false;
     }
 
@@ -167,11 +195,15 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
         private readonly HardwareEncoderInputRequirement _inputRequirement;
         private readonly IMediaTransportAuditSink _auditSink;
         private readonly IMediaForgeDiagnosticsSink? _diagnostics;
+        private readonly EncodedOutputBackpressurePolicy _backpressurePolicy;
         private readonly Channel<EncodingWorkItem> _queue;
         private readonly CancellationTokenSource _stop = new();
         private readonly Task _worker;
         private int _disposed;
+        private long _framesSubmitted;
+        private long _framesDropped;
         private volatile RenderedOutputEncodingRuntimeStatus _status;
+        private string? _statusReason;
 
         public EncodingOutputRuntime(
             RenderOutputId outputId,
@@ -180,7 +212,8 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
             HardwareEncoderInputRequirement inputRequirement,
             IMediaTransportAuditSink auditSink,
             IMediaForgeDiagnosticsSink? diagnostics,
-            int queueCapacity)
+            int queueCapacity,
+            EncodedOutputBackpressurePolicy backpressurePolicy)
         {
             if (queueCapacity <= 0)
                 throw new ArgumentOutOfRangeException(nameof(queueCapacity), "Encoding queue capacity must be positive.");
@@ -191,6 +224,7 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
             _inputRequirement = inputRequirement;
             _auditSink = auditSink;
             _diagnostics = diagnostics;
+            _backpressurePolicy = backpressurePolicy ?? throw new ArgumentNullException(nameof(backpressurePolicy));
             _status = RenderedOutputEncodingRuntimeStatus.Starting;
             _queue = Channel.CreateBounded<EncodingWorkItem>(new BoundedChannelOptions(queueCapacity)
             {
@@ -207,11 +241,37 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
 
         public RenderedOutputEncodingRuntimeStatus Status => _status;
 
+        public EncodedOutputRuntimeSnapshot GetSnapshot()
+        {
+            var pipelineStatus = MapStatus(_status);
+            var schedulerStatus = _schedulerTarget.Status;
+            var status = schedulerStatus == EncodedOutputRuntimeStatus.Failed ||
+                         pipelineStatus == EncodedOutputRuntimeStatus.Failed
+                ? EncodedOutputRuntimeStatus.Failed
+                : schedulerStatus == EncodedOutputRuntimeStatus.Backpressure ||
+                  pipelineStatus == EncodedOutputRuntimeStatus.Backpressure
+                    ? EncodedOutputRuntimeStatus.Backpressure
+                    : pipelineStatus;
+
+            return new EncodedOutputRuntimeSnapshot(
+                OutputId,
+                status,
+                _schedulerTarget.StatusReason ?? Volatile.Read(ref _statusReason),
+                Interlocked.Read(ref _framesSubmitted),
+                _schedulerTarget.PacketsProduced,
+                0,
+                Interlocked.Read(ref _framesDropped) + _schedulerTarget.FramesDropped,
+                _schedulerTarget.LastPacketLatency);
+        }
+
         public void Enqueue(
             RenderedOutputFrameBatch frameBatch,
             RenderedOutputFrame frame)
         {
             if (Volatile.Read(ref _disposed) != 0)
+                return;
+
+            if (_status == RenderedOutputEncodingRuntimeStatus.Failed)
                 return;
 
             var lease = frameBatch.CreateLease(
@@ -227,7 +287,10 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
 
             var item = new EncodingWorkItem(lease, frameBatch.FrameContext);
             if (_queue.Writer.TryWrite(item))
+            {
+                Interlocked.Increment(ref _framesSubmitted);
                 return;
+            }
 
             ReportBackpressureDrop();
             _ = DisposeLeaseAfterRejectedEnqueueAsync(lease);
@@ -298,6 +361,11 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
 
                         _schedulerTarget.EnqueueRenderedFrame(scheduledFrame);
                         scheduledFrame = null;
+                        if (_status != RenderedOutputEncodingRuntimeStatus.Failed)
+                        {
+                            _status = RenderedOutputEncodingRuntimeStatus.Running;
+                            Volatile.Write(ref _statusReason, null);
+                        }
                     }
                     catch (OperationCanceledException) when (_stop.IsCancellationRequested)
                     {
@@ -308,6 +376,7 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                     {
                         scheduledFrame?.Dispose();
                         _status = RenderedOutputEncodingRuntimeStatus.Failed;
+                        Volatile.Write(ref _statusReason, ex.Message);
                         MediaForgeDiagnostics.Report(
                             _diagnostics,
                             MediaForgeDiagnosticSeverity.Error,
@@ -326,6 +395,18 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
 
         private void ReportBackpressureDrop()
         {
+            Interlocked.Increment(ref _framesDropped);
+            if (_backpressurePolicy.AllowFrameDrop)
+            {
+                _status = RenderedOutputEncodingRuntimeStatus.Backpressure;
+                Volatile.Write(ref _statusReason, "Encoding export queue is full; live output policy dropped a frame.");
+            }
+            else
+            {
+                _status = RenderedOutputEncodingRuntimeStatus.Failed;
+                Volatile.Write(ref _statusReason, "Encoding export queue is full; recording output does not allow frame drops.");
+            }
+
             MediaForgeDiagnostics.Report(
                 _diagnostics,
                 MediaForgeDiagnosticSeverity.Warning,
@@ -333,6 +414,16 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                 $"Rendered output {OutputId} dropped an encoding frame because the export queue is full.",
                 nameof(RenderedOutputEncodingPipeline));
         }
+
+        private static EncodedOutputRuntimeStatus MapStatus(RenderedOutputEncodingRuntimeStatus status) =>
+            status switch
+            {
+                RenderedOutputEncodingRuntimeStatus.Starting => EncodedOutputRuntimeStatus.Starting,
+                RenderedOutputEncodingRuntimeStatus.Running => EncodedOutputRuntimeStatus.Running,
+                RenderedOutputEncodingRuntimeStatus.Backpressure => EncodedOutputRuntimeStatus.Backpressure,
+                RenderedOutputEncodingRuntimeStatus.Failed => EncodedOutputRuntimeStatus.Failed,
+                _ => EncodedOutputRuntimeStatus.Stopped
+            };
 
         private async Task DisposeLeaseAfterRejectedEnqueueAsync(RenderOutputFrameLease lease)
         {

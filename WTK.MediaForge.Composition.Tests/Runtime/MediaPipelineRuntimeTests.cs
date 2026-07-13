@@ -51,6 +51,13 @@ public sealed class MediaPipelineRuntimeTests
         Assert.Equal(TimeSpan.FromMilliseconds(759), sinkA.Packets[0].PresentationTime);
         Assert.Same(sinkA.Packets[0], sinkB.Packets[0]);
         Assert.Equal(1, surface.DisposeCount);
+
+        var snapshot = Assert.Single(runtime.GetEncodedOutputRuntimeSnapshots());
+        Assert.Equal(outputId, snapshot.OutputId);
+        Assert.Equal(EncodedOutputRuntimeStatus.Running, snapshot.Status);
+        Assert.Equal(1, snapshot.PacketsProduced);
+        Assert.Equal(2, snapshot.PacketsWritten);
+        Assert.Equal(0, snapshot.FramesDropped);
     }
 
     [Fact]

@@ -26,7 +26,61 @@ public sealed class CapabilityReportTests
         var passed = MediaForgeCapabilityCatalog.CreateDefaultEntries(GpuExportProofStatus.Passed)
             .First(e => e.Id == MediaForgeCapabilityCatalog.RecordingMp4H264);
         Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, passed.SupportStatus);
-        Assert.Contains("Prototype", passed.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(MediaForgeCapabilityCatalog.RenderToEncodeProof, passed.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Capability_proof_aggregator_promotes_recording_streaming_and_video_input_only_after_required_proofs_pass()
+    {
+        var unavailable = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
+        {
+            Platform = "Test",
+            Proofs =
+            [
+                UnavailableProof(MediaForgeCapabilityCatalog.HardwareEncodeProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.RenderToEncodeProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.Mp4OutputProductProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.HardwareDecodeProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.DecodeToRenderProof)
+            ]
+        });
+
+        Assert.Equal(
+            MediaForgeSupportStatus.PrototypeOnly,
+            unavailable.TryGetEntry(MediaForgeCapabilityCatalog.RecordingMp4H264)!.SupportStatus);
+        Assert.Equal(
+            MediaForgeSupportStatus.PrototypeOnly,
+            unavailable.TryGetEntry(MediaForgeCapabilityCatalog.RtmpH264)!.SupportStatus);
+        Assert.Equal(
+            MediaForgeSupportStatus.PrototypeOnly,
+            unavailable.TryGetEntry(MediaForgeCapabilityCatalog.VideoFileMp4)!.SupportStatus);
+
+        var available = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
+        {
+            Platform = "Test",
+            Proofs =
+            [
+                PassedProof(MediaForgeCapabilityCatalog.HardwareEncodeProof),
+                PassedProof(MediaForgeCapabilityCatalog.RenderToEncodeProof, "BackendCallSucceeded"),
+                PassedProof(MediaForgeCapabilityCatalog.Mp4OutputProductProof),
+                PassedProof(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof),
+                PassedProof(MediaForgeCapabilityCatalog.HardwareDecodeProof),
+                PassedProof(MediaForgeCapabilityCatalog.DecodeToRenderProof)
+            ]
+        });
+
+        var recording = available.TryGetEntry(MediaForgeCapabilityCatalog.RecordingMp4H264)!;
+        Assert.Equal(MediaForgeSupportStatus.Supported, recording.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.ProductValidated, recording.ProductReadinessStatus);
+
+        var rtmp = available.TryGetEntry(MediaForgeCapabilityCatalog.RtmpH264)!;
+        Assert.Equal(MediaForgeSupportStatus.Experimental, rtmp.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.ProductValidated, rtmp.ProductReadinessStatus);
+
+        var video = available.TryGetEntry(MediaForgeCapabilityCatalog.VideoFileMp4)!;
+        Assert.Equal(MediaForgeSupportStatus.Experimental, video.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.ProductValidated, video.ProductReadinessStatus);
     }
 
     [Fact]
@@ -429,7 +483,7 @@ public sealed class CapabilityReportTests
                 var entry = Assert.IsType<CapabilityEntry>(report.TryGetEntry(id));
                 Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, entry.SupportStatus);
                 Assert.False(report.IsFeatureAvailable(id));
-                Assert.Contains("Prototype", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+                Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));
             });
     }
 
@@ -483,4 +537,25 @@ public sealed class CapabilityReportTests
                 evidence: [nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated)]));
         }
     }
+
+    private static HardwareMediaProof UnavailableProof(string id) =>
+        new()
+        {
+            Id = id,
+            DisplayName = id,
+            Status = HardwareMediaProofStatus.Unavailable,
+            Reason = "Unavailable in unit test."
+        };
+
+    private static HardwareMediaProof PassedProof(
+        string id,
+        string evidence = nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated)) =>
+        new()
+        {
+            Id = id,
+            DisplayName = id,
+            Status = HardwareMediaProofStatus.Passed,
+            Backend = "TestBackend",
+            Evidence = [evidence]
+        };
 }

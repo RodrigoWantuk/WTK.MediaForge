@@ -1,5 +1,10 @@
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Composition;
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Windows.Media;
 using WTK.MediaForge.Windows.Media.Decode;
 using WTK.MediaForge.Windows.Media.Encode;
@@ -156,6 +161,16 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         Assert.Contains(registry.Runners, runner =>
             runner.Id == MediaForgeCapabilityCatalog.HardwareEncodeProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.RenderToEncodeProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.Mp4OutputProductProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.RtmpNetworkOutputProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.HardwareDecodeProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.DecodeToRenderProof);
 
         var report = await MediaForgeWindows.GetCapabilityReportWithHardwareProofsAsync(
             new WindowsHardwareMediaCapabilityProbe(),
@@ -170,5 +185,36 @@ public sealed class WindowsMediaCapabilityTruthTests
             $"Unexpected support status: {encodeProof.SupportStatus}");
         Assert.NotEqual(MediaForgeProductReadinessStatus.Prototype, encodeProof.ProductReadinessStatus);
         Assert.NotEqual(MediaForgeProductReadinessStatus.Skeleton, encodeProof.ProductReadinessStatus);
+    }
+
+    [Fact]
+    public async Task Windows_encoded_output_route_factory_refuses_unvalidated_recording_route()
+    {
+        var output = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(),
+            Name = "Recording",
+            TypeId = RenderOutputTypes.RecordingMp4,
+            OutputSize = new FrameSize(320, 180),
+            Settings = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4("test.mp4"))
+        };
+
+        var report = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
+        {
+            Platform = "Test"
+        });
+        var factory = new WindowsEncodedOutputRouteFactory(
+            capabilityReportFactory: _ => ValueTask.FromResult(report));
+
+        await using var runtime = new MediaPipelineRuntime();
+        var exception = await Assert.ThrowsAsync<MediaForgeUnsupportedFeatureException>(async () =>
+            await factory.RegisterAsync(
+                new MediaForgeProject { Outputs = [output] },
+                output,
+                runtime,
+                CancellationToken.None));
+
+        Assert.Equal(MediaForgeCapabilityCatalog.RecordingMp4H264, exception.FeatureCode);
+        Assert.Equal(0, runtime.EncodedOutputCount);
     }
 }

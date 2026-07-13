@@ -46,6 +46,8 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
         int encodeQueueCapacity = 2,
         int sinkQueueCapacity = 8,
         TimeSpan? encodeTimeout = null,
+        EncodedOutputBackpressurePolicy? backpressurePolicy = null,
+        IAsyncDisposable? routeResources = null,
         CancellationToken cancellationToken = default)
     {
         if (outputId.IsEmpty)
@@ -72,6 +74,7 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
         var startedSinks = new List<IEncodedPacketSink>(sinkList.Length);
         EncodedOutputRouter? router = null;
         EncodeSchedulerTarget? scheduler = null;
+        var policy = backpressurePolicy ?? ResolveBackpressurePolicy(sinkList);
 
         try
         {
@@ -87,7 +90,7 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
             {
                 router.RegisterConsumer(
                     new EncodedPacketSinkConsumer(sink),
-                    CreateConsumerOptionsForSink(sink));
+                    CreateConsumerOptionsForSink(sink, policy));
             }
 
             scheduler = new EncodeSchedulerTarget(
@@ -97,10 +100,10 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                 router.RoutePacket,
                 _diagnostics,
                 encodeQueueCapacity,
-                EncodeSchedulerBackpressurePolicy.KeepLatest,
+                policy.EncodeQueuePolicy,
                 encodeTimeout);
 
-            var route = new EncodedRenderOutputRoute(outputId, router, startedSinks);
+            var route = new EncodedRenderOutputRoute(outputId, router, startedSinks, policy, routeResources);
             lock (_gate)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
@@ -113,12 +116,14 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                     scheduler,
                     encoder.InputRequirement,
                     auditSink,
-                    exportQueueCapacity);
+                    exportQueueCapacity,
+                    policy);
                 _encodedRoutes.Add(outputId, route);
             }
 
             router = null;
             scheduler = null;
+            routeResources = null;
         }
         catch (Exception registrationException)
         {
@@ -157,6 +162,18 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                 errors.Add(cleanupException);
             }
 
+            if (routeResources is not null)
+            {
+                try
+                {
+                    await routeResources.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception cleanupException)
+                {
+                    errors.Add(cleanupException);
+                }
+            }
+
             throw new AggregateException($"Failed to register encoded output route {outputId}.", errors);
         }
     }
@@ -179,6 +196,63 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
 
     public void PublishCompletedFrames(RenderedOutputFrameBatch frameBatch) =>
         Encoding.PublishCompletedFrames(frameBatch);
+
+    public IReadOnlyList<EncodedOutputRuntimeSnapshot> GetEncodedOutputRuntimeSnapshots()
+    {
+        EncodedRenderOutputRoute[] routes;
+        lock (_gate)
+            routes = _encodedRoutes.Values.ToArray();
+
+        var snapshots = new List<EncodedOutputRuntimeSnapshot>(routes.Length);
+        foreach (var route in routes)
+        {
+            if (!Encoding.TryGetSnapshot(route.OutputId, out var snapshot))
+            {
+                snapshots.Add(new EncodedOutputRuntimeSnapshot(
+                    route.OutputId,
+                    EncodedOutputRuntimeStatus.Stopped,
+                    null,
+                    0,
+                    0,
+                    0,
+                    0,
+                    TimeSpan.Zero));
+                continue;
+            }
+
+            var stats = route.Router.GetConsumerStatistics();
+            var packetsWritten = stats.Sum(static item => item.WrittenPackets);
+            var droppedPackets = stats.Sum(static item => item.DroppedPackets);
+            var failed = stats.FirstOrDefault(static item =>
+                item.FailedWrites > 0 ||
+                item.TimedOutWrites > 0 ||
+                !string.IsNullOrWhiteSpace(item.LastError));
+
+            var status = snapshot.Status;
+            var reason = snapshot.Reason;
+            if (failed is not null)
+            {
+                status = EncodedOutputRuntimeStatus.Failed;
+                reason = failed.LastError ??
+                         $"Encoded sink '{failed.DisplayName}' failed or timed out while writing packets.";
+            }
+            else if (droppedPackets > 0 && snapshot.Status != EncodedOutputRuntimeStatus.Failed)
+            {
+                status = EncodedOutputRuntimeStatus.Backpressure;
+                reason ??= "One or more encoded packet consumers dropped packets because their queue was full.";
+            }
+
+            snapshots.Add(snapshot with
+            {
+                Status = status,
+                Reason = reason,
+                PacketsWritten = packetsWritten,
+                FramesDropped = snapshot.FramesDropped + droppedPackets
+            });
+        }
+
+        return snapshots;
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -249,42 +323,73 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
             throw new AggregateException("Failed to stop one or more encoded packet sinks.", errors);
     }
 
-    private static EncodedPacketConsumerOptions CreateConsumerOptionsForSink(IEncodedPacketSink sink) =>
+    private static EncodedOutputBackpressurePolicy ResolveBackpressurePolicy(IReadOnlyList<IEncodedPacketSink> sinks)
+    {
+        if (sinks.Any(static sink => sink is RecordingMp4Sink or RecordingMp4PacketSink))
+            return EncodedOutputBackpressurePolicy.Recording();
+
+        if (sinks.Any(static sink => sink is RtmpSink or RtmpPacketSink))
+            return EncodedOutputBackpressurePolicy.Streaming();
+
+        return EncodedOutputBackpressurePolicy.Diagnostics();
+    }
+
+    private static EncodedPacketConsumerOptions CreateConsumerOptionsForSink(
+        IEncodedPacketSink sink,
+        EncodedOutputBackpressurePolicy policy) =>
         sink switch
         {
             RecordingMp4Sink or RecordingMp4PacketSink => new EncodedPacketConsumerOptions
             {
-                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.Backpressure,
+                BackpressurePolicy = policy.SinkPolicy,
                 IsProductOutput = true,
-                WriteTimeout = TimeSpan.FromSeconds(10),
+                WriteTimeout = policy.SinkWriteTimeout,
                 DisplayName = sink.GetType().Name
             },
             RtmpSink or RtmpPacketSink => new EncodedPacketConsumerOptions
             {
-                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.FailOutput,
+                BackpressurePolicy = policy.SinkPolicy,
                 IsProductOutput = true,
-                WriteTimeout = TimeSpan.FromSeconds(5),
+                WriteTimeout = policy.SinkWriteTimeout,
                 DisplayName = sink.GetType().Name
             },
             _ => new EncodedPacketConsumerOptions
             {
-                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.FailOutput,
-                WriteTimeout = TimeSpan.FromSeconds(5),
+                BackpressurePolicy = policy.SinkPolicy,
+                WriteTimeout = policy.SinkWriteTimeout,
                 DisplayName = sink.GetType().Name
             }
         };
 
-    private sealed class EncodedRenderOutputRoute(
-        RenderOutputId outputId,
-        EncodedOutputRouter router,
-        IReadOnlyList<IEncodedPacketSink> sinks)
+    private sealed class EncodedRenderOutputRoute
     {
-        public RenderOutputId OutputId { get; } = outputId;
+        private readonly IReadOnlyList<IEncodedPacketSink> _sinks;
+        private readonly IAsyncDisposable? _resources;
+
+        public EncodedRenderOutputRoute(
+            RenderOutputId outputId,
+            EncodedOutputRouter router,
+            IReadOnlyList<IEncodedPacketSink> sinks,
+            EncodedOutputBackpressurePolicy policy,
+            IAsyncDisposable? resources)
+        {
+            OutputId = outputId;
+            Router = router ?? throw new ArgumentNullException(nameof(router));
+            Policy = policy ?? throw new ArgumentNullException(nameof(policy));
+            _sinks = sinks ?? throw new ArgumentNullException(nameof(sinks));
+            _resources = resources;
+        }
+
+        public RenderOutputId OutputId { get; }
+
+        public EncodedOutputRouter Router { get; }
+
+        public EncodedOutputBackpressurePolicy Policy { get; }
 
         public async ValueTask DisposeAsync(CancellationToken cancellationToken)
         {
             List<Exception>? errors = null;
-            foreach (var sink in sinks)
+            foreach (var sink in _sinks)
             {
                 try
                 {
@@ -298,18 +403,30 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
 
             try
             {
-                await router.DisposeAsync().ConfigureAwait(false);
+                await Router.DisposeAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 (errors ??= []).Add(ex);
             }
 
-            foreach (var sink in sinks)
+            foreach (var sink in _sinks)
             {
                 try
                 {
                     await sink.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    (errors ??= []).Add(ex);
+                }
+            }
+
+            if (_resources is not null)
+            {
+                try
+                {
+                    await _resources.DisposeAsync().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
