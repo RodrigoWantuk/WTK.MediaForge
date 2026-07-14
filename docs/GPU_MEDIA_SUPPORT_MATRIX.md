@@ -63,8 +63,8 @@ marketing:
 |--------|-----------|--------|-------|
 | Preview panel | GpuSurface | Experimental | No CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | PrototypeOnly until composite proofs pass | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. v12 MP4 output proof writes and validates a real packet-only MP4 from hardware-validated packets when the hardware path is available. |
-| RTMP H.264 | EncodedPacket | PrototypeOnly until composite proofs pass | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. v12 RTMP proof publishes real H.264 FLV tags to a local TCP proof server when the hardware path is available. |
+| Recording MP4 H.264 | EncodedPacket | Runtime proof-gated | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. v12 MP4 recording/output proofs write and validate real packet-only MP4 files from hardware-validated packets when the hardware path is available. |
+| RTMP H.264 | EncodedPacket | Runtime proof-gated | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. v12 RTMP proof publishes real H.264 FLV tags to a local TCP proof server when the hardware path is available. |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | N/A | Unsupported | |
 | Virtual camera | N/A | Unsupported | |
@@ -82,9 +82,10 @@ marketing:
 
 ## v12 Media I/O Proof Set and Readiness Gates
 
-Recording MP4 and RTMP remain **PrototypeOnly** as end-to-end product features
-until the hardware media proofs pass and the v12 readiness scripts are
-green:
+Recording MP4 and RTMP are **runtime proof-gated** end-to-end product
+features. The static catalog stays conservative, but a hardware proof report can
+promote them when the v12 readiness scripts are green for the current
+machine/driver:
 
 ```text
 FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> hardware H.264 -> EncodedPacketMp4Muxer
@@ -123,6 +124,9 @@ profile and D3D11 encoder ownership checks before media capability promotion.
 The v12 Windows composite runners execute render-to-encode, packet-only MP4,
 TCP RTMP, hardware decode, and decode-to-render product proofs where the
 current machine supports the required hardware/driver/API path.
+On the current AMD/Radeon validation target, render-to-encode, hardware H.264
+encode, MP4 recording/output, and RTMP network output pass; MP4 input/decode,
+webcam, and NDI remain blocked/unavailable until their own product proofs pass.
 The report artifacts are
 `test-reports/media-proof-report.json` and
 `test-reports/media-proof-report.md`.

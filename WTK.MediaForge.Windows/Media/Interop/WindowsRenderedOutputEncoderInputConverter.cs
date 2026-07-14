@@ -54,7 +54,7 @@ internal sealed class WindowsRenderedOutputEncoderInputConverter : IRenderedOutp
         }
 
         var sourceHandle = (D3D11SharedTextureFrameHandle)source.BackendSurface!;
-        D3D11SharedTextureFrameHandle? outputHandle = null;
+        ID3D11Texture2D? outputTexture = null;
 
         auditSink.Record(new MediaTransportAuditEvent
         {
@@ -66,28 +66,29 @@ internal sealed class WindowsRenderedOutputEncoderInputConverter : IRenderedOutp
 
         try
         {
-            outputHandle = D3D11SharedTextureFactory.CreateSharedTexture(
+            outputTexture = D3D11BgraToNv12Converter.CreatePrivateVideoProcessorTexture(
                 _device,
-                (uint)requirement.Width,
-                (uint)requirement.Height,
-                Format.NV12);
+                Format.NV12,
+                requirement.Width,
+                requirement.Height,
+                BindFlags.RenderTarget);
 
             D3D11BgraToNv12Converter.ExecuteVideoProcessorConversion(
                 _device,
                 sourceHandle.Texture,
-                outputHandle.Texture,
+                outputTexture,
                 requirement.Width,
                 requirement.Height,
                 cancellationToken);
         }
         catch (OperationCanceledException)
         {
-            outputHandle?.Dispose();
+            outputTexture?.Dispose();
             throw;
         }
         catch (Exception ex)
         {
-            outputHandle?.Dispose();
+            outputTexture?.Dispose();
             RecordUnavailable(auditSink, $"D3D11 rendered-output to NV12 conversion failed: {ex.Message}");
             throw new NotSupportedException(
                 "D3D11 rendered-output to NV12 conversion failed on the current GPU/driver.",
@@ -112,8 +113,8 @@ internal sealed class WindowsRenderedOutputEncoderInputConverter : IRenderedOutp
 
         var lease = HardwareEncoderInputLease.CreateWithBackendSurface(
             descriptor,
-            outputHandle,
-            outputHandle.Dispose);
+            outputTexture,
+            outputTexture.Dispose);
 
         auditSink.Record(new MediaTransportAuditEvent
         {

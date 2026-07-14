@@ -128,25 +128,36 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (context.InputLease.BackendSurface is not D3D11SharedTextureFrameHandle surface)
+        if (context.InputLease.BackendSurface is not (D3D11SharedTextureFrameHandle or ID3D11Texture2D))
         {
             if (!_allowPrototypeEncoding)
             {
                 throw MediaFoundationHardwareH264EncoderSession.CreateUnavailableException(
-                    new InvalidOperationException("Encoder requires a D3D11 shared texture backend surface."));
+                    new InvalidOperationException("Encoder requires a D3D11 texture backend surface."));
             }
 
-            throw new InvalidOperationException("Encoder requires a D3D11 shared texture backend surface.");
+            throw new InvalidOperationException("Encoder requires a D3D11 texture backend surface.");
         }
 
         if (!_allowPrototypeEncoding)
         {
-            var result = EnsureProductBackendAvailable()
-                .TryEncodeSurface(
-                    surface,
-                    Interlocked.Increment(ref _frameNumber),
-                    context.PresentationTime,
-                    auditSink);
+            HardwareEncoderInputSurfaceRetention? retainedSurface =
+                context.InputLease.RetainBackendSurfaceForAsyncConsumer();
+            EncodedSurfaceResult? result;
+            try
+            {
+                result = EnsureProductBackendAvailable()
+                    .TryEncodeSurface(
+                        retainedSurface,
+                        Interlocked.Increment(ref _frameNumber),
+                        context.PresentationTime,
+                        auditSink);
+                retainedSurface = null;
+            }
+            finally
+            {
+                retainedSurface?.Dispose();
+            }
 
             if (result is null)
                 return ValueTask.FromResult<EncodedVideoPacket?>(null);
@@ -168,6 +179,9 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
                     MediaForgeCapabilityCatalog.HardwareEncodeProof)
             });
         }
+
+        if (context.InputLease.BackendSurface is not D3D11SharedTextureFrameHandle surface)
+            throw new InvalidOperationException("Prototype encoder requires a D3D11 shared texture backend surface.");
 
         _prototypeSession ??= CreatePrototypeSession();
 

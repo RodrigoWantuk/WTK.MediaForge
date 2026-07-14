@@ -25,7 +25,7 @@ public sealed class HardwareEncoderInputRequirement
 public sealed class HardwareEncoderInputLease : IDisposable
 {
     private int _disposed;
-    private readonly Action? _onRelease;
+    private Action? _onRelease;
 
     private HardwareEncoderInputLease(
         GpuVideoFrameDescriptor descriptor,
@@ -50,12 +50,46 @@ public sealed class HardwareEncoderInputLease : IDisposable
         Action? onRelease = null) =>
         new(descriptor, onRelease, backendSurface);
 
+    internal HardwareEncoderInputSurfaceRetention RetainBackendSurfaceForAsyncConsumer()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (BackendSurface is null)
+            throw new InvalidOperationException("Encoder input lease does not contain a backend surface to retain.");
+
+        var onRelease = Interlocked.Exchange(ref _onRelease, null);
+        return new HardwareEncoderInputSurfaceRetention(BackendSurface, onRelease);
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        _onRelease?.Invoke();
+        Interlocked.Exchange(ref _onRelease, null)?.Invoke();
+    }
+}
+
+internal sealed class HardwareEncoderInputSurfaceRetention : IDisposable
+{
+    private int _disposed;
+    private Action? _onRelease;
+
+    public HardwareEncoderInputSurfaceRetention(
+        object backendSurface,
+        Action? onRelease)
+    {
+        BackendSurface = backendSurface ?? throw new ArgumentNullException(nameof(backendSurface));
+        _onRelease = onRelease;
+    }
+
+    public object BackendSurface { get; }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        Interlocked.Exchange(ref _onRelease, null)?.Invoke();
     }
 }
 

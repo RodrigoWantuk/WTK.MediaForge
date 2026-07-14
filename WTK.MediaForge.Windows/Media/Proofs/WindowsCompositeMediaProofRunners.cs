@@ -43,7 +43,7 @@ internal sealed class WindowsRenderToH264EncodeProofRunner : HardwareMediaProofR
         try
         {
             var result = await WindowsRenderedOutputH264ProofPipeline
-                .RunAsync(cancellationToken)
+                .RunCachedAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             return Passed(
@@ -85,7 +85,7 @@ internal sealed class WindowsMp4OutputProductProofRunner : HardwareMediaProofRun
         try
         {
             var renderEncode = await WindowsRenderedOutputH264ProofPipeline
-                .RunAsync(cancellationToken)
+                .RunCachedAsync(cancellationToken)
                 .ConfigureAwait(false);
             var outputPath = Path.Combine(
                 Path.GetTempPath(),
@@ -148,6 +148,86 @@ internal sealed class WindowsMp4OutputProductProofRunner : HardwareMediaProofRun
     }
 }
 
+internal sealed class WindowsMp4RecordingProofRunner : HardwareMediaProofRunner
+{
+    public WindowsMp4RecordingProofRunner()
+        : base(MediaForgeCapabilityCatalog.Mp4RecordingProof, "Windows MP4 recording proof")
+    {
+    }
+
+    public override async ValueTask<HardwareMediaProofResult> RunAsync(
+        HardwareMediaCapabilityReport baseline,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            var renderEncode = await WindowsRenderedOutputH264ProofPipeline
+                .RunCachedAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var outputPath = Path.Combine(
+                Path.GetTempPath(),
+                $"wtk_mediaforge_mp4_recording_proof_{Guid.NewGuid():N}.mp4");
+
+            try
+            {
+                await using var sink = new RecordingMp4PacketSink(outputPath);
+                await sink
+                    .StartAsync(
+                        new EncodedPacketSinkContext
+                        {
+                            Codec = EncodedVideoCodec.H264,
+                            Size = new FrameSize(
+                                (uint)renderEncode.EncoderSettings.Width,
+                                (uint)renderEncode.EncoderSettings.Height),
+                            FramesPerSecond = renderEncode.EncoderSettings.FramesPerSecond
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                await sink.WritePacketAsync(renderEncode.Packet, cancellationToken).ConfigureAwait(false);
+                await sink.StopAsync(cancellationToken).ConfigureAwait(false);
+
+                if (!IsoBmffMp4Writer.HasValidH264BoxStructure(
+                        outputPath,
+                        new IsoBmffMp4Writer.TrackMetadata(
+                            (uint)renderEncode.EncoderSettings.Width,
+                            (uint)renderEncode.EncoderSettings.Height),
+                        minimumSampleCount: 1))
+                {
+                    return Unavailable(
+                        "MP4 recording proof wrote a file that failed H.264 MP4 box validation.",
+                        "MediaFoundation-HardwareMft+NativeMp4Mux",
+                        baseline.GpuVendor);
+                }
+
+                return Passed(
+                    "MediaFoundation-HardwareMft+NativeMp4Mux",
+                    [
+                        nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated),
+                        nameof(RecordingMp4PacketSink),
+                        "ValidFtypMoovMdatAvcC"
+                    ],
+                    baseline.GpuVendor,
+                    $"MP4 recording proof wrote a valid H.264 recording file from a real render-to-encode packet ({new FileInfo(outputPath).Length} bytes).");
+            }
+            finally
+            {
+                if (File.Exists(outputPath))
+                    File.Delete(outputPath);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Unavailable(
+                $"MP4 recording proof unavailable on this machine: {ex.Message}",
+                "MediaFoundation-HardwareMft+NativeMp4Mux",
+                baseline.GpuVendor);
+        }
+    }
+}
+
 internal sealed class WindowsRtmpNetworkOutputProofRunner : HardwareMediaProofRunner
 {
     public WindowsRtmpNetworkOutputProofRunner()
@@ -165,7 +245,7 @@ internal sealed class WindowsRtmpNetworkOutputProofRunner : HardwareMediaProofRu
         try
         {
             var renderEncode = await WindowsRenderedOutputH264ProofPipeline
-                .RunAsync(cancellationToken)
+                .RunCachedAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             await using var server = new WindowsLocalRtmpProofServer();

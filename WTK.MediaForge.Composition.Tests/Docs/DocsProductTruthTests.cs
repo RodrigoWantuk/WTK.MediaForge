@@ -74,8 +74,8 @@ public sealed class DocsProductTruthTests
         Assert.Contains("The RTMP network boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
 
         Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
-        Assert.Contains("| Recording MP4 H.264 | EncodedPacket | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
-        Assert.Contains("| RTMP H.264 | EncodedPacket | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| Recording MP4 H.264 | EncodedPacket | Runtime proof-gated |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| RTMP H.264 | EncodedPacket | Runtime proof-gated |", supportMatrix, StringComparison.Ordinal);
     }
 
     [Fact]

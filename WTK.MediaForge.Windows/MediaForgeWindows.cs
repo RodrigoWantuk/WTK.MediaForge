@@ -50,6 +50,7 @@ public static class MediaForgeWindows
         var registry = new HardwareMediaProofRegistry();
         registry.Register(new WindowsRenderToH264EncodeProofRunner());
         registry.Register(new WindowsHardwareH264EncodeProofRunner());
+        registry.Register(new WindowsMp4RecordingProofRunner());
         registry.Register(new WindowsMp4OutputProductProofRunner());
         registry.Register(new WindowsRtmpNetworkOutputProofRunner());
         registry.Register(new WindowsHardwareDecodeProofRunner());

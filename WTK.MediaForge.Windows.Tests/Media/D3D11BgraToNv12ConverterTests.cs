@@ -103,7 +103,7 @@ public sealed class D3D11BgraToNv12ConverterTests
 
             Assert.Equal("NV12", converted.Descriptor.Format);
             Assert.Equal(MediaTransportKind.GpuSurface, converted.Descriptor.TransportKind);
-            Assert.IsType<D3D11SharedTextureFrameHandle>(converted.BackendSurface);
+            Assert.IsAssignableFrom<ID3D11Texture2D>(converted.BackendSurface);
             Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuFormatConversionStarted));
             Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuFormatConversionSucceeded));
             Assert.False(audit.Contains(MediaTransportAuditEventKind.GpuFormatConversionUnavailable));

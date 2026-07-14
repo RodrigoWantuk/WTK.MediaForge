@@ -75,31 +75,32 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
             Detail = "Starting D3D11 VideoProcessor BGRA/RGBA to NV12 conversion."
         });
 
-        D3D11SharedTextureFrameHandle? outputHandle = null;
+        ID3D11Texture2D? outputTexture = null;
         try
         {
-            outputHandle = D3D11SharedTextureFactory.CreateSharedTexture(
+            outputTexture = CreatePrivateVideoProcessorTexture(
                 _device!,
-                (uint)requirement.Width,
-                (uint)requirement.Height,
-                Format.NV12);
+                Format.NV12,
+                requirement.Width,
+                requirement.Height,
+                BindFlags.RenderTarget);
 
             ExecuteVideoProcessorConversion(
                 _device!,
                 sourceHandle.Texture,
-                outputHandle.Texture,
+                outputTexture,
                 requirement.Width,
                 requirement.Height,
                 cancellationToken);
         }
         catch (OperationCanceledException)
         {
-            outputHandle?.Dispose();
+            outputTexture?.Dispose();
             throw;
         }
         catch (Exception ex)
         {
-            outputHandle?.Dispose();
+            outputTexture?.Dispose();
             RecordUnavailable(
                 auditSink,
                 $"D3D11 VideoProcessor BGRA/RGBA to NV12 conversion failed: {ex.Message}");
@@ -127,8 +128,8 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
 
         var lease = HardwareEncoderInputLease.CreateWithBackendSurface(
             outputDescriptor,
-            outputHandle!,
-            outputHandle!.Dispose);
+            outputTexture!,
+            outputTexture!.Dispose);
 
         auditSink.Record(new MediaTransportAuditEvent
         {
@@ -151,8 +152,47 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var sourceDescription = source.Description;
+        var outputDescription = output.Description;
+        using var processorInput = CreatePrivateVideoProcessorTexture(
+            device,
+            sourceDescription.Format,
+            width,
+            height,
+            BindFlags.ShaderResource | BindFlags.RenderTarget);
+        using var processorOutput = CreatePrivateVideoProcessorTexture(
+            device,
+            outputDescription.Format,
+            width,
+            height,
+            BindFlags.RenderTarget);
+
+        var immediateContext = device.ImmediateContext;
+        immediateContext.CopyResource(processorInput, source);
+        ExecuteVideoProcessorBlt(
+            device,
+            immediateContext,
+            processorInput,
+            processorOutput,
+            width,
+            height,
+            cancellationToken);
+        immediateContext.CopyResource(output, processorOutput);
+        immediateContext.Flush();
+    }
+
+    private static void ExecuteVideoProcessorBlt(
+        ID3D11Device device,
+        ID3D11DeviceContext immediateContext,
+        ID3D11Texture2D source,
+        ID3D11Texture2D output,
+        int width,
+        int height,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         using var videoDevice = device.QueryInterface<ID3D11VideoDevice>();
-        using var immediateContext = device.ImmediateContext;
         using var videoContext = immediateContext.QueryInterface<ID3D11VideoContext>();
 
         var content = new VideoProcessorContentDescription
@@ -206,6 +246,30 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
 
                     using (outputView)
                     {
+                        var targetRect = new Vortice.RawRect(0, 0, width, height);
+                        videoContext.VideoProcessorSetStreamFrameFormat(
+                            processor,
+                            0,
+                            VideoFrameFormat.Progressive);
+                        videoContext.VideoProcessorSetStreamAutoProcessingMode(
+                            processor,
+                            0,
+                            false);
+                        videoContext.VideoProcessorSetStreamSourceRect(
+                            processor,
+                            0,
+                            true,
+                            targetRect);
+                        videoContext.VideoProcessorSetStreamDestRect(
+                            processor,
+                            0,
+                            true,
+                            targetRect);
+                        videoContext.VideoProcessorSetOutputTargetRect(
+                            processor,
+                            true,
+                            targetRect);
+
                         var stream = new VideoProcessorStream
                         {
                             Enable = true,
@@ -224,6 +288,32 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
                 }
             }
         }
+    }
+
+    internal static ID3D11Texture2D CreatePrivateVideoProcessorTexture(
+        ID3D11Device device,
+        Format format,
+        int width,
+        int height,
+        BindFlags bindFlags)
+    {
+        var description = new Texture2DDescription
+        {
+            Width = checked((uint)width),
+            Height = checked((uint)height),
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = format,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = bindFlags,
+            CPUAccessFlags = CpuAccessFlags.None,
+            MiscFlags = ResourceOptionFlags.None
+        };
+
+        var texture = device.CreateTexture2D(in description);
+        return texture ?? throw new InvalidOperationException(
+            $"D3D11 could not create private {format} video processor texture.");
     }
 
     private static void RecordUnavailable(

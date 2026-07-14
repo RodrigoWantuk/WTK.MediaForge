@@ -238,11 +238,9 @@ internal sealed class WindowsDecodeGpuTextureFactory : IGpuTextureFactory
     {
         ArgumentNullException.ThrowIfNull(decodedTexture);
         var handle = D3D11SharedTextureFactory.CreateSharedTexture(_device, width, height, format);
-        using (var context = _device.ImmediateContext)
-        {
-            context.CopyResource(handle.Texture, decodedTexture);
-            context.Flush();
-        }
+        var context = _device.ImmediateContext;
+        context.CopyResource(handle.Texture, decodedTexture);
+        context.Flush();
 
         lock (_gate)
             _decodedTextures.Enqueue(new WindowsDecodeGpuPhysicalTexture(_device, handle));

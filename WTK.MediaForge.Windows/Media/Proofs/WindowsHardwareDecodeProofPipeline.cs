@@ -236,7 +236,7 @@ internal sealed class WindowsProductMp4ProofAsset : IAsyncDisposable
     public static async ValueTask<WindowsProductMp4ProofAsset> CreateAsync(CancellationToken cancellationToken)
     {
         var renderEncode = await WindowsRenderedOutputH264ProofPipeline
-            .RunAsync(cancellationToken)
+            .RunCachedAsync(cancellationToken)
             .ConfigureAwait(false);
         var outputPath = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(),

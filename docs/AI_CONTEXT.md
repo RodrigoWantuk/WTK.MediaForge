@@ -234,8 +234,9 @@ The legacy WinForms preview path has been removed as a product path because it u
   and NDI input/output. Each proof is represented by `HardwareMediaProof` and
   must be `Passed` before a product capability can advertise support.
 - `MediaForgeWindows.CreateHardwareMediaProofRegistry()` registers Windows
-  proof runners, including H.264 hardware encode, render-to-encode, MP4 output,
-  RTMP output, hardware decode, and decode-to-render product proofs.
+  proof runners, including H.264 hardware encode, render-to-encode, MP4
+  recording, MP4 output, RTMP output, hardware decode, and decode-to-render
+  product proofs.
   `GetCapabilityReportWithHardwareProofsAsync` is explicit because proof
   execution may touch D3D11/Media Foundation hardware and must not be hidden in
   cheap UI capability probes.

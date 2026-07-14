@@ -70,6 +70,10 @@ Complete foundations:
   publish against a local proof server, generated MP4 asset -> D3D11VA decode,
   and decode-to-Vulkan render submission. Capabilities are promoted only when
   those proof results pass on the current hardware/driver stack.
+- The AMD/Radeon validation target now passes the Windows render-to-encode,
+  hardware H.264 encode, MP4 recording/output, and RTMP network output proof
+  chains. Remaining Windows media blockers are hardware MP4 decode/D3D11VA,
+  decode-to-render, webcam product input, and NDI license/GPU-safe paths.
 - Rendered-output-to-encoder input preparation is explicit. A rendered surface
   is exported directly only when the encoder requirement matches; otherwise the
   path must use a GPU-only conversion step such as BGRA/RGBA -> NV12. If no

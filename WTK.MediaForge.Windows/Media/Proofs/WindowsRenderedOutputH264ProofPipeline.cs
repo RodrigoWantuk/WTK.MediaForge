@@ -32,6 +32,39 @@ internal static class WindowsRenderedOutputH264ProofPipeline
     public const int FramesPerSecond = 30;
     private const int MaxRenderedFrames = 16;
     private static readonly TimeSpan ProofTimeout = TimeSpan.FromSeconds(5);
+    private static readonly object CacheGate = new();
+    private static Task<WindowsRenderedOutputH264ProofResult>? cachedProofTask;
+
+    public static async ValueTask<WindowsRenderedOutputH264ProofResult> RunCachedAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Task<WindowsRenderedOutputH264ProofResult> task;
+        lock (CacheGate)
+        {
+            cachedProofTask ??= RunAsync(CancellationToken.None).AsTask();
+            task = cachedProofTask;
+        }
+
+        try
+        {
+            return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (task.IsFaulted || task.IsCanceled)
+            {
+                lock (CacheGate)
+                {
+                    if (ReferenceEquals(cachedProofTask, task))
+                        cachedProofTask = null;
+                }
+            }
+
+            throw;
+        }
+    }
 
     public static async ValueTask<WindowsRenderedOutputH264ProofResult> RunAsync(
         CancellationToken cancellationToken)
