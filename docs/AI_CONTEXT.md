@@ -173,11 +173,13 @@ The legacy WinForms preview path has been removed as a product path because it u
   shared texture lease. System-memory decoded samples and placeholder textures
   remain unavailable for product decode; only internal tests may opt into the
   prototype bridge, and its audit evidence must remain `Prototype`.
-- Decode-to-render product proof is explicitly gated by
-  `MediaTransportAuditRules.IsDecodeToRenderProofPathValid()`. It requires
-  `BackendOutputValidated` evidence for hardware decode, decoded-frame to
-  source-frame adaptation, and renderer submission, with no CPU readback or
-  staging evidence. Prototype decoder frames cannot satisfy this proof.
+- Decode-to-render product proof is executable in v12: it generates a real MP4
+  asset from the render-to-encode/MP4 proof path, decodes it through Media
+  Foundation D3D11VA, adapts the decoded GPU frame to a source lease, and
+  submits it through Vulkan. It still requires `BackendOutputValidated`
+  evidence for hardware decode and fails as unavailable if the machine lacks
+  the required hardware/driver/API/interoperability path. Prototype decoder
+  frames cannot satisfy this proof.
 - The logical `RenderGraphExecutor` now carries renderable `GpuFrameReference`
   resources through source/effect/canvas/output nodes and skips downstream work
   when a source frame is unavailable. The engine attaches the per-frame graph
@@ -232,7 +234,8 @@ The legacy WinForms preview path has been removed as a product path because it u
   and NDI input/output. Each proof is represented by `HardwareMediaProof` and
   must be `Passed` before a product capability can advertise support.
 - `MediaForgeWindows.CreateHardwareMediaProofRegistry()` registers Windows
-  proof runners, currently including the H.264 hardware encode proof runner.
+  proof runners, including H.264 hardware encode, render-to-encode, MP4 output,
+  RTMP output, hardware decode, and decode-to-render product proofs.
   `GetCapabilityReportWithHardwareProofsAsync` is explicit because proof
   execution may touch D3D11/Media Foundation hardware and must not be hidden in
   cheap UI capability probes.
@@ -252,6 +255,12 @@ The legacy WinForms preview path has been removed as a product path because it u
   `test-reports/media-proof-report.json` and
   `test-reports/media-proof-report.md` by
   `./scripts/generate-media-proof-report.ps1`.
+  `./scripts/verify-engine-readiness-v12.ps1` is the current official entrypoint
+  for engine media work. It runs the v11 baseline and adds v12 checks for
+  `EncodedVideoProfile`, Media Foundation encoder D3D11 device ownership, and
+  refreshed proof-report generation. Proof runners may report `Unavailable`
+  only for actual runtime hardware/driver/platform absence, not for pending
+  implementation stubs.
   `-RequireHardwareMedia` additionally fails release validation unless all
   v8 hardware media proofs pass on the target machine.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.

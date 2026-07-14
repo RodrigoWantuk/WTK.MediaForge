@@ -15,10 +15,13 @@ public static class MediaForgeOutputs
             EnableVSync = enableVSync
         };
 
-    public static RecordingMp4OutputSettings RecordMp4(string path) =>
+    public static RecordingMp4OutputSettings RecordMp4(
+        string path,
+        EncodedVideoProfile? video = null) =>
         new()
         {
-            Path = path
+            Path = path,
+            Video = video ?? EncodedVideoProfile.DefaultH264
         };
 
     public static EncodedFileOutputSettings EncodedFile(
@@ -36,11 +39,13 @@ public static class MediaForgeOutputs
 
     public static StreamingRtmpOutputSettings Rtmp(
         string url,
-        string streamKey) =>
+        string streamKey,
+        EncodedVideoProfile? video = null) =>
         new()
         {
             Url = url,
-            StreamKey = streamKey
+            StreamKey = streamKey,
+            Video = video ?? EncodedVideoProfile.DefaultH264
         };
 
     public static StreamingSrtOutputSettings Srt(string url) =>

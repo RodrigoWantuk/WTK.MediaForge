@@ -153,6 +153,7 @@ Before considering a change complete, verify:
 - [ ] Engine readiness v9 (`verify-engine-readiness-v9.ps1`) passes before promoting prototype/skeleton media paths.
 - [ ] Engine readiness v10 (`verify-engine-readiness-v10.ps1`) passes before promoting media transport, encoder, decoder, render-output encode, sink, or capability work.
 - [ ] Engine readiness v11 (`verify-engine-readiness-v11.ps1`) passes and generates the media proof report before promoting media proof or encoded-route work.
+- [ ] Engine readiness v12 (`verify-engine-readiness-v12.ps1`) is the current official gate for hardware-first media work; encoded outputs must use `EncodedVideoProfile`, and Media Foundation encoder device ownership must be tested.
 - [ ] Release hardware media readiness uses the current readiness script with `-RequireHardwareMedia`; missing required proofs must fail with an actionable report, not silent success.
 - [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.
 

@@ -290,6 +290,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Outputs.RenderPixelFormat",
                 "WTK.MediaForge.Composition.Outputs.RtmpSink",
                 "WTK.MediaForge.Composition.Outputs.RtmpPacketSink",
+                "WTK.MediaForge.Composition.Outputs.Settings.EncodedVideoProfile",
                 "WTK.MediaForge.Composition.Outputs.Settings.EncodedFileOutputSettings",
                 "WTK.MediaForge.Composition.Outputs.Settings.NdiOutputSettings",
                 "WTK.MediaForge.Composition.Outputs.Settings.OffscreenOutputSettings",

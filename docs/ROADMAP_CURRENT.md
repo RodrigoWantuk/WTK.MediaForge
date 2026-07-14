@@ -64,6 +64,12 @@ Complete foundations:
   render-to-encode, MP4 recording, and MP4 output product proofs; RTMP requires
   hardware encode, render-to-encode, and RTMP network proof; MP4 video input
   requires hardware decode, decode-to-render, and MP4 input product proofs.
+- Windows v12 composite proof runners now execute real product paths where the
+  machine supports them: Vulkan offscreen render -> D3D11 export/conversion ->
+  Media Foundation H.264 packet, packet-only MP4 mux validation, TCP RTMP
+  publish against a local proof server, generated MP4 asset -> D3D11VA decode,
+  and decode-to-Vulkan render submission. Capabilities are promoted only when
+  those proof results pass on the current hardware/driver stack.
 - Rendered-output-to-encoder input preparation is explicit. A rendered surface
   is exported directly only when the encoder requirement matches; otherwise the
   path must use a GPU-only conversion step such as BGRA/RGBA -> NV12. If no
@@ -83,9 +89,10 @@ Complete foundations:
   an `IMFDXGIBuffer` GPU texture. The texture is copied by GPU into a D3D11
   shared texture lease for renderer import. System-memory samples and
   placeholder texture output remain unavailable for product decode.
-- Decode-to-render product proof now has an audit gate and remains blocked until
-  hardware decode, source-frame adaptation, and renderer submission all provide
-  `BackendOutputValidated` evidence.
+- Decode-to-render product proof now executes against a generated MP4 proof
+  asset. It remains unavailable on machines where D3D11VA does not return
+  `IMFDXGIBuffer` GPU samples, where NV12/shared-texture interop is unsupported,
+  or where the Vulkan import/render submission fails.
 - RenderGraph execution now propagates available source-frame resources and
   explicit skip reasons through the logical graph, and submitted
   `RenderFrameSnapshot` instances carry the graph execution result computed
@@ -208,14 +215,19 @@ or capability work, run the full product boundary suite:
 ```powershell
 ./scripts/verify-engine-readiness-v10.ps1
 ./scripts/verify-engine-readiness-v11.ps1
+./scripts/verify-engine-readiness-v12.ps1
 ```
 
-`verify-engine-readiness-v11.ps1` generates the operational media proof report
-before running deeper gates. The report is written to
+`verify-engine-readiness-v12.ps1` is the current official engine readiness
+entrypoint. It runs the v11 baseline, adds v12 checks for encoded output
+profiles and D3D11 encoder device ownership, then refreshes the operational
+media proof report. The report is written to
 `test-reports/media-proof-report.json` and
 `test-reports/media-proof-report.md` through
 `./scripts/generate-media-proof-report.ps1`. Normal developer runs may pass
-with honest `Blocked`/`Unavailable` feature status. Release runs use
+with honest `Blocked`/`Unavailable` feature status only for runtime hardware,
+driver, OS, or environment absence. Proof runners must not return
+`Unavailable` merely because implementation work is still pending. Release runs use
 `-RequireHardwareMedia`; in that mode missing required proofs produce exit code
 2 and block promotion.
 
@@ -231,7 +243,7 @@ Execute in this exact order after vNext (commits 00-24) is complete. Plan:
 | 03 | Asset Manager | Fast | **Done** |
 | 04 | **GPU Surface Export Proof (Real)** | **Blocks 15-17** | **Done** |
 | 05 | Hardware Decode Foundation | Fast | **Done** |
-| 06 | Windows Hardware Decode Boundary | Gpu | **Backend work started: SourceReader/D3D11VA session accepts only IMFDXGIBuffer GPU samples; product proof still pending** |
+| 06 | Windows Hardware Decode Boundary | Gpu | **Backend work started: SourceReader/D3D11VA session accepts only IMFDXGIBuffer GPU samples; v12 product proof executes generated MP4 decode and promotes only on pass** |
 | 07 | Video Source Runtime | Fast | **Done** |
 | 08 | Texture Streaming | Gpu | **Done** |
 | 09 | Renderer Video Integration | Gpu | **Done** |
@@ -240,9 +252,9 @@ Execute in this exact order after vNext (commits 00-24) is complete. Plan:
 | 12 | GPU Effects Framework | Gpu | **Color correction and source-layer blur ProductValidated in Vulkan source/effect passes** |
 | 13 | Transform Effects | Gpu | **Done:ProductValidated for Vulkan geometry/shader path; graph nodes remain skeleton** |
 | 14 | Text Rendering | Gpu | **Done:ProductValidated for Windows Vulkan glyph atlas text layers** |
-| 15 | Hardware Encode Foundation | Gpu; requires 04 | **Backend work started: MF hardware MFT session/settings/proof runner exist; MP4/RTMP product proof still pending** |
-| 16 | MP4 Recording Packet Mux Boundary | Gpu | **Contract/Product boundary - public sink requires BackendOutputValidated packets; end-to-end recording remains blocked by hardware encoder proof** |
-| 17 | RTMP Network Transport Boundary | Gpu | **Contract/Product boundary - TCP RTMP handshake/publish and FLV H.264 packetization implemented; end-to-end streaming remains blocked by hardware encoder proof** |
+| 15 | Hardware Encode Foundation | Gpu; requires 04 | **Backend work started: MF hardware MFT session/settings/proof runner execute real packet validation; product output promotion depends on composite proof pass** |
+| 16 | MP4 Recording Packet Mux Boundary | Gpu | **Contract/Product boundary - public sink requires BackendOutputValidated packets; v12 MP4 output proof writes and validates a real packet-only MP4 when hardware path is available** |
+| 17 | RTMP Network Transport Boundary | Gpu | **Contract/Product boundary - TCP RTMP handshake/publish and FLV H.264 packetization implemented; v12 RTMP proof publishes real hardware-validated H.264 packets to a local proof server** |
 | 18 | Synthetic Performance Validation | Report | **NeedsRealBackend - synthetic workload only** |
 | 19 | Fault Recovery | Gpu stress | **Done:Contract - integration with real failure points pending** |
 | 20 | Engine Readiness Gate | Fast + Gpu + verify | **Done:Contract** |
@@ -297,8 +309,8 @@ advertised as ready merely because one internal prototype path exists.
 | NDI input product proof | `proof.media_io.ndi_input.product` | NDI licensing is approved and the input path is GPU-safe without continuous CPU frame transport. |
 | NDI output product proof | `proof.media_io.ndi_output.product` | NDI licensing is approved and output avoids continuous CPU readback while preserving sink backpressure/lifetime contracts. |
 
-Default CI may report proofs as `Unavailable` with reasons when the hardware
-path is not implemented or not present. Release/readiness machines use the
+Default CI may report proofs as `Unavailable` with reasons when the hardware,
+driver, OS API, or GPU interop path is not present. Release/readiness machines use the
 current readiness gate with `-RequireHardwareMedia`; that mode fails unless
 every required v8 hardware media proof is `Passed`.
 
@@ -324,13 +336,13 @@ Current truth table:
 | Decode-to-source frame bridge | Done:Contract |
 | Windows video-file source provider | Done:Prototype, blocked by default |
 | Webcam source | Planned until immediate GPU-upload provider is product validated |
-| Windows decode | Backend work started; SourceReader/D3D11VA path requires `IMFDXGIBuffer` GPU samples and rejects CPU samples; product proof pending |
-| Decode-to-render proof | Blocked until real decode backend is validated |
-| Windows encode | Backend work started; typed settings, MF runtime lease, product MFT session, and Windows H.264 proof runner exist; product output proofs pending |
+| Windows decode | Backend work started; SourceReader/D3D11VA path requires `IMFDXGIBuffer` GPU samples and rejects CPU samples; v12 proof executes generated MP4 decode and promotes only on pass |
+| Decode-to-render proof | Executable v12 proof; promoted only when hardware decode, source lease adaptation, Vulkan import, and offscreen render pass |
+| Windows encode | Backend work started; typed settings, MF runtime lease, owned D3D11 device lifetime, product MFT session, and v12 proof runners execute real packet/product output validation |
 | Encoder format conversion | Done:BackendCallSucceeded for D3D11 VideoProcessor path when supported; product encode remains blocked on real MF packet validation |
 | Packet sink boundary | Done:Contract with explicit bitstream metadata |
-| MP4 writer | Done:Contract/Product boundary; public path requires trusted BackendOutputValidated H.264 packet evidence and rejects prototype/contract-only packets |
-| RTMP transport | Done:Contract/Product boundary; public path requires trusted BackendOutputValidated H.264 packet evidence, rejects prototype/contract-only packets, and keeps prototype transport behind explicit test opt-in |
+| MP4 writer | Done:Contract/Product boundary; public path requires trusted BackendOutputValidated H.264 packet evidence and rejects prototype/contract-only packets; v12 product proof validates ftyp/moov/mdat/avcC from real packets |
+| RTMP transport | Done:Contract/Product boundary; public path requires trusted BackendOutputValidated H.264 packet evidence, rejects prototype/contract-only packets, and v12 product proof validates TCP handshake/publish/FLV H.264 tags |
 | RenderGraph | Done:Contract/resource bridge; not a GPU pass executor |
 | Color correction effect | Done:ProductValidated for Vulkan source-layer shader |
 | Blur effect | Done:ProductValidated for Vulkan source-layer shader/intermediate passes |
@@ -348,7 +360,7 @@ that includes GPU and Performance tiers. Release hardware validation still uses
 `-RequireHardwareMedia`; hardware proof absence must remain explicit
 `Unavailable` and must never become software fallback.
 
-## Active vNext v9/v10/v11 Product Boundary Gates
+## Active vNext v9/v10/v11/v12 Product Boundary Gates
 
 `./scripts/verify-engine-readiness-v9.ps1` is the default product-boundary
 gate. It runs build, Fast tier, media transport guard rails, license guard
@@ -365,6 +377,13 @@ aggregation tests, encoded output route/status/backpressure tests, Windows
 media proof truth tests, and a generated media proof report. It is the
 preferred local gate before changing MP4, RTMP, decode, encode, or encoded-route
 capability behavior.
+
+`./scripts/verify-engine-readiness-v12.ps1` is the current official gate for
+hardware-first media work. It keeps v11 as the baseline and adds checks that
+encoded outputs use `EncodedVideoProfile` instead of route-local hardcoded
+encoder settings, that the default Media Foundation encoder owns its D3D11
+device until dispose, and that proof-report artifacts are regenerated by the
+v12 run.
 
 Hardware proof runners are registered through `HardwareMediaProofRegistry`.
 They may report `Unavailable` on developer/CI machines without required

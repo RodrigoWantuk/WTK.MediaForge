@@ -6,6 +6,7 @@ using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Windows.Media;
+using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Windows.Media.Decode;
 using WTK.MediaForge.Windows.Media.Encode;
 using Xunit;
@@ -25,7 +26,7 @@ public sealed class WindowsMediaCapabilityTruthTests
         Assert.False(report.AcceptsGpuSurfaceInput);
         Assert.False(report.RequiresCpuStaging);
         Assert.Equal(GpuExportProofStatus.Pending, report.ExportProofStatus);
-        Assert.Contains("not completed", report.ExportProofReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("v12 proof runners", report.ExportProofReason, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(report.BackendCapabilities, backend =>
             backend.Id == "windows.mf.d3d11va.decode.h264" &&
             backend.SupportStatus == MediaForgeSupportStatus.PrototypeOnly &&
@@ -43,7 +44,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Windows_capability_probe_reports_v8_media_proofs_with_explicit_reasons()
+    public async Task Windows_capability_probe_reports_v12_media_proofs_with_explicit_reasons()
     {
         var report = await new WindowsHardwareMediaCapabilityProbe()
             .ProbeAsync(CancellationToken.None);
@@ -95,7 +96,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Required_hardware_media_release_gate_fails_until_all_v8_proofs_pass()
+    public async Task Required_hardware_media_release_gate_fails_until_all_v12_proofs_pass()
     {
         if (!string.Equals(
             Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"),
@@ -114,7 +115,7 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         Assert.True(
             missing.Length == 0,
-            "Hardware media release gate requires all v8 proofs to pass: " + string.Join("; ", missing));
+            "Hardware media release gate requires all v12 proofs to pass: " + string.Join("; ", missing));
     }
 
     [Fact]
@@ -185,6 +186,52 @@ public sealed class WindowsMediaCapabilityTruthTests
             $"Unexpected support status: {encodeProof.SupportStatus}");
         Assert.NotEqual(MediaForgeProductReadinessStatus.Prototype, encodeProof.ProductReadinessStatus);
         Assert.NotEqual(MediaForgeProductReadinessStatus.Skeleton, encodeProof.ProductReadinessStatus);
+    }
+
+    [Fact]
+    public async Task Windows_composite_product_proof_runners_do_not_return_placeholder_unavailable_reasons()
+    {
+        var baseline = new HardwareMediaCapabilityReport
+        {
+            Platform = OperatingSystem.IsWindows() ? "Windows" : "Non-Windows",
+            GpuVendor = "TestVendor"
+        };
+        HardwareMediaProofRunner[] runners =
+        [
+            new WindowsRenderToH264EncodeProofRunner(),
+            new WindowsMp4OutputProductProofRunner(),
+            new WindowsRtmpNetworkOutputProofRunner(),
+            new WindowsHardwareDecodeProofRunner(),
+            new WindowsDecodeToRenderProofRunner()
+        ];
+
+        foreach (var runner in runners)
+        {
+            var result = await runner.RunAsync(baseline, CancellationToken.None);
+            Assert.True(
+                result.Status is HardwareMediaProofStatus.Passed or HardwareMediaProofStatus.Unavailable,
+                $"Unexpected proof status for {runner.Id}: {result.Status}");
+
+            if (result.Status == HardwareMediaProofStatus.Unavailable &&
+                OperatingSystem.IsWindows())
+            {
+                Assert.DoesNotContain("requires render-to-encode", result.Reason, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("requires a renderer-owned", result.Reason, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("before a real packet", result.Reason, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("before network output", result.Reason, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("requires an approved", result.Reason, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("requires a hardware-decoded", result.Reason, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("not implemented", result.Reason, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains("unavailable on this machine", result.Reason, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (result.Status == HardwareMediaProofStatus.Passed)
+            {
+                Assert.Contains(
+                    nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated),
+                    result.Evidence);
+            }
+        }
     }
 
     [Fact]

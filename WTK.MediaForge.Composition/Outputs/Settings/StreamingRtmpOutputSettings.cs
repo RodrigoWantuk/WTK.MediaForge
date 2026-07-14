@@ -11,4 +11,6 @@ public sealed class StreamingRtmpOutputSettings : IRenderOutputSettings
     public string Url { get; init; } = string.Empty;
 
     public string StreamKey { get; init; } = string.Empty;
+
+    public EncodedVideoProfile Video { get; init; } = EncodedVideoProfile.DefaultH264;
 }

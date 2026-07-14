@@ -1,5 +1,6 @@
 using Vortice.Direct3D11;
 using Vortice.DXGI;
+using System.Reflection;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Core.Gpu.Resources;
@@ -93,6 +94,26 @@ public sealed class HardwareEncodeFoundationTests
         Assert.Equal(720, encoder.InputRequirement.Height);
         Assert.Equal("NV12", encoder.InputRequirement.PixelFormat);
         Assert.True(encoder.InputRequirement.RequiresGpuSurface);
+    }
+
+    [Fact]
+    public async Task Public_default_encoder_constructor_keeps_owned_d3d11_device_alive_until_dispose()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        await using var encoder = new MediaFoundationHardwareVideoEncoder(320, 180);
+
+        var ownedDeviceField = typeof(MediaFoundationHardwareVideoEncoder).GetField(
+            "_ownedDevice",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        var ownedDevice = Assert.IsType<OwnedD3D11EncoderDevice>(ownedDeviceField?.GetValue(encoder));
+
+        Assert.NotNull(ownedDevice.Device);
+
+        await encoder.DisposeAsync();
+
+        Assert.Throws<ObjectDisposedException>(() => ownedDevice.Device);
     }
 
     [Fact]

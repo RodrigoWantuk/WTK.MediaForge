@@ -174,15 +174,68 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
         if (size.IsEmpty)
             throw new InvalidOperationException($"Encoded output '{output.Name}' requires a non-empty output size.");
 
+        var profile = GetEncodedVideoProfile(output);
+        ValidateEncodedVideoProfile(output, profile);
+
         return new HardwareVideoEncoderSettings
         {
             Width = checked((int)size.Width),
             Height = checked((int)size.Height),
-            FramesPerSecond = 60,
-            BitrateBitsPerSecond = 8_000_000,
-            KeyFrameIntervalFrames = 120,
-            PixelFormat = "NV12"
+            Codec = profile.Codec,
+            FramesPerSecond = profile.FramesPerSecond,
+            BitrateBitsPerSecond = profile.BitrateBitsPerSecond,
+            KeyFrameIntervalFrames = profile.KeyFrameIntervalFrames,
+            PixelFormat = profile.PixelFormat
         };
+    }
+
+    private static EncodedVideoProfile GetEncodedVideoProfile(MediaForgeRenderOutput output)
+    {
+        if (output.TypeId == RenderOutputTypes.RecordingMp4)
+        {
+            var settings = (RecordingMp4OutputSettings)RenderOutputSettingsSerializer.Deserialize(
+                output.TypeId,
+                output.Settings);
+            return settings.Video;
+        }
+
+        if (output.TypeId == RenderOutputTypes.StreamingRtmp)
+        {
+            var settings = (StreamingRtmpOutputSettings)RenderOutputSettingsSerializer.Deserialize(
+                output.TypeId,
+                output.Settings);
+            return settings.Video;
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(output), output.TypeId.Value, "Unsupported encoded output route.");
+    }
+
+    private static void ValidateEncodedVideoProfile(
+        MediaForgeRenderOutput output,
+        EncodedVideoProfile profile)
+    {
+        try
+        {
+            if (profile.Codec != EncodedVideoCodec.H264)
+                throw new NotSupportedException($"Encoded output '{output.Name}' supports H.264 only.");
+
+            if (profile.FramesPerSecond <= 0)
+                throw new ArgumentOutOfRangeException(nameof(profile.FramesPerSecond));
+
+            if (profile.BitrateBitsPerSecond <= 0)
+                throw new ArgumentOutOfRangeException(nameof(profile.BitrateBitsPerSecond));
+
+            if (profile.KeyFrameIntervalFrames <= 0)
+                throw new ArgumentOutOfRangeException(nameof(profile.KeyFrameIntervalFrames));
+
+            ArgumentException.ThrowIfNullOrWhiteSpace(profile.PixelFormat);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            throw new InvalidOperationException(
+                $"Encoded output '{output.Name}' has an invalid video profile.",
+                ex);
+        }
     }
 
     private static string CombineRtmpUrl(string url, string streamKey)

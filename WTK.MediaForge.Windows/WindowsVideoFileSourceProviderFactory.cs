@@ -15,20 +15,26 @@ internal sealed class WindowsVideoFileSourceProviderFactory : IMediaSourceProvid
 {
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly bool _enablePrototypeProvider;
+    private readonly bool _enableProductProvider;
     private readonly Func<HardwareDecodeOpenContext, IHardwareFileVideoDecoder> _decoderFactory;
 
     public WindowsVideoFileSourceProviderFactory(
         IMediaForgeDiagnosticsSink? diagnostics = null,
         bool enablePrototypeProvider = false,
+        bool enableProductProvider = false,
         Func<HardwareDecodeOpenContext, IHardwareFileVideoDecoder>? decoderFactory = null)
     {
         _diagnostics = diagnostics;
         _enablePrototypeProvider = enablePrototypeProvider;
-        _decoderFactory = decoderFactory ?? CreatePrototypeDecoder;
+        _enableProductProvider = enableProductProvider;
+        _decoderFactory = decoderFactory ??
+                          (enablePrototypeProvider
+                              ? CreatePrototypeDecoder
+                              : CreateProductDecoder);
     }
 
     public bool CanCreate(MediaSourceTypeId typeId) =>
-        _enablePrototypeProvider &&
+        (_enableProductProvider || _enablePrototypeProvider) &&
         MediaSourceTypeRegistry.ResolveCanonical(typeId) == MediaSourceTypes.VideoFile;
 
     public IVideoFrameProvider CreateProvider(MediaForgeSourceDefinition sourceDefinition)
@@ -43,11 +49,11 @@ internal sealed class WindowsVideoFileSourceProviderFactory : IMediaSourceProvid
                 nameof(sourceDefinition));
         }
 
-        if (!_enablePrototypeProvider)
+        if (!_enableProductProvider && !_enablePrototypeProvider)
         {
             throw new MediaForgeUnsupportedFeatureException(
                 $"source.{MediaSourceTypes.VideoFile.Value}",
-                "Windows video file source provider is prototype-only until real hardware decode is product validated.");
+                "Windows video file source provider is blocked until hardware decode, decode-to-render, and MP4 input product proofs pass.");
         }
 
         var settings = (VideoFileSourceSettings)MediaSourceSettingsSerializer.Deserialize(
@@ -69,5 +75,11 @@ internal sealed class WindowsVideoFileSourceProviderFactory : IMediaSourceProvid
     {
         _ = context;
         return new MediaFoundationHardwareVideoDecoder(allowPrototypeDecoding: true);
+    }
+
+    private static IHardwareFileVideoDecoder CreateProductDecoder(HardwareDecodeOpenContext context)
+    {
+        _ = context;
+        return new MediaFoundationHardwareVideoDecoder();
     }
 }

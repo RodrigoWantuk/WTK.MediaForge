@@ -51,7 +51,7 @@ marketing:
 | Webcam | GpuSurface | Planned | Raw CPU input possible at system boundary only; no product GPU-upload provider yet |
 | Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows product path | Load-time CPU decode; CPU copy released after GPU upload |
 | Static image WebP | N/A | Planned | Blocked until license review |
-| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly | Windows SourceReader/D3D11VA backend work has started and accepts only IMFDXGIBuffer GPU samples; decode-to-render product proof is not validated |
+| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly until composite proofs pass | Windows SourceReader/D3D11VA backend work accepts only IMFDXGIBuffer GPU samples; v12 proof generates an MP4 through the product render/encode/mux path and promotes only when hardware decode plus decode-to-render pass |
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
 | Animated GIF/APNG/WebP | N/A | Planned | Blocked until GPU-safe strategy |
 | Lottie | N/A | Planned | Blocked until GPU-safe rasterization |
@@ -63,8 +63,8 @@ marketing:
 |--------|-----------|--------|-------|
 | Preview panel | GpuSurface | Experimental | No CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | PrototypeOnly until composite proofs pass | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. Product support requires hardware encode, render-to-encode, MP4 recording, and MP4 output product proofs. |
-| RTMP H.264 | EncodedPacket | PrototypeOnly until composite proofs pass | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. Product support requires hardware encode, render-to-encode, and RTMP network output proofs. |
+| Recording MP4 H.264 | EncodedPacket | PrototypeOnly until composite proofs pass | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. v12 MP4 output proof writes and validates a real packet-only MP4 from hardware-validated packets when the hardware path is available. |
+| RTMP H.264 | EncodedPacket | PrototypeOnly until composite proofs pass | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. v12 RTMP proof publishes real H.264 FLV tags to a local TCP proof server when the hardware path is available. |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | N/A | Unsupported | |
 | Virtual camera | N/A | Unsupported | |
@@ -73,17 +73,17 @@ marketing:
 
 | Encoder | Status | Notes |
 |---------|--------|-------|
-| Media Foundation hardware MFT H.264 | Proof-runner gated / not product output by itself | Windows session uses typed settings, D3D11 device manager, shared MF runtime, and backend packet validation. Product MP4/RTMP still requires the full output proof chain. |
+| Media Foundation hardware MFT H.264 | Proof-runner gated / not product output by itself | Windows session uses typed settings, owned D3D11 device lifetime, shared MF runtime, and backend packet validation. Product MP4/RTMP still requires the full output proof chain. |
 | NVENC direct | Planned | RequiresLegalReview |
 | Intel QSV direct | Planned | RequiresLegalReview |
 | AMD AMF direct | Planned | RequiresLegalReview |
 | libx264 / software H.264 | Prohibited | |
 | FFmpeg (future) | Planned / Not used in first product path | Future LGPL-only with review; never a raw video frame product path |
 
-## v8 Media I/O Proof Set and v9/v10 Readiness Gates
+## v12 Media I/O Proof Set and Readiness Gates
 
 Recording MP4 and RTMP remain **PrototypeOnly** as end-to-end product features
-until the v8 hardware media proofs pass and the v9/v10 readiness scripts are
+until the hardware media proofs pass and the v12 readiness scripts are
 green:
 
 ```text
@@ -117,7 +117,13 @@ codec/backend proof:
 `./scripts/verify-engine-readiness-v10.ps1` adds GPU and Performance tiers for
 full local readiness before promotion. `./scripts/verify-engine-readiness-v11.ps1`
 adds encoded route/status/backpressure tests, capability proof aggregation
-checks, and generated media proof reports. The report artifacts are
+checks, and generated media proof reports. `./scripts/verify-engine-readiness-v12.ps1`
+is the current official gate; it keeps the v11 baseline and adds encoded output
+profile and D3D11 encoder ownership checks before media capability promotion.
+The v12 Windows composite runners execute render-to-encode, packet-only MP4,
+TCP RTMP, hardware decode, and decode-to-render product proofs where the
+current machine supports the required hardware/driver/API path.
+The report artifacts are
 `test-reports/media-proof-report.json` and
 `test-reports/media-proof-report.md`.
 

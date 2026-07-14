@@ -9,4 +9,6 @@ public sealed class RecordingMp4OutputSettings : IRenderOutputSettings
     public int SchemaVersion { get; init; } = 1;
 
     public string Path { get; init; } = string.Empty;
+
+    public EncodedVideoProfile Video { get; init; } = EncodedVideoProfile.DefaultH264;
 }

@@ -88,6 +88,8 @@ internal sealed class PrototypeMediaFoundationH264EncoderSession : IDisposable
 /// </summary>
 internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 {
+    private const int MaxOutputAttemptsPerInput = 8;
+
     private readonly ID3D11Device _device;
     private readonly HardwareVideoEncoderSettings _settings;
     private IMFDXGIDeviceManager? _deviceManager;
@@ -147,8 +149,6 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             throw CreateUnavailableException();
 
         IMFSample? inputSample = null;
-        IMFSample? outputSample = null;
-        IMFMediaBuffer? outputBuffer = null;
 
         try
         {
@@ -163,8 +163,36 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             Detail = $"Media Foundation hardware MFT accepted D3D11 surface input ({_transformName ?? "unknown MFT"}, {_settings.Width}x{_settings.Height}@{_settings.FramesPerSecond}, {_settings.PixelFormat})."
             });
 
+            for (var attempt = 0; attempt < MaxOutputAttemptsPerInput; attempt++)
+            {
+                var output = TryReadOutputPacket(frameNumber, auditSink);
+                if (output.HasValue)
+                    return output.Value;
+            }
+
+            return null;
+        }
+        catch (Exception ex) when (ex is not ObjectDisposedException)
+        {
+            throw CreateUnavailableException(ex);
+        }
+        finally
+        {
+            inputSample?.Dispose();
+        }
+    }
+
+    private EncodedSurfaceResult? TryReadOutputPacket(
+        long frameNumber,
+        IMediaTransportAuditSink auditSink)
+    {
+        IMFSample? outputSample = null;
+        IMFMediaBuffer? outputBuffer = null;
+
+        try
+        {
             outputSample = MediaFactory.MFCreateSample();
-            var outputInfo = _transform.GetOutputStreamInfo(0);
+            var outputInfo = _transform!.GetOutputStreamInfo(0);
             outputBuffer = MediaFactory.MFCreateMemoryBuffer(Math.Max(outputInfo.Size, 1_048_576));
             outputSample.AddBuffer(outputBuffer);
 
@@ -174,12 +202,13 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
                 Sample = outputSample
             };
 
-            var processStatus = ProcessOutputStatus.ProcessOutputStatusNewStreams;
-            var result = _transform.ProcessOutput(ProcessOutputFlags.None, 1, ref outputData, out processStatus);
+            var result = _transform.ProcessOutput(
+                ProcessOutputFlags.None,
+                1,
+                ref outputData,
+                out _);
             if (result.Code == Vortice.MediaFoundation.ResultCode.TransformNeedMoreInput.Code)
-            {
                 return null;
-            }
 
             if (result.Code == Vortice.MediaFoundation.ResultCode.TransformStreamChange.Code)
             {
@@ -195,7 +224,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
                         $"Media Foundation hardware encoder did not produce an output packet. HRESULT={result.Code:X8} {result.Description}"));
             }
 
-            var packet = ReadEncodedPacket(outputData.Sample ?? outputSample);
+            var sample = outputData.Sample ?? outputSample;
+            var packet = ReadEncodedPacket(sample);
             if (packet.IsEmpty)
                 return null;
 
@@ -211,18 +241,13 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             {
                 Data = packet,
                 CodecConfiguration = TryReadCodecConfiguration(),
-                IsKeyFrame = IsKeyFrame(outputData.Sample ?? outputSample, frameNumber)
+                IsKeyFrame = IsKeyFrame(sample, frameNumber)
             };
-        }
-        catch (Exception ex) when (ex is not ObjectDisposedException)
-        {
-            throw CreateUnavailableException(ex);
         }
         finally
         {
             outputBuffer?.Dispose();
             outputSample?.Dispose();
-            inputSample?.Dispose();
         }
     }
 
@@ -406,6 +431,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
     private void DisposeTransformResources()
     {
+        TryFlushAndEndStream();
         _transform?.Dispose();
         _transform = null;
         _deviceManager?.Dispose();
@@ -414,5 +440,44 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         _initialized = false;
         _mediaFoundationRuntimeLease?.Dispose();
         _mediaFoundationRuntimeLease = null;
+    }
+
+    private void TryFlushAndEndStream()
+    {
+        if (_transform is null)
+            return;
+
+        try
+        {
+            _transform.ProcessMessage(TMessageType.MessageNotifyEndOfStream, UIntPtr.Zero);
+        }
+        catch (SharpGenException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        try
+        {
+            _transform.ProcessMessage(TMessageType.MessageCommandDrain, UIntPtr.Zero);
+        }
+        catch (SharpGenException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        try
+        {
+            _transform.ProcessMessage(TMessageType.MessageCommandFlush, UIntPtr.Zero);
+        }
+        catch (SharpGenException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 }

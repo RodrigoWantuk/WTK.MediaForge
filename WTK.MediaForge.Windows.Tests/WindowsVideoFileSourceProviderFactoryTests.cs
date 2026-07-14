@@ -29,7 +29,21 @@ public sealed class WindowsVideoFileSourceProviderFactoryTests
             factory.CreateProvider(CreateSourceDefinition(SourceId.New(), "blocked.mp4")));
 
         Assert.Equal($"source.{MediaSourceTypes.VideoFile.Value}", ex.FeatureCode);
-        Assert.Contains("prototype-only", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("hardware decode", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("MP4 input product proofs", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Product_video_file_provider_can_be_enabled_with_product_decoder_factory()
+    {
+        var decoder = new FakeHardwareFileVideoDecoder();
+        var factory = new WindowsVideoFileSourceProviderFactory(
+            enableProductProvider: true,
+            decoderFactory: _ => decoder);
+
+        Assert.True(factory.CanCreate(MediaSourceTypes.VideoFile));
+        using var provider = Assert.IsAssignableFrom<IDisposable>(
+            factory.CreateProvider(CreateSourceDefinition(SourceId.New(), "product.mp4")));
     }
 
     [Fact]

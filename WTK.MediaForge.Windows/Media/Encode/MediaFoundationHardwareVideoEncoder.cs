@@ -18,6 +18,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
     private readonly HardwareEncoderInputRequirement _inputRequirement;
     private readonly HardwareVideoEncoderSettings _settings;
     private readonly ID3D11Device _device;
+    private readonly OwnedD3D11EncoderDevice? _ownedDevice;
     private readonly bool _allowPrototypeEncoding;
     private readonly IHardwareEncoderFormatConverter? _formatConverter;
     private PrototypeMediaFoundationH264EncoderSession? _prototypeSession;
@@ -102,8 +103,17 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int width,
         int height,
         string pixelFormat = "NV12")
-        : this(CreateDefaultDevice(), CreateSettings(width, height, pixelFormat), allowPrototypeEncoding: false)
+        : this(CreateOwnedDefaultDevice(), CreateSettings(width, height, pixelFormat), allowPrototypeEncoding: false)
     {
+    }
+
+    private MediaFoundationHardwareVideoEncoder(
+        OwnedD3D11EncoderDevice ownedDevice,
+        HardwareVideoEncoderSettings settings,
+        bool allowPrototypeEncoding)
+        : this(ownedDevice.Device, settings, allowPrototypeEncoding)
+    {
+        _ownedDevice = ownedDevice;
     }
 
     public HardwareEncoderInfo Info => _info;
@@ -269,6 +279,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         _prototypeSession = null;
         _hardwareSession?.Dispose();
         _hardwareSession = null;
+        _ownedDevice?.Dispose();
         return ValueTask.CompletedTask;
     }
 
@@ -305,14 +316,13 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             PixelFormat = pixelFormat
         };
 
-    private static ID3D11Device CreateDefaultDevice()
+    private static OwnedD3D11EncoderDevice CreateOwnedDefaultDevice()
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Media Foundation hardware encoder requires Windows.");
 
         using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
         factory.EnumAdapters1(0, out var adapter).CheckError();
-        using var gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
-        return gpuDevice.Device;
+        return OwnedD3D11EncoderDevice.Create(adapter);
     }
 }

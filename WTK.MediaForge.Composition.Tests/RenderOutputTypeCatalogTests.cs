@@ -65,6 +65,63 @@ public class RenderOutputTypeCatalogTests
     }
 
     [Fact]
+    public void Settings_serializer_round_trips_encoded_video_profiles()
+    {
+        var profile = new EncodedVideoProfile
+        {
+            FramesPerSecond = 30,
+            BitrateBitsPerSecond = 5_500_000,
+            KeyFrameIntervalFrames = 60,
+            PixelFormat = "NV12",
+            H264Profile = "Main",
+            H264Level = "4.1"
+        };
+
+        var recordingJson = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4("program.mp4", profile));
+        var recording = Assert.IsType<RecordingMp4OutputSettings>(
+            RenderOutputSettingsSerializer.Deserialize(RenderOutputTypes.RecordingMp4, recordingJson));
+        Assert.Equal(30, recording.Video.FramesPerSecond);
+        Assert.Equal(5_500_000, recording.Video.BitrateBitsPerSecond);
+        Assert.Equal(60, recording.Video.KeyFrameIntervalFrames);
+        Assert.Equal("Main", recording.Video.H264Profile);
+
+        var rtmpJson = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.Rtmp("rtmp://localhost/live", "program", profile));
+        var rtmp = Assert.IsType<StreamingRtmpOutputSettings>(
+            RenderOutputSettingsSerializer.Deserialize(RenderOutputTypes.StreamingRtmp, rtmpJson));
+        Assert.Equal(30, rtmp.Video.FramesPerSecond);
+        Assert.Equal(5_500_000, rtmp.Video.BitrateBitsPerSecond);
+        Assert.Equal("4.1", rtmp.Video.H264Level);
+    }
+
+    [Fact]
+    public void Validator_rejects_invalid_encoded_video_profile()
+    {
+        var project = new MediaForgeProject
+        {
+            Outputs =
+            [
+                new MediaForgeRenderOutput
+                {
+                    Name = "Recording",
+                    TypeId = RenderOutputTypes.RecordingMp4,
+                    Settings = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4(
+                        "program.mp4",
+                        new EncodedVideoProfile
+                        {
+                            FramesPerSecond = 0,
+                            BitrateBitsPerSecond = 8_000_000,
+                            KeyFrameIntervalFrames = 120
+                        }))
+                }
+            ]
+        };
+
+        var validation = MediaForgeProjectValidator.Validate(project);
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Issues, issue => issue.Code == "output.video_profile.fps");
+    }
+
+    [Fact]
     public void Migrator_defaults_empty_output_type_to_preview_window()
     {
         var project = new MediaForgeProject

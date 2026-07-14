@@ -2,6 +2,7 @@ using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Composition.Validation.Outputs;
 
@@ -30,6 +31,54 @@ internal static class OutputSettingsValidation
             yield return ValidationIssue.Error(
                 code,
                 $"Output '{outputName}' requires a non-empty {fieldName}.");
+        }
+    }
+
+    public static IEnumerable<ValidationIssue> ValidateEncodedVideoProfile(
+        EncodedVideoProfile? profile,
+        string outputName)
+    {
+        if (profile is null)
+        {
+            yield return ValidationIssue.Error(
+                "output.video_profile.required",
+                $"Output '{outputName}' requires an encoded video profile.");
+            yield break;
+        }
+
+        if (profile.Codec != EncodedVideoCodec.H264)
+        {
+            yield return ValidationIssue.Error(
+                "output.video_profile.codec",
+                $"Output '{outputName}' currently supports H.264 hardware video only.");
+        }
+
+        if (profile.FramesPerSecond <= 0)
+        {
+            yield return ValidationIssue.Error(
+                "output.video_profile.fps",
+                $"Output '{outputName}' requires a positive frame rate.");
+        }
+
+        if (profile.BitrateBitsPerSecond <= 0)
+        {
+            yield return ValidationIssue.Error(
+                "output.video_profile.bitrate",
+                $"Output '{outputName}' requires a positive bitrate.");
+        }
+
+        if (profile.KeyFrameIntervalFrames <= 0)
+        {
+            yield return ValidationIssue.Error(
+                "output.video_profile.gop",
+                $"Output '{outputName}' requires a positive keyframe interval.");
+        }
+
+        if (string.IsNullOrWhiteSpace(profile.PixelFormat))
+        {
+            yield return ValidationIssue.Error(
+                "output.video_profile.pixel_format",
+                $"Output '{outputName}' requires an encoder pixel format.");
         }
     }
 }
@@ -89,6 +138,9 @@ internal sealed class RecordingMp4OutputDefinitionValidator : TypedRenderOutputD
 
         foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.Path, output.Name, "output.recording.path", "Path"))
             yield return issue;
+
+        foreach (var issue in OutputSettingsValidation.ValidateEncodedVideoProfile(settings.Video, output.Name))
+            yield return issue;
     }
 }
 
@@ -129,6 +181,9 @@ internal sealed class StreamingRtmpOutputDefinitionValidator : TypedRenderOutput
             yield return issue;
 
         foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.StreamKey, output.Name, "output.rtmp.key", "StreamKey"))
+            yield return issue;
+
+        foreach (var issue in OutputSettingsValidation.ValidateEncodedVideoProfile(settings.Video, output.Name))
             yield return issue;
     }
 }

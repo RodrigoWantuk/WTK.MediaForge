@@ -73,7 +73,7 @@ public sealed class DocsProductTruthTests
         Assert.Contains("The MP4 packet writer boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
         Assert.Contains("The RTMP network boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
 
-        Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("| Recording MP4 H.264 | EncodedPacket | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("| RTMP H.264 | EncodedPacket | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
     }
@@ -143,8 +143,10 @@ public sealed class DocsProductTruthTests
         Assert.Contains("verify-engine-readiness-v9.ps1", aiContext, StringComparison.Ordinal);
         Assert.Contains("verify-engine-readiness-v10.ps1", aiContext, StringComparison.Ordinal);
         Assert.Contains("verify-engine-readiness-v11.ps1", aiContext, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v12.ps1", aiContext, StringComparison.Ordinal);
         Assert.Contains("v8 hardware media proofs", aiContext, StringComparison.Ordinal);
         Assert.Contains("HardwareMediaProof", publicApi, StringComparison.Ordinal);
+        Assert.Contains("EncodedVideoProfile", publicApi, StringComparison.Ordinal);
         Assert.Contains("BackendOutputValidated", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("Render-to-encode proof", roadmap, StringComparison.Ordinal);
         Assert.Contains("Decode-to-render proof", roadmap, StringComparison.Ordinal);
@@ -158,12 +160,13 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Engine_readiness_v9_v10_and_v11_scripts_define_current_product_boundary_gates()
+    public void Engine_readiness_v9_v10_v11_and_v12_scripts_define_current_product_boundary_gates()
     {
         var repoRoot = FindRepositoryRoot();
         var v9Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v9.ps1"));
         var v10Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v10.ps1"));
         var v11Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v11.ps1"));
+        var v12Script = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-engine-readiness-v12.ps1"));
         var reportScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "generate-media-proof-report.ps1"));
         var productBoundaryScript = File.ReadAllText(Path.Combine(repoRoot, "scripts", "verify-product-boundary.ps1"));
 
@@ -189,6 +192,14 @@ public sealed class DocsProductTruthTests
         Assert.Contains("CapabilityReportTests", v11Script, StringComparison.Ordinal);
         Assert.Contains("MediaPipelineRuntimeTests", v11Script, StringComparison.Ordinal);
         Assert.Contains("WindowsMediaCapabilityTruthTests", v11Script, StringComparison.Ordinal);
+
+        Assert.Contains("verify-engine-readiness-v11.ps1", v12Script, StringComparison.Ordinal);
+        Assert.Contains("RenderOutputTypeCatalogTests", v12Script, StringComparison.Ordinal);
+        Assert.Contains("HardwareEncodeFoundationTests", v12Script, StringComparison.Ordinal);
+        Assert.Contains("WindowsMediaCapabilityTruthTests", v12Script, StringComparison.Ordinal);
+        Assert.Contains("generate-media-proof-report.ps1", v12Script, StringComparison.Ordinal);
+        Assert.Contains("test-reports/media-proof-report.json", v12Script, StringComparison.Ordinal);
+        Assert.Contains("test-reports/media-proof-report.md", v12Script, StringComparison.Ordinal);
 
         Assert.Contains("WTK.MediaForge.Tools.MediaProofReport", reportScript, StringComparison.Ordinal);
         Assert.Contains("RequireHardwareMedia", reportScript, StringComparison.Ordinal);

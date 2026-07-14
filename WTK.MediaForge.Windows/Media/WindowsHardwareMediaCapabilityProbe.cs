@@ -23,7 +23,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             AcceptsGpuSurfaceInput = false,
             RequiresCpuStaging = false,
             ExportProofStatus = GpuExportProofStatus.Pending,
-            ExportProofReason = "Real Media Foundation hardware encode/decode output validation has not completed; prototype bridges are excluded.",
+            ExportProofReason = "Run the v12 proof runners to validate hardware encode/decode on this machine; baseline probing does not promote product media without executed proof evidence.",
             BackendCapabilities = CreateBackendCapabilities(vendor),
             Proofs = CreateProofs(vendor)
         };
@@ -42,7 +42,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             DecodeCodecs = ["H264"],
             SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Prototype,
-            UnavailableReason = "Real D3D11VA output surface validation is not complete; placeholder decode bridges are excluded."
+            UnavailableReason = "Run the v12 hardware decode proof to validate real D3D11VA IMFDXGIBuffer output for this machine; placeholder decode bridges are excluded."
         },
         new HardwareMediaBackendCapability
         {
@@ -53,7 +53,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             EncodeCodecs = ["H264"],
             SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Prototype,
-            UnavailableReason = "Real hardware MFT packet validation is not complete; canned packet bridges are excluded."
+            UnavailableReason = "Run the v12 hardware encode proof to validate real Media Foundation hardware MFT packets for this machine; canned packet bridges are excluded."
         },
         new HardwareMediaBackendCapability
         {
@@ -99,7 +99,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Status = HardwareMediaProofStatus.Unavailable,
             Backend = "Vulkan-D3D11-MediaFoundation",
             Vendor = vendor,
-            Reason = "Render-to-encode proof must be executed by the readiness gate on a hardware validation machine."
+            Reason = "Render-to-encode proof must execute the Vulkan offscreen render, D3D11 export/conversion, and hardware encoder path on this machine."
         },
         new HardwareMediaProof
         {
@@ -108,7 +108,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Status = HardwareMediaProofStatus.Unavailable,
             Backend = "MediaFoundation-HardwareMft",
             Vendor = vendor,
-            Reason = "Hardware encode proof has not been validated for this runtime capability report."
+            Reason = "Hardware encode proof must execute Media Foundation hardware MFT output validation for this runtime capability report."
         },
         new HardwareMediaProof
         {
@@ -126,7 +126,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Status = HardwareMediaProofStatus.Unavailable,
             Backend = "MediaFoundation-D3D11VA",
             Vendor = vendor,
-            Reason = "Hardware decode proof has not been validated for this runtime capability report."
+            Reason = "Hardware decode proof must execute Media Foundation D3D11VA and validate IMFDXGIBuffer output for this runtime capability report."
         },
         new HardwareMediaProof
         {
@@ -135,7 +135,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Status = HardwareMediaProofStatus.Unavailable,
             Backend = "MediaFoundation-D3D11VA+Vulkan",
             Vendor = vendor,
-            Reason = "Decode-to-render proof remains unavailable until D3D11VA produces a validated GPU surface submitted to the renderer."
+            Reason = "Decode-to-render proof must execute D3D11VA decode, source lease adaptation, Vulkan import, and an offscreen render submission."
         },
         new HardwareMediaProof
         {
@@ -171,7 +171,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Status = HardwareMediaProofStatus.Unavailable,
             Backend = "NativeRtmpTransport",
             Vendor = vendor,
-            Reason = "TCP RTMP transport exists; proof remains unavailable until hardware-encoded packets from the render-output encode pipeline publish without blocking the render thread."
+            Reason = "RTMP network proof must execute local TCP RTMP handshake/publish using hardware-encoded packets from the render-output encode pipeline."
         },
         new HardwareMediaProof
         {
