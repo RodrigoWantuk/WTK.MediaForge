@@ -62,20 +62,23 @@ public sealed class DocsProductTruthTests
         var phase2Acceptance = File.ReadAllText(Path.Combine(repoRoot, "docs", "PHASE2_ACCEPTANCE.md"));
         var supportMatrix = File.ReadAllText(Path.Combine(repoRoot, "docs", "GPU_MEDIA_SUPPORT_MATRIX.md"));
 
-        Assert.Contains("RenderGraph | Done:Contract/resource bridge; not a GPU pass executor", roadmap, StringComparison.Ordinal);
-        Assert.Contains("Color correction effect | Done:ProductValidated for Vulkan source-layer shader", roadmap, StringComparison.Ordinal);
-        Assert.Contains("Blur effect | Done:ProductValidated for Vulkan source-layer shader/intermediate passes", roadmap, StringComparison.Ordinal);
-        Assert.Contains("Text rendering | Done:ProductValidated for Windows Vulkan glyph atlas upload", roadmap, StringComparison.Ordinal);
-        Assert.Contains("Output route transitions | Done:ProductValidated for Vulkan cut/fade output pass", roadmap, StringComparison.Ordinal);
-        Assert.Contains("Performance validation | Done:Skeleton", roadmap, StringComparison.Ordinal);
+        Assert.Contains("## Product Principles", roadmap, StringComparison.Ordinal);
+        Assert.Contains("## Active Product Tracks", roadmap, StringComparison.Ordinal);
+        Assert.Contains("RenderGraph physical executor | Active work", roadmap, StringComparison.Ordinal);
+        Assert.Contains("MP4 recording | Hardware-dependent", roadmap, StringComparison.Ordinal);
+        Assert.Contains("Preview panel sink | Supported", roadmap, StringComparison.Ordinal);
+        Assert.Contains("Product performance requires sustained render, encode, decode, MP4, and RTMP workloads", roadmap, StringComparison.Ordinal);
 
-        Assert.Contains("Windows hardware decode, Windows hardware encode, and MP4 recording", phase2Acceptance, StringComparison.Ordinal);
-        Assert.Contains("The MP4 packet writer boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
-        Assert.Contains("The RTMP network boundary is `Done:Contract`", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("This document is retained only as a historical index", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("Current Windows product proof status", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("MP4 recording product path: passed", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("RTMP H.264 product path: passed", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("MP4 video input: blocked", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("Use `MediaForgeSupportStatus`, `ProductReadinessStatus`, and the media proof", phase2Acceptance, StringComparison.Ordinal);
 
-        Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
-        Assert.Contains("| Recording MP4 H.264 | EncodedPacket | Runtime proof-gated |", supportMatrix, StringComparison.Ordinal);
-        Assert.Contains("| RTMP H.264 | EncodedPacket | Runtime proof-gated |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | Unavailable until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| Recording MP4 H.264 | EncodedPacket | Hardware-dependent |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| RTMP H.264 | EncodedPacket | Hardware-dependent experimental |", supportMatrix, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -213,7 +216,7 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Preview_panel_acceptance_keeps_sink_experimental_until_local_reliability_gate()
+    public void Preview_panel_acceptance_documents_gpu_surface_sink_scope()
     {
         var repoRoot = FindRepositoryRoot();
         var roadmap = File.ReadAllText(Path.Combine(repoRoot, "docs", "ROADMAP_CURRENT.md"));
@@ -221,7 +224,7 @@ public sealed class DocsProductTruthTests
 
         Assert.Contains("docs/PREVIEW_PANEL_ACCEPTANCE.md", roadmap, StringComparison.Ordinal);
         Assert.Contains("PreviewPanelSink", acceptance, StringComparison.Ordinal);
-        Assert.Contains("experimental GPU preview sink", acceptance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("GPU preview sink", acceptance, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("no CPU readback", acceptance, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Remaining Product Gate", acceptance, StringComparison.Ordinal);
     }

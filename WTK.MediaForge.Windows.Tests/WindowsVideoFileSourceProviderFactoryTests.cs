@@ -19,18 +19,15 @@ namespace WTK.MediaForge.Windows.Tests;
 public sealed class WindowsVideoFileSourceProviderFactoryTests
 {
     [Fact]
-    public void Video_file_provider_is_blocked_without_internal_prototype_opt_in()
+    public void Video_file_provider_uses_product_decoder_by_default()
     {
-        var factory = new WindowsVideoFileSourceProviderFactory();
+        var decoder = new FakeHardwareFileVideoDecoder();
+        var factory = new WindowsVideoFileSourceProviderFactory(
+            decoderFactory: _ => decoder);
 
-        Assert.False(factory.CanCreate(MediaSourceTypes.VideoFile));
-
-        var ex = Assert.Throws<MediaForgeUnsupportedFeatureException>(() =>
-            factory.CreateProvider(CreateSourceDefinition(SourceId.New(), "blocked.mp4")));
-
-        Assert.Equal($"source.{MediaSourceTypes.VideoFile.Value}", ex.FeatureCode);
-        Assert.Contains("hardware decode", ex.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("MP4 input product proofs", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(factory.CanCreate(MediaSourceTypes.VideoFile));
+        using var provider = Assert.IsAssignableFrom<IDisposable>(
+            factory.CreateProvider(CreateSourceDefinition(SourceId.New(), "product-default.mp4")));
     }
 
     [Fact]

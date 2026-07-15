@@ -91,6 +91,7 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
                 outputTexture,
                 requirement.Width,
                 requirement.Height,
+                requirement.FramesPerSecond,
                 cancellationToken);
         }
         catch (OperationCanceledException)
@@ -148,6 +149,7 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
         ID3D11Texture2D output,
         int width,
         int height,
+        int framesPerSecond,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -176,21 +178,27 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
             processorOutput,
             width,
             height,
+            framesPerSecond,
+            sourceArraySlice: 0,
             cancellationToken);
         immediateContext.CopyResource(output, processorOutput);
         immediateContext.Flush();
     }
 
-    private static void ExecuteVideoProcessorBlt(
+    internal static void ExecuteVideoProcessorBlt(
         ID3D11Device device,
         ID3D11DeviceContext immediateContext,
         ID3D11Texture2D source,
         ID3D11Texture2D output,
         int width,
         int height,
+        int framesPerSecond,
+        int sourceArraySlice,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (framesPerSecond <= 0)
+            throw new ArgumentOutOfRangeException(nameof(framesPerSecond), "Video processor frame rate must be positive.");
 
         using var videoDevice = device.QueryInterface<ID3D11VideoDevice>();
         using var videoContext = immediateContext.QueryInterface<ID3D11VideoContext>();
@@ -202,8 +210,8 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
             InputHeight = (uint)height,
             OutputWidth = (uint)width,
             OutputHeight = (uint)height,
-            InputFrameRate = new Rational(60, 1),
-            OutputFrameRate = new Rational(60, 1),
+            InputFrameRate = new Rational((uint)framesPerSecond, 1),
+            OutputFrameRate = new Rational((uint)framesPerSecond, 1),
             Usage = VideoUsage.PlaybackNormal
         };
 
@@ -219,7 +227,7 @@ internal sealed class D3D11BgraToNv12Converter : IHardwareEncoderFormatConverter
                     Texture2D = new Texture2DVideoProcessorInputView
                     {
                         MipSlice = 0,
-                        ArraySlice = 0
+                        ArraySlice = checked((uint)sourceArraySlice)
                     }
                 };
                 videoDevice.CreateVideoProcessorInputView(

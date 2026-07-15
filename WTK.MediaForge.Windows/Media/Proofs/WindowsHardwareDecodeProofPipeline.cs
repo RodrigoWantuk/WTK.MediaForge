@@ -236,7 +236,7 @@ internal sealed class WindowsProductMp4ProofAsset : IAsyncDisposable
     public static async ValueTask<WindowsProductMp4ProofAsset> CreateAsync(CancellationToken cancellationToken)
     {
         var renderEncode = await WindowsRenderedOutputH264ProofPipeline
-            .RunCachedAsync(cancellationToken)
+            .RunSustainedCachedAsync(cancellationToken)
             .ConfigureAwait(false);
         var outputPath = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(),
@@ -244,30 +244,17 @@ internal sealed class WindowsProductMp4ProofAsset : IAsyncDisposable
 
         try
         {
-            await using var sink = new RecordingMp4PacketSink(outputPath);
-            await sink
-                .StartAsync(
-                    new EncodedPacketSinkContext
-                    {
-                        Codec = EncodedVideoCodec.H264,
-                        Size = new FrameSize(
-                            (uint)renderEncode.EncoderSettings.Width,
-                            (uint)renderEncode.EncoderSettings.Height),
-                        FramesPerSecond = renderEncode.EncoderSettings.FramesPerSecond
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
-            await sink.WritePacketAsync(renderEncode.Packet, cancellationToken).ConfigureAwait(false);
-            await sink.StopAsync(cancellationToken).ConfigureAwait(false);
+            WindowsMediaFoundationMp4PacketWriter.Write(
+                outputPath,
+                renderEncode.Packets,
+                new FrameSize(
+                    (uint)renderEncode.EncoderSettings.Width,
+                    (uint)renderEncode.EncoderSettings.Height),
+                renderEncode.EncoderSettings.FramesPerSecond);
 
-            if (!IsoBmffMp4Writer.HasValidH264BoxStructure(
-                    outputPath,
-                    new IsoBmffMp4Writer.TrackMetadata(
-                        (uint)renderEncode.EncoderSettings.Width,
-                        (uint)renderEncode.EncoderSettings.Height),
-                    minimumSampleCount: 1))
+            if (!IsoBmffMp4Writer.HasExperimentalBoxStructure(outputPath))
             {
-                throw new NotSupportedException("Generated decode proof asset failed MP4/H.264 box validation.");
+                throw new NotSupportedException("Generated decode proof asset failed basic MP4 materialization validation.");
             }
 
             return new WindowsProductMp4ProofAsset(

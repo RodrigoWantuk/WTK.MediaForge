@@ -51,7 +51,7 @@ marketing:
 | Webcam | GpuSurface | Planned | Raw CPU input possible at system boundary only; no product GPU-upload provider yet |
 | Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows product path | Load-time CPU decode; CPU copy released after GPU upload |
 | Static image WebP | N/A | Planned | Blocked until license review |
-| Video file MP4 | EncodedPacket -> GpuSurface | PrototypeOnly until composite proofs pass | Windows SourceReader/D3D11VA backend work accepts only IMFDXGIBuffer GPU samples; v12 proof generates an MP4 through the product render/encode/mux path and promotes only when hardware decode plus decode-to-render pass |
+| Video file MP4 | EncodedPacket -> GpuSurface | Unavailable until composite proofs pass | Windows SourceReader/D3D11VA accepts only IMFDXGIBuffer GPU samples; product source capability promotes only when hardware decode, decode-to-render, and MP4 input proofs pass |
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
 | Animated GIF/APNG/WebP | N/A | Planned | Blocked until GPU-safe strategy |
 | Lottie | N/A | Planned | Blocked until GPU-safe rasterization |
@@ -61,10 +61,10 @@ marketing:
 
 | Output | Transport | Status | Notes |
 |--------|-----------|--------|-------|
-| Preview panel | GpuSurface | Experimental | No CPU readback |
+| Preview panel | GpuSurface | Supported | Vulkan/Win32 GPU surface presentation, no CPU readback |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | Runtime proof-gated | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. v12 MP4 recording/output proofs write and validate real packet-only MP4 files from hardware-validated packets when the hardware path is available. |
-| RTMP H.264 | EncodedPacket | Runtime proof-gated | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. v12 RTMP proof publishes real H.264 FLV tags to a local TCP proof server when the hardware path is available. |
+| Recording MP4 H.264 | EncodedPacket | Hardware-dependent | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. v12 MP4 recording/output proofs write and validate sustained packet-only MP4 files from hardware-validated packets when the hardware path is available. |
+| RTMP H.264 | EncodedPacket | Hardware-dependent experimental | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. v12 RTMP proof publishes sustained real H.264 FLV tags to a local TCP proof server when the hardware path is available. |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | N/A | Unsupported | |
 | Virtual camera | N/A | Unsupported | |
@@ -78,7 +78,7 @@ marketing:
 | Intel QSV direct | Planned | RequiresLegalReview |
 | AMD AMF direct | Planned | RequiresLegalReview |
 | libx264 / software H.264 | Prohibited | |
-| FFmpeg (future) | Planned / Not used in first product path | Future LGPL-only with review; never a raw video frame product path |
+| FFmpeg (future) | Deferred / RequiresLegalReview | Future encoded-packet/container-only review; never a raw video frame product path |
 
 ## v12 Media I/O Proof Set and Readiness Gates
 
@@ -133,7 +133,7 @@ The report artifacts are
 
 ## Decode-To-Render Proof Gate
 
-Video file sources remain **PrototypeOnly** until the audit trail proves the
+Video file sources remain **Unavailable** until the audit trail proves the
 complete GPU path:
 
 ```text

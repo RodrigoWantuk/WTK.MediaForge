@@ -89,9 +89,12 @@ internal sealed class PrototypeMediaFoundationH264EncoderSession : IDisposable
 /// </summary>
 internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 {
+    private const int MaxOutputDrainIterations = 64;
+
     private readonly ID3D11Device _device;
     private readonly HardwareVideoEncoderSettings _settings;
     private readonly Queue<HardwareEncoderInputSurfaceRetention> _pendingInputSurfaces = new();
+    private readonly Queue<EncodedSurfaceResult> _pendingOutputPackets = new();
     private IMFDXGIDeviceManager? _deviceManager;
     private IMFTransform? _transform;
     private MediaFoundationRuntimeLease? _mediaFoundationRuntimeLease;
@@ -171,16 +174,20 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             _transform.ProcessInput(0, inputSample, 0);
             acceptedSurface = true;
             _pendingInputSurfaces.Enqueue(retainedSurface);
+            EnforcePendingInputSurfaceLimit();
 
             auditSink.Record(new MediaTransportAuditEvent
             {
-            Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
-            Source = nameof(MediaFoundationHardwareH264EncoderSession),
-            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
-            Detail = $"Media Foundation hardware MFT accepted D3D11 surface input ({_transformName ?? "unknown MFT"}, {_settings.Width}x{_settings.Height}@{_settings.FramesPerSecond}, {_settings.PixelFormat})."
+                Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
+                Source = nameof(MediaFoundationHardwareH264EncoderSession),
+                EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
+                Detail = $"Media Foundation hardware MFT accepted D3D11 surface input ({_transformName ?? "unknown MFT"}, {_settings.Width}x{_settings.Height}@{_settings.FramesPerSecond}, {_settings.PixelFormat})."
             });
 
-            return TryReadOutputPacket(frameNumber, auditSink);
+            DrainAvailableOutputPackets(frameNumber, auditSink);
+            return _pendingOutputPackets.Count > 0
+                ? _pendingOutputPackets.Dequeue()
+                : null;
         }
         catch (Exception ex) when (ex is not ObjectDisposedException)
         {
@@ -196,86 +203,107 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         }
     }
 
-    private EncodedSurfaceResult? TryReadOutputPacket(
+    private void DrainAvailableOutputPackets(
         long frameNumber,
         IMediaTransportAuditSink auditSink)
     {
-        IMFSample? outputSample = null;
-        IMFMediaBuffer? outputBuffer = null;
-
-        try
+        var drainIterations = 0;
+        while (true)
         {
+            if (++drainIterations > MaxOutputDrainIterations)
+            {
+                throw CreateUnavailableException(
+                    new InvalidOperationException(
+                        $"Media Foundation hardware encoder exceeded {MaxOutputDrainIterations} output drain iteration(s) for one input surface. The backend returned too many empty or partial outputs to be safe for sustained product encoding."));
+            }
+
+            IMFSample? outputSample = null;
+            IMFMediaBuffer? outputBuffer = null;
+            OutputDataBuffer outputData = default;
             var outputInfo = _transform!.GetOutputStreamInfo(0);
             var outputFlags = (OutputStreamInfoFlags)outputInfo.Flags;
             var transformProvidesSamples =
                 outputFlags.HasFlag(OutputStreamInfoFlags.OutputStreamProvidesSamples) ||
                 outputFlags.HasFlag(OutputStreamInfoFlags.OutputStreamCanProvideSamples);
-            if (!transformProvidesSamples)
+
+            try
             {
-                outputSample = MediaFactory.MFCreateSample();
-                outputBuffer = MediaFactory.MFCreateMemoryBuffer(Math.Max(outputInfo.Size, 1_048_576));
-                outputSample.AddBuffer(outputBuffer);
+                if (!transformProvidesSamples)
+                {
+                    outputSample = MediaFactory.MFCreateSample();
+                    outputBuffer = MediaFactory.MFCreateMemoryBuffer(Math.Max(outputInfo.Size, 1_048_576));
+                    outputSample.AddBuffer(outputBuffer);
+                }
+
+                outputData = new OutputDataBuffer
+                {
+                    StreamID = 0,
+                    Sample = transformProvidesSamples ? null : outputSample
+                };
+
+                var result = _transform.ProcessOutput(
+                    ProcessOutputFlags.None,
+                    1,
+                    ref outputData,
+                    out _);
+                if (result.Code == Vortice.MediaFoundation.ResultCode.TransformNeedMoreInput.Code)
+                    return;
+
+                if (result.Code == Vortice.MediaFoundation.ResultCode.TransformStreamChange.Code)
+                {
+                    throw CreateUnavailableException(
+                        new InvalidOperationException(
+                            "Media Foundation hardware encoder requested an output stream change. Dynamic output type renegotiation is not accepted by the current product proof path."));
+                }
+
+                if (result.Failure)
+                {
+                    if (IsOutputNotReadyQuirk(result))
+                        return;
+
+                    throw CreateUnavailableException(
+                        new InvalidOperationException(
+                            $"Media Foundation hardware encoder did not produce an output packet. HRESULT={result.Code:X8} {result.Description}"));
+                }
+
+                var sample = outputData.Sample ?? outputSample;
+                if (sample is null)
+                    continue;
+
+                var packet = ReadEncodedPacket(sample);
+                if (packet.IsEmpty)
+                    continue;
+
+                ReleaseCompletedInputSurface();
+
+                auditSink.Record(new MediaTransportAuditEvent
+                {
+                    Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
+                    Source = nameof(MediaFoundationHardwareH264EncoderSession),
+                    EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated,
+                    Detail = $"Media Foundation hardware MFT produced a real H.264 packet ({packet.Length} bytes)."
+                });
+
+                _pendingOutputPackets.Enqueue(new EncodedSurfaceResult
+                {
+                    Data = packet,
+                    CodecConfiguration = TryReadCodecConfiguration(),
+                    IsKeyFrame = IsKeyFrame(sample, frameNumber)
+                });
             }
-
-            var outputData = new OutputDataBuffer
+            finally
             {
-                StreamID = 0,
-                Sample = transformProvidesSamples ? null : outputSample
-            };
+                if (outputData.Sample is not null && !ReferenceEquals(outputData.Sample, outputSample))
+                    outputData.Sample.Dispose();
 
-            var result = _transform.ProcessOutput(
-                ProcessOutputFlags.None,
-                1,
-                ref outputData,
-                out _);
-            if (result.Code == Vortice.MediaFoundation.ResultCode.TransformNeedMoreInput.Code)
-                return null;
-
-            if (result.Code == Vortice.MediaFoundation.ResultCode.TransformStreamChange.Code)
-            {
-                throw CreateUnavailableException(
-                    new InvalidOperationException(
-                        "Media Foundation hardware encoder requested an output stream change. Dynamic output type renegotiation is not accepted by the current product proof path."));
+                outputBuffer?.Dispose();
+                outputSample?.Dispose();
             }
-
-            if (result.Failure)
-            {
-                throw CreateUnavailableException(
-                    new InvalidOperationException(
-                        $"Media Foundation hardware encoder did not produce an output packet. HRESULT={result.Code:X8} {result.Description}"));
-            }
-
-            var sample = outputData.Sample ?? outputSample;
-            if (sample is null)
-                return null;
-
-            var packet = ReadEncodedPacket(sample);
-            if (packet.IsEmpty)
-                return null;
-
-            ReleaseCompletedInputSurface();
-
-            auditSink.Record(new MediaTransportAuditEvent
-            {
-                Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
-                Source = nameof(MediaFoundationHardwareH264EncoderSession),
-                EvidenceKind = MediaTransportAuditEvidenceKind.BackendOutputValidated,
-                Detail = $"Media Foundation hardware MFT produced a real H.264 packet ({packet.Length} bytes)."
-            });
-
-            return new EncodedSurfaceResult
-            {
-                Data = packet,
-                CodecConfiguration = TryReadCodecConfiguration(),
-                IsKeyFrame = IsKeyFrame(sample, frameNumber)
-            };
-        }
-        finally
-        {
-            outputBuffer?.Dispose();
-            outputSample?.Dispose();
         }
     }
+
+    private static bool IsOutputNotReadyQuirk(Result result) =>
+        result.Code == unchecked((int)0x8000FFFF);
 
     private IMFTransform CreateHardwareTransform()
     {
@@ -506,6 +534,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         _deviceManager?.Dispose();
         _deviceManager = null;
         _codecConfiguration = ReadOnlyMemory<byte>.Empty;
+        _pendingOutputPackets.Clear();
         _initialized = false;
         _mediaFoundationRuntimeLease?.Dispose();
         _mediaFoundationRuntimeLease = null;
@@ -517,6 +546,18 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             return;
 
         _pendingInputSurfaces.Dequeue().Dispose();
+    }
+
+    private void EnforcePendingInputSurfaceLimit()
+    {
+        if (_pendingInputSurfaces.Count <= _settings.MaxPendingInputSurfaces)
+            return;
+
+        ReleaseAllPendingInputSurfaces();
+        DisposeTransformResources();
+        throw CreateUnavailableException(
+            new InvalidOperationException(
+                $"Media Foundation hardware encoder retained more than {_settings.MaxPendingInputSurfaces} pending input surface(s) without output. This driver/backend is not safe for sustained product encoding."));
     }
 
     private void ReleaseAllPendingInputSurfaces()

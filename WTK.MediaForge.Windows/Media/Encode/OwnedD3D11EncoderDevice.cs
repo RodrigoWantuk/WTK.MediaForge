@@ -22,7 +22,7 @@ internal sealed class OwnedD3D11EncoderDevice : IDisposable
     }
 
     public static OwnedD3D11EncoderDevice Create(IDXGIAdapter1 adapter) =>
-        new(D3D11GpuDevice.CreateForAdapter(adapter));
+        new(D3D11GpuDevice.CreateForAdapter(adapter, requireVideoSupport: true));
 
     public void Dispose()
     {

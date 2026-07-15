@@ -103,9 +103,9 @@ public static class MediaSourceTypeRegistry
             "Video file",
             MediaSourceTypes.VideoFile,
             hasAudio: true,
-            MediaForgeSupportStatus.PrototypeOnly,
-            MediaForgeProductReadinessStatus.Prototype,
-            "Prototype only: current file-video runtime does not yet demux/decode real media into GPU frames.");
+            MediaForgeSupportStatus.Unavailable,
+            MediaForgeProductReadinessStatus.Contract,
+            "Unavailable until hardware decode, decode-to-render, and MP4 input product proofs pass on this runtime.");
         yield return TimelineEncoded("RTSP stream", MediaSourceTypes.RtspInput, hasAudio: true);
         yield return TimelineEncoded("IP camera", MediaSourceTypes.IpCamera, hasAudio: true);
         yield return Blocked("Animated image", MediaSourceTypes.AnimatedImage, "Blocked until GPU-safe frame strategy.");

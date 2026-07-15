@@ -19,6 +19,8 @@ public sealed class HardwareEncoderInputRequirement
 
     public required string PixelFormat { get; init; }
 
+    public int FramesPerSecond { get; init; } = 60;
+
     public bool RequiresGpuSurface { get; init; } = true;
 }
 

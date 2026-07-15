@@ -357,15 +357,43 @@ internal static class IsoBmffMp4Writer
 
     private static byte[] BuildAvcC(IReadOnlyList<EncodedVideoPacket> packets)
     {
-        var configuration = packets
-            .Select(packet => packet.CodecConfiguration)
-            .FirstOrDefault(configuration => !configuration.IsEmpty);
-        if (!configuration.IsEmpty)
-            return configuration.ToArray();
+        foreach (var configuration in packets.Select(static packet => packet.CodecConfiguration))
+        {
+            if (!configuration.IsEmpty &&
+                TryNormalizeH264CodecConfiguration(configuration.Span, out var normalized))
+            {
+                return normalized;
+            }
+        }
 
         if (!TryFindParameterSets(packets, out var sps, out var pps))
             throw new InvalidOperationException("Cannot build MP4 avcC without H.264 SPS and PPS data.");
 
+        return BuildAvcCFromParameterSets(sps, pps);
+    }
+
+    internal static bool TryNormalizeH264CodecConfiguration(
+        ReadOnlySpan<byte> configuration,
+        out byte[] avcC)
+    {
+        if (TryExtractParameterSetsFromAvcC(configuration, out var avcCSps, out var avcCPps))
+        {
+            avcC = BuildAvcCFromParameterSets(avcCSps, avcCPps);
+            return true;
+        }
+
+        if (TryFindParameterSets(configuration, out var sps, out var pps))
+        {
+            avcC = BuildAvcCFromParameterSets(sps, pps);
+            return true;
+        }
+
+        avcC = [];
+        return false;
+    }
+
+    private static byte[] BuildAvcCFromParameterSets(byte[] sps, byte[] pps)
+    {
         if (sps.Length < 4)
             throw new InvalidOperationException("H.264 SPS is too short to build MP4 avcC data.");
 
@@ -380,6 +408,87 @@ internal static class IsoBmffMp4Writer
         WriteUInt16(content, (ushort)pps.Length);
         content.Write(pps);
         return content.ToArray();
+    }
+
+    private static bool IsValidAvcC(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 7 || data[0] != 0x01)
+            return false;
+
+        var offset = 6;
+        var spsCount = data[5] & 0x1F;
+        if (spsCount == 0)
+            return false;
+
+        for (var index = 0; index < spsCount; index++)
+        {
+            if (offset + 2 > data.Length)
+                return false;
+
+            var length = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset, 2));
+            offset += 2;
+            if (length == 0 || offset + length > data.Length)
+                return false;
+
+            offset += length;
+        }
+
+        if (offset + 1 > data.Length)
+            return false;
+
+        var ppsCount = data[offset++];
+        if (ppsCount == 0)
+            return false;
+
+        for (var index = 0; index < ppsCount; index++)
+        {
+            if (offset + 2 > data.Length)
+                return false;
+
+            var length = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset, 2));
+            offset += 2;
+            if (length == 0 || offset + length > data.Length)
+                return false;
+
+            offset += length;
+        }
+
+        return offset <= data.Length;
+    }
+
+    private static bool TryExtractParameterSetsFromAvcC(
+        ReadOnlySpan<byte> data,
+        out byte[] sps,
+        out byte[] pps)
+    {
+        sps = [];
+        pps = [];
+
+        if (!IsValidAvcC(data))
+            return false;
+
+        var offset = 6;
+        var spsCount = data[5] & 0x1F;
+        for (var index = 0; index < spsCount; index++)
+        {
+            var length = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset, 2));
+            offset += 2;
+            if (sps.Length == 0)
+                sps = data.Slice(offset, length).ToArray();
+            offset += length;
+        }
+
+        var ppsCount = data[offset++];
+        for (var index = 0; index < ppsCount; index++)
+        {
+            var length = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset, 2));
+            offset += 2;
+            if (pps.Length == 0)
+                pps = data.Slice(offset, length).ToArray();
+            offset += length;
+        }
+
+        return sps.Length > 0 && pps.Length > 0;
     }
 
     private static void WriteStts(MemoryStream writer, IReadOnlyList<uint> sampleDurations)
@@ -454,7 +563,7 @@ internal static class IsoBmffMp4Writer
             var packet = packets[index];
             var sampleBytes = packet.BitstreamFormat == EncodedVideoBitstreamFormat.AnnexB
                 ? ConvertAnnexBToAvcc(packet.Data.Span)
-                : packet.Data.ToArray();
+                : NormalizeAvccSample(packet.Data.Span);
             payload.Write(sampleBytes);
             sampleSizes.Add((uint)sampleBytes.Length);
             sampleDurations.Add(ResolveSampleDurationMilliseconds(packets, index));
@@ -509,6 +618,51 @@ internal static class IsoBmffMp4Writer
             throw new InvalidOperationException("Annex-B H.264 packet does not contain a NAL payload.");
 
         return written;
+    }
+
+    internal static uint WriteAvccSample(System.IO.Stream output, ReadOnlySpan<byte> avccOrSingleNal)
+    {
+        if (IsValidAvccSample(avccOrSingleNal))
+        {
+            output.Write(avccOrSingleNal);
+            return checked((uint)avccOrSingleNal.Length);
+        }
+
+        WriteUInt32(output, checked((uint)avccOrSingleNal.Length));
+        output.Write(avccOrSingleNal);
+        return checked(4u + (uint)avccOrSingleNal.Length);
+    }
+
+    private static byte[] NormalizeAvccSample(ReadOnlySpan<byte> avccOrSingleNal)
+    {
+        if (IsValidAvccSample(avccOrSingleNal))
+            return avccOrSingleNal.ToArray();
+
+        using var content = new MemoryStream();
+        WriteUInt32(content, checked((uint)avccOrSingleNal.Length));
+        content.Write(avccOrSingleNal);
+        return content.ToArray();
+    }
+
+    private static bool IsValidAvccSample(ReadOnlySpan<byte> data)
+    {
+        var offset = 0;
+        var nalCount = 0;
+        while (offset < data.Length)
+        {
+            if (offset + 4 > data.Length)
+                return false;
+
+            var length = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset, 4));
+            offset += 4;
+            if (length == 0 || length > int.MaxValue || offset + (int)length > data.Length)
+                return false;
+
+            offset += (int)length;
+            nalCount++;
+        }
+
+        return nalCount > 0 && offset == data.Length;
     }
 
     private static void WriteMdatFromFile(System.IO.Stream output, string avccSamplePayloadPath)
@@ -614,6 +768,40 @@ internal static class IsoBmffMp4Writer
                 if (sps.Length > 0 && pps.Length > 0)
                     return true;
             }
+        }
+
+        return false;
+    }
+
+    private static bool TryFindParameterSets(
+        ReadOnlySpan<byte> annexB,
+        out byte[] sps,
+        out byte[] pps)
+    {
+        sps = [];
+        pps = [];
+
+        var searchOffset = 0;
+        while (H264NalUtilities.TryReadNextAnnexBNalUnit(
+            annexB,
+            searchOffset,
+            out searchOffset,
+            out _,
+            out var nalOffset,
+            out var nalLength))
+        {
+            if (nalLength == 0)
+                continue;
+
+            var nal = annexB.Slice(nalOffset, nalLength);
+            var nalType = nal[0] & 0x1F;
+            if (nalType == 7 && sps.Length == 0)
+                sps = nal.ToArray();
+            else if (nalType == 8 && pps.Length == 0)
+                pps = nal.ToArray();
+
+            if (sps.Length > 0 && pps.Length > 0)
+                return true;
         }
 
         return false;

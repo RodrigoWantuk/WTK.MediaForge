@@ -95,6 +95,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             Width = _settings.Width,
             Height = _settings.Height,
             PixelFormat = _settings.PixelFormat,
+            FramesPerSecond = _settings.FramesPerSecond,
             RequiresGpuSurface = true
         };
     }

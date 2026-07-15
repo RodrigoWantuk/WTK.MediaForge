@@ -6,6 +6,6 @@ public enum MediaForgeLicenseStatus
     ApprovedWithComplianceRequirements,
     RequiresCommercialLicense,
     RequiresLegalReview,
-    Prohibited,
-    NotUsedInMvp
+    NotApplicable,
+    Prohibited
 }

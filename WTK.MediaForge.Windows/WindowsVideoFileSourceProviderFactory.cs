@@ -21,7 +21,7 @@ internal sealed class WindowsVideoFileSourceProviderFactory : IMediaSourceProvid
     public WindowsVideoFileSourceProviderFactory(
         IMediaForgeDiagnosticsSink? diagnostics = null,
         bool enablePrototypeProvider = false,
-        bool enableProductProvider = false,
+        bool enableProductProvider = true,
         Func<HardwareDecodeOpenContext, IHardwareFileVideoDecoder>? decoderFactory = null)
     {
         _diagnostics = diagnostics;
@@ -53,7 +53,7 @@ internal sealed class WindowsVideoFileSourceProviderFactory : IMediaSourceProvid
         {
             throw new MediaForgeUnsupportedFeatureException(
                 $"source.{MediaSourceTypes.VideoFile.Value}",
-                "Windows video file source provider is blocked until hardware decode, decode-to-render, and MP4 input product proofs pass.");
+                "Windows video file source provider is unavailable because neither the product hardware decoder nor the explicit internal prototype decoder is enabled.");
         }
 
         var settings = (VideoFileSourceSettings)MediaSourceSettingsSerializer.Deserialize(

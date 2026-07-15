@@ -72,8 +72,7 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
         }
         else
         {
-            _payloadStream.Write(packet.Data.Span);
-            sampleSize = checked((uint)packet.Data.Length);
+            sampleSize = IsoBmffMp4Writer.WriteAvccSample(_payloadStream, packet.Data.Span);
         }
 
         _samples.Add(new IsoBmffMp4Writer.SampleMetadata(
@@ -192,7 +191,13 @@ internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
     {
         if (!packet.CodecConfiguration.IsEmpty)
         {
-            var configuration = packet.CodecConfiguration.ToArray();
+            if (!IsoBmffMp4Writer.TryNormalizeH264CodecConfiguration(
+                    packet.CodecConfiguration.Span,
+                    out var configuration))
+            {
+                return;
+            }
+
             if (_avcC.Length > 0 && !_avcC.AsSpan().SequenceEqual(configuration))
                 throw new NotSupportedException("MP4 recording does not support changing H.264 codec configuration.");
 

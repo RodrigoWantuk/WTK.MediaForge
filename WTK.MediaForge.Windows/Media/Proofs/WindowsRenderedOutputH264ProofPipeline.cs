@@ -21,19 +21,30 @@ namespace WTK.MediaForge.Windows.Media.Proofs;
 
 internal sealed record WindowsRenderedOutputH264ProofResult(
     EncodedVideoPacket Packet,
+    IReadOnlyList<EncodedVideoPacket> Packets,
     IReadOnlyList<MediaTransportAuditEvent> AuditEvents,
     HardwareVideoEncoderSettings EncoderSettings,
     int RenderedFrameCount);
+
+internal sealed record WindowsRenderedOutputH264SustainedProofOptions(
+    int FrameCount,
+    int MinimumPacketCount,
+    TimeSpan Timeout)
+{
+    public static WindowsRenderedOutputH264SustainedProofOptions Default { get; } =
+        new(60, 2, TimeSpan.FromSeconds(15));
+}
 
 internal static class WindowsRenderedOutputH264ProofPipeline
 {
     public const int Width = 320;
     public const int Height = 180;
-    public const int FramesPerSecond = 30;
+    public const int FramesPerSecond = 60;
     private const int MaxRenderedFrames = 16;
     private static readonly TimeSpan ProofTimeout = TimeSpan.FromSeconds(5);
     private static readonly object CacheGate = new();
     private static Task<WindowsRenderedOutputH264ProofResult>? cachedProofTask;
+    private static Task<WindowsRenderedOutputH264ProofResult>? cachedSustainedProofTask;
 
     public static async ValueTask<WindowsRenderedOutputH264ProofResult> RunCachedAsync(
         CancellationToken cancellationToken)
@@ -67,6 +78,87 @@ internal static class WindowsRenderedOutputH264ProofPipeline
     }
 
     public static async ValueTask<WindowsRenderedOutputH264ProofResult> RunAsync(
+        CancellationToken cancellationToken)
+    {
+        var result = await RunFramesAsync(
+                maxRenderedFrames: MaxRenderedFrames,
+                minimumPacketCount: 1,
+                stopAfterMinimumPackets: true,
+                ProofTimeout,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return result;
+    }
+
+    public static ValueTask<WindowsRenderedOutputH264ProofResult> RunSustainedAsync(
+        CancellationToken cancellationToken) =>
+        RunSustainedCachedAsync(cancellationToken);
+
+    public static async ValueTask<WindowsRenderedOutputH264ProofResult> RunSustainedCachedAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Task<WindowsRenderedOutputH264ProofResult> task;
+        lock (CacheGate)
+        {
+            cachedSustainedProofTask ??= RunSustainedAsync(
+                WindowsRenderedOutputH264SustainedProofOptions.Default,
+                CancellationToken.None).AsTask();
+            task = cachedSustainedProofTask;
+        }
+
+        try
+        {
+            return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (task.IsFaulted || task.IsCanceled)
+            {
+                lock (CacheGate)
+                {
+                    if (ReferenceEquals(cachedSustainedProofTask, task))
+                        cachedSustainedProofTask = null;
+                }
+            }
+
+            throw;
+        }
+    }
+
+    public static async ValueTask<WindowsRenderedOutputH264ProofResult> RunSustainedAsync(
+        WindowsRenderedOutputH264SustainedProofOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.FrameCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Sustained proof frame count must be positive.");
+
+        if (options.MinimumPacketCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Sustained proof minimum packet count must be positive.");
+
+        if (options.MinimumPacketCount > options.FrameCount)
+            throw new ArgumentOutOfRangeException(nameof(options), "Sustained proof cannot require more packets than submitted frames.");
+
+        if (options.Timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options), "Sustained proof timeout must be positive.");
+
+        return await RunFramesAsync(
+                options.FrameCount,
+                options.MinimumPacketCount,
+                stopAfterMinimumPackets: false,
+                options.Timeout,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async ValueTask<WindowsRenderedOutputH264ProofResult> RunFramesAsync(
+        int maxRenderedFrames,
+        int minimumPacketCount,
+        bool stopAfterMinimumPackets,
+        TimeSpan perSubmissionTimeout,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -117,7 +209,8 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     new WindowsRenderedOutputEncoderSurfaceExporter(ownedDevice.Device),
                     new WindowsRenderedOutputEncoderInputConverter(ownedDevice.Device)));
 
-            for (var frameIndex = 0; frameIndex < MaxRenderedFrames; frameIndex++)
+            var packets = new List<EncodedVideoPacket>();
+            for (var frameIndex = 0; frameIndex < maxRenderedFrames; frameIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 using var snapshot = CreateSolidSnapshot(
@@ -126,7 +219,7 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     frameIndex + 1);
 
                 submission = renderer.Submit(snapshot);
-                await submission.WaitForCompletionAsync(ProofTimeout, cancellationToken).ConfigureAwait(false);
+                await submission.WaitForCompletionAsync(perSubmissionTimeout, cancellationToken).ConfigureAwait(false);
 
                 var outputFrames = submission.AcquireOutputFrames();
                 try
@@ -159,11 +252,16 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     if (packet is not null)
                     {
                         ValidatePacket(packet);
-                        return new WindowsRenderedOutputH264ProofResult(
-                            packet,
-                            audit.Events.ToArray(),
-                            settings,
-                            frameIndex + 1);
+                        packets.Add(packet);
+                        if (stopAfterMinimumPackets && packets.Count >= minimumPacketCount)
+                        {
+                            return new WindowsRenderedOutputH264ProofResult(
+                                packets[0],
+                                packets.ToArray(),
+                                audit.Events.ToArray(),
+                                settings,
+                                frameIndex + 1);
+                        }
                     }
                 }
                 finally
@@ -174,8 +272,18 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                 }
             }
 
+            if (packets.Count >= minimumPacketCount)
+            {
+                return new WindowsRenderedOutputH264ProofResult(
+                    packets[0],
+                    packets.ToArray(),
+                    audit.Events.ToArray(),
+                    settings,
+                    maxRenderedFrames);
+            }
+
             throw new NotSupportedException(
-                $"Media Foundation hardware encoder accepted rendered output but did not emit a packet within {MaxRenderedFrames} frames.");
+                $"Media Foundation hardware encoder accepted rendered output but emitted {packets.Count} packet(s) after {maxRenderedFrames} rendered frame(s); required {minimumPacketCount}.");
         }
         finally
         {

@@ -90,7 +90,7 @@ public sealed class HardwareMediaValidationReportTests
     {
         var capabilityReport = CreateCapabilityReport(
             [
-                Capability(MediaForgeCapabilityCatalog.RecordingMp4H264, "Recording", MediaForgeSupportStatus.PrototypeOnly, "Blocked in test.")
+                Capability(MediaForgeCapabilityCatalog.RecordingMp4H264, "Recording", MediaForgeSupportStatus.Unavailable, "Blocked in test.")
             ],
             [
                 UnavailableProof(MediaForgeCapabilityCatalog.HardwareEncodeProof),
@@ -176,7 +176,7 @@ public sealed class HardwareMediaValidationReportTests
             LicenseStatus = MediaForgeLicenseStatus.Approved,
             ProductReadinessStatus = status is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Experimental
                 ? MediaForgeProductReadinessStatus.ProductValidated
-                : MediaForgeProductReadinessStatus.Prototype,
+                : MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = status is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Experimental
                 ? null
                 : reason ?? "Unavailable in unit test."

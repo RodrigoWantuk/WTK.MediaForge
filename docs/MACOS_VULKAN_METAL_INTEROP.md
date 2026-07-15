@@ -32,7 +32,7 @@ Vulkan offscreen render target
 
 - MoltenVK export to Metal texture ownership and lifetime
 - CVPixelBuffer pool sizing vs render thread cadence
-- Audit hooks mirroring Commit 06 (`IMediaTransportAuditSink`)
+- Audit hooks mirroring the current GPU media proof contracts (`IMediaTransportAuditSink`)
 
 ## References
 

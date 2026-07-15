@@ -132,9 +132,9 @@ public sealed class CapabilityProofAggregator
             Category = category,
             Id = id,
             DisplayName = displayName,
-            SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
-            LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
-            ProductReadinessStatus = MediaForgeProductReadinessStatus.Prototype,
+            SupportStatus = MediaForgeSupportStatus.Unavailable,
+            LicenseStatus = licenseStatus,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             TransportKind = transportKind,
             UnavailableReason = $"{blockedReason} Missing proof(s): {string.Join("; ", missing)}."
         };

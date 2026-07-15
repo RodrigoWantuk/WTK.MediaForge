@@ -36,12 +36,12 @@ public class RenderOutputSinkComplianceRegistryTests
 
         Assert.Equal(MediaTransportKind.EncodedPacket, mp4.Transport);
         Assert.Equal(MediaTransportKind.EncodedPacket, rtmp.Transport);
-        Assert.False(mp4.IsProductSink);
-        Assert.False(rtmp.IsProductSink);
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, mp4.SupportStatus);
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, rtmp.SupportStatus);
-        Assert.Contains("Prototype", mp4.UnavailableReason, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Prototype", rtmp.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.True(mp4.IsProductSink);
+        Assert.True(rtmp.IsProductSink);
+        Assert.Equal(MediaForgeSupportStatus.Supported, mp4.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Supported, rtmp.SupportStatus);
+        Assert.Null(mp4.UnavailableReason);
+        Assert.Null(rtmp.UnavailableReason);
     }
 
     [Fact]

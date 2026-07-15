@@ -57,14 +57,21 @@ public static class MediaForgeCapabilityCatalog
             "GPL encoder prohibited without commercial license."),
 
         Entry(CapabilityCategories.License, Ffmpeg, "FFmpeg integration",
-            MediaForgeSupportStatus.NotUsedInMvp, MediaForgeLicenseStatus.NotUsedInMvp,
+            MediaForgeSupportStatus.Deferred, MediaForgeLicenseStatus.RequiresLegalReview,
             MediaForgeProductReadinessStatus.Contract,
-            "Not used in first hardware MP4/RTMP product path."),
+            "Deferred until the native hardware media product path is sustained and a separate encoded-packet/container-only legal review approves the scope."),
 
         Entry(CapabilityCategories.Encode, MfHardwareH264, "Media Foundation hardware MFT H.264",
-            MediaForgeSupportStatus.PrototypeOnly, MediaForgeLicenseStatus.RequiresLegalReview,
-            MediaForgeProductReadinessStatus.Prototype,
-            "Prototype only until real hardware MFT enumeration and backend output validation are implemented."),
+            GetProof(proofs, HardwareEncodeProof).Status == HardwareMediaProofStatus.Passed
+                ? MediaForgeSupportStatus.Supported
+                : MediaForgeSupportStatus.Unavailable,
+            MediaForgeLicenseStatus.Approved,
+            GetProof(proofs, HardwareEncodeProof).Status == HardwareMediaProofStatus.Passed
+                ? MediaForgeProductReadinessStatus.BackendCallSucceeded
+                : MediaForgeProductReadinessStatus.Contract,
+            GetProof(proofs, HardwareEncodeProof).Status == HardwareMediaProofStatus.Passed
+                ? "Media Foundation hardware H.264 encode proof passed on this runtime."
+                : "Unavailable until the hardware H.264 encode proof passes on this runtime."),
 
         proofAggregator.ResolveVideoFileInputCapability(hardware),
 
@@ -98,7 +105,7 @@ public static class MediaForgeCapabilityCatalog
             {
                 GpuExportProofStatus.Passed => "GPU export proof passed.",
                 GpuExportProofStatus.Failed => "GPU export proof failed; recording blocked.",
-                _ => "Awaiting Commit 06 export proof."
+                _ => "GPU export proof has not passed on this runtime."
             },
             MediaTransportKind.GpuSurface),
 
@@ -173,10 +180,10 @@ public static class MediaForgeCapabilityCatalog
             MediaForgeProductReadinessStatus.ProductValidated),
 
         Entry(CapabilityCategories.Performance, EnginePerformanceBaseline, "Engine performance baseline",
-            MediaForgeSupportStatus.PrototypeOnly,
+            MediaForgeSupportStatus.Deferred,
             MediaForgeLicenseStatus.Approved,
             MediaForgeProductReadinessStatus.Skeleton,
-            "Synthetic performance validation exists, but real render/decode/encode workloads are not product-validated.",
+            "Synthetic performance validation exists; product performance requires sustained render, encode, decode, MP4, and RTMP workloads.",
             MediaTransportKind.GpuSurface)
     ];
     }
@@ -285,7 +292,7 @@ public static class MediaForgeCapabilityCatalog
         {
             HardwareMediaProofStatus.Passed => MediaForgeSupportStatus.Supported,
             HardwareMediaProofStatus.Failed => MediaForgeSupportStatus.Blocked,
-            HardwareMediaProofStatus.Unavailable => MediaForgeSupportStatus.Unsupported,
+            HardwareMediaProofStatus.Unavailable => MediaForgeSupportStatus.Unavailable,
             HardwareMediaProofStatus.Skipped => MediaForgeSupportStatus.Planned,
             _ => MediaForgeSupportStatus.Planned
         };

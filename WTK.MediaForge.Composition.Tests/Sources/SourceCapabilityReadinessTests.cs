@@ -7,7 +7,7 @@ namespace WTK.MediaForge.Composition.Tests.Sources;
 public sealed class SourceCapabilityReadinessTests
 {
     [Fact]
-    public void Static_image_is_product_validated_but_video_file_remains_prototype()
+    public void Static_image_is_product_validated_but_video_file_requires_composite_product_proofs()
     {
         var entries = MediaSourceTypeRegistry.CreateCapabilityEntries();
 
@@ -17,9 +17,10 @@ public sealed class SourceCapabilityReadinessTests
         Assert.Equal(MediaTransportKind.StaticCpuAsset, image.TransportKind);
 
         var video = Assert.Single(entries, entry => entry.Id == $"source.{MediaSourceTypes.VideoFile.Value}");
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, video.SupportStatus);
-        Assert.Equal(MediaForgeProductReadinessStatus.Prototype, video.ProductReadinessStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, video.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.Contract, video.ProductReadinessStatus);
         Assert.False(string.IsNullOrWhiteSpace(video.UnavailableReason));
+        Assert.Contains("hardware decode", video.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

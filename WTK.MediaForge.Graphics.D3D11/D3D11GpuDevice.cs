@@ -24,7 +24,9 @@ public sealed class D3D11GpuDevice : IDisposable
 
     public ID3D11DeviceContext Context { get; }
 
-    public static D3D11GpuDevice CreateForAdapter(IDXGIAdapter1 adapter)
+    public static D3D11GpuDevice CreateForAdapter(
+        IDXGIAdapter1 adapter,
+        bool requireVideoSupport = false)
     {
         var creationFlags =
             DeviceCreationFlags.BgraSupport |
@@ -33,6 +35,8 @@ public sealed class D3D11GpuDevice : IDisposable
 #else
             DeviceCreationFlags.None;
 #endif
+        if (requireVideoSupport)
+            creationFlags |= DeviceCreationFlags.VideoSupport;
 
         var featureLevels = new[]
         {
@@ -49,6 +53,11 @@ public sealed class D3D11GpuDevice : IDisposable
             featureLevels,
             out ID3D11Device device,
             out ID3D11DeviceContext context);
+        if (requireVideoSupport)
+        {
+            using var multithread = device.QueryInterfaceOrNull<ID3D11Multithread>();
+            multithread?.SetMultithreadProtected(true);
+        }
 
         return new D3D11GpuDevice(adapter, device, context);
     }

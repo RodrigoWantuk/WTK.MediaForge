@@ -16,6 +16,8 @@ public sealed class HardwareVideoEncoderSettings
 
     public string PixelFormat { get; init; } = "NV12";
 
+    public int MaxPendingInputSurfaces { get; init; } = 32;
+
     public void Validate()
     {
         if (Codec != EncodedVideoCodec.H264)
@@ -35,6 +37,13 @@ public sealed class HardwareVideoEncoderSettings
 
         if (KeyFrameIntervalFrames <= 0)
             throw new ArgumentOutOfRangeException(nameof(KeyFrameIntervalFrames), "Encoder keyframe interval must be positive.");
+
+        if (MaxPendingInputSurfaces <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxPendingInputSurfaces),
+                "Encoder pending input surface limit must be positive.");
+        }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(PixelFormat);
     }

@@ -33,12 +33,13 @@ input/output each require their own product proof.
 
 ## FFmpeg Policy
 
-**FFmpeg is not used in the first hardware MP4/RTMP product path.**
+**FFmpeg is deferred until the native hardware MP4/RTMP product path is sustained.**
 
 Future FFmpeg integration requires:
 
 - LGPL-only build, no GPL components
 - No libx264, libx265, rawvideo pipe
+- Encoded-packet/container-only scope
 - License review before any product path
 
 ## Codec Policy

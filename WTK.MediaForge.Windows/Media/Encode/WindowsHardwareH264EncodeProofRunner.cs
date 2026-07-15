@@ -24,7 +24,7 @@ internal sealed class WindowsHardwareH264EncodeProofRunner : HardwareMediaProofR
         try
         {
             var result = await WindowsRenderedOutputH264ProofPipeline
-                .RunCachedAsync(cancellationToken)
+                .RunSustainedCachedAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             return Passed(
@@ -36,7 +36,7 @@ internal sealed class WindowsHardwareH264EncodeProofRunner : HardwareMediaProofR
                     "H264Packet"
                 ],
                 baseline.GpuVendor,
-                $"Hardware encoder produced {result.Packet.Data.Length} backend-validated H.264 bytes from a rendered GPU surface.");
+                $"Hardware encoder produced {result.Packets.Count} backend-validated H.264 packet(s) from sustained rendered GPU surfaces.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

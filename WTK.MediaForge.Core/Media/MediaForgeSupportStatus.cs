@@ -5,10 +5,12 @@ public enum MediaForgeSupportStatus
     Supported,
     Experimental,
     PrototypeOnly,
+    InternalOnly,
     Planned,
+    Deferred,
+    Unavailable,
     RequiresLegalReview,
     Unsupported,
     Prohibited,
-    Blocked,
-    NotUsedInMvp
+    Blocked
 }

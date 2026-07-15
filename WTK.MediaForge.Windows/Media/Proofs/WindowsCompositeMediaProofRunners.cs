@@ -43,7 +43,7 @@ internal sealed class WindowsRenderToH264EncodeProofRunner : HardwareMediaProofR
         try
         {
             var result = await WindowsRenderedOutputH264ProofPipeline
-                .RunCachedAsync(cancellationToken)
+                .RunSustainedCachedAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             return Passed(
@@ -56,7 +56,7 @@ internal sealed class WindowsRenderToH264EncodeProofRunner : HardwareMediaProofR
                     "H264Packet"
                 ],
                 baseline.GpuVendor,
-                $"Rendered {result.RenderedFrameCount} Vulkan frame(s) and produced {result.Packet.Data.Length} backend-validated H.264 bytes.");
+                $"Rendered {result.RenderedFrameCount} Vulkan frame(s) and produced {result.Packets.Count} backend-validated H.264 packet(s).");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -85,7 +85,7 @@ internal sealed class WindowsMp4OutputProductProofRunner : HardwareMediaProofRun
         try
         {
             var renderEncode = await WindowsRenderedOutputH264ProofPipeline
-                .RunCachedAsync(cancellationToken)
+                .RunSustainedAsync(cancellationToken)
                 .ConfigureAwait(false);
             var outputPath = Path.Combine(
                 Path.GetTempPath(),
@@ -106,7 +106,8 @@ internal sealed class WindowsMp4OutputProductProofRunner : HardwareMediaProofRun
                         },
                         cancellationToken)
                     .ConfigureAwait(false);
-                await sink.WritePacketAsync(renderEncode.Packet, cancellationToken).ConfigureAwait(false);
+                foreach (var packet in renderEncode.Packets)
+                    await sink.WritePacketAsync(packet, cancellationToken).ConfigureAwait(false);
                 await sink.StopAsync(cancellationToken).ConfigureAwait(false);
 
                 if (!IsoBmffMp4Writer.HasValidH264BoxStructure(
@@ -114,7 +115,7 @@ internal sealed class WindowsMp4OutputProductProofRunner : HardwareMediaProofRun
                         new IsoBmffMp4Writer.TrackMetadata(
                             (uint)renderEncode.EncoderSettings.Width,
                             (uint)renderEncode.EncoderSettings.Height),
-                        minimumSampleCount: 1))
+                        minimumSampleCount: renderEncode.Packets.Count))
                 {
                     return Unavailable(
                         "MP4 product proof wrote a file that failed H.264 MP4 box validation.",
@@ -130,7 +131,7 @@ internal sealed class WindowsMp4OutputProductProofRunner : HardwareMediaProofRun
                         "ValidFtypMoovMdatAvcC"
                     ],
                     baseline.GpuVendor,
-                    $"MP4 product proof wrote a valid H.264 MP4 file from a real render-to-encode packet ({new FileInfo(outputPath).Length} bytes).");
+                    $"MP4 product proof wrote a valid H.264 MP4 file from {renderEncode.Packets.Count} real render-to-encode packets ({new FileInfo(outputPath).Length} bytes).");
             }
             finally
             {
@@ -165,7 +166,7 @@ internal sealed class WindowsMp4RecordingProofRunner : HardwareMediaProofRunner
         try
         {
             var renderEncode = await WindowsRenderedOutputH264ProofPipeline
-                .RunCachedAsync(cancellationToken)
+                .RunSustainedAsync(cancellationToken)
                 .ConfigureAwait(false);
             var outputPath = Path.Combine(
                 Path.GetTempPath(),
@@ -186,7 +187,8 @@ internal sealed class WindowsMp4RecordingProofRunner : HardwareMediaProofRunner
                         },
                         cancellationToken)
                     .ConfigureAwait(false);
-                await sink.WritePacketAsync(renderEncode.Packet, cancellationToken).ConfigureAwait(false);
+                foreach (var packet in renderEncode.Packets)
+                    await sink.WritePacketAsync(packet, cancellationToken).ConfigureAwait(false);
                 await sink.StopAsync(cancellationToken).ConfigureAwait(false);
 
                 if (!IsoBmffMp4Writer.HasValidH264BoxStructure(
@@ -194,7 +196,7 @@ internal sealed class WindowsMp4RecordingProofRunner : HardwareMediaProofRunner
                         new IsoBmffMp4Writer.TrackMetadata(
                             (uint)renderEncode.EncoderSettings.Width,
                             (uint)renderEncode.EncoderSettings.Height),
-                        minimumSampleCount: 1))
+                        minimumSampleCount: renderEncode.Packets.Count))
                 {
                     return Unavailable(
                         "MP4 recording proof wrote a file that failed H.264 MP4 box validation.",
@@ -210,7 +212,7 @@ internal sealed class WindowsMp4RecordingProofRunner : HardwareMediaProofRunner
                         "ValidFtypMoovMdatAvcC"
                     ],
                     baseline.GpuVendor,
-                    $"MP4 recording proof wrote a valid H.264 recording file from a real render-to-encode packet ({new FileInfo(outputPath).Length} bytes).");
+                    $"MP4 recording proof wrote a valid H.264 recording file from {renderEncode.Packets.Count} real render-to-encode packets ({new FileInfo(outputPath).Length} bytes).");
             }
             finally
             {
@@ -245,7 +247,7 @@ internal sealed class WindowsRtmpNetworkOutputProofRunner : HardwareMediaProofRu
         try
         {
             var renderEncode = await WindowsRenderedOutputH264ProofPipeline
-                .RunCachedAsync(cancellationToken)
+                .RunSustainedAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             await using var server = new WindowsLocalRtmpProofServer();
@@ -262,8 +264,11 @@ internal sealed class WindowsRtmpNetworkOutputProofRunner : HardwareMediaProofRu
                     },
                     cancellationToken)
                 .ConfigureAwait(false);
-            await sink.WritePacketAsync(renderEncode.Packet, cancellationToken).ConfigureAwait(false);
-            await server.WaitForVideoPacketsAsync(1, TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            foreach (var packet in renderEncode.Packets)
+                await sink.WritePacketAsync(packet, cancellationToken).ConfigureAwait(false);
+            await server
+                .WaitForVideoPacketsAsync(renderEncode.Packets.Count, TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
 
             return Passed(
                 "TCP-RTMP",
@@ -274,7 +279,7 @@ internal sealed class WindowsRtmpNetworkOutputProofRunner : HardwareMediaProofRu
                     "FlvH264VideoTag"
                 ],
                 baseline.GpuVendor,
-                $"RTMP product proof published {server.VideoPacketCount} H.264 FLV video tag(s) over TCP.");
+                $"RTMP product proof published {server.VideoPacketCount} H.264 FLV video tag(s) over TCP from sustained render-to-encode output.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

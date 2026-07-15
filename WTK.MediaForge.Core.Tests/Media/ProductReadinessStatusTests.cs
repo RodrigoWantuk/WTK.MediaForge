@@ -7,7 +7,7 @@ namespace WTK.MediaForge.Core.Tests.Media;
 public sealed class ProductReadinessStatusTests
 {
     [Fact]
-    public void Current_prototype_media_paths_are_not_product_available_even_after_export_proof()
+    public void Current_unproven_media_paths_are_not_product_available_even_after_export_proof()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
         {
@@ -15,10 +15,10 @@ public sealed class ProductReadinessStatusTests
             ExportProofStatus = GpuExportProofStatus.Passed
         });
 
-        AssertPrototypeUnavailable(report, MediaForgeCapabilityCatalog.RecordingMp4H264);
-        AssertPrototypeUnavailable(report, MediaForgeCapabilityCatalog.RtmpH264);
-        AssertPrototypeUnavailable(report, MediaForgeCapabilityCatalog.MfHardwareH264);
-        AssertPrototypeUnavailable(report, MediaForgeCapabilityCatalog.VideoFileMp4);
+        AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.RecordingMp4H264);
+        AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.RtmpH264);
+        AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.MfHardwareH264);
+        AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.VideoFileMp4);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class ProductReadinessStatusTests
         var entry = Assert.IsType<CapabilityEntry>(
             report.TryGetEntry(MediaForgeCapabilityCatalog.EnginePerformanceBaseline));
 
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, entry.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Deferred, entry.SupportStatus);
         Assert.Equal(MediaForgeProductReadinessStatus.Skeleton, entry.ProductReadinessStatus);
         Assert.False(report.IsFeatureAvailable(entry.Id));
         Assert.Contains("Synthetic", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
@@ -99,12 +99,12 @@ public sealed class ProductReadinessStatusTests
         Assert.False(MediaTransportAuditRules.IsExportProofPathValid(audit.Events));
     }
 
-    private static void AssertPrototypeUnavailable(MediaForgeCapabilityReport report, string id)
+    private static void AssertUnprovenUnavailable(MediaForgeCapabilityReport report, string id)
     {
         var entry = Assert.IsType<CapabilityEntry>(report.TryGetEntry(id));
 
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, entry.SupportStatus);
-        Assert.Equal(MediaForgeProductReadinessStatus.Prototype, entry.ProductReadinessStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, entry.SupportStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.Contract, entry.ProductReadinessStatus);
         Assert.False(report.IsFeatureAvailable(id));
         Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));
     }

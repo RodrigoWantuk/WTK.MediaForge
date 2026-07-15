@@ -40,9 +40,9 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Platform = "Windows",
             Vendor = vendor,
             DecodeCodecs = ["H264"],
-            SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
-            ProductReadinessStatus = MediaForgeProductReadinessStatus.Prototype,
-            UnavailableReason = "Run the v12 hardware decode proof to validate real D3D11VA IMFDXGIBuffer output for this machine; placeholder decode bridges are excluded."
+            SupportStatus = MediaForgeSupportStatus.Unavailable,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
+            UnavailableReason = "Run the v12 hardware decode proof to validate real D3D11VA IMFDXGIBuffer output for this machine."
         },
         new HardwareMediaBackendCapability
         {
@@ -51,9 +51,9 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Platform = "Windows",
             Vendor = vendor,
             EncodeCodecs = ["H264"],
-            SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
-            ProductReadinessStatus = MediaForgeProductReadinessStatus.Prototype,
-            UnavailableReason = "Run the v12 hardware encode proof to validate real Media Foundation hardware MFT packets for this machine; canned packet bridges are excluded."
+            SupportStatus = MediaForgeSupportStatus.Unavailable,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
+            UnavailableReason = "Run the v12 hardware encode proof to validate real Media Foundation hardware MFT packets for this machine."
         },
         new HardwareMediaBackendCapability
         {

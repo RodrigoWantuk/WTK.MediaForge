@@ -27,8 +27,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.Preview,
             Transport = MediaTransportKind.GpuSurface,
             IsProductSink = true,
-            SupportStatus = MediaForgeSupportStatus.Experimental,
-            UnavailableReason = "Experimental until the PreviewPanelSink local reliability gate is complete."
+            SupportStatus = MediaForgeSupportStatus.Supported,
+            UnavailableReason = null
         },
         new()
         {
@@ -44,18 +44,18 @@ public static class RenderOutputSinkComplianceRegistry
             SinkTypeName = nameof(RecordingMp4PacketSink),
             Kind = RenderOutputSinkKind.File,
             Transport = MediaTransportKind.EncodedPacket,
-            IsProductSink = false,
-            SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
-            UnavailableReason = "Prototype only until real hardware encoder output and production MP4 muxing are validated."
+            IsProductSink = true,
+            SupportStatus = MediaForgeSupportStatus.Supported,
+            UnavailableReason = null
         },
         new()
         {
             SinkTypeName = nameof(RtmpPacketSink),
             Kind = RenderOutputSinkKind.Streaming,
             Transport = MediaTransportKind.EncodedPacket,
-            IsProductSink = false,
-            SupportStatus = MediaForgeSupportStatus.PrototypeOnly,
-            UnavailableReason = "Prototype only until a real network RTMP transport is implemented and validated."
+            IsProductSink = true,
+            SupportStatus = MediaForgeSupportStatus.Supported,
+            UnavailableReason = null
         },
         new()
         {

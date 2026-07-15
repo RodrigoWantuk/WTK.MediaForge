@@ -109,13 +109,12 @@ The legacy WinForms preview path has been removed as a product path because it u
   bridge from `DecodedGpuFrame` to `GpuFrameLease`; it preserves source id,
   PTS, frame number, size, and releases the original texture lease when the
   render source lease is released.
-- `WindowsVideoFileSourceProviderFactory` exists only as an internal
-  prototype scaffold. It is registered in the Windows provider chain with
-  prototype creation disabled, so `MediaForgeWindows.CreateEngine()` does not
-  create video file providers by default. Tests may opt in with fake/prototype
-  decoders to validate `VideoSourceRuntime -> DecodedGpuFrame ->
-  GpuFrameLease`, but capability reports must keep video file sources
-  `PrototypeOnly` until real hardware decode is product validated.
+- `WindowsVideoFileSourceProviderFactory` is registered in the normal Windows
+  provider chain and uses the product hardware decoder by default. If
+  Media Foundation/D3D11VA cannot produce GPU-backed decoded frames, the source
+  fails observably; it must not fall back to placeholder decode or system-memory
+  frame transport. Capability reports keep MP4 video input `Unavailable` until
+  hardware decode, decode-to-render, and MP4 input product proofs pass together.
 - `MediaFoundationHardwareVideoEncoder` has a separate product session
   boundary (`MediaFoundationHardwareH264EncoderSession`) from the canned
   prototype bridge. The product path is configured by
@@ -149,8 +148,9 @@ The legacy WinForms preview path has been removed as a product path because it u
   video-file input capability from required hardware media proofs. MP4 recording
   requires hardware encode, render-to-encode, MP4 recording, and MP4 output
   product proofs. MP4 video input requires hardware decode, decode-to-render,
-  and MP4 input product proofs. These features stay `PrototypeOnly` until the
-  required proof chain passes on the current machine.
+  and MP4 input product proofs. Missing proof chains make these features
+  `Unavailable` with explicit proof reasons until the required proof chain
+  passes on the current machine.
 - `EncodedVideoPacket` carries explicit codec, bitstream format, presentation
   time, optional duration, and optional codec configuration bytes. MP4/RTMP
   packet sinks must reject unknown H.264 bitstream format instead of accepting
@@ -219,7 +219,9 @@ The legacy WinForms preview path has been removed as a product path because it u
 - Formal types: `EncodedVideoPacket`, `GpuVideoFrame` (GPU lease), `StaticCpuImageAsset` (load-only), raw CPU video prohibited on product path.
 - Registered raw CPU exceptions use `RawCpuVideoFrameException` with kinds: `PixelTestOnly`, `ManualScreenshotOnly`, `WebcamSystemRawInput`. Static image load is **not** an exception.
 - `CpuReadbackSink` is debug/test only (`DebugOnlyCpuReadback`). Product sinks consume `GpuSurface` or `EncodedPacket` after hardware encode.
-- FFmpeg is not used in the first hardware MP4/RTMP product path.
+- FFmpeg is deferred until the native hardware MP4/RTMP product path is
+  sustained and a separate encoded-packet/container-only legal review approves
+  the scope.
 - Platform media adapters stay in their own assemblies: Windows uses
   D3D11/D3D11VA/Media Foundation first; Linux targets VAAPI/DRM/DMABUF,
   Vulkan Video, or approved vendor interop in Linux-specific projects; macOS
@@ -228,7 +230,7 @@ The legacy WinForms preview path has been removed as a product path because it u
 - NVIDIA, AMD/Radeon, Intel integrated/discrete, Apple, VAAPI, Vulkan Video,
   and future vendor SDK paths must be runtime-detected through capability
   reports. GPU vendor names alone must never imply support.
-- Hardware media promotion is blocked by the v8 proof set: render-to-encode,
+- Hardware media promotion is driven by composite proof chains: render-to-encode,
   hardware H.264 encode, MP4 recording packet output, hardware H.264 decode,
   decode-to-render, MP4 output, MP4 input, webcam input, RTMP network output,
   and NDI input/output. Each proof is represented by `HardwareMediaProof` and
@@ -240,7 +242,6 @@ The legacy WinForms preview path has been removed as a product path because it u
   `GetCapabilityReportWithHardwareProofsAsync` is explicit because proof
   execution may touch D3D11/Media Foundation hardware and must not be hidden in
   cheap UI capability probes.
-- Commit 06 (Vulkan -> D3D11/MF encoder surface export proof) blocks hardware recording until passed.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
   `Prototype` and `Skeleton` readiness entries must never be emitted as

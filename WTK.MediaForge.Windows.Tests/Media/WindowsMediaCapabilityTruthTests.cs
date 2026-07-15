@@ -29,12 +29,12 @@ public sealed class WindowsMediaCapabilityTruthTests
         Assert.Contains("v12 proof runners", report.ExportProofReason, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(report.BackendCapabilities, backend =>
             backend.Id == "windows.mf.d3d11va.decode.h264" &&
-            backend.SupportStatus == MediaForgeSupportStatus.PrototypeOnly &&
-            backend.ProductReadinessStatus == MediaForgeProductReadinessStatus.Prototype);
+            backend.SupportStatus == MediaForgeSupportStatus.Unavailable &&
+            backend.ProductReadinessStatus == MediaForgeProductReadinessStatus.Contract);
         Assert.Contains(report.BackendCapabilities, backend =>
             backend.Id == "windows.mf.hardware_mft.encode.h264" &&
-            backend.SupportStatus == MediaForgeSupportStatus.PrototypeOnly &&
-            backend.ProductReadinessStatus == MediaForgeProductReadinessStatus.Prototype);
+            backend.SupportStatus == MediaForgeSupportStatus.Unavailable &&
+            backend.ProductReadinessStatus == MediaForgeProductReadinessStatus.Contract);
         Assert.Contains(report.BackendCapabilities, backend =>
             backend.Id == "linux.vaapi.drm.decode_encode" &&
             backend.SupportStatus == MediaForgeSupportStatus.Planned);
@@ -141,12 +141,12 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         var mp4 = Assert.IsType<CapabilityEntry>(
             report.TryGetEntry($"output.{RenderOutputTypes.RecordingMp4.Value}"));
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, mp4.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, mp4.SupportStatus);
         Assert.False(report.IsFeatureAvailable(mp4.Id));
 
         var rtmp = Assert.IsType<CapabilityEntry>(
             report.TryGetEntry($"output.{RenderOutputTypes.StreamingRtmp.Value}"));
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, rtmp.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, rtmp.SupportStatus);
         Assert.False(report.IsFeatureAvailable(rtmp.Id));
 
         var ndi = Assert.IsType<CapabilityEntry>(
@@ -182,7 +182,7 @@ public sealed class WindowsMediaCapabilityTruthTests
             report.TryGetEntry(MediaForgeCapabilityCatalog.HardwareEncodeProof));
 
         Assert.True(
-            encodeProof.SupportStatus is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Unsupported,
+            encodeProof.SupportStatus is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Unavailable,
             $"Unexpected support status: {encodeProof.SupportStatus}");
         Assert.NotEqual(MediaForgeProductReadinessStatus.Prototype, encodeProof.ProductReadinessStatus);
         Assert.NotEqual(MediaForgeProductReadinessStatus.Skeleton, encodeProof.ProductReadinessStatus);

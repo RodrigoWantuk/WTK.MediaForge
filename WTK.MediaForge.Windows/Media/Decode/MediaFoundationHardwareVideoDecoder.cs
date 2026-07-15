@@ -36,7 +36,7 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
 
         using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
         factory.EnumAdapters1(0, out var adapter).CheckError();
-        _gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
+        _gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter, requireVideoSupport: true);
         _decodeTextureFactory = new WindowsDecodeGpuTextureFactory(_gpuDevice.Device);
         _resourcePool = new GpuResourcePool(_decodeTextureFactory);
         _allowPrototypeDecoding = allowPrototypeDecoding;
@@ -204,7 +204,8 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
             decoded.Texture,
             checked((uint)decoded.Width),
             checked((uint)decoded.Height),
-            decoded.Format);
+            decoded.Format,
+            decoded.SubresourceIndex);
 
         return _resourcePool.AcquireTexture(new GpuTextureDescriptor
         {
@@ -234,12 +235,20 @@ internal sealed class WindowsDecodeGpuTextureFactory : IGpuTextureFactory
         ID3D11Texture2D decodedTexture,
         uint width,
         uint height,
-        Format format)
+        Format format,
+        int subresourceIndex)
     {
         ArgumentNullException.ThrowIfNull(decodedTexture);
         var handle = D3D11SharedTextureFactory.CreateSharedTexture(_device, width, height, format);
         var context = _device.ImmediateContext;
-        context.CopyResource(handle.Texture, decodedTexture);
+        context.CopySubresourceRegion(
+            handle.Texture,
+            0,
+            0,
+            0,
+            0,
+            decodedTexture,
+            checked((uint)subresourceIndex));
         context.Flush();
 
         lock (_gate)
@@ -325,9 +334,11 @@ internal sealed class MediaFoundationFileHardwareVideoDecoderSession : IDisposab
             _deviceManager = MediaFactory.MFCreateDXGIDeviceManager();
             _deviceManager.ResetDevice(_device).CheckError();
 
-            using var attributes = MediaFactory.MFCreateAttributes(4);
+            using var attributes = MediaFactory.MFCreateAttributes(6);
             attributes.Set(SourceReaderAttributeKeys.D3DManager, _deviceManager).CheckError();
             attributes.Set(SourceReaderAttributeKeys.DisableDxva, false).CheckError();
+            attributes.Set(SinkWriterAttributeKeys.ReadwriteEnableHardwareTransforms, true).CheckError();
+            attributes.Set(SourceReaderAttributeKeys.EnableTranscodeOnlyTransforms, true).CheckError();
             attributes.Set(SourceReaderAttributeKeys.EnableVideoProcessing, false).CheckError();
             attributes.Set(SourceReaderAttributeKeys.EnableAdvancedVideoProcessing, false).CheckError();
 
@@ -388,26 +399,21 @@ internal sealed class MediaFoundationFileHardwareVideoDecoderSession : IDisposab
             if (sample is null)
                 return null;
 
-            using var buffer = sample.GetBufferByIndex(0);
-            using var dxgiBuffer = buffer.QueryInterfaceOrNull<IMFDXGIBuffer>();
-            if (dxgiBuffer is null)
+            var texture = TryGetDecodedTexture(sample);
+            if (texture is null)
             {
                 auditSink.Record(new MediaTransportAuditEvent
                 {
                     Kind = MediaTransportAuditEventKind.HardwareDecodeUnavailable,
                     Source = nameof(MediaFoundationFileHardwareVideoDecoderSession),
                     EvidenceKind = MediaTransportAuditEvidenceKind.ContractOnly,
-                    Detail = "Media Foundation returned a system-memory sample; CPU decoded samples are prohibited for product decode."
+                    Detail = $"Media Foundation returned a sample with {sample.BufferCount} buffer(s), but none exposed IMFDXGIBuffer or IMFDXGICrossAdapterBuffer. CPU decoded samples are prohibited for product decode."
                 });
 
-                throw CreateUnavailableException();
+                throw CreateUnavailableException(
+                    new InvalidOperationException(
+                        $"Media Foundation returned a decoded sample with {sample.BufferCount} buffer(s), but none exposed IMFDXGIBuffer or IMFDXGICrossAdapterBuffer."));
             }
-
-            var texturePointer = dxgiBuffer.GetResource(typeof(ID3D11Texture2D).GUID);
-            if (texturePointer == IntPtr.Zero)
-                throw CreateUnavailableException();
-
-            var texture = new ID3D11Texture2D(texturePointer);
             var presentationTime = timestamp >= 0
                 ? TimeSpan.FromTicks(timestamp)
                 : context.PresentationTime;
@@ -424,22 +430,65 @@ internal sealed class MediaFoundationFileHardwareVideoDecoderSession : IDisposab
             });
 
             return new DecodedD3D11VideoFrame(
-                texture,
+                texture.Texture,
                 _width,
                 _height,
                 Format.NV12,
+                texture.SubresourceIndex,
                 presentationTime,
                 duration);
         }
     }
 
+    private DecodedTextureReference? TryGetDecodedTexture(IMFSample sample)
+    {
+        var bufferCount = sample.BufferCount;
+        for (var index = 0; index < bufferCount; index++)
+        {
+            using var buffer = sample.GetBufferByIndex(index);
+            using var dxgiBuffer = buffer.QueryInterfaceOrNull<IMFDXGIBuffer>();
+            if (dxgiBuffer is not null)
+            {
+                var texturePointer = dxgiBuffer.GetResource(typeof(ID3D11Texture2D).GUID);
+                if (texturePointer != IntPtr.Zero)
+                    return new DecodedTextureReference(
+                        new ID3D11Texture2D(texturePointer),
+                        checked((int)dxgiBuffer.SubresourceIndex));
+            }
+
+            using var crossAdapterBuffer = buffer.QueryInterfaceOrNull<IMFDXGICrossAdapterBuffer>();
+            if (crossAdapterBuffer is not null)
+            {
+                var texturePointer = crossAdapterBuffer.GetResourceForDevice(
+                    _device,
+                    typeof(ID3D11Texture2D).GUID);
+                if (texturePointer != IntPtr.Zero)
+                {
+                    var subresourceIndex = checked((int)crossAdapterBuffer.GetSubresourceIndexForDevice(_device));
+                    return new DecodedTextureReference(
+                        new ID3D11Texture2D(texturePointer),
+                        subresourceIndex);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private sealed record DecodedTextureReference(ID3D11Texture2D Texture, int SubresourceIndex);
+
     public static NotSupportedException CreateUnavailableException() =>
         CreateUnavailableException(null);
 
-    public static NotSupportedException CreateUnavailableException(Exception? innerException) =>
-        new(
-            "Real Media Foundation D3D11VA file decode requires an IMFDXGIBuffer-backed GPU sample. System-memory decoded samples and placeholder texture bridges are not product decoder backends.",
+    public static NotSupportedException CreateUnavailableException(Exception? innerException)
+    {
+        var detail = innerException is null
+            ? string.Empty
+            : $" Detail: {innerException.GetType().Name}: {innerException.Message}";
+        return new NotSupportedException(
+            "Real Media Foundation D3D11VA file decode requires an IMFDXGIBuffer-backed GPU sample. System-memory decoded samples and placeholder texture bridges are not product decoder backends." + detail,
             innerException);
+    }
 
     public void Dispose()
     {
@@ -514,6 +563,7 @@ internal sealed class DecodedD3D11VideoFrame : IDisposable
         int width,
         int height,
         Format format,
+        int subresourceIndex,
         TimeSpan presentationTime,
         TimeSpan duration)
     {
@@ -521,6 +571,7 @@ internal sealed class DecodedD3D11VideoFrame : IDisposable
         Width = width;
         Height = height;
         Format = format;
+        SubresourceIndex = subresourceIndex;
         PresentationTime = presentationTime;
         Duration = duration;
     }
@@ -532,6 +583,8 @@ internal sealed class DecodedD3D11VideoFrame : IDisposable
     public int Height { get; }
 
     public Format Format { get; }
+
+    public int SubresourceIndex { get; }
 
     public TimeSpan PresentationTime { get; }
 

@@ -360,9 +360,13 @@ public static class HardwareMediaValidationReportBuilder
         {
             MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Experimental =>
                 HardwareMediaValidationStatus.Passed,
-            MediaForgeSupportStatus.Planned => HardwareMediaValidationStatus.Planned,
-            MediaForgeSupportStatus.Unsupported => HardwareMediaValidationStatus.Unavailable,
+            MediaForgeSupportStatus.Planned or MediaForgeSupportStatus.Deferred =>
+                HardwareMediaValidationStatus.Planned,
+            MediaForgeSupportStatus.Unsupported or MediaForgeSupportStatus.Unavailable =>
+                HardwareMediaValidationStatus.Unavailable,
             MediaForgeSupportStatus.Blocked or MediaForgeSupportStatus.PrototypeOnly =>
+                HardwareMediaValidationStatus.Blocked,
+            MediaForgeSupportStatus.InternalOnly =>
                 HardwareMediaValidationStatus.Blocked,
             _ => HardwareMediaValidationStatus.Unavailable
         };

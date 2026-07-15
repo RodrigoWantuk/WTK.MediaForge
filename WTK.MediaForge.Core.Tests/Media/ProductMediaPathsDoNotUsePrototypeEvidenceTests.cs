@@ -6,7 +6,7 @@ namespace WTK.MediaForge.Core.Tests.Media;
 
 public sealed class ProductMediaPathsDoNotUsePrototypeEvidenceTests
 {
-    private static readonly string[] PrototypeProductCapabilityIds =
+    private static readonly string[] UnprovenProductCapabilityIds =
     [
         MediaForgeCapabilityCatalog.RecordingMp4H264,
         MediaForgeCapabilityCatalog.RtmpH264,
@@ -15,7 +15,7 @@ public sealed class ProductMediaPathsDoNotUsePrototypeEvidenceTests
     ];
 
     [Fact]
-    public void Prototype_product_media_capabilities_are_not_available_even_after_export_proof_passes()
+    public void Unproven_product_media_capabilities_are_not_available_even_after_export_proof_passes()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
         {
@@ -23,12 +23,12 @@ public sealed class ProductMediaPathsDoNotUsePrototypeEvidenceTests
             ExportProofStatus = GpuExportProofStatus.Passed
         });
 
-        Assert.All(PrototypeProductCapabilityIds, id =>
+        Assert.All(UnprovenProductCapabilityIds, id =>
         {
             var entry = Assert.IsType<CapabilityEntry>(report.TryGetEntry(id));
 
-            Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, entry.SupportStatus);
-            Assert.Equal(MediaForgeProductReadinessStatus.Prototype, entry.ProductReadinessStatus);
+            Assert.Equal(MediaForgeSupportStatus.Unavailable, entry.SupportStatus);
+            Assert.Equal(MediaForgeProductReadinessStatus.Contract, entry.ProductReadinessStatus);
             Assert.False(report.IsFeatureAvailable(id));
             Assert.False(IsUserAvailable(entry.SupportStatus));
             Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));

@@ -85,7 +85,8 @@ public sealed class HardwareEncodeFoundationTests
             FramesPerSecond = 30,
             BitrateBitsPerSecond = 6_000_000,
             KeyFrameIntervalFrames = 60,
-            PixelFormat = "NV12"
+            PixelFormat = "NV12",
+            MaxPendingInputSurfaces = 3
         };
 
         await using var encoder = new MediaFoundationHardwareVideoEncoder(gpuDevice.Device, settings);
@@ -93,7 +94,22 @@ public sealed class HardwareEncodeFoundationTests
         Assert.Equal(1280, encoder.InputRequirement.Width);
         Assert.Equal(720, encoder.InputRequirement.Height);
         Assert.Equal("NV12", encoder.InputRequirement.PixelFormat);
+        Assert.Equal(30, encoder.InputRequirement.FramesPerSecond);
         Assert.True(encoder.InputRequirement.RequiresGpuSurface);
+    }
+
+    [Fact]
+    public void Hardware_encoder_settings_rejects_invalid_pending_surface_limit()
+    {
+        var settings = new HardwareVideoEncoderSettings
+        {
+            Width = 320,
+            Height = 180,
+            MaxPendingInputSurfaces = 0
+        };
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(settings.Validate);
+        Assert.Equal("MaxPendingInputSurfaces", ex.ParamName);
     }
 
     [Fact]

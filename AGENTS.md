@@ -8,8 +8,8 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
 
 ## Mandatory Rules
 
-- Do not start UI, NDI, encoder, audio, offscreen rendering, visual pipeline, or new composition features until the P0 GPU lifecycle hardening gates are complete and green.
-- Execute roadmap work in the exact order defined in `docs/ROADMAP_CURRENT.md`.
+- Follow the product roadmap in `docs/ROADMAP_CURRENT.md`; do not follow historical gate language from older acceptance notes when it conflicts with the current roadmap.
+- Advance media features only when the implementation preserves GPU lifetime, hardware media transport, capability truth, and explicit failure diagnostics.
 - Do not keep dangerous APIs for compatibility.
 - Do not introduce new `Simulate*` properties in production classes.
 - Do not add TODOs in GPU lifetime, shutdown, dispose, keyed mutex, Vulkan registry, or submission ownership paths.
@@ -21,8 +21,8 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
 - No software decode/encode fallback for continuous video; hardware/GPU path or `Unsupported`.
 - `CpuReadbackSink` is debug/test only; never wire as recording, streaming, or primary preview.
 - Static image load uses `StaticCpuAsset` (load-time CPU decode, GPU render); not a `RawCpuVideoFrameException`.
-- FFmpeg is not used in the first hardware MP4/RTMP MVP.
-- Commit 06 GPU export proof is a blocking gate before hardware recording.
+- FFmpeg is deferred until the native hardware MP4/RTMP product path is sustained and a separate encoded-packet/container-only legal review approves the scope.
+- Hardware MP4/RTMP routes require composite runtime proofs: render-to-encode, hardware encode, packet mux/transport, and sustained route validation.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; never block the UI thread.
 
 
@@ -70,7 +70,7 @@ Do not add FFmpeg, libav*, libx264, libx265, codec libraries, muxers, demuxers, 
 - `docs/GPU_MEDIA_SUPPORT_MATRIX.md`
 - `docs/ROADMAP_CURRENT.md`
 
-FFmpeg is not allowed in the first MP4/RTMP hardware MVP.
+FFmpeg is not allowed in the native MP4/RTMP hardware product path.
 
 Future FFmpeg library usage is limited to encoded-packet/container operations after the dedicated **FFmpeg Libraries Integration Review** phase.
 

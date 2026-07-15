@@ -205,7 +205,7 @@ Capability and license status are queryable without starting the engine:
 - `HardwareMediaBackendCapability` reports runtime-detected OS/vendor backend facts for hardware decode/encode. A backend that requires CPU staging for continuous video, or is only `Prototype`/`Skeleton`, must not be reported as `Supported` or `Experimental`.
 - `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v8 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` is the session runner registry used to execute proof runners and merge observed proof results into capability reports. Non-passed proofs must include a user-visible reason. Passed proofs must identify the validated backend and include evidence at the required level: `BackendCallSucceeded` for render-to-encode input acceptance, `BackendOutputValidated` for encoded packets, MP4 recording/output, hardware decode, decode-to-render output, MP4 input, webcam input, RTMP network output, and NDI input/output.
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.
-- Capability entries that are not user-available (`PrototypeOnly`, `Planned`, `Unsupported`, `Blocked`, `Prohibited`, or equivalent non-product states) must include a non-empty `UnavailableReason` suitable for UI and diagnostics.
+- Capability entries that are not user-available (`Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, `Blocked`, `Prohibited`, or equivalent non-product states) must include a non-empty `UnavailableReason` suitable for UI and diagnostics.
 - `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.
 - `IHardwareVideoEncoder`, `HardwareVideoEncoderSettings`, and `EncodeFrameContext` represent hardware-only encoder input. Settings validate codec, dimensions, FPS, bitrate, keyframe interval, and GPU input format before a platform encoder session starts.
 - `EncodedVideoProfile` is the public, serializable profile attached to MP4 and RTMP outputs. Platform route factories map it to `HardwareVideoEncoderSettings`; encoder FPS, bitrate, GOP, profile/level, and pixel format must not be hardcoded in the Windows route.
@@ -213,7 +213,7 @@ Capability and license status are queryable without starting the engine:
 - Product file decode must return GPU-backed frames; system-memory decoded samples are unavailable, not a fallback.
 - `IStaticImageAssetDecoder`, `StaticCpuAsset`, and `StaticImageAssetFormats` define load-time static image decode contracts. Platform assemblies provide decoder implementations; Composition does not own `System.Drawing` or any platform image decoder. On Windows, `MediaForgeWindows.CreateEngine()` wires PNG/JPEG image sources through load-time decode, D3D11 shared texture upload, and GPU frame leases; provider wiring remains internal.
 
-Studio and host apps must use capability status to disable or label features that are PrototypeOnly, Planned, Unsupported, or Blocked.
+Studio and host apps must use capability status to disable or label features that are `Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, or `Blocked`.
 
 Operational validation scripts use
 `./scripts/generate-media-proof-report.ps1` and
@@ -224,7 +224,7 @@ hardware paths are allowed only when the report contains explicit blockers. In
 release mode, `-RequireHardwareMedia` fails unless required hardware media
 features have passed proof chains.
 
-Productive preview shells, NDI, MP4/encoded file, streaming, virtual camera, and audio outputs remain blocked until the owning roadmap track opens and capability report reflects Supported status.
+Product preview panel sinks are GPU-surface product sinks for the validated Win32/Vulkan scope. MP4 recording and RTMP streaming must still be enabled through capability reports, because their routes require composite hardware proof chains on the current machine. NDI, SRT, virtual camera, and audio outputs remain unavailable/planned until their owning roadmap tracks and capability reports say otherwise.
 
 Sink compliance metadata follows the same rule: sinks that are debug-only,
 prototype-only, planned, unsupported, blocked, or otherwise not product-ready

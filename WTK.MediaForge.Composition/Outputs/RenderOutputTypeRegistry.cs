@@ -47,28 +47,28 @@ public static class RenderOutputTypeRegistry
         if (typeId == RenderOutputTypes.PreviewWindow)
         {
             return (
-                MediaForgeSupportStatus.Experimental,
-                MediaForgeProductReadinessStatus.BackendCallSucceeded,
+                MediaForgeSupportStatus.Supported,
+                MediaForgeProductReadinessStatus.ProductValidated,
                 MediaTransportKind.GpuSurface,
-                "Experimental until the PreviewPanelSink local reliability gate is complete.");
+                null);
         }
 
         if (typeId == RenderOutputTypes.RecordingMp4)
         {
             return (
-                MediaForgeSupportStatus.PrototypeOnly,
-                MediaForgeProductReadinessStatus.Prototype,
+                MediaForgeSupportStatus.Unavailable,
+                MediaForgeProductReadinessStatus.Contract,
                 MediaTransportKind.EncodedPacket,
-                "Prototype only until hardware encode and MP4 output product proofs pass.");
+                "Unavailable until the composite recording capability reports hardware encode, render-to-encode, MP4 recording, and MP4 output product proofs passed on this runtime.");
         }
 
         if (typeId == RenderOutputTypes.StreamingRtmp)
         {
             return (
-                MediaForgeSupportStatus.PrototypeOnly,
-                MediaForgeProductReadinessStatus.Prototype,
+                MediaForgeSupportStatus.Unavailable,
+                MediaForgeProductReadinessStatus.Contract,
                 MediaTransportKind.EncodedPacket,
-                "Prototype only until a real network RTMP transport is implemented and validated.");
+                "Unavailable until the composite RTMP capability reports hardware encode, render-to-encode, and RTMP network proofs passed on this runtime.");
         }
 
         if (typeId == RenderOutputTypes.Ndi)
@@ -95,7 +95,7 @@ public static class RenderOutputTypeRegistry
                 MediaForgeSupportStatus.Planned,
                 MediaForgeProductReadinessStatus.Contract,
                 MediaTransportKind.EncodedPacket,
-                "Planned after MP4 hardware recording product proof; must consume hardware-encoded packets only.");
+                "Planned after MP4 recording is sustained; encoded file outputs must consume hardware-encoded packets only.");
         }
 
         return (

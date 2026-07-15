@@ -17,15 +17,15 @@ public sealed class CapabilityReportTests
     }
 
     [Fact]
-    public void Default_catalog_marks_recording_mp4_blocked_until_export_proof()
+    public void Default_catalog_marks_recording_mp4_unavailable_until_composite_proofs_pass()
     {
         var pending = MediaForgeCapabilityCatalog.CreateDefaultEntries(GpuExportProofStatus.Pending)
             .First(e => e.Id == MediaForgeCapabilityCatalog.RecordingMp4H264);
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, pending.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, pending.SupportStatus);
 
         var passed = MediaForgeCapabilityCatalog.CreateDefaultEntries(GpuExportProofStatus.Passed)
             .First(e => e.Id == MediaForgeCapabilityCatalog.RecordingMp4H264);
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, passed.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, passed.SupportStatus);
         Assert.Contains(MediaForgeCapabilityCatalog.RenderToEncodeProof, passed.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -49,13 +49,13 @@ public sealed class CapabilityReportTests
         });
 
         Assert.Equal(
-            MediaForgeSupportStatus.PrototypeOnly,
+            MediaForgeSupportStatus.Unavailable,
             unavailable.TryGetEntry(MediaForgeCapabilityCatalog.RecordingMp4H264)!.SupportStatus);
         Assert.Equal(
-            MediaForgeSupportStatus.PrototypeOnly,
+            MediaForgeSupportStatus.Unavailable,
             unavailable.TryGetEntry(MediaForgeCapabilityCatalog.RtmpH264)!.SupportStatus);
         Assert.Equal(
-            MediaForgeSupportStatus.PrototypeOnly,
+            MediaForgeSupportStatus.Unavailable,
             unavailable.TryGetEntry(MediaForgeCapabilityCatalog.VideoFileMp4)!.SupportStatus);
 
         var available = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
@@ -88,13 +88,14 @@ public sealed class CapabilityReportTests
     }
 
     [Fact]
-    public void Default_catalog_marks_ffmpeg_not_used_in_mvp()
+    public void Default_catalog_marks_ffmpeg_deferred_for_later_packet_container_review()
     {
         var entry = MediaForgeCapabilityCatalog.CreateDefaultEntries(GpuExportProofStatus.Pending)
             .First(e => e.Id == MediaForgeCapabilityCatalog.Ffmpeg);
 
-        Assert.Equal(MediaForgeSupportStatus.NotUsedInMvp, entry.SupportStatus);
-        Assert.Equal(MediaForgeLicenseStatus.NotUsedInMvp, entry.LicenseStatus);
+        Assert.Equal(MediaForgeSupportStatus.Deferred, entry.SupportStatus);
+        Assert.Equal(MediaForgeLicenseStatus.RequiresLegalReview, entry.LicenseStatus);
+        Assert.Contains("Deferred", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -154,7 +155,7 @@ public sealed class CapabilityReportTests
 
         var decode = Assert.IsType<CapabilityEntry>(
             report.TryGetEntry(MediaForgeCapabilityCatalog.HardwareDecodeProof));
-        Assert.Equal(MediaForgeSupportStatus.Unsupported, decode.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, decode.SupportStatus);
         Assert.Contains("No hardware decoder", decode.UnavailableReason, StringComparison.OrdinalIgnoreCase);
 
         Assert.NotNull(report.TryGetEntry(MediaForgeCapabilityCatalog.Mp4OutputProductProof));
@@ -485,7 +486,9 @@ public sealed class CapabilityReportTests
             id =>
             {
                 var entry = Assert.IsType<CapabilityEntry>(report.TryGetEntry(id));
-                Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, entry.SupportStatus);
+                Assert.True(
+                    entry.SupportStatus is MediaForgeSupportStatus.Unavailable or MediaForgeSupportStatus.Supported,
+                    $"Unexpected support status for {id}: {entry.SupportStatus}");
                 Assert.False(report.IsFeatureAvailable(id));
                 Assert.False(string.IsNullOrWhiteSpace(entry.UnavailableReason));
             });
@@ -510,7 +513,7 @@ public sealed class CapabilityReportTests
         };
         var before = MediaForgeCapabilityReportBuilder.Build(baseline);
         Assert.Equal(
-            MediaForgeSupportStatus.Unsupported,
+            MediaForgeSupportStatus.Unavailable,
             before.TryGetEntry(MediaForgeCapabilityCatalog.RtmpNetworkOutputProof)!.SupportStatus);
 
         var registry = new HardwareMediaProofRegistry();

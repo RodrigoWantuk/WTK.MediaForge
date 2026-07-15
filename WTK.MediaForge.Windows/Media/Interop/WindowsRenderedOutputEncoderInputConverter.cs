@@ -79,6 +79,7 @@ internal sealed class WindowsRenderedOutputEncoderInputConverter : IRenderedOutp
                 outputTexture,
                 requirement.Width,
                 requirement.Height,
+                requirement.FramesPerSecond,
                 cancellationToken);
         }
         catch (OperationCanceledException)

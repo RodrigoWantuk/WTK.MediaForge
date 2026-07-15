@@ -173,14 +173,14 @@ public class RenderOutputTypeCatalogTests
         Assert.Equal(MediaTransportKind.GpuSurface, offscreen.TransportKind);
 
         var mp4 = Assert.Single(entries, entry => entry.Id == $"output.{RenderOutputTypes.RecordingMp4.Value}");
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, mp4.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, mp4.SupportStatus);
         Assert.Equal(MediaTransportKind.EncodedPacket, mp4.TransportKind);
-        Assert.Contains("proof", mp4.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("proofs", mp4.UnavailableReason, StringComparison.OrdinalIgnoreCase);
 
         var rtmp = Assert.Single(entries, entry => entry.Id == $"output.{RenderOutputTypes.StreamingRtmp.Value}");
-        Assert.Equal(MediaForgeSupportStatus.PrototypeOnly, rtmp.SupportStatus);
+        Assert.Equal(MediaForgeSupportStatus.Unavailable, rtmp.SupportStatus);
         Assert.Equal(MediaTransportKind.EncodedPacket, rtmp.TransportKind);
-        Assert.Contains("network RTMP", rtmp.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("RTMP", rtmp.UnavailableReason, StringComparison.OrdinalIgnoreCase);
 
         var ndi = Assert.Single(entries, entry => entry.Id == $"output.{RenderOutputTypes.Ndi.Value}");
         Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);

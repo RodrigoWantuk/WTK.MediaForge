@@ -25,14 +25,14 @@ $checks = @(
         Required = $true
     },
     @{
-        Name = "FFmpeg not used in first product path"
-        Pattern = "NotUsedInMvp"
+        Name = "FFmpeg deferred in capability catalog"
+        Pattern = "Deferred"
         File = $catalog
         Required = $true
     },
     @{
-        Name = "Policy documents FFmpeg first product path exclusion"
-        Pattern = "not used in the first hardware MP4/RTMP product path"
+        Name = "Policy documents FFmpeg deferred product path"
+        Pattern = "deferred until the native hardware MP4/RTMP product path is sustained"
         File = $policy
         Required = $true
     },

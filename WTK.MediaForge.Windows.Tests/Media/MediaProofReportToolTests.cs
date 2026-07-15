@@ -157,7 +157,7 @@ public sealed class MediaProofReportToolTests
     private static CapabilityEntry Capability(
         string id,
         string displayName,
-        MediaForgeSupportStatus status = MediaForgeSupportStatus.PrototypeOnly) =>
+        MediaForgeSupportStatus status = MediaForgeSupportStatus.Unavailable) =>
         new()
         {
             Id = id,
@@ -167,7 +167,7 @@ public sealed class MediaProofReportToolTests
             LicenseStatus = MediaForgeLicenseStatus.Approved,
             ProductReadinessStatus = status is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Experimental
                 ? MediaForgeProductReadinessStatus.ProductValidated
-                : MediaForgeProductReadinessStatus.Prototype,
+                : MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = status is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Experimental
                 ? null
                 : "Unavailable in tool test."

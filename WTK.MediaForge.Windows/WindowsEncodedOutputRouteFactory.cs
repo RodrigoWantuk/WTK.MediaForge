@@ -270,7 +270,7 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
 
             using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
             factory.EnumAdapters1(0, out var adapter).CheckError();
-            var device = D3D11GpuDevice.CreateForAdapter(adapter);
+            var device = D3D11GpuDevice.CreateForAdapter(adapter, requireVideoSupport: true);
             return new WindowsEncodedOutputRouteResources(
                 device,
                 new VulkanToD3D11EncoderSurfaceExporter(device.Device));
