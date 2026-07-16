@@ -59,7 +59,7 @@ public sealed class SourceCapabilityReadinessTests
     }
 
     [Fact]
-    public void Ndi_input_is_unsupported_until_license_and_gpu_path_are_validated()
+    public void Ndi_input_is_unsupported_until_gpu_video_path_is_validated()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(
             new HardwareMediaCapabilityReport { Platform = "Test" },
@@ -72,7 +72,7 @@ public sealed class SourceCapabilityReadinessTests
         Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);
         Assert.Equal(MediaForgeProductReadinessStatus.Contract, ndi.ProductReadinessStatus);
         Assert.False(report.IsFeatureAvailable(ndi.Id));
-        Assert.Contains("license", ndi.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("GPU-safe", ndi.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -77,7 +77,7 @@ public static class RenderOutputTypeRegistry
                 MediaForgeSupportStatus.Unsupported,
                 MediaForgeProductReadinessStatus.Contract,
                 MediaTransportKind.GpuSurface,
-                "Unsupported until NDI SDK licensing and a GPU-safe output path are approved.");
+                "Blocked until a GPU-safe NDI video output path is validated. Standard SDK discovery/runtime redistribution is handled by the Windows adapter.");
         }
 
         if (typeId == RenderOutputTypes.StreamingSrt)
@@ -106,7 +106,6 @@ public static class RenderOutputTypeRegistry
     }
 
     private static MediaForgeLicenseStatus ResolveLicenseStatus(RenderOutputTypeId typeId) =>
-        typeId == RenderOutputTypes.Ndi ||
         typeId == RenderOutputTypes.StreamingSrt ||
         typeId == RenderOutputTypes.StreamingRtsp ||
         typeId == RenderOutputTypes.StreamingHls

@@ -27,6 +27,7 @@ public sealed class WindowsNdiSourceProviderFactoryTests
             IsLoadable: true,
             LibraryPath: @"C:\NDI\Processing.NDI.Lib.x64.dll",
             Version: "NDI test runtime",
+            SupportsStandardSourceDiscovery: true,
             Reason: "Detected.")));
         var definition = new MediaForgeSourceDefinition
         {
@@ -49,6 +50,7 @@ public sealed class WindowsNdiSourceProviderFactoryTests
             IsLoadable: false,
             LibraryPath: null,
             Version: null,
+            SupportsStandardSourceDiscovery: false,
             Reason: "Missing.");
 
     private sealed class FakeNdiRuntimeProbe(WindowsNdiRuntimeInfo info) : IWindowsNdiRuntimeProbe

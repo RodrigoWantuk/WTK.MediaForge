@@ -54,8 +54,9 @@ gate is `./scripts/verify-engine-readiness-v12.ps1`; release hardware
 validation uses `./scripts/verify-engine-readiness-v12.ps1 -RequireHardwareMedia`.
 On the current Windows AMD/Radeon validation target, MP4 recording, RTMP,
 MP4 input, webcam input, desktop capture, and preview paths have passing
-product proof chains. NDI runtime detection exists on Windows, but NDI remains
-blocked by SDK/license/GPU-safe path requirements before product support.
+product proof chains. NDI Standard SDK runtime detection and source discovery
+exist on Windows, and licensed runtime DLLs can be packed as native assets, but
+NDI video input/output remain blocked until GPU-safe product proofs pass.
 
 
 ## Studio UI Direction

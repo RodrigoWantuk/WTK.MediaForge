@@ -24,13 +24,17 @@ application satisfies the SDK/EULA, attribution, and runtime distribution
 requirements. It is not an open-source/libre dependency.
 
 MediaForge may dynamically detect an installed NDI runtime (`NDI_RUNTIME_DIR_V6`,
-`NDI_RUNTIME_DIR_V5`, application directory, or `PATH`) without compiling
-against or bundling the SDK. Detection only proves the runtime is present and
-loadable. It does **not** promote NDI input/output to product support.
+`NDI_RUNTIME_DIR_V5`, application directory, NuGet native assets, `Program Files`
+runtime folders, or `PATH`). Release builds may redistribute the Standard SDK
+runtime DLLs by placing licensed copies under `third_party/ndi/windows/*`; the
+Windows project will copy and pack them as `runtimes/win-*/native` assets when
+present. Detection and redistributable packaging only prove the runtime is
+present and loadable. They do **not** promote NDI video input/output to product
+support.
 
 NDI product support requires all of the following:
 
-- legal approval for the chosen SDK/runtime redistribution model;
+- Standard SDK redistribution terms satisfied for the shipped package;
 - trademark/attribution/EULA coverage in the host application;
 - a GPU-safe input path that produces GPU-importable source leases or encoded
   transport without continuous raw CPU video frames;
@@ -40,10 +44,11 @@ NDI product support requires all of the following:
   `proof.media_io.ndi_output.product` passing with
   `BackendOutputValidated` evidence.
 
-The Standard SDK frame-buffer send/receive path is not accepted as a product
-path for continuous video because it would move decompressed video through
-CPU/RAM. Any future NDI Advanced or vendor-specific path must remain isolated
-in the platform adapter and pass the same GPU Media Law.
+The Standard SDK is accepted for runtime detection, redistribution, and source
+discovery. Its frame-buffer send/receive path is not accepted as a product path
+for continuous video because it would move decompressed video through CPU/RAM.
+Any future NDI Advanced or vendor-specific path must remain isolated in the
+platform adapter and pass the same GPU Media Law.
 
 ## Prohibited by Default
 
@@ -84,7 +89,7 @@ Future FFmpeg integration requires:
 | PCM/WAV | Planned | Future audio track |
 | VP9 | Planned | Hardware path only |
 | ProRes/DNxHR | Planned | Professional; license review |
-| NDI Full/HX | Runtime-detected / blocked | Public SDK/runtime can be detected dynamically, but product support requires license approval and GPU-safe input/output proofs |
+| NDI Full/HX | Discovery supported / video blocked | Standard SDK runtime can be detected, redistributed, and used for source discovery; product video support requires GPU-safe input/output proofs |
 | Virtual Camera | Unsupported | Platform path required |
 
 ## Static Image Decoders

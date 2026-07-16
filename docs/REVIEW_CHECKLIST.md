@@ -85,7 +85,7 @@ Before considering a change complete, verify:
 
 - [ ] Public `Scene` APIs remain aliases over `MediaForgeCanvas`, not a competing scene primitive.
 - [ ] Routes use `CanvasId -> RenderOutput -> RenderOutputSink(s)` and never direct canvas-to-encoder/NDI/preview shortcuts.
-- [ ] NDI runtime detection is not treated as product support; NDI source/output paths remain blocked unless GPU-safe product proofs pass.
+- [ ] NDI Standard SDK runtime detection/source discovery is not treated as video product support; NDI source/output video paths remain blocked unless GPU-safe product proofs pass.
 - [ ] Same scene routed to multiple sinks/outputs does not require duplicate canvas rendering when size/config/version match.
 - [ ] Same source across scenes/layers is acquired once per frame where the runtime graph can share it.
 - [ ] Reusable source effect-chain nodes are keyed by semantic source/effect configuration, not by runtime object identity.

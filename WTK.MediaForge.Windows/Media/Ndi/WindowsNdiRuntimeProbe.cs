@@ -7,6 +7,7 @@ internal sealed record WindowsNdiRuntimeInfo(
     bool IsLoadable,
     string? LibraryPath,
     string? Version,
+    bool SupportsStandardSourceDiscovery,
     string Reason)
 {
     public bool CanUseStandardSdk =>
@@ -37,13 +38,13 @@ internal sealed class WindowsNdiRuntimeProbe : IWindowsNdiRuntimeProbe
 
     private readonly Func<string, string?> _getEnvironmentVariable;
     private readonly Func<string, bool> _fileExists;
-    private readonly Func<string, (bool Success, nint Handle, string? Version, string? Error)> _tryLoadLibrary;
+    private readonly Func<string, (bool Success, nint Handle, string? Version, bool SupportsStandardSourceDiscovery, string? Error)> _tryLoadLibrary;
     private readonly IReadOnlyList<string> _additionalSearchDirectories;
 
     public WindowsNdiRuntimeProbe(
         Func<string, string?>? getEnvironmentVariable = null,
         Func<string, bool>? fileExists = null,
-        Func<string, (bool Success, nint Handle, string? Version, string? Error)>? tryLoadLibrary = null,
+        Func<string, (bool Success, nint Handle, string? Version, bool SupportsStandardSourceDiscovery, string? Error)>? tryLoadLibrary = null,
         IReadOnlyList<string>? additionalSearchDirectories = null)
     {
         _getEnvironmentVariable = getEnvironmentVariable ?? Environment.GetEnvironmentVariable;
@@ -61,6 +62,7 @@ internal sealed class WindowsNdiRuntimeProbe : IWindowsNdiRuntimeProbe
                 IsLoadable: false,
                 LibraryPath: null,
                 Version: null,
+                SupportsStandardSourceDiscovery: false,
                 Reason: "NDI runtime probing is implemented in the Windows adapter only.");
         }
 
@@ -81,6 +83,7 @@ internal sealed class WindowsNdiRuntimeProbe : IWindowsNdiRuntimeProbe
                     IsLoadable: false,
                     LibraryPath: candidate,
                     Version: null,
+                    SupportsStandardSourceDiscovery: false,
                     Reason: $"NDI runtime library was found but could not be loaded: {load.Error ?? "unknown loader error"}.");
             }
 
@@ -92,7 +95,10 @@ internal sealed class WindowsNdiRuntimeProbe : IWindowsNdiRuntimeProbe
                 IsLoadable: true,
                 LibraryPath: candidate,
                 Version: load.Version,
-                Reason: "NDI runtime library is installed and loadable, but product NDI remains blocked until a GPU-safe input/output path is validated.");
+                SupportsStandardSourceDiscovery: load.SupportsStandardSourceDiscovery,
+                Reason: load.SupportsStandardSourceDiscovery
+                    ? "NDI Standard SDK runtime is installed, loadable, and exposes source discovery. Product video I/O remains blocked until a GPU-safe input/output path is validated."
+                    : "NDI runtime library is installed and loadable, but it does not expose the Standard SDK source discovery entry points required by this adapter.");
         }
 
         return new WindowsNdiRuntimeInfo(
@@ -100,6 +106,7 @@ internal sealed class WindowsNdiRuntimeProbe : IWindowsNdiRuntimeProbe
             IsLoadable: false,
             LibraryPath: null,
             Version: null,
+            SupportsStandardSourceDiscovery: false,
             Reason: "NDI runtime library was not found. Install the NDI runtime/SDK and expose NDI_RUNTIME_DIR_V6 or NDI_RUNTIME_DIR_V5 to enable runtime probing.");
     }
 
@@ -127,7 +134,13 @@ internal sealed class WindowsNdiRuntimeProbe : IWindowsNdiRuntimeProbe
                 yield return directory!;
         }
 
-        yield return AppContext.BaseDirectory;
+        foreach (var directory in EnumerateKnownProgramFilesRuntimeDirectories())
+            yield return directory;
+
+        var baseDirectory = AppContext.BaseDirectory;
+        yield return baseDirectory;
+        yield return Path.Combine(baseDirectory, "runtimes", "win-x64", "native");
+        yield return Path.Combine(baseDirectory, "runtimes", "win-x86", "native");
 
         var path = _getEnvironmentVariable("PATH");
         if (string.IsNullOrWhiteSpace(path))
@@ -137,12 +150,25 @@ internal sealed class WindowsNdiRuntimeProbe : IWindowsNdiRuntimeProbe
             yield return directory;
     }
 
-    private static (bool Success, nint Handle, string? Version, string? Error) TryLoadNativeLibrary(string libraryPath)
+    private IEnumerable<string> EnumerateKnownProgramFilesRuntimeDirectories()
+    {
+        foreach (var variable in new[] { "ProgramFiles", "ProgramFiles(x86)" })
+        {
+            var root = _getEnvironmentVariable(variable);
+            if (string.IsNullOrWhiteSpace(root))
+                continue;
+
+            yield return Path.Combine(root!, "NDI", "NDI 6 Tools", "Runtime");
+            yield return Path.Combine(root!, "NDI", "NDI 5 Runtime");
+        }
+    }
+
+    private static (bool Success, nint Handle, string? Version, bool SupportsStandardSourceDiscovery, string? Error) TryLoadNativeLibrary(string libraryPath)
     {
         try
         {
             if (!NativeLibrary.TryLoad(libraryPath, out var handle))
-                return (false, 0, null, "NativeLibrary.TryLoad returned false.");
+                return (false, 0, null, false, "NativeLibrary.TryLoad returned false.");
 
             string? version = null;
             if (NativeLibrary.TryGetExport(handle, "NDIlib_version", out var versionExport))
@@ -152,11 +178,18 @@ internal sealed class WindowsNdiRuntimeProbe : IWindowsNdiRuntimeProbe
                 version = Marshal.PtrToStringAnsi(versionPointer);
             }
 
-            return (true, handle, version, null);
+            var supportsDiscovery =
+                NativeLibrary.TryGetExport(handle, "NDIlib_initialize", out _) &&
+                NativeLibrary.TryGetExport(handle, "NDIlib_find_create_v2", out _) &&
+                NativeLibrary.TryGetExport(handle, "NDIlib_find_destroy", out _) &&
+                NativeLibrary.TryGetExport(handle, "NDIlib_find_wait_for_sources", out _) &&
+                NativeLibrary.TryGetExport(handle, "NDIlib_find_get_current_sources", out _);
+
+            return (true, handle, version, supportsDiscovery, null);
         }
         catch (Exception ex)
         {
-            return (false, 0, null, ex.Message);
+            return (false, 0, null, false, ex.Message);
         }
     }
 

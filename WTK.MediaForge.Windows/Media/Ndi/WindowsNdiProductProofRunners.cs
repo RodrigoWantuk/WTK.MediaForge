@@ -42,7 +42,7 @@ internal sealed class WindowsNdiInputProductProofRunner : HardwareMediaProofRunn
         }
 
         return Unavailable(
-            $"NDI runtime detected at '{runtime.LibraryPath}'{FormatVersion(runtime)}. {requirement} The Standard SDK runtime alone is not accepted as a MediaForge product path because it exposes frame-buffer APIs that would require continuous CPU/RAM video transport.",
+            $"NDI Standard SDK runtime detected at '{runtime.LibraryPath}'{FormatVersion(runtime)}. {requirement} The Standard SDK is accepted for redistributable runtime use and source discovery, but its high-bandwidth video path exposes frame-buffer APIs that would require continuous CPU/RAM video transport.",
             "NDI-SDK",
             vendor);
     }
@@ -80,7 +80,7 @@ internal sealed class WindowsNdiOutputProductProofRunner : HardwareMediaProofRun
         }
 
         return ValueTask.FromResult(Unavailable(
-            $"NDI runtime detected at '{runtime.LibraryPath}'{FormatVersion(runtime)}. NDI output must consume a rendered GPU surface or hardware encoded packets without continuous CPU readback. The Standard SDK runtime alone is not accepted as a MediaForge product path because High Bandwidth send requires frame-buffer access.",
+            $"NDI Standard SDK runtime detected at '{runtime.LibraryPath}'{FormatVersion(runtime)}. NDI output must consume a rendered GPU surface or hardware encoded packets without continuous CPU readback. The Standard SDK is accepted for redistributable runtime use and source discovery, but High Bandwidth send requires frame-buffer access.",
             "NDI-SDK",
             baseline.GpuVendor));
     }

@@ -76,9 +76,10 @@ Unavailable/planned:
 - Window capture product source, SRT, virtual camera, audio capture/mix/mux,
   Linux VAAPI/DRM backend, Linux Vulkan Video backend, and macOS VideoToolbox
   backend.
-- NDI input/output product paths. The Windows adapter can dynamically detect a
-  loadable NDI runtime, but NDI remains blocked until license/redistribution
-  approval and GPU-safe input/output proofs pass. Standard SDK raw
+- NDI input/output product video paths. The Windows adapter can dynamically
+  detect a loadable Standard NDI runtime, package licensed runtime DLLs as
+  NuGet native assets when supplied, and enumerate NDI sources. NDI video
+  remains blocked until GPU-safe input/output proofs pass. Standard SDK raw
   frame-buffer send/receive is not accepted as a MediaForge product path.
 - FFmpeg/libav integration. It is deferred until native hardware media routes
   are sustained and legal review approves encoded-packet/container-only usage.
@@ -131,7 +132,7 @@ docs truthful before it is considered complete.
 | Desktop capture | Experimental | Product hardening for reset/reconnect and multi-display remains active. |
 | Window capture | Planned | Windows Graphics Capture provider is not product implemented. |
 | Webcam | Hardware-dependent experimental | Promotes when the Media Foundation webcam proof validates immediate D3D11 upload, `KeepLatest` GPU slot lifetime, and Vulkan render on the current machine. |
-| NDI | Runtime-detected / blocked | Windows detects loadable NDI runtime when installed; product support still requires license approval and GPU-safe source/output proofs. |
+| NDI | Discovery supported / video blocked | Windows detects loadable NDI runtime when installed and can enumerate sources; product video support still requires GPU-safe source/output proofs. |
 | SRT/HLS/virtual camera/audio | Planned | Out of scope until core video pipeline is sustained. |
 | RenderGraph physical executor | Active work | Logical plan and physical pass checkpoint exist; Vulkan still needs to consume the physical plan directly. |
 | Performance suite | Active work | Synthetic coverage exists; sustained real workloads are required. |
@@ -189,8 +190,8 @@ Composite product capabilities:
   `proof.media_io.mp4_input.product` (MP4 input product proof).
 - Webcam requires:
   `proof.media_io.webcam_input.product` (Webcam input product proof).
-- NDI requires runtime detection, license approval, GPU-safe input/output
-  design, and product proofs for input/output separately. The output side is
+- NDI requires runtime detection, GPU-safe input/output design, and product
+  proofs for input/output separately. The output side is
   represented by the NDI output product proof. NDI is not required for the
   current MP4/RTMP/webcam/decode hardware release gate.
 

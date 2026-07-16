@@ -159,6 +159,15 @@ public sealed class WindowsMediaCapabilityTruthTests
             ndi.SupportStatus is MediaForgeSupportStatus.Unavailable or MediaForgeSupportStatus.Blocked,
             $"Unexpected NDI support status: {ndi.SupportStatus}");
         Assert.False(report.IsFeatureAvailable(ndi.Id));
+
+        var ndiDiscovery = Assert.IsType<CapabilityEntry>(
+            report.TryGetEntry(MediaForgeCapabilityCatalog.NdiSourceDiscovery));
+        Assert.Equal(MediaForgeLicenseStatus.Approved, ndiDiscovery.LicenseStatus);
+        Assert.True(
+            ndiDiscovery.SupportStatus is MediaForgeSupportStatus.Supported or MediaForgeSupportStatus.Unavailable,
+            $"Unexpected NDI discovery support status: {ndiDiscovery.SupportStatus}");
+        if (ndiDiscovery.SupportStatus == MediaForgeSupportStatus.Supported)
+            Assert.True(report.IsFeatureAvailable(ndiDiscovery.Id));
     }
 
     [Fact]

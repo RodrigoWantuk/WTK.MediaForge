@@ -110,7 +110,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
                 : MediaForgeSupportStatus.Unavailable,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = ndiRuntime.CanUseStandardSdk
-                ? $"NDI runtime is installed and loadable at '{ndiRuntime.LibraryPath}', but MediaForge requires a GPU-safe NDI path before product support."
+                ? $"NDI Standard SDK runtime is installed and loadable at '{ndiRuntime.LibraryPath}'. Discovery is allowed, but MediaForge requires a GPU-safe NDI video path before product input/output support."
                 : ndiRuntime.Reason
         }
     ];
@@ -208,7 +208,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Backend = "NDI-SDK",
             Vendor = vendor,
             Reason = ndiRuntime.CanUseStandardSdk
-                ? $"NDI runtime detected at '{ndiRuntime.LibraryPath}', but input remains blocked until SDK licensing and a GPU-safe source lease path are validated."
+                ? $"NDI Standard SDK runtime detected at '{ndiRuntime.LibraryPath}', but video input remains blocked until a GPU-safe source lease path is validated."
                 : ndiRuntime.Reason
         },
         new HardwareMediaProof
@@ -219,7 +219,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Backend = "NDI-SDK",
             Vendor = vendor,
             Reason = ndiRuntime.CanUseStandardSdk
-                ? $"NDI runtime detected at '{ndiRuntime.LibraryPath}', but output remains blocked until SDK licensing and a GPU-safe send path are validated."
+                ? $"NDI Standard SDK runtime detected at '{ndiRuntime.LibraryPath}', but video output remains blocked until a GPU-safe send path is validated."
                 : ndiRuntime.Reason
         }
     ];

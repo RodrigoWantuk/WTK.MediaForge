@@ -72,6 +72,8 @@ Current public runtime types:
 
 - `MediaForgeEngine`
 - `MediaForgeWindows`
+- `WindowsNdiDiscoveryOptions`
+- `WindowsNdiSourceInfo`
 - `MediaForgeEngineOptions`
 - `MediaForgeEngineState`
 - `MediaForgeEngineException`
@@ -100,6 +102,10 @@ Engine operations are observable:
 - `GetEncodedOutputRuntimeSnapshots()` exposes high-level encoded output state
   (`Running`, `Backpressure`, `Failed`, etc.) and counters without exposing
   encoder workers, GPU surfaces, command buffers, or native handles
+- `MediaForgeWindows.FindNdiSourcesAsync(...)` performs Standard NDI SDK source
+  discovery on Windows when a licensed/loadable runtime is present. It returns
+  names and addresses only; it does not receive video frames, allocate raw
+  frame buffers, or promote NDI video input/output to product support.
 
 Applications must not manually wire `CompositionRuntime`, `MediaForgeRenderThread`, `RenderThreadGuard`, `IRenderBackendFactory`, `IRenderOutputSinkFactory`, or `IMediaSourceProviderFactory`.
 
@@ -203,6 +209,10 @@ Capability and license status are queryable without starting the engine:
   media proof results. The Windows capability report also promotes webcam input
   when its product proof passes. Features must not be promoted manually or from
   prototype evidence.
+- `MediaForgeCapabilityCatalog.NdiSourceDiscovery` reports whether the Windows
+  Standard NDI SDK runtime can perform source discovery. This capability is
+  metadata/discovery only and must not be used as proof that NDI video
+  input/output is available.
 - `HardwareMediaBackendCapability` reports runtime-detected OS/vendor backend facts for hardware decode/encode. A backend that requires CPU staging for continuous video, or is only `Prototype`/`Skeleton`, must not be reported as `Supported` or `Experimental`.
 - `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v12 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` is the session runner registry used to execute proof runners and merge observed proof results into capability reports. Non-passed proofs must include a user-visible reason. Passed proofs must identify the validated backend and include evidence at the required level: `BackendCallSucceeded` for render-to-encode input acceptance, `BackendOutputValidated` for encoded packets, MP4 recording/output, hardware decode, decode-to-render output, MP4 input, webcam input, RTMP network output, and NDI input/output.
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.
@@ -225,7 +235,7 @@ hardware paths are allowed only when the report contains explicit blockers. In
 release mode, `-RequireHardwareMedia` fails unless required hardware media
 features have passed proof chains.
 
-Product preview panel sinks are GPU-surface product sinks for the validated Win32/Vulkan scope. MP4 recording, RTMP streaming, MP4 input, and webcam input must still be enabled through capability reports, because their routes require hardware proof chains on the current machine. NDI is runtime-detected on Windows when the NDI runtime is installed, but detection alone does not make NDI available: input/output remain blocked until legal approval and GPU-safe product proofs pass. SRT, virtual camera, and audio outputs remain unavailable/planned until their owning roadmap tracks and capability reports say otherwise.
+Product preview panel sinks are GPU-surface product sinks for the validated Win32/Vulkan scope. MP4 recording, RTMP streaming, MP4 input, and webcam input must still be enabled through capability reports, because their routes require hardware proof chains on the current machine. NDI is runtime-detected on Windows when the NDI runtime is installed or packaged as a native asset, and Standard SDK source discovery is exposed through `FindNdiSourcesAsync`. Detection/discovery alone does not make NDI video available: input/output remain blocked until GPU-safe product proofs pass. SRT, virtual camera, and audio outputs remain unavailable/planned until their owning roadmap tracks and capability reports say otherwise.
 
 Sink compliance metadata follows the same rule: sinks that are debug-only,
 prototype-only, planned, unsupported, blocked, or otherwise not product-ready

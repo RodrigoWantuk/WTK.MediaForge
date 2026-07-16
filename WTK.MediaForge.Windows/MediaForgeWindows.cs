@@ -48,6 +48,11 @@ public static class MediaForgeWindows
         CancellationToken cancellationToken = default) =>
         GetCapabilityReportAsync(DefaultCapabilityProbe, cancellationToken);
 
+    public static ValueTask<IReadOnlyList<WindowsNdiSourceInfo>> FindNdiSourcesAsync(
+        WindowsNdiDiscoveryOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        new WindowsNdiSourceDiscovery().FindSourcesAsync(options, cancellationToken);
+
     public static HardwareMediaProofRegistry CreateHardwareMediaProofRegistry()
     {
         var registry = new HardwareMediaProofRegistry();
@@ -100,6 +105,8 @@ public static class MediaForgeWindows
         HardwareMediaCapabilityReport hardware)
     {
         var ndiRuntime = new WindowsNdiRuntimeProbe().Probe();
+        yield return CreateNdiSourceDiscoveryCapabilityEntry(ndiRuntime);
+
         foreach (var entry in MediaSourceTypeRegistry.CreateCapabilityEntries())
         {
             if (entry.Id.Equals($"source.{MediaSourceTypes.Webcam.Value}", StringComparison.OrdinalIgnoreCase) &&
@@ -140,6 +147,26 @@ public static class MediaForgeWindows
         }
     }
 
+    private static CapabilityEntry CreateNdiSourceDiscoveryCapabilityEntry(
+        WindowsNdiRuntimeInfo runtime) =>
+        new()
+        {
+            Id = MediaForgeCapabilityCatalog.NdiSourceDiscovery,
+            Category = CapabilityCategories.Source,
+            DisplayName = "NDI source discovery",
+            SupportStatus = runtime is { CanUseStandardSdk: true, SupportsStandardSourceDiscovery: true }
+                ? MediaForgeSupportStatus.Supported
+                : MediaForgeSupportStatus.Unavailable,
+            LicenseStatus = MediaForgeLicenseStatus.Approved,
+            ProductReadinessStatus = runtime is { CanUseStandardSdk: true, SupportsStandardSourceDiscovery: true }
+                ? MediaForgeProductReadinessStatus.ProductValidated
+                : MediaForgeProductReadinessStatus.Contract,
+            UnavailableReason = runtime is { CanUseStandardSdk: true, SupportsStandardSourceDiscovery: true }
+                ? null
+                : runtime.Reason,
+            TransportKind = null
+        };
+
     private static CapabilityEntry CreateNdiInputCapabilityEntry(
         CapabilityEntry entry,
         HardwareMediaCapabilityReport hardware,
@@ -153,7 +180,7 @@ public static class MediaForgeWindows
                 Category = entry.Category,
                 DisplayName = entry.DisplayName,
                 SupportStatus = MediaForgeSupportStatus.Experimental,
-                LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+                LicenseStatus = MediaForgeLicenseStatus.Approved,
                 ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated,
                 UnavailableReason = null,
                 TransportKind = entry.TransportKind
@@ -168,10 +195,10 @@ public static class MediaForgeWindows
             SupportStatus = runtime.CanUseStandardSdk
                 ? MediaForgeSupportStatus.Blocked
                 : MediaForgeSupportStatus.Unavailable,
-            LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+            LicenseStatus = MediaForgeLicenseStatus.Approved,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = runtime.CanUseStandardSdk
-                ? $"NDI runtime detected at '{runtime.LibraryPath}', but NDI input remains blocked until a GPU-safe source lease path is validated. Continuous raw CPU NDI frames are prohibited."
+                ? $"NDI Standard SDK runtime detected at '{runtime.LibraryPath}', but NDI input remains blocked until a GPU-safe source lease path is validated. Standard SDK frame-buffer receive would require continuous raw CPU video frames."
                 : runtime.Reason,
             TransportKind = entry.TransportKind
         };
@@ -190,7 +217,7 @@ public static class MediaForgeWindows
                 Category = entry.Category,
                 DisplayName = entry.DisplayName,
                 SupportStatus = MediaForgeSupportStatus.Experimental,
-                LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+                LicenseStatus = MediaForgeLicenseStatus.Approved,
                 ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated,
                 UnavailableReason = null,
                 TransportKind = entry.TransportKind
@@ -205,10 +232,10 @@ public static class MediaForgeWindows
             SupportStatus = runtime.CanUseStandardSdk
                 ? MediaForgeSupportStatus.Blocked
                 : MediaForgeSupportStatus.Unavailable,
-            LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+            LicenseStatus = MediaForgeLicenseStatus.Approved,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = runtime.CanUseStandardSdk
-                ? $"NDI runtime detected at '{runtime.LibraryPath}', but NDI output remains blocked until rendered GPU surfaces or hardware encoded packets can be sent without continuous CPU readback."
+                ? $"NDI Standard SDK runtime detected at '{runtime.LibraryPath}', but NDI output remains blocked until rendered GPU surfaces or hardware encoded packets can be sent without continuous CPU readback. Standard SDK high-bandwidth send consumes frame buffers."
                 : runtime.Reason,
             TransportKind = entry.TransportKind
         };

@@ -24,7 +24,7 @@ internal sealed class WindowsNdiSourceProviderFactory(
 
         var runtime = _runtimeProbe.Probe();
         var message = runtime.CanUseStandardSdk
-            ? $"NDI runtime is installed at '{runtime.LibraryPath}', but NDI input is not enabled because the detected SDK path has not proven GPU-safe source leases. Continuous raw CPU NDI frames are prohibited in the product path."
+            ? $"NDI Standard SDK runtime is installed at '{runtime.LibraryPath}', but NDI video input is not enabled because Standard SDK receive exposes frame buffers and has not proven GPU-safe source leases. Continuous raw CPU NDI frames are prohibited in the product path. Use MediaForgeWindows.FindNdiSourcesAsync for safe source discovery."
             : $"NDI input is unavailable. {runtime.Reason}";
 
         var exception = new MediaForgeUnsupportedFeatureException(

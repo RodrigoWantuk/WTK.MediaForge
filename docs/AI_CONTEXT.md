@@ -248,13 +248,15 @@ The legacy WinForms preview path has been removed as a product path because it u
   `GetCapabilityReportWithHardwareProofsAsync` is explicit because proof
   execution may touch D3D11/Media Foundation hardware and must not be hidden in
   cheap UI capability probes.
-- The Windows NDI adapter currently detects an installed/loadable NDI runtime
+- The Windows NDI adapter detects an installed/loadable Standard NDI runtime
   dynamically (`NDI_RUNTIME_DIR_V6`, `NDI_RUNTIME_DIR_V5`, application
-  directory, or `PATH`) without compiling against or bundling the SDK. Runtime
-  detection does not promote NDI to product support. NDI remains blocked until
-  license/redistribution approval and GPU-safe input/output proofs pass; the
-  Standard SDK raw frame-buffer path is not accepted for continuous product
-  video.
+  directory, NuGet native assets, `Program Files` runtime folders, or `PATH`).
+  Licensed runtime DLLs can be placed under `third_party/ndi/windows/*` and
+  packed as `runtimes/win-*/native` assets. `MediaForgeWindows.FindNdiSourcesAsync`
+  performs Standard SDK source discovery only. Runtime detection/discovery does
+  not promote NDI video to product support; video input/output remain blocked
+  until GPU-safe input/output proofs pass. The Standard SDK raw frame-buffer
+  path is not accepted for continuous product video.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
   `Prototype` and `Skeleton` readiness entries must never be emitted as

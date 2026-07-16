@@ -41,9 +41,11 @@ marketing:
   cannot be reported as `Supported` or `Experimental`.
 - `Prototype` and `Skeleton` backend readiness cannot be reported as
   user-available, even if the OS or GPU advertises a compatible codec.
-- NDI SDK/runtime detection is separated from product support. A loadable
-  Standard NDI runtime is reported as detected, but NDI input/output remain
-  `Blocked` until legal approval and GPU-safe source/output proofs pass.
+- NDI SDK/runtime detection is separated from product video support. A loadable
+  Standard NDI runtime is reported as detected, may be redistributed in release
+  packages when its SDK terms are satisfied, and can be used for source
+  discovery. NDI video input/output remain `Blocked` until GPU-safe
+  source/output proofs pass.
 
 ## Source Types
 
@@ -58,7 +60,7 @@ marketing:
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
 | Animated GIF/APNG/WebP | N/A | Planned | Blocked until GPU-safe strategy |
 | Lottie | N/A | Planned | Blocked until GPU-safe rasterization |
-| NDI input | Runtime-detected NDI SDK -> GpuSurface required | Blocked/unavailable | Windows adapter detects NDI runtime dynamically, but product input requires a GPU-safe source lease path; Standard SDK raw frame-buffer receive is not accepted |
+| NDI input | Standard NDI discovery -> GpuSurface video required | Discovery supported / video blocked | Windows adapter detects NDI runtime and can enumerate sources; product input requires a GPU-safe source lease path because Standard SDK raw frame-buffer receive is not accepted |
 
 ## Output Types
 
@@ -69,7 +71,7 @@ marketing:
 | Recording MP4 H.264 | EncodedPacket | Hardware-dependent | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. v12 MP4 recording/output proofs write and validate sustained packet-only MP4 files from hardware-validated packets when the hardware path is available. |
 | RTMP H.264 | EncodedPacket | Hardware-dependent experimental | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. v12 RTMP proof publishes sustained real H.264 FLV tags to a local TCP proof server when the hardware path is available. |
 | SRT | N/A | Planned | Blocked by license/transport review |
-| NDI output | Runtime-detected NDI SDK -> GpuSurface/EncodedPacket required | Blocked/unavailable | Windows adapter detects NDI runtime dynamically, but product output requires GPU-safe send without continuous CPU readback |
+| NDI output | Runtime-detected NDI SDK -> GpuSurface/EncodedPacket required | Blocked/unavailable | Windows adapter can package/detect Standard NDI runtime, but product output requires GPU-safe send without continuous CPU readback |
 | Virtual camera | N/A | Unsupported | |
 
 ## Encoder Paths
@@ -114,8 +116,8 @@ codec/backend proof:
 - Webcam input requires `proof.media_io.webcam_input.product`.
 - RTMP output requires hardware encode and
   `proof.media_io.rtmp_output.network`.
-- NDI input/output require runtime detection, license approval, a GPU-safe
-  input/output strategy, and their matching NDI product proofs. NDI is tracked
+- NDI input/output require runtime detection, a GPU-safe input/output strategy,
+  and their matching NDI product proofs. NDI is tracked
   separately from the current hardware release gate so MP4/RTMP/webcam/decode
   can ship without pretending NDI is complete.
 
@@ -129,9 +131,9 @@ TCP RTMP, hardware decode, and decode-to-render product proofs where the
 current machine supports the required hardware/driver/API path.
 On the current AMD/Radeon validation target, render-to-encode, hardware H.264
 encode, MP4 recording/output, RTMP network output, hardware decode,
-decode-to-render, MP4 input, and webcam input pass. NDI runtime probing exists,
-but NDI input/output remain blocked/unavailable until SDK licensing and
-GPU-safe input/output proofs pass.
+decode-to-render, MP4 input, and webcam input pass. NDI runtime probing and
+source discovery exist, but NDI video input/output remain blocked/unavailable
+until GPU-safe input/output proofs pass.
 The report artifacts are
 `test-reports/media-proof-report.json` and
 `test-reports/media-proof-report.md`.

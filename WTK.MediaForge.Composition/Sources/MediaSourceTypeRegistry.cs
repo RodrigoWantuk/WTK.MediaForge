@@ -110,7 +110,7 @@ public static class MediaSourceTypeRegistry
         yield return TimelineEncoded("IP camera", MediaSourceTypes.IpCamera, hasAudio: true);
         yield return Blocked("Animated image", MediaSourceTypes.AnimatedImage, "Blocked until GPU-safe frame strategy.");
         yield return Blocked("Lottie animation", MediaSourceTypes.Lottie, "Blocked until GPU-safe rasterization strategy.");
-        yield return Blocked("NDI input", MediaSourceTypes.NdiInput, "Unsupported until license and GPU path.", MediaForgeSupportStatus.Unsupported);
+        yield return Blocked("NDI input", MediaSourceTypes.NdiInput, "Blocked until a GPU-safe NDI video source path is validated. Standard SDK discovery is Windows-specific.", MediaForgeSupportStatus.Unsupported);
         yield return new MediaSourceTypeDescriptor
         {
             TypeId = MediaSourceTypes.Generated,

@@ -28,13 +28,14 @@ public sealed class WindowsNdiRuntimeProbeTests
         var probe = new WindowsNdiRuntimeProbe(
             getEnvironmentVariable: name => name == "NDI_RUNTIME_DIR_V6" ? runtimeDirectory : null,
             fileExists: path => string.Equals(path, runtimePath, StringComparison.OrdinalIgnoreCase),
-            tryLoadLibrary: path => (true, 0, "NDI test runtime", null),
+            tryLoadLibrary: path => (true, 0, "NDI test runtime", true, null),
             additionalSearchDirectories: []);
 
         var result = probe.Probe();
 
         Assert.True(result.CanUseStandardSdk);
         Assert.False(result.HasProductSafeGpuPath);
+        Assert.True(result.SupportsStandardSourceDiscovery);
         Assert.Equal(runtimePath, result.LibraryPath);
         Assert.Equal("NDI test runtime", result.Version);
     }
@@ -47,6 +48,7 @@ public sealed class WindowsNdiRuntimeProbeTests
             IsLoadable: true,
             LibraryPath: @"C:\NDI\Processing.NDI.Lib.x64.dll",
             Version: "NDI test runtime",
+            SupportsStandardSourceDiscovery: true,
             Reason: "Detected."));
         var baseline = new HardwareMediaCapabilityReport
         {

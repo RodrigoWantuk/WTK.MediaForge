@@ -21,6 +21,7 @@ public static class MediaForgeCapabilityCatalog
     public const string Mp4InputProductProof = "proof.media_io.mp4_input.product";
     public const string WebcamInputProductProof = "proof.media_io.webcam_input.product";
     public const string RtmpNetworkOutputProof = "proof.media_io.rtmp_output.network";
+    public const string NdiSourceDiscovery = "source.ndi.discovery";
     public const string NdiInputProductProof = "proof.media_io.ndi_input.product";
     public const string NdiOutputProductProof = "proof.media_io.ndi_output.product";
     public const string VideoFileMp4 = "source.video.file.mp4";

@@ -395,6 +395,8 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Windows.Media.Encode.MediaFoundationHardwareVideoEncoder",
                 "WTK.MediaForge.Windows.Media.Interop.VulkanToD3D11EncoderSurfaceExporter",
                 "WTK.MediaForge.Windows.Media.Interop.WindowsGpuExportProofDiagnostics",
+                "WTK.MediaForge.Windows.Media.Ndi.WindowsNdiDiscoveryOptions",
+                "WTK.MediaForge.Windows.Media.Ndi.WindowsNdiSourceInfo",
                 "WTK.MediaForge.Windows.Media.WindowsHardwareMediaCapabilityProbe",
                 "WTK.MediaForge.Windows.MediaForgeEngineOptions",
                 "WTK.MediaForge.Windows.MediaForgeWindows"

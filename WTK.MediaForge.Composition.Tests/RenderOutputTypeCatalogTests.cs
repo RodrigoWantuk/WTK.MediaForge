@@ -184,7 +184,7 @@ public class RenderOutputTypeCatalogTests
 
         var ndi = Assert.Single(entries, entry => entry.Id == $"output.{RenderOutputTypes.Ndi.Value}");
         Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);
-        Assert.Equal(MediaForgeLicenseStatus.RequiresLegalReview, ndi.LicenseStatus);
-        Assert.Contains("NDI SDK", ndi.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(MediaForgeLicenseStatus.Approved, ndi.LicenseStatus);
+        Assert.Contains("GPU-safe", ndi.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 }

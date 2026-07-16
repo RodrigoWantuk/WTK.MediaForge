@@ -73,7 +73,7 @@ public static class RenderOutputSinkComplianceRegistry
             Transport = MediaTransportKind.GpuSurface,
             IsProductSink = false,
             SupportStatus = MediaForgeSupportStatus.Unsupported,
-            UnavailableReason = "Unsupported until NDI SDK licensing and a GPU-safe path are approved."
+            UnavailableReason = "Unsupported until a GPU-safe NDI video output path is validated. Standard SDK discovery/runtime redistribution does not satisfy rendered surface transport."
         },
         new()
         {
