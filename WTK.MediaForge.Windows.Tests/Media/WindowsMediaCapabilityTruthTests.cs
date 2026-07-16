@@ -106,16 +106,20 @@ public sealed class WindowsMediaCapabilityTruthTests
             return;
         }
 
-        var report = await new WindowsHardwareMediaCapabilityProbe()
-            .ProbeAsync(CancellationToken.None);
-        var missing = report.Proofs
-            .Where(static proof => proof.Status != HardwareMediaProofStatus.Passed)
-            .Select(static proof => $"{proof.Id}: {proof.Status} - {proof.Reason}")
+        var capabilityReport = await MediaForgeWindows
+            .GetCapabilityReportWithHardwareProofsAsync(CancellationToken.None);
+        var validation = HardwareMediaValidationReportBuilder.Build(
+            capabilityReport,
+            requireHardwareMedia: true);
+        var missing = validation.Features
+            .Where(static feature => feature.RequiredForHardwareRelease)
+            .Where(static feature => feature.Status != HardwareMediaValidationStatus.Passed)
+            .Select(static feature => $"{feature.Id}: {feature.Status} - {feature.Reason}")
             .ToArray();
 
         Assert.True(
-            missing.Length == 0,
-            "Hardware media release gate requires all v12 proofs to pass: " + string.Join("; ", missing));
+            validation.ReleaseGatePassed && missing.Length == 0,
+            "Hardware media release gate requires all required v12 proofs to pass: " + string.Join("; ", missing));
     }
 
     [Fact]
@@ -151,7 +155,9 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         var ndi = Assert.IsType<CapabilityEntry>(
             report.TryGetEntry($"output.{RenderOutputTypes.Ndi.Value}"));
-        Assert.Equal(MediaForgeSupportStatus.Unsupported, ndi.SupportStatus);
+        Assert.True(
+            ndi.SupportStatus is MediaForgeSupportStatus.Unavailable or MediaForgeSupportStatus.Blocked,
+            $"Unexpected NDI support status: {ndi.SupportStatus}");
         Assert.False(report.IsFeatureAvailable(ndi.Id));
     }
 
@@ -176,6 +182,10 @@ public sealed class WindowsMediaCapabilityTruthTests
             runner.Id == MediaForgeCapabilityCatalog.Mp4InputProductProof);
         Assert.Contains(registry.Runners, runner =>
             runner.Id == MediaForgeCapabilityCatalog.WebcamInputProductProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.NdiInputProductProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.NdiOutputProductProof);
 
         var report = await MediaForgeWindows.GetCapabilityReportWithHardwareProofsAsync(
             new WindowsHardwareMediaCapabilityProbe(),

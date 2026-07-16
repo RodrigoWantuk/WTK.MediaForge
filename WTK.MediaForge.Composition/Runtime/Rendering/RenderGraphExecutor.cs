@@ -5,11 +5,13 @@ internal sealed class RenderGraphExecutionResult
     public RenderGraphExecutionResult(
         IReadOnlyList<string> executedNodeKeys,
         IReadOnlyList<string> skippedNodeKeys,
-        IReadOnlyDictionary<string, RenderGraphNodeResult> nodeResults)
+        IReadOnlyDictionary<string, RenderGraphNodeResult> nodeResults,
+        PhysicalRenderGraphPlan physicalPlan)
     {
         ExecutedNodeKeys = executedNodeKeys;
         SkippedNodeKeys = skippedNodeKeys;
         NodeResults = nodeResults;
+        PhysicalPlan = physicalPlan;
     }
 
     public IReadOnlyList<string> ExecutedNodeKeys { get; }
@@ -17,6 +19,8 @@ internal sealed class RenderGraphExecutionResult
     public IReadOnlyList<string> SkippedNodeKeys { get; }
 
     public IReadOnlyDictionary<string, RenderGraphNodeResult> NodeResults { get; }
+
+    public PhysicalRenderGraphPlan PhysicalPlan { get; }
 }
 
 internal static class RenderGraphExecutor
@@ -53,6 +57,7 @@ internal static class RenderGraphExecutor
         return new RenderGraphExecutionResult(
             executed,
             skipped,
-            new Dictionary<string, RenderGraphNodeResult>(context.NodeResults, StringComparer.Ordinal));
+            new Dictionary<string, RenderGraphNodeResult>(context.NodeResults, StringComparer.Ordinal),
+            plan.PhysicalPlan);
     }
 }

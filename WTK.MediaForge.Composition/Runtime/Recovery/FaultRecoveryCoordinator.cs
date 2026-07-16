@@ -10,12 +10,83 @@ public enum FaultRecoveryScenario
     DecoderUnavailable,
     MonitorDisconnected,
     WebcamRemoved,
-    GpuSwitch
+    GpuSwitch,
+    RenderExportFailed,
+    RtmpDisconnected,
+    Mp4FinalizeFailed,
+    SourceProviderFailed
+}
+
+public enum FaultRecoveryStatus
+{
+    Recovering,
+    Recovered,
+    Exhausted,
+    Canceled
+}
+
+public sealed record FaultRecoveryPolicy
+{
+    public int MaxAttempts { get; init; } = 5;
+
+    public TimeSpan InitialBackoff { get; init; } = TimeSpan.FromMilliseconds(250);
+
+    public TimeSpan MaxBackoff { get; init; } = TimeSpan.FromSeconds(5);
+
+    public bool RequiresRecordingPause { get; init; }
+
+    public bool RequiresStreamingPause { get; init; }
+
+    public bool RequiresSourceIsolation { get; init; }
+
+    public static FaultRecoveryPolicy ForScenario(FaultRecoveryScenario scenario) =>
+        scenario switch
+        {
+            FaultRecoveryScenario.EncoderUnavailable => new FaultRecoveryPolicy
+            {
+                RequiresRecordingPause = true,
+                RequiresStreamingPause = true
+            },
+            FaultRecoveryScenario.GpuSwitch => new FaultRecoveryPolicy
+            {
+                RequiresRecordingPause = true,
+                RequiresStreamingPause = true
+            },
+            FaultRecoveryScenario.RenderExportFailed => new FaultRecoveryPolicy
+            {
+                RequiresRecordingPause = true,
+                RequiresStreamingPause = true
+            },
+            FaultRecoveryScenario.RtmpDisconnected => new FaultRecoveryPolicy
+            {
+                RequiresStreamingPause = true,
+                InitialBackoff = TimeSpan.FromMilliseconds(500),
+                MaxBackoff = TimeSpan.FromSeconds(10)
+            },
+            FaultRecoveryScenario.Mp4FinalizeFailed => new FaultRecoveryPolicy
+            {
+                RequiresRecordingPause = true,
+                MaxAttempts = 1
+            },
+            FaultRecoveryScenario.WebcamRemoved => new FaultRecoveryPolicy
+            {
+                RequiresSourceIsolation = true,
+                InitialBackoff = TimeSpan.FromSeconds(1),
+                MaxBackoff = TimeSpan.FromSeconds(10)
+            },
+            FaultRecoveryScenario.SourceProviderFailed => new FaultRecoveryPolicy
+            {
+                RequiresSourceIsolation = true
+            },
+            _ => new FaultRecoveryPolicy()
+        };
 }
 
 public sealed record FaultRecoveryState
 {
     public FaultRecoveryScenario Scenario { get; init; }
+
+    public FaultRecoveryStatus Status { get; init; } = FaultRecoveryStatus.Recovering;
 
     public string Detail { get; init; } = string.Empty;
 
@@ -26,6 +97,8 @@ public sealed record FaultRecoveryState
     public bool RequiresRecordingPause { get; init; }
 
     public bool RequiresStreamingPause { get; init; }
+
+    public bool RequiresSourceIsolation { get; init; }
 }
 
 /// <summary>
@@ -33,15 +106,18 @@ public sealed record FaultRecoveryState
 /// </summary>
 public sealed class FaultRecoveryCoordinator
 {
-    private static readonly TimeSpan InitialBackoff = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(5);
-
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
+    private readonly Func<FaultRecoveryScenario, FaultRecoveryPolicy> _policyProvider;
     private readonly Dictionary<FaultRecoveryScenario, FaultRecoveryState> _states = new();
     private readonly object _gate = new();
 
-    public FaultRecoveryCoordinator(IMediaForgeDiagnosticsSink? diagnostics = null) =>
+    public FaultRecoveryCoordinator(
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        Func<FaultRecoveryScenario, FaultRecoveryPolicy>? policyProvider = null)
+    {
         _diagnostics = diagnostics;
+        _policyProvider = policyProvider ?? FaultRecoveryPolicy.ForScenario;
+    }
 
     public event EventHandler<FaultRecoveryState>? RecoveryStateChanged;
 
@@ -72,6 +148,15 @@ public sealed class FaultRecoveryCoordinator
         }
     }
 
+    public bool HasIsolatedSources
+    {
+        get
+        {
+            lock (_gate)
+                return _states.Values.Any(state => state.RequiresSourceIsolation);
+        }
+    }
+
     public async Task<FaultRecoveryState> HandleFaultAsync(
         FaultRecoveryScenario scenario,
         string detail,
@@ -80,35 +165,47 @@ public sealed class FaultRecoveryCoordinator
     {
         ArgumentNullException.ThrowIfNull(recoveryAction);
 
+        var policy = ValidatePolicy(_policyProvider(scenario));
         var attempt = 0;
-        var backoff = InitialBackoff;
+        var backoff = policy.InitialBackoff;
 
-        while (!cancellationToken.IsCancellationRequested)
+        while (true)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                var canceledState = CreateState(
+                    scenario,
+                    $"{detail} (recovery canceled)",
+                    attempt,
+                    FaultRecoveryStatus.Canceled,
+                    policy);
+                PublishState(canceledState);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             attempt++;
-            var state = CreateState(scenario, detail, attempt);
+            var state = CreateState(scenario, detail, attempt, FaultRecoveryStatus.Recovering, policy);
             PublishState(state);
 
             try
             {
                 if (await recoveryAction(cancellationToken).ConfigureAwait(false))
                 {
-                    ClearState(scenario);
+                    var recoveredState = CreateState(
+                        scenario,
+                        $"{detail} (recovered)",
+                        state.AttemptCount,
+                        FaultRecoveryStatus.Recovered,
+                        policy);
+                    PublishState(recoveredState);
                     MediaForgeDiagnostics.Report(
                         _diagnostics,
                         MediaForgeDiagnosticSeverity.Info,
                         "engine.fault_recovery_succeeded",
                         $"Recovered from {scenario}.",
                         nameof(FaultRecoveryCoordinator));
-                    return new FaultRecoveryState
-                    {
-                        Scenario = state.Scenario,
-                        Detail = $"{detail} (recovered)",
-                        AttemptCount = state.AttemptCount,
-                        LastAttemptUtc = state.LastAttemptUtc,
-                        RequiresRecordingPause = state.RequiresRecordingPause,
-                        RequiresStreamingPause = state.RequiresStreamingPause
-                    };
+                    ClearState(scenario);
+                    return recoveredState;
                 }
             }
             catch (Exception ex)
@@ -122,14 +219,19 @@ public sealed class FaultRecoveryCoordinator
                     ex);
             }
 
-            if (attempt >= 5)
+            if (attempt >= policy.MaxAttempts)
                 break;
 
             await Task.Delay(backoff, cancellationToken).ConfigureAwait(false);
-            backoff = TimeSpan.FromMilliseconds(Math.Min(backoff.TotalMilliseconds * 2, MaxBackoff.TotalMilliseconds));
+            backoff = TimeSpan.FromMilliseconds(Math.Min(backoff.TotalMilliseconds * 2, policy.MaxBackoff.TotalMilliseconds));
         }
 
-        var failedState = CreateState(scenario, $"{detail} (recovery exhausted)", attempt);
+        var failedState = CreateState(
+            scenario,
+            $"{detail} (recovery exhausted)",
+            attempt,
+            FaultRecoveryStatus.Exhausted,
+            policy);
         PublishState(failedState);
         return failedState;
     }
@@ -140,6 +242,15 @@ public sealed class FaultRecoveryCoordinator
     public void NotifyDecoderUnavailable(string detail) =>
         PublishState(CreateState(FaultRecoveryScenario.DecoderUnavailable, detail, 1));
 
+    public void NotifyRtmpDisconnected(string detail) =>
+        PublishState(CreateState(FaultRecoveryScenario.RtmpDisconnected, detail, 1));
+
+    public void NotifyRenderExportFailed(string detail) =>
+        PublishState(CreateState(FaultRecoveryScenario.RenderExportFailed, detail, 1));
+
+    public void NotifySourceProviderFailed(string detail) =>
+        PublishState(CreateState(FaultRecoveryScenario.SourceProviderFailed, detail, 1));
+
     public void ClearState(FaultRecoveryScenario scenario)
     {
         lock (_gate)
@@ -147,55 +258,43 @@ public sealed class FaultRecoveryCoordinator
     }
 
     private FaultRecoveryState CreateState(FaultRecoveryScenario scenario, string detail, int attempt) =>
-        scenario switch
+        CreateState(
+            scenario,
+            detail,
+            attempt,
+            FaultRecoveryStatus.Recovering,
+            ValidatePolicy(_policyProvider(scenario)));
+
+    private static FaultRecoveryState CreateState(
+        FaultRecoveryScenario scenario,
+        string detail,
+        int attempt,
+        FaultRecoveryStatus status,
+        FaultRecoveryPolicy policy) =>
+        new()
         {
-            FaultRecoveryScenario.EncoderUnavailable => new FaultRecoveryState
-            {
-                Scenario = scenario,
-                Detail = detail,
-                AttemptCount = attempt,
-                RequiresRecordingPause = true,
-                RequiresStreamingPause = true
-            },
-            FaultRecoveryScenario.DecoderUnavailable => new FaultRecoveryState
-            {
-                Scenario = scenario,
-                Detail = detail,
-                AttemptCount = attempt
-            },
-            FaultRecoveryScenario.VulkanDeviceLost => new FaultRecoveryState
-            {
-                Scenario = scenario,
-                Detail = detail,
-                AttemptCount = attempt
-            },
-            FaultRecoveryScenario.MonitorDisconnected => new FaultRecoveryState
-            {
-                Scenario = scenario,
-                Detail = detail,
-                AttemptCount = attempt
-            },
-            FaultRecoveryScenario.WebcamRemoved => new FaultRecoveryState
-            {
-                Scenario = scenario,
-                Detail = detail,
-                AttemptCount = attempt
-            },
-            FaultRecoveryScenario.GpuSwitch => new FaultRecoveryState
-            {
-                Scenario = scenario,
-                Detail = detail,
-                AttemptCount = attempt,
-                RequiresRecordingPause = true,
-                RequiresStreamingPause = true
-            },
-            _ => new FaultRecoveryState
-            {
-                Scenario = scenario,
-                Detail = detail,
-                AttemptCount = attempt
-            }
+            Scenario = scenario,
+            Status = status,
+            Detail = detail,
+            AttemptCount = attempt,
+            RequiresRecordingPause = policy.RequiresRecordingPause,
+            RequiresStreamingPause = policy.RequiresStreamingPause,
+            RequiresSourceIsolation = policy.RequiresSourceIsolation
         };
+
+    private static FaultRecoveryPolicy ValidatePolicy(FaultRecoveryPolicy policy)
+    {
+        if (policy.MaxAttempts <= 0)
+            throw new ArgumentOutOfRangeException(nameof(policy), "Fault recovery MaxAttempts must be positive.");
+
+        if (policy.InitialBackoff < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(policy), "Fault recovery InitialBackoff cannot be negative.");
+
+        if (policy.MaxBackoff < policy.InitialBackoff)
+            throw new ArgumentOutOfRangeException(nameof(policy), "Fault recovery MaxBackoff must be greater than or equal to InitialBackoff.");
+
+        return policy;
+    }
 
     private void PublishState(FaultRecoveryState state)
     {

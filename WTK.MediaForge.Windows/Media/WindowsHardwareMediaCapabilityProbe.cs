@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Vortice.DXGI;
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Windows.Media.Ndi;
 
 namespace WTK.MediaForge.Windows.Media;
 
@@ -10,7 +11,11 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var ndiRuntime = new WindowsNdiRuntimeProbe().Probe();
         var apis = new List<string> { "D3D11", "D3D11VA", "Vulkan", "MediaFoundation" };
+        if (ndiRuntime.CanUseStandardSdk)
+            apis.Add("NDI-SDK");
+
         var (vendor, deviceName) = TryGetPrimaryAdapterInfo();
         var report = new HardwareMediaCapabilityReport
         {
@@ -24,14 +29,16 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             RequiresCpuStaging = false,
             ExportProofStatus = GpuExportProofStatus.Pending,
             ExportProofReason = "Run the v12 proof runners to validate hardware encode/decode on this machine; baseline probing does not promote product media without executed proof evidence.",
-            BackendCapabilities = CreateBackendCapabilities(vendor),
-            Proofs = CreateProofs(vendor)
+            BackendCapabilities = CreateBackendCapabilities(vendor, ndiRuntime),
+            Proofs = CreateProofs(vendor, ndiRuntime)
         };
 
         return ValueTask.FromResult(report);
     }
 
-    private static IReadOnlyList<HardwareMediaBackendCapability> CreateBackendCapabilities(string? vendor) =>
+    private static IReadOnlyList<HardwareMediaBackendCapability> CreateBackendCapabilities(
+        string? vendor,
+        WindowsNdiRuntimeInfo ndiRuntime) =>
     [
         new HardwareMediaBackendCapability
         {
@@ -87,10 +94,30 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             SupportStatus = MediaForgeSupportStatus.Planned,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
             UnavailableReason = "VideoToolbox/CVPixelBuffer/IOSurface bridge must live in a macOS-specific project and is not implemented yet."
+        },
+        new HardwareMediaBackendCapability
+        {
+            Id = "windows.ndi.standard.runtime",
+            DisplayName = "Windows NDI SDK runtime",
+            Platform = "Windows",
+            Vendor = "Vizrt NDI AB",
+            DecodeCodecs = ["NDI"],
+            EncodeCodecs = ["NDI"],
+            RequiresGpuSurface = true,
+            RequiresCpuStaging = !ndiRuntime.HasProductSafeGpuPath,
+            SupportStatus = ndiRuntime.CanUseStandardSdk
+                ? MediaForgeSupportStatus.Blocked
+                : MediaForgeSupportStatus.Unavailable,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
+            UnavailableReason = ndiRuntime.CanUseStandardSdk
+                ? $"NDI runtime is installed and loadable at '{ndiRuntime.LibraryPath}', but MediaForge requires a GPU-safe NDI path before product support."
+                : ndiRuntime.Reason
         }
     ];
 
-    private static IReadOnlyList<HardwareMediaProof> CreateProofs(string? vendor) =>
+    private static IReadOnlyList<HardwareMediaProof> CreateProofs(
+        string? vendor,
+        WindowsNdiRuntimeInfo ndiRuntime) =>
     [
         new HardwareMediaProof
         {
@@ -180,7 +207,9 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Status = HardwareMediaProofStatus.Unavailable,
             Backend = "NDI-SDK",
             Vendor = vendor,
-            Reason = "NDI input is unsupported until SDK licensing is approved and a GPU-safe input path is validated."
+            Reason = ndiRuntime.CanUseStandardSdk
+                ? $"NDI runtime detected at '{ndiRuntime.LibraryPath}', but input remains blocked until SDK licensing and a GPU-safe source lease path are validated."
+                : ndiRuntime.Reason
         },
         new HardwareMediaProof
         {
@@ -189,7 +218,9 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             Status = HardwareMediaProofStatus.Unavailable,
             Backend = "NDI-SDK",
             Vendor = vendor,
-            Reason = "NDI output is unsupported until SDK licensing is approved and output avoids continuous CPU readback."
+            Reason = ndiRuntime.CanUseStandardSdk
+                ? $"NDI runtime detected at '{ndiRuntime.LibraryPath}', but output remains blocked until SDK licensing and a GPU-safe send path are validated."
+                : ndiRuntime.Reason
         }
     ];
 

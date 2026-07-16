@@ -6,6 +6,7 @@ using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Graphics.Vulkan;
 using WTK.MediaForge.Windows.Media;
 using WTK.MediaForge.Windows.Media.Encode;
+using WTK.MediaForge.Windows.Media.Ndi;
 using WTK.MediaForge.Windows.Media.Text;
 
 namespace WTK.MediaForge.Windows;
@@ -25,6 +26,7 @@ public static class MediaForgeWindows
             new WindowsDesktopSourceProviderFactory(options.Diagnostics),
             new WindowsImageSourceProviderFactory(options.Diagnostics),
             new WindowsWebcamSourceProviderFactory(options.Diagnostics),
+            new WindowsNdiSourceProviderFactory(options.Diagnostics),
             new WindowsUnavailableLiveSourceProviderFactory(options.Diagnostics),
             new WindowsVideoFileSourceProviderFactory(options.Diagnostics)),
             new WindowsRenderOutputSinkFactory(),
@@ -58,6 +60,8 @@ public static class MediaForgeWindows
         registry.Register(new WindowsDecodeToRenderProofRunner());
         registry.Register(new WindowsMp4InputProductProofRunner());
         registry.Register(new WindowsWebcamInputProductProofRunner());
+        registry.Register(new WindowsNdiInputProductProofRunner());
+        registry.Register(new WindowsNdiOutputProductProofRunner());
         return registry;
     }
 
@@ -95,6 +99,7 @@ public static class MediaForgeWindows
     private static IEnumerable<CapabilityEntry> CreatePlatformCapabilityEntries(
         HardwareMediaCapabilityReport hardware)
     {
+        var ndiRuntime = new WindowsNdiRuntimeProbe().Probe();
         foreach (var entry in MediaSourceTypeRegistry.CreateCapabilityEntries())
         {
             if (entry.Id.Equals($"source.{MediaSourceTypes.Webcam.Value}", StringComparison.OrdinalIgnoreCase) &&
@@ -114,11 +119,99 @@ public static class MediaForgeWindows
                 continue;
             }
 
+            if (entry.Id.Equals($"source.{MediaSourceTypes.NdiInput.Value}", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return CreateNdiInputCapabilityEntry(entry, hardware, ndiRuntime);
+                continue;
+            }
+
             yield return entry;
         }
 
         foreach (var entry in RenderOutputTypeRegistry.CreateCapabilityEntries())
+        {
+            if (entry.Id.Equals($"output.{RenderOutputTypes.Ndi.Value}", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return CreateNdiOutputCapabilityEntry(entry, hardware, ndiRuntime);
+                continue;
+            }
+
             yield return entry;
+        }
+    }
+
+    private static CapabilityEntry CreateNdiInputCapabilityEntry(
+        CapabilityEntry entry,
+        HardwareMediaCapabilityReport hardware,
+        WindowsNdiRuntimeInfo runtime)
+    {
+        if (HasPassedProof(hardware, MediaForgeCapabilityCatalog.NdiInputProductProof))
+        {
+            return new CapabilityEntry
+            {
+                Id = entry.Id,
+                Category = entry.Category,
+                DisplayName = entry.DisplayName,
+                SupportStatus = MediaForgeSupportStatus.Experimental,
+                LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+                ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated,
+                UnavailableReason = null,
+                TransportKind = entry.TransportKind
+            };
+        }
+
+        return new CapabilityEntry
+        {
+            Id = entry.Id,
+            Category = entry.Category,
+            DisplayName = entry.DisplayName,
+            SupportStatus = runtime.CanUseStandardSdk
+                ? MediaForgeSupportStatus.Blocked
+                : MediaForgeSupportStatus.Unavailable,
+            LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
+            UnavailableReason = runtime.CanUseStandardSdk
+                ? $"NDI runtime detected at '{runtime.LibraryPath}', but NDI input remains blocked until a GPU-safe source lease path is validated. Continuous raw CPU NDI frames are prohibited."
+                : runtime.Reason,
+            TransportKind = entry.TransportKind
+        };
+    }
+
+    private static CapabilityEntry CreateNdiOutputCapabilityEntry(
+        CapabilityEntry entry,
+        HardwareMediaCapabilityReport hardware,
+        WindowsNdiRuntimeInfo runtime)
+    {
+        if (HasPassedProof(hardware, MediaForgeCapabilityCatalog.NdiOutputProductProof))
+        {
+            return new CapabilityEntry
+            {
+                Id = entry.Id,
+                Category = entry.Category,
+                DisplayName = entry.DisplayName,
+                SupportStatus = MediaForgeSupportStatus.Experimental,
+                LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+                ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated,
+                UnavailableReason = null,
+                TransportKind = entry.TransportKind
+            };
+        }
+
+        return new CapabilityEntry
+        {
+            Id = entry.Id,
+            Category = entry.Category,
+            DisplayName = entry.DisplayName,
+            SupportStatus = runtime.CanUseStandardSdk
+                ? MediaForgeSupportStatus.Blocked
+                : MediaForgeSupportStatus.Unavailable,
+            LicenseStatus = MediaForgeLicenseStatus.RequiresLegalReview,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
+            UnavailableReason = runtime.CanUseStandardSdk
+                ? $"NDI runtime detected at '{runtime.LibraryPath}', but NDI output remains blocked until rendered GPU surfaces or hardware encoded packets can be sent without continuous CPU readback."
+                : runtime.Reason,
+            TransportKind = entry.TransportKind
+        };
     }
 
     private static bool HasPassedProof(HardwareMediaCapabilityReport hardware, string proofId) =>

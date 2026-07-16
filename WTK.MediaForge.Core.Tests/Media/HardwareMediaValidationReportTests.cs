@@ -83,6 +83,9 @@ public sealed class HardwareMediaValidationReportTests
         Assert.All(
             report.Features.Where(static feature => feature.RequiredForHardwareRelease),
             feature => Assert.Equal(HardwareMediaValidationStatus.Passed, feature.Status));
+        Assert.All(
+            report.Features.Where(static feature => feature.Id.Contains(".ndi", StringComparison.OrdinalIgnoreCase)),
+            feature => Assert.False(feature.RequiredForHardwareRelease));
     }
 
     [Fact]

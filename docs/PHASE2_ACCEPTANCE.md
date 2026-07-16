@@ -69,7 +69,8 @@ Current Windows product proof status:
 - Webcam input: passed when the Windows webcam proof shows Media Foundation
   capture, immediate D3D11 upload, bounded `KeepLatest` GPU slot lifetime, and
   Vulkan render validation.
-- NDI input/output: blocked until SDK licensing and GPU-safe input/output paths
+- NDI input/output: Windows runtime detection exists, but product paths remain
+  blocked until SDK licensing/redistribution and GPU-safe input/output proofs
   are approved.
 
 ## Blocking Rules Still Verified

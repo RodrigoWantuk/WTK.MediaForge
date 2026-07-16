@@ -225,7 +225,7 @@ hardware paths are allowed only when the report contains explicit blockers. In
 release mode, `-RequireHardwareMedia` fails unless required hardware media
 features have passed proof chains.
 
-Product preview panel sinks are GPU-surface product sinks for the validated Win32/Vulkan scope. MP4 recording, RTMP streaming, MP4 input, and webcam input must still be enabled through capability reports, because their routes require hardware proof chains on the current machine. NDI, SRT, virtual camera, and audio outputs remain unavailable/planned until their owning roadmap tracks and capability reports say otherwise.
+Product preview panel sinks are GPU-surface product sinks for the validated Win32/Vulkan scope. MP4 recording, RTMP streaming, MP4 input, and webcam input must still be enabled through capability reports, because their routes require hardware proof chains on the current machine. NDI is runtime-detected on Windows when the NDI runtime is installed, but detection alone does not make NDI available: input/output remain blocked until legal approval and GPU-safe product proofs pass. SRT, virtual camera, and audio outputs remain unavailable/planned until their owning roadmap tracks and capability reports say otherwise.
 
 Sink compliance metadata follows the same rule: sinks that are debug-only,
 prototype-only, planned, unsupported, blocked, or otherwise not product-ready

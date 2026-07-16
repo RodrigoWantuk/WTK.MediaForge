@@ -188,8 +188,11 @@ The legacy WinForms preview path has been removed as a product path because it u
   when a source frame is unavailable. The engine attaches the per-frame graph
   execution result to `RenderFrameSnapshot` after source leases are acquired,
   so backends can audit/consume the DAG for the submitted frame. It still does
-  not allocate Vulkan intermediate targets or execute GPU passes;
-  `GpuTextureLease` output resources are reserved for that future bridge.
+  not allocate Vulkan intermediate targets or execute GPU passes directly.
+  A physical pass checkpoint now exposes source acquisition, effect
+  intermediates, canvas passes, output passes, and rendered-output fanout, but
+  `GpuTextureLease` output resources are reserved for the future bridge where
+  Vulkan consumes that physical plan directly.
 - `ColorCorrectionEffect` is implemented in the Vulkan source-layer fragment
   shader for brightness, contrast, saturation, and hue. The shader applies
   source sample -> color correction -> chroma key -> opacity.
@@ -241,10 +244,17 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `MediaForgeWindows.CreateHardwareMediaProofRegistry()` registers Windows
   proof runners, including H.264 hardware encode, render-to-encode, MP4
   recording, MP4 output, RTMP output, hardware decode, decode-to-render, MP4
-  input, and webcam input product proofs.
+  input, webcam input, and NDI input/output product proofs.
   `GetCapabilityReportWithHardwareProofsAsync` is explicit because proof
   execution may touch D3D11/Media Foundation hardware and must not be hidden in
   cheap UI capability probes.
+- The Windows NDI adapter currently detects an installed/loadable NDI runtime
+  dynamically (`NDI_RUNTIME_DIR_V6`, `NDI_RUNTIME_DIR_V5`, application
+  directory, or `PATH`) without compiling against or bundling the SDK. Runtime
+  detection does not promote NDI to product support. NDI remains blocked until
+  license/redistribution approval and GPU-safe input/output proofs pass; the
+  Standard SDK raw frame-buffer path is not accepted for continuous product
+  video.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; Studio loads capabilities in background.
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
   `Prototype` and `Skeleton` readiness entries must never be emitted as

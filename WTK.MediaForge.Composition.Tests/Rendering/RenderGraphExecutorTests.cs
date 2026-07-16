@@ -94,6 +94,10 @@ public sealed class RenderGraphExecutorTests
 
         Assert.Equal(1, result.ExecutedNodeKeys.Count(key => key.StartsWith("canvas:", StringComparison.Ordinal)));
         Assert.Equal(2, result.ExecutedNodeKeys.Count(key => key.StartsWith("output:", StringComparison.Ordinal)));
+        Assert.Equal(1, result.PhysicalPlan.Statistics.CanvasPasses);
+        Assert.Equal(2, result.PhysicalPlan.Statistics.OutputPasses);
+        Assert.Equal(1, result.PhysicalPlan.Statistics.FanOutGroups);
+        Assert.Equal(1, result.PhysicalPlan.Statistics.ReusedCanvasOutputs);
     }
 
     [Fact]
@@ -155,6 +159,42 @@ public sealed class RenderGraphExecutorTests
         if (context.NodeResults[outputKey].SourceFrame is not { } outputFrame)
             throw new Xunit.Sdk.XunitException("Output node did not receive a source frame.");
         Assert.Equal(sourceFrame, outputFrame);
+    }
+
+    [Fact]
+    public void Physical_plan_exposes_deduplicated_source_effect_canvas_and_output_passes()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Preview", 1280, 720, out var preview)
+            .Scene("Program", 1920, 1080, out var program)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(
+                preview,
+                source,
+                layer => layer
+                    .SetBounds(0, 0, 1280, 720)
+                    .AddBlur(4))
+            .AddSourceLayer(
+                program,
+                source,
+                layer => layer
+                    .SetBounds(100, 100, 640, 360)
+                    .AddBlur(4))
+            .OffscreenOutput("Preview full", preview, 1280, 720, out _)
+            .OffscreenOutput("Preview half", preview, 640, 360, out _)
+            .OffscreenOutput("Program", program, 1920, 1080, out _)
+            .BuildValidated();
+
+        var plan = MediaForgeRenderGraphCompiler.Compile(project);
+        var physical = plan.PhysicalPlan;
+
+        Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.AcquireSourceFrame));
+        Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.RenderEffectIntermediate));
+        Assert.Equal(2, physical.Count(PhysicalRenderGraphOperationKind.RenderCanvas));
+        Assert.Equal(3, physical.Count(PhysicalRenderGraphOperationKind.RenderOutput));
+        Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.FanOutRenderedOutput));
+        Assert.True(physical.Statistics.ReusedSourceConsumers >= 1);
+        Assert.Equal(1, physical.Statistics.ReusedCanvasOutputs);
     }
 
     [Fact]

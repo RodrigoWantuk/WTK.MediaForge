@@ -159,13 +159,13 @@ public static class HardwareMediaValidationReportBuilder
             "NDI input product path",
             "source.wtk.source.ndi.input",
             [MediaForgeCapabilityCatalog.NdiInputProductProof],
-            RequiredForHardwareRelease: true),
+            RequiredForHardwareRelease: false),
         new(
             "feature.output.ndi",
             "NDI output product path",
             "output.wtk.output.ndi",
             [MediaForgeCapabilityCatalog.NdiOutputProductProof],
-            RequiredForHardwareRelease: true)
+            RequiredForHardwareRelease: false)
     ];
 
     private static readonly (string Id, string DisplayName)[] KnownProofs =

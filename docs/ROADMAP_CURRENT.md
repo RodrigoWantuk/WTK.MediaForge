@@ -60,15 +60,26 @@ Implemented but still product-limited:
 
 - Logical RenderGraph. It carries source-frame resources and skip reasons, but
   the physical GPU pass executor is still the active renderer/snapshot path.
-- Performance and recovery suites. Contracts exist, but product performance
-  must be measured with sustained render, encode, decode, MP4, and RTMP
-  workloads.
+- Physical RenderGraph checkpoint. The logical graph now exposes a physical
+  pass plan for source acquisition, effect intermediates, canvas passes,
+  output passes, and rendered-output fanout, but the Vulkan renderer still
+  needs to consume that physical plan directly.
+- Fault recovery coordination. Scenario policies now distinguish recovery,
+  recovered, exhausted, and canceled states and isolate encoded routes, RTMP,
+  export, source, and device faults, but end-to-end runtime wiring still needs
+  sustained fault-injection coverage.
+- Performance suites. Contracts exist, but product performance must be
+  measured with sustained render, encode, decode, MP4, and RTMP workloads.
 
 Unavailable/planned:
 
-- Window capture product source, NDI input/output, SRT, virtual camera, audio
-  capture/mix/mux, Linux VAAPI/DRM backend, Linux Vulkan Video backend, and
-  macOS VideoToolbox backend.
+- Window capture product source, SRT, virtual camera, audio capture/mix/mux,
+  Linux VAAPI/DRM backend, Linux Vulkan Video backend, and macOS VideoToolbox
+  backend.
+- NDI input/output product paths. The Windows adapter can dynamically detect a
+  loadable NDI runtime, but NDI remains blocked until license/redistribution
+  approval and GPU-safe input/output proofs pass. Standard SDK raw
+  frame-buffer send/receive is not accepted as a MediaForge product path.
 - FFmpeg/libav integration. It is deferred until native hardware media routes
   are sustained and legal review approves encoded-packet/container-only usage.
 
@@ -97,12 +108,12 @@ docs truthful before it is considered complete.
 | 08 | Decode-to-render sustained | Generated product MP4 asset decodes to GPU leases and renders through Vulkan without CPU frame transport over sustained playback. |
 | 09 | Desktop/window capture | Desktop duplication is validated; Windows Graphics Capture must publish GPU leases, survive device/display reset, and share sources safely. |
 | 10 | Webcam source hardening | Media Foundation capture is validated for immediate GPU upload; next work is sustained capture, device-loss/reconnect, and richer format selection tests. |
-| 11 | SceneRuntime and physical RenderGraph | Source acquisition, canvas/effect/output passes, encoded routes, and resource lifetime are compiled into executable GPU pass plans. |
+| 11 | SceneRuntime and physical RenderGraph | Source acquisition, canvas/effect/output passes, rendered-output fanout, encoded routes, and resource lifetime are compiled into executable GPU pass plans. |
 | 12 | GPU resource pooling | Render/effect/export intermediates are pooled, bounded, and retired after GPU fences without leaks or stale handles. |
 | 13 | Effects/text through graph | Layer effects, scene effects, text atlas reuse, and route transitions become graph nodes with backend capability diagnostics. |
 | 14 | Multi-output routing | Same scene/profile renders once, encodes once, and fans out to preview/MP4/RTMP when profile-compatible. |
 | 15 | Product performance suite | Product performance requires sustained render, encode, decode, MP4, and RTMP workloads with render latency, encode latency, dropped frames, CPU, RAM, and VRAM estimates. |
-| 16 | Fault recovery | Encoder failure, RTMP disconnect, MP4 finalize failure, decode EOF/seek failure, source loss, device reset, and export failure isolate affected routes. |
+| 16 | Fault recovery | Encoder failure, RTMP disconnect, MP4 finalize failure, decode EOF/seek failure, source loss, device reset, and export failure isolate affected routes with scenario-specific backoff and pause policy. |
 | 17 | Backend contract freeze | Core contracts stabilize for Windows/Linux/macOS adapters. |
 | 18 | Linux/macOS parity plan | Platform projects define VAAPI/DRM/DMABUF/Vulkan Video and VideoToolbox/CVPixelBuffer/IOSurface paths without contaminating Core. |
 
@@ -120,9 +131,9 @@ docs truthful before it is considered complete.
 | Desktop capture | Experimental | Product hardening for reset/reconnect and multi-display remains active. |
 | Window capture | Planned | Windows Graphics Capture provider is not product implemented. |
 | Webcam | Hardware-dependent experimental | Promotes when the Media Foundation webcam proof validates immediate D3D11 upload, `KeepLatest` GPU slot lifetime, and Vulkan render on the current machine. |
-| NDI | Unsupported | Requires license approval and GPU-safe source/output design. |
+| NDI | Runtime-detected / blocked | Windows detects loadable NDI runtime when installed; product support still requires license approval and GPU-safe source/output proofs. |
 | SRT/HLS/virtual camera/audio | Planned | Out of scope until core video pipeline is sustained. |
-| RenderGraph physical executor | Active work | Logical plan exists; physical GPU pass executor is not complete. |
+| RenderGraph physical executor | Active work | Logical plan and physical pass checkpoint exist; Vulkan still needs to consume the physical plan directly. |
 | Performance suite | Active work | Synthetic coverage exists; sustained real workloads are required. |
 
 ## Acceptance Suites
@@ -178,8 +189,10 @@ Composite product capabilities:
   `proof.media_io.mp4_input.product` (MP4 input product proof).
 - Webcam requires:
   `proof.media_io.webcam_input.product` (Webcam input product proof).
-- NDI requires license approval and product proofs for input/output separately.
-  The output side is represented by the NDI output product proof.
+- NDI requires runtime detection, license approval, GPU-safe input/output
+  design, and product proofs for input/output separately. The output side is
+  represented by the NDI output product proof. NDI is not required for the
+  current MP4/RTMP/webcam/decode hardware release gate.
 
 Non-passed proofs must include a reason. Passed proofs must identify backend
 evidence. Product media proofs require `BackendOutputValidated` evidence except
