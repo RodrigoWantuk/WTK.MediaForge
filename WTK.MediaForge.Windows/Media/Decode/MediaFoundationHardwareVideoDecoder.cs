@@ -6,6 +6,7 @@ using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Decode;
+using WTK.MediaForge.Windows.Media.Encode;
 using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Windows.Media.Decode;
@@ -159,7 +160,7 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
             Kind = MediaTransportAuditEventKind.HardwareDecodeSucceeded,
             Source = nameof(MediaFoundationHardwareVideoDecoder),
             EvidenceKind = MediaTransportAuditEvidenceKind.Prototype,
-            Detail = "Prototype decode path produced a GPU texture placeholder; real MF/D3D11VA decode output validation is not implemented yet."
+            Detail = "Explicit prototype decode path produced a GPU texture placeholder; this evidence is never accepted for product decode capability promotion."
         });
 
         _frameNumber++;
@@ -200,7 +201,7 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
 
     private GpuTextureLease AcquireDecodedTextureLease(DecodedD3D11VideoFrame decoded)
     {
-        _decodeTextureFactory.EnqueueDecodedTexture(
+        var materializedFormat = _decodeTextureFactory.EnqueueDecodedTexture(
             decoded.Texture,
             checked((uint)decoded.Width),
             checked((uint)decoded.Height),
@@ -211,7 +212,7 @@ public sealed class MediaFoundationHardwareVideoDecoder : IHardwareVideoDecoder,
         {
             Width = decoded.Width,
             Height = decoded.Height,
-            Format = decoded.Format.ToString(),
+            Format = materializedFormat.ToString(),
             Usage = GpuTextureUsage.ExternalImport,
             Recyclable = false
         });
@@ -231,7 +232,7 @@ internal sealed class WindowsDecodeGpuTextureFactory : IGpuTextureFactory
         _fallbackFactory = fallbackFactory;
     }
 
-    public void EnqueueDecodedTexture(
+    public Format EnqueueDecodedTexture(
         ID3D11Texture2D decodedTexture,
         uint width,
         uint height,
@@ -239,20 +240,36 @@ internal sealed class WindowsDecodeGpuTextureFactory : IGpuTextureFactory
         int subresourceIndex)
     {
         ArgumentNullException.ThrowIfNull(decodedTexture);
-        var handle = D3D11SharedTextureFactory.CreateSharedTexture(_device, width, height, format);
+        var materializedFormat = SelectMaterializedFormat(format);
+        var handle = D3D11SharedTextureFactory.CreateSharedTexture(_device, width, height, materializedFormat);
         var context = _device.ImmediateContext;
-        context.CopySubresourceRegion(
-            handle.Texture,
-            0,
-            0,
-            0,
-            0,
-            decodedTexture,
-            checked((uint)subresourceIndex));
-        context.Flush();
+
+        if (format == materializedFormat)
+        {
+            context.CopySubresourceRegion(
+                handle.Texture,
+                0,
+                0,
+                0,
+                0,
+                decodedTexture,
+                checked((uint)subresourceIndex));
+            context.Flush();
+        }
+        else
+        {
+            ConvertDecodedTextureToSharedBgra(
+                decodedTexture,
+                handle.Texture,
+                checked((int)width),
+                checked((int)height),
+                subresourceIndex);
+        }
 
         lock (_gate)
             _decodedTextures.Enqueue(new WindowsDecodeGpuPhysicalTexture(_device, handle));
+
+        return materializedFormat;
     }
 
     public IGpuPhysicalResource CreateTexture(GpuTextureDescriptor descriptor)
@@ -272,6 +289,42 @@ internal sealed class WindowsDecodeGpuTextureFactory : IGpuTextureFactory
                 _device,
                 (uint)descriptor.Width,
                 (uint)descriptor.Height));
+    }
+
+    private static Format SelectMaterializedFormat(Format decodedFormat) =>
+        decodedFormat switch
+        {
+            Format.NV12 => Format.B8G8R8A8_UNorm,
+            _ => decodedFormat
+        };
+
+    private void ConvertDecodedTextureToSharedBgra(
+        ID3D11Texture2D decodedTexture,
+        ID3D11Texture2D sharedBgraTexture,
+        int width,
+        int height,
+        int subresourceIndex)
+    {
+        using var processorOutput = D3D11BgraToNv12Converter.CreatePrivateVideoProcessorTexture(
+            _device,
+            Format.B8G8R8A8_UNorm,
+            width,
+            height,
+            BindFlags.RenderTarget);
+
+        D3D11BgraToNv12Converter.ExecuteVideoProcessorBlt(
+            _device,
+            _device.ImmediateContext,
+            decodedTexture,
+            processorOutput,
+            width,
+            height,
+            framesPerSecond: 60,
+            sourceArraySlice: subresourceIndex,
+            CancellationToken.None);
+
+        _device.ImmediateContext.CopyResource(sharedBgraTexture, processorOutput);
+        _device.ImmediateContext.Flush();
     }
 }
 

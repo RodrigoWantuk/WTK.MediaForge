@@ -14,8 +14,7 @@ internal sealed class WindowsUnavailableLiveSourceProviderFactory(
     public bool CanCreate(MediaSourceTypeId typeId)
     {
         var canonical = MediaSourceTypeRegistry.ResolveCanonical(typeId);
-        return canonical == MediaSourceTypes.WindowCapture ||
-               canonical == MediaSourceTypes.Webcam;
+        return canonical == MediaSourceTypes.WindowCapture;
     }
 
     public IVideoFrameProvider CreateProvider(MediaForgeSourceDefinition sourceDefinition)
@@ -25,9 +24,7 @@ internal sealed class WindowsUnavailableLiveSourceProviderFactory(
         var canonical = MediaSourceTypeRegistry.ResolveCanonical(sourceDefinition.TypeId);
         var message = canonical == MediaSourceTypes.WindowCapture
             ? "Windows window capture is planned until a Windows Graphics Capture provider publishes D3D11 GPU frame leases."
-            : canonical == MediaSourceTypes.Webcam
-                ? "Windows webcam capture is planned until a provider uploads system frames to GPU immediately and is product validated."
-                : $"Source type '{sourceDefinition.TypeId.Value}' is not handled by this provider factory.";
+            : $"Source type '{sourceDefinition.TypeId.Value}' is not handled by this provider factory.";
 
         var featureCode = $"source.{canonical.Value}";
         var exception = new MediaForgeUnsupportedFeatureException(featureCode, message);

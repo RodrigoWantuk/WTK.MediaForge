@@ -24,6 +24,7 @@ public static class MediaForgeWindows
             new CompositeMediaSourceProviderFactory(
             new WindowsDesktopSourceProviderFactory(options.Diagnostics),
             new WindowsImageSourceProviderFactory(options.Diagnostics),
+            new WindowsWebcamSourceProviderFactory(options.Diagnostics),
             new WindowsUnavailableLiveSourceProviderFactory(options.Diagnostics),
             new WindowsVideoFileSourceProviderFactory(options.Diagnostics)),
             new WindowsRenderOutputSinkFactory(),
@@ -55,6 +56,8 @@ public static class MediaForgeWindows
         registry.Register(new WindowsRtmpNetworkOutputProofRunner());
         registry.Register(new WindowsHardwareDecodeProofRunner());
         registry.Register(new WindowsDecodeToRenderProofRunner());
+        registry.Register(new WindowsMp4InputProductProofRunner());
+        registry.Register(new WindowsWebcamInputProductProofRunner());
         return registry;
     }
 
@@ -70,8 +73,7 @@ public static class MediaForgeWindows
         var hardware = await probe.ProbeAsync(cancellationToken).ConfigureAwait(false);
         return MediaForgeCapabilityReportBuilder.Build(
             hardware,
-            MediaSourceTypeRegistry.CreateCapabilityEntries()
-                .Concat(RenderOutputTypeRegistry.CreateCapabilityEntries()));
+            CreatePlatformCapabilityEntries(hardware));
     }
 
     public static async ValueTask<MediaForgeCapabilityReport> GetCapabilityReportWithHardwareProofsAsync(
@@ -87,9 +89,42 @@ public static class MediaForgeWindows
         var mergedHardware = HardwareMediaProofRegistry.ApplyResults(hardware, proofResults);
         return MediaForgeCapabilityReportBuilder.Build(
             mergedHardware,
-            MediaSourceTypeRegistry.CreateCapabilityEntries()
-                .Concat(RenderOutputTypeRegistry.CreateCapabilityEntries()));
+            CreatePlatformCapabilityEntries(mergedHardware));
     }
+
+    private static IEnumerable<CapabilityEntry> CreatePlatformCapabilityEntries(
+        HardwareMediaCapabilityReport hardware)
+    {
+        foreach (var entry in MediaSourceTypeRegistry.CreateCapabilityEntries())
+        {
+            if (entry.Id.Equals($"source.{MediaSourceTypes.Webcam.Value}", StringComparison.OrdinalIgnoreCase) &&
+                HasPassedProof(hardware, MediaForgeCapabilityCatalog.WebcamInputProductProof))
+            {
+                yield return new CapabilityEntry
+                {
+                    Id = entry.Id,
+                    Category = entry.Category,
+                    DisplayName = entry.DisplayName,
+                    SupportStatus = MediaForgeSupportStatus.Experimental,
+                    LicenseStatus = entry.LicenseStatus,
+                    ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated,
+                    UnavailableReason = null,
+                    TransportKind = entry.TransportKind
+                };
+                continue;
+            }
+
+            yield return entry;
+        }
+
+        foreach (var entry in RenderOutputTypeRegistry.CreateCapabilityEntries())
+            yield return entry;
+    }
+
+    private static bool HasPassedProof(HardwareMediaCapabilityReport hardware, string proofId) =>
+        hardware.Proofs.Any(proof =>
+            proof.Id.Equals(proofId, StringComparison.OrdinalIgnoreCase) &&
+            proof.Status == HardwareMediaProofStatus.Passed);
 
     private static void ValidateOptions(MediaForgeEngineOptions options)
     {

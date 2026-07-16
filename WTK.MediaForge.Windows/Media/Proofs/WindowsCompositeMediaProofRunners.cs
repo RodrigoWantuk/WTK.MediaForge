@@ -402,3 +402,143 @@ internal sealed class WindowsDecodeToRenderProofRunner : HardwareMediaProofRunne
         }
     }
 }
+
+internal sealed class WindowsMp4InputProductProofRunner : HardwareMediaProofRunner
+{
+    public WindowsMp4InputProductProofRunner()
+        : base(MediaForgeCapabilityCatalog.Mp4InputProductProof, "Windows MP4 input product proof")
+    {
+    }
+
+    public override async ValueTask<HardwareMediaProofResult> RunAsync(
+        HardwareMediaCapabilityReport baseline,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return Unavailable(
+                "Windows MP4 input proof requires Windows D3D11VA, the video file source provider, and Vulkan.",
+                "MediaFoundation-D3D11VA+Vulkan",
+                baseline.GpuVendor);
+        }
+
+        try
+        {
+            await using var asset = await WindowsProductMp4ProofAsset
+                .CreateAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            await WindowsHardwareDecodeProofPipeline
+                .SubmitVideoFileProviderFrameToRendererAsync(asset, cancellationToken)
+                .ConfigureAwait(false);
+
+            return Passed(
+                "MediaFoundation-D3D11VA+Vulkan",
+                [
+                    nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated),
+                    "MP4Demux",
+                    "VideoFileSourceProvider",
+                    "D3D11DecodedTexture",
+                    "GpuSourceFrameLease",
+                    "VulkanOffscreenRenderTarget"
+                ],
+                baseline.GpuVendor,
+                "Opened a generated MP4 through the Windows video file source provider, published a GPU source frame, and rendered it through Vulkan.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Unavailable(
+                $"MP4 input product proof unavailable on this machine: {ex.Message}",
+                "MediaFoundation-D3D11VA+Vulkan",
+                baseline.GpuVendor);
+        }
+    }
+}
+
+internal sealed class WindowsWebcamInputProductProofRunner : HardwareMediaProofRunner
+{
+    public WindowsWebcamInputProductProofRunner()
+        : base(MediaForgeCapabilityCatalog.WebcamInputProductProof, "Windows webcam input product proof")
+    {
+    }
+
+    public override async ValueTask<HardwareMediaProofResult> RunAsync(
+        HardwareMediaCapabilityReport baseline,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return Unavailable(
+                "Windows webcam input proof requires Media Foundation capture, D3D11 upload, and Vulkan.",
+                "MediaFoundation-Webcam-D3D11Upload+Vulkan",
+                baseline.GpuVendor);
+        }
+
+        try
+        {
+            var devices = WindowsWebcamDeviceEnumerator.Enumerate();
+            if (devices.Count == 0)
+            {
+                return Unavailable(
+                    "No Media Foundation webcam device was found on this machine.",
+                    "MediaFoundation-Webcam-D3D11Upload+Vulkan",
+                    baseline.GpuVendor);
+            }
+
+            var device = SelectProofDevice(devices);
+
+            await WindowsHardwareDecodeProofPipeline
+                .SubmitWebcamProviderFrameToRendererAsync(device, cancellationToken)
+                .ConfigureAwait(false);
+
+            return Passed(
+                "MediaFoundation-Webcam-D3D11Upload+Vulkan",
+                [
+                    nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated),
+                    "MediaFoundationWebcamDevice",
+                    "ImmediateD3D11Upload",
+                    "KeepLatestGpuSlotRing",
+                    "GpuSourceFrameLease",
+                    "VulkanOffscreenRenderTarget"
+                ],
+                baseline.GpuVendor,
+                $"Captured one webcam frame from '{device.FriendlyName}', uploaded it immediately to a D3D11 shared GPU texture, and rendered it through Vulkan.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Unavailable(
+                $"Webcam input product proof unavailable on this machine: {ex.Message}",
+                "MediaFoundation-Webcam-D3D11Upload+Vulkan",
+                baseline.GpuVendor);
+        }
+    }
+
+    private static WindowsWebcamDeviceInfo SelectProofDevice(IReadOnlyList<WindowsWebcamDeviceInfo> devices) =>
+        devices
+            .OrderBy(DeviceScore)
+            .ThenBy(device => device.FriendlyName, StringComparer.OrdinalIgnoreCase)
+            .First();
+
+    private static int DeviceScore(WindowsWebcamDeviceInfo device)
+    {
+        var text = $"{device.DeviceId} {device.FriendlyName}";
+        if (text.Contains(@"\\?\usb#", StringComparison.OrdinalIgnoreCase))
+            return 0;
+
+        if (text.Contains("ndi", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("obs", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("virtual", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("manycam", StringComparison.OrdinalIgnoreCase))
+        {
+            return 20;
+        }
+
+        return 10;
+    }
+}

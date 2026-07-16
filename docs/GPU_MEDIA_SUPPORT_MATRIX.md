@@ -48,10 +48,10 @@ marketing:
 |--------|-----------|--------|-------|
 | Desktop capture | GpuSurface | Experimental | D3D11 shared texture |
 | Window capture | GpuSurface | Planned | Requires Windows Graphics Capture provider that publishes D3D11 GPU frame leases |
-| Webcam | GpuSurface | Planned | Raw CPU input possible at system boundary only; no product GPU-upload provider yet |
+| Webcam | GpuSurface | Hardware-dependent experimental | Windows Media Foundation provider validates immediate OS-boundary upload to D3D11 shared GPU textures through `proof.media_io.webcam_input.product`; raw CPU frames must not circulate beyond that boundary |
 | Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows product path | Load-time CPU decode; CPU copy released after GPU upload |
 | Static image WebP | N/A | Planned | Blocked until license review |
-| Video file MP4 | EncodedPacket -> GpuSurface | Unavailable until composite proofs pass | Windows SourceReader/D3D11VA accepts only IMFDXGIBuffer GPU samples; product source capability promotes only when hardware decode, decode-to-render, and MP4 input proofs pass |
+| Video file MP4 | EncodedPacket -> GpuSurface | Hardware-dependent experimental | Windows SourceReader/D3D11VA accepts only IMFDXGIBuffer GPU samples; product source capability promotes only when hardware decode, decode-to-render, and MP4 input proofs pass |
 | RTSP/IP camera | EncodedPacket -> GpuSurface | Planned | Hardware decode required |
 | Animated GIF/APNG/WebP | N/A | Planned | Blocked until GPU-safe strategy |
 | Lottie | N/A | Planned | Blocked until GPU-safe rasterization |
@@ -114,27 +114,26 @@ codec/backend proof:
 - NDI input/output require license approval plus their matching NDI product
   proofs.
 
-`./scripts/verify-engine-readiness-v9.ps1` is the default product-boundary gate.
-`./scripts/verify-engine-readiness-v10.ps1` adds GPU and Performance tiers for
-full local readiness before promotion. `./scripts/verify-engine-readiness-v11.ps1`
-adds encoded route/status/backpressure tests, capability proof aggregation
-checks, and generated media proof reports. `./scripts/verify-engine-readiness-v12.ps1`
-is the current official gate; it keeps the v11 baseline and adds encoded output
-profile and D3D11 encoder ownership checks before media capability promotion.
+`./scripts/verify-engine-readiness-v12.ps1` is the current official
+product-boundary gate. Older v9/v10/v11 readiness scripts remain layered
+historical evidence, but new hardware-first media promotion must use v12.
+The v12 gate keeps the v11 baseline and adds encoded output profile and D3D11
+encoder ownership checks before media capability promotion.
 The v12 Windows composite runners execute render-to-encode, packet-only MP4,
 TCP RTMP, hardware decode, and decode-to-render product proofs where the
 current machine supports the required hardware/driver/API path.
 On the current AMD/Radeon validation target, render-to-encode, hardware H.264
-encode, MP4 recording/output, and RTMP network output pass; MP4 input/decode,
-webcam, and NDI remain blocked/unavailable until their own product proofs pass.
+encode, MP4 recording/output, RTMP network output, hardware decode,
+decode-to-render, MP4 input, and webcam input pass. NDI remains
+blocked/unavailable until SDK licensing and GPU-safe input/output proofs pass.
 The report artifacts are
 `test-reports/media-proof-report.json` and
 `test-reports/media-proof-report.md`.
 
 ## Decode-To-Render Proof Gate
 
-Video file sources remain **Unavailable** until the audit trail proves the
-complete GPU path:
+Video file sources are hardware-dependent and promote only when the audit trail
+proves the complete GPU path:
 
 ```text
 encoded file/source packet

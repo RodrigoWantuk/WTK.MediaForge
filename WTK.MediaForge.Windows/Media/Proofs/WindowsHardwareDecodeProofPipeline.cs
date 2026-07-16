@@ -1,9 +1,11 @@
 using WTK.MediaForge.Composition.Media.Mux;
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Composition.Sources;
+using WTK.MediaForge.Composition.Sources.Settings;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
@@ -12,6 +14,7 @@ using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Decode;
+using WTK.MediaForge.Core.Sources;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
 using WTK.MediaForge.Windows.Media.Decode;
 
@@ -82,15 +85,90 @@ internal static class WindowsHardwareDecodeProofPipeline
     {
         ArgumentNullException.ThrowIfNull(decoded);
 
+        var sourceLease = DecodedFrameToSourceFrameAdapter.Instance
+            .CreateSourceFrameLease(decoded, SourceId.New(), frameNumber: 1);
+        await SubmitSourceFrameLeaseToRendererAsync(sourceLease, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async ValueTask SubmitVideoFileProviderFrameToRendererAsync(
+        WindowsProductMp4ProofAsset asset,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(asset);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var sourceId = SourceId.New();
+        var provider = new WindowsVideoFileSourceProviderFactory(enableProductProvider: true)
+            .CreateProvider(CreateVideoFileSourceDefinition(sourceId, asset.Path));
+        try
+        {
+            await provider.StartAsync(cancellationToken).ConfigureAwait(false);
+            var frameLease = await WaitForProviderFrameAsync(provider, cancellationToken).ConfigureAwait(false);
+            await SubmitSourceFrameLeaseToRendererAsync(frameLease, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                await provider.StopAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (provider is IDisposable disposable)
+                    disposable.Dispose();
+            }
+        }
+    }
+
+    public static async ValueTask SubmitWebcamProviderFrameToRendererAsync(
+        WindowsWebcamDeviceInfo device,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var sourceId = SourceId.New();
+        var provider = new WindowsWebcamSourceProviderFactory()
+            .CreateProvider(CreateWebcamSourceDefinition(sourceId, device));
+        try
+        {
+            await provider.StartAsync(cancellationToken)
+                .WaitAsync(ProofTimeout, cancellationToken)
+                .ConfigureAwait(false);
+            var frameLease = await WaitForProviderFrameAsync(provider, cancellationToken).ConfigureAwait(false);
+            await SubmitSourceFrameLeaseToRendererAsync(frameLease, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                await provider.StopAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (provider is IAsyncDisposable asyncDisposable)
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                else if (provider is IDisposable disposable)
+                    disposable.Dispose();
+            }
+        }
+    }
+
+    private static async ValueTask SubmitSourceFrameLeaseToRendererAsync(
+        GpuFrameLease sourceLease,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sourceLease);
+
         var outputId = RenderOutputId.New();
         var canvasId = CanvasId.New();
-        var sourceId = SourceId.New();
         var guard = new RenderThreadGuard();
         guard.BindToCurrentThread();
 
         MediaForgeVulkanRenderer? renderer = null;
         IRenderFrameSubmission? submission = null;
         RenderFrameSnapshot? snapshot = null;
+        var leaseTransferredToSnapshot = false;
         try
         {
             if (!MediaForgeVulkanRenderer.TryCreate(
@@ -104,9 +182,8 @@ internal static class WindowsHardwareDecodeProofPipeline
             }
 
             renderer.BindOutput(CreateOffscreenBinding(outputId));
-            var sourceLease = DecodedFrameToSourceFrameAdapter.Instance
-                .CreateSourceFrameLease(decoded, sourceId, frameNumber: 1);
             snapshot = CreateDecodedSourceSnapshot(canvasId, outputId, sourceLease);
+            leaseTransferredToSnapshot = true;
             submission = renderer.Submit(snapshot);
             await submission.WaitForCompletionAsync(ProofTimeout, cancellationToken).ConfigureAwait(false);
 
@@ -128,6 +205,9 @@ internal static class WindowsHardwareDecodeProofPipeline
         }
         finally
         {
+            if (!leaseTransferredToSnapshot)
+                sourceLease.Dispose();
+
             if (submission is not null)
             {
                 try
@@ -146,6 +226,64 @@ internal static class WindowsHardwareDecodeProofPipeline
             guard.Clear();
         }
     }
+
+    private static async ValueTask<GpuFrameLease> WaitForProviderFrameAsync(
+        IVideoFrameProvider provider,
+        CancellationToken cancellationToken)
+    {
+        var deadline = TimeProvider.System.GetTimestamp() +
+                       TimeProvider.System.TimestampFrequency * (long)ProofTimeout.TotalSeconds;
+        while (TimeProvider.System.GetTimestamp() < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (provider.TryAcquireLatestFrame(out var lease))
+                return lease;
+
+            if (provider.State == MediaSourceState.Failed)
+            {
+                throw new NotSupportedException(
+                    "Windows video file provider failed before publishing a GPU source frame.",
+                    provider.LastError);
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(5), cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException("Windows video file provider did not publish a GPU frame before the proof timeout.");
+    }
+
+    private static MediaForgeSourceDefinition CreateVideoFileSourceDefinition(
+        SourceId sourceId,
+        string path) =>
+        new()
+        {
+            Id = sourceId,
+            Name = "MP4 input product proof",
+            TypeId = MediaSourceTypes.VideoFile,
+            Settings = MediaSourceSettingsSerializer.ToJson(new VideoFileSourceSettings
+            {
+                Path = path,
+                Loop = false
+            })
+        };
+
+    private static MediaForgeSourceDefinition CreateWebcamSourceDefinition(
+        SourceId sourceId,
+        WindowsWebcamDeviceInfo device) =>
+        new()
+        {
+            Id = sourceId,
+            Name = device.FriendlyName,
+            TypeId = MediaSourceTypes.Webcam,
+            Settings = MediaSourceSettingsSerializer.ToJson(new WebcamSourceSettings
+            {
+                DeviceId = device.DeviceId,
+                PreferredWidth = 1280,
+                PreferredHeight = 720,
+                PreferredFrameRate = 30
+            })
+        };
 
     private static RenderOutputBindingSnapshot CreateOffscreenBinding(RenderOutputId outputId) =>
         new()

@@ -150,10 +150,8 @@ Before considering a change complete, verify:
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
 - [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15-20.
-- [ ] Engine readiness v9 (`verify-engine-readiness-v9.ps1`) passes before promoting prototype/skeleton media paths.
-- [ ] Engine readiness v10 (`verify-engine-readiness-v10.ps1`) passes before promoting media transport, encoder, decoder, render-output encode, sink, or capability work.
-- [ ] Engine readiness v11 (`verify-engine-readiness-v11.ps1`) passes and generates the media proof report before promoting media proof or encoded-route work.
-- [ ] Engine readiness v12 (`verify-engine-readiness-v12.ps1`) is the current official gate for hardware-first media work; encoded outputs must use `EncodedVideoProfile`, and Media Foundation encoder device ownership must be tested.
+- [ ] Engine readiness v12 (`verify-engine-readiness-v12.ps1`) is the current official gate for hardware-first media work; encoded outputs must use `EncodedVideoProfile`, Media Foundation encoder device ownership must be tested, and the media proof report must be regenerated.
+- [ ] Older v9/v10/v11 readiness scripts are historical/layered evidence only; do not promote new media paths from them when v12 disagrees.
 - [ ] Release hardware media readiness uses the current readiness script with `-RequireHardwareMedia`; missing required proofs must fail with an actionable report, not silent success.
 - [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.
 

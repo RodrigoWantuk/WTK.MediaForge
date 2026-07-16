@@ -64,10 +64,11 @@ Current Windows product proof status:
   render-to-encode, and RTMP network proof all passed.
 - Hardware H.264 decode: passed when the report shows Media Foundation/D3D11VA
   returns a decoded GPU texture.
-- MP4 video input: blocked until decode-to-render and source lifecycle proofs
-  pass through the normal engine route.
-- Webcam input: blocked until the Windows webcam provider uploads frames to GPU
-  immediately, uses bounded `KeepLatest`, and is product validated.
+- MP4 video input: passed when hardware decode, decode-to-render, and MP4 input
+  product proofs all pass through the normal Windows provider route.
+- Webcam input: passed when the Windows webcam proof shows Media Foundation
+  capture, immediate D3D11 upload, bounded `KeepLatest` GPU slot lifetime, and
+  Vulkan render validation.
 - NDI input/output: blocked until SDK licensing and GPU-safe input/output paths
   are approved.
 

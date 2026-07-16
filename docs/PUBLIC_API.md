@@ -200,10 +200,11 @@ Capability and license status are queryable without starting the engine:
   current schema version is `1`.
 - `CapabilityProofAggregator` resolves composite product capabilities such as
   MP4 recording, RTMP streaming, and MP4 video input from required hardware
-  media proof results. It must not promote features manually or from prototype
-  evidence.
+  media proof results. The Windows capability report also promotes webcam input
+  when its product proof passes. Features must not be promoted manually or from
+  prototype evidence.
 - `HardwareMediaBackendCapability` reports runtime-detected OS/vendor backend facts for hardware decode/encode. A backend that requires CPU staging for continuous video, or is only `Prototype`/`Skeleton`, must not be reported as `Supported` or `Experimental`.
-- `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v8 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` is the session runner registry used to execute proof runners and merge observed proof results into capability reports. Non-passed proofs must include a user-visible reason. Passed proofs must identify the validated backend and include evidence at the required level: `BackendCallSucceeded` for render-to-encode input acceptance, `BackendOutputValidated` for encoded packets, MP4 recording/output, hardware decode, decode-to-render output, MP4 input, webcam input, RTMP network output, and NDI input/output.
+- `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v12 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` is the session runner registry used to execute proof runners and merge observed proof results into capability reports. Non-passed proofs must include a user-visible reason. Passed proofs must identify the validated backend and include evidence at the required level: `BackendCallSucceeded` for render-to-encode input acceptance, `BackendOutputValidated` for encoded packets, MP4 recording/output, hardware decode, decode-to-render output, MP4 input, webcam input, RTMP network output, and NDI input/output.
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.
 - Capability entries that are not user-available (`Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, `Blocked`, `Prohibited`, or equivalent non-product states) must include a non-empty `UnavailableReason` suitable for UI and diagnostics.
 - `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.
@@ -224,7 +225,7 @@ hardware paths are allowed only when the report contains explicit blockers. In
 release mode, `-RequireHardwareMedia` fails unless required hardware media
 features have passed proof chains.
 
-Product preview panel sinks are GPU-surface product sinks for the validated Win32/Vulkan scope. MP4 recording and RTMP streaming must still be enabled through capability reports, because their routes require composite hardware proof chains on the current machine. NDI, SRT, virtual camera, and audio outputs remain unavailable/planned until their owning roadmap tracks and capability reports say otherwise.
+Product preview panel sinks are GPU-surface product sinks for the validated Win32/Vulkan scope. MP4 recording, RTMP streaming, MP4 input, and webcam input must still be enabled through capability reports, because their routes require hardware proof chains on the current machine. NDI, SRT, virtual camera, and audio outputs remain unavailable/planned until their owning roadmap tracks and capability reports say otherwise.
 
 Sink compliance metadata follows the same rule: sinks that are debug-only,
 prototype-only, planned, unsupported, blocked, or otherwise not product-ready

@@ -73,10 +73,10 @@ public sealed class DocsProductTruthTests
         Assert.Contains("Current Windows product proof status", phase2Acceptance, StringComparison.Ordinal);
         Assert.Contains("MP4 recording product path: passed", phase2Acceptance, StringComparison.Ordinal);
         Assert.Contains("RTMP H.264 product path: passed", phase2Acceptance, StringComparison.Ordinal);
-        Assert.Contains("MP4 video input: blocked", phase2Acceptance, StringComparison.Ordinal);
+        Assert.Contains("MP4 video input: passed", phase2Acceptance, StringComparison.Ordinal);
         Assert.Contains("Use `MediaForgeSupportStatus`, `ProductReadinessStatus`, and the media proof", phase2Acceptance, StringComparison.Ordinal);
 
-        Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | Unavailable until composite proofs pass |", supportMatrix, StringComparison.Ordinal);
+        Assert.Contains("| Video file MP4 | EncodedPacket -> GpuSurface | Hardware-dependent experimental |", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("| Recording MP4 H.264 | EncodedPacket | Hardware-dependent |", supportMatrix, StringComparison.Ordinal);
         Assert.Contains("| RTMP H.264 | EncodedPacket | Hardware-dependent experimental |", supportMatrix, StringComparison.Ordinal);
     }
@@ -135,7 +135,7 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Engine_truth_docs_define_v8_hardware_media_proof_gate()
+    public void Engine_truth_docs_define_v12_hardware_media_proof_gate()
     {
         var repoRoot = FindRepositoryRoot();
         var aiContext = File.ReadAllText(Path.Combine(repoRoot, "docs", "AI_CONTEXT.md"));
@@ -143,11 +143,8 @@ public sealed class DocsProductTruthTests
         var supportMatrix = File.ReadAllText(Path.Combine(repoRoot, "docs", "GPU_MEDIA_SUPPORT_MATRIX.md"));
         var publicApi = File.ReadAllText(Path.Combine(repoRoot, "docs", "PUBLIC_API.md"));
 
-        Assert.Contains("verify-engine-readiness-v9.ps1", aiContext, StringComparison.Ordinal);
-        Assert.Contains("verify-engine-readiness-v10.ps1", aiContext, StringComparison.Ordinal);
-        Assert.Contains("verify-engine-readiness-v11.ps1", aiContext, StringComparison.Ordinal);
         Assert.Contains("verify-engine-readiness-v12.ps1", aiContext, StringComparison.Ordinal);
-        Assert.Contains("v8 hardware media proofs", aiContext, StringComparison.Ordinal);
+        Assert.Contains("v12 hardware media proofs", aiContext, StringComparison.Ordinal);
         Assert.Contains("HardwareMediaProof", publicApi, StringComparison.Ordinal);
         Assert.Contains("EncodedVideoProfile", publicApi, StringComparison.Ordinal);
         Assert.Contains("BackendOutputValidated", supportMatrix, StringComparison.Ordinal);

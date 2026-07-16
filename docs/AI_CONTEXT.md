@@ -96,11 +96,13 @@ The legacy WinForms preview path has been removed as a product path because it u
   leases; it must not be shown as available. The Windows engine recognizes the
   source contract and fails with a typed unavailable-feature diagnostic instead
   of a generic missing-provider error.
-- Webcam remains a project/API contract only. Capability reports keep it
-  `Planned` until a provider validates immediate GPU upload from the
-  registered `WebcamSystemRawInput` boundary; it must not be shown as
-  available. The Windows engine likewise reports a typed unavailable-feature
-  diagnostic until that provider exists.
+- Windows webcam input has a real Media Foundation provider. It enumerates video
+  capture devices, selects a supported native format, converts NV12/YUY2/RGB32
+  at the OS boundary, immediately uploads into a D3D11 shared GPU texture, and
+  publishes bounded `KeepLatest` GPU leases. Capability reports promote webcam
+  only when `proof.media_io.webcam_input.product` passes on the current machine;
+  missing hardware, permission, or driver support remains `Unavailable` with a
+  reason.
 - Windows PNG/JPEG static image sources decode once into `StaticCpuAsset`, upload to a D3D11 shared texture, release the CPU pixel copy, and then publish GPU frame leases. WebP remains Planned until decoder/license review.
 - Decode/video resource ownership remains split by purpose: `GpuTextureLease`
   is the internal pooled GPU texture lease, `GpuFrameLease` is the render
@@ -113,7 +115,7 @@ The legacy WinForms preview path has been removed as a product path because it u
   provider chain and uses the product hardware decoder by default. If
   Media Foundation/D3D11VA cannot produce GPU-backed decoded frames, the source
   fails observably; it must not fall back to placeholder decode or system-memory
-  frame transport. Capability reports keep MP4 video input `Unavailable` until
+  frame transport. Capability reports promote MP4 video input only when
   hardware decode, decode-to-render, and MP4 input product proofs pass together.
 - `MediaFoundationHardwareVideoEncoder` has a separate product session
   boundary (`MediaFoundationHardwareH264EncoderSession`) from the canned
@@ -145,12 +147,13 @@ The legacy WinForms preview path has been removed as a product path because it u
   `KeepLatest`; queue exhaustion becomes observable failure/backpressure, not
   a silent frame drop.
 - `CapabilityProofAggregator` resolves MP4 recording, RTMP streaming, and MP4
-  video-file input capability from required hardware media proofs. MP4 recording
-  requires hardware encode, render-to-encode, MP4 recording, and MP4 output
-  product proofs. MP4 video input requires hardware decode, decode-to-render,
-  and MP4 input product proofs. Missing proof chains make these features
-  `Unavailable` with explicit proof reasons until the required proof chain
-  passes on the current machine.
+  video-file input capability from required hardware media proofs. The Windows
+  capability report also promotes the webcam source entry when the webcam
+  product proof passes. MP4 recording requires hardware encode,
+  render-to-encode, MP4 recording, and MP4 output product proofs. MP4 video
+  input requires hardware decode, decode-to-render, and MP4 input product
+  proofs. Missing proof chains make these features `Unavailable` with explicit
+  proof reasons until the required proof chain passes on the current machine.
 - `EncodedVideoPacket` carries explicit codec, bitstream format, presentation
   time, optional duration, and optional codec configuration bytes. MP4/RTMP
   packet sinks must reject unknown H.264 bitstream format instead of accepting
@@ -237,8 +240,8 @@ The legacy WinForms preview path has been removed as a product path because it u
   must be `Passed` before a product capability can advertise support.
 - `MediaForgeWindows.CreateHardwareMediaProofRegistry()` registers Windows
   proof runners, including H.264 hardware encode, render-to-encode, MP4
-  recording, MP4 output, RTMP output, hardware decode, and decode-to-render
-  product proofs.
+  recording, MP4 output, RTMP output, hardware decode, decode-to-render, MP4
+  input, and webcam input product proofs.
   `GetCapabilityReportWithHardwareProofsAsync` is explicit because proof
   execution may touch D3D11/Media Foundation hardware and must not be hidden in
   cheap UI capability probes.
@@ -246,25 +249,24 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `CapabilityEntry.ProductReadinessStatus` is separate from `MediaForgeSupportStatus`.
   `Prototype` and `Skeleton` readiness entries must never be emitted as
   `Supported` or `Experimental`.
-- `./scripts/verify-engine-readiness-v9.ps1` is the current default executable
-  product-boundary gate for product readiness, docs alignment, media transport,
-  license, Fast tier, encode input preparation, encoded sink evidence, and
-  media I/O boundary tests. `./scripts/verify-engine-readiness-v10.ps1` adds
-  GPU and Performance tiers for full local readiness.
+- `./scripts/verify-engine-readiness-v12.ps1` is the current official
+  product-boundary gate for engine media work. Older v9/v10/v11 scripts remain
+  historical or layered evidence, but v12 is the entrypoint that should be used
+  for new hardware-first media changes. `./scripts/verify-engine-readiness-v10.ps1`
+  adds GPU and Performance tiers for full local readiness.
   `./scripts/verify-engine-readiness-v11.ps1` adds the encoded route/status,
   capability proof aggregation, Windows media proof truth checks, and an
   operational media proof report on top. The report is generated at
   `test-reports/media-proof-report.json` and
   `test-reports/media-proof-report.md` by
   `./scripts/generate-media-proof-report.ps1`.
-  `./scripts/verify-engine-readiness-v12.ps1` is the current official entrypoint
-  for engine media work. It runs the v11 baseline and adds v12 checks for
+  v12 runs the v11 baseline and adds checks for
   `EncodedVideoProfile`, Media Foundation encoder D3D11 device ownership, and
   refreshed proof-report generation. Proof runners may report `Unavailable`
   only for actual runtime hardware/driver/platform absence, not for pending
   implementation stubs.
   `-RequireHardwareMedia` additionally fails release validation unless all
-  v8 hardware media proofs pass on the target machine.
+  required v12 hardware media proofs pass on the target machine.
 - `IMediaTransportAuditSink` records transport events; product paths must not emit `CpuReadbackAttempted` or `StagingBufferCreated`.
 
 ## GPU Resource Pool (Phase 2)

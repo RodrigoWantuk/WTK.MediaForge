@@ -172,6 +172,10 @@ public sealed class WindowsMediaCapabilityTruthTests
             runner.Id == MediaForgeCapabilityCatalog.HardwareDecodeProof);
         Assert.Contains(registry.Runners, runner =>
             runner.Id == MediaForgeCapabilityCatalog.DecodeToRenderProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.Mp4InputProductProof);
+        Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.WebcamInputProductProof);
 
         var report = await MediaForgeWindows.GetCapabilityReportWithHardwareProofsAsync(
             new WindowsHardwareMediaCapabilityProbe(),
@@ -202,7 +206,9 @@ public sealed class WindowsMediaCapabilityTruthTests
             new WindowsMp4OutputProductProofRunner(),
             new WindowsRtmpNetworkOutputProofRunner(),
             new WindowsHardwareDecodeProofRunner(),
-            new WindowsDecodeToRenderProofRunner()
+            new WindowsDecodeToRenderProofRunner(),
+            new WindowsMp4InputProductProofRunner(),
+            new WindowsWebcamInputProductProofRunner()
         ];
 
         foreach (var runner in runners)

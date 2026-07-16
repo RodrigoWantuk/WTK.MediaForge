@@ -46,16 +46,18 @@ Product-validated foundations:
   hardware packet.
 - Windows MP4 output and RTMP network proof paths using real hardware-validated
   packets and native packet/container boundaries on validated hardware.
-
-Implemented but still product-limited:
-
-- Windows Media Foundation D3D11VA MP4 decode path. The product session rejects
-  system-memory samples and requires `IMFDXGIBuffer` GPU textures, but MP4 input
-  is promoted only after hardware decode, decode-to-render, and video source
-  lifecycle proofs pass together.
+- Windows Media Foundation D3D11VA MP4 input path on validated hardware:
+  generated MP4 asset -> hardware decode -> D3D11 GPU texture -> source lease
+  -> Vulkan render.
 - Video file source runtime/provider. The provider uses the real decoder by
   default; if hardware decode is unavailable it fails observably instead of
   using placeholder decode.
+- Windows Media Foundation webcam input path on validated hardware:
+  device enumeration -> native webcam frame -> immediate D3D11 shared texture
+  upload through a bounded `KeepLatest` GPU slot ring -> Vulkan render.
+
+Implemented but still product-limited:
+
 - Logical RenderGraph. It carries source-frame resources and skip reasons, but
   the physical GPU pass executor is still the active renderer/snapshot path.
 - Performance and recovery suites. Contracts exist, but product performance
@@ -64,9 +66,9 @@ Implemented but still product-limited:
 
 Unavailable/planned:
 
-- Webcam product source, window capture product source, NDI input/output, SRT,
-  virtual camera, audio capture/mix/mux, Linux VAAPI/DRM backend, Linux Vulkan
-  Video backend, and macOS VideoToolbox backend.
+- Window capture product source, NDI input/output, SRT, virtual camera, audio
+  capture/mix/mux, Linux VAAPI/DRM backend, Linux Vulkan Video backend, and
+  macOS VideoToolbox backend.
 - FFmpeg/libav integration. It is deferred until native hardware media routes
   are sustained and legal review approves encoded-packet/container-only usage.
 
@@ -93,8 +95,8 @@ docs truthful before it is considered complete.
 | 06 | RTMP product route | Engine route publishes sustained H.264 FLV tags to a real TCP RTMP endpoint with explicit backpressure and reconnect/failure diagnostics. |
 | 07 | MP4 video input | Product provider opens real MP4 files, decodes with hardware D3D11VA into GPU textures, supports play/pause/seek/loop/EOF, and feeds renderer. |
 | 08 | Decode-to-render sustained | Generated product MP4 asset decodes to GPU leases and renders through Vulkan without CPU frame transport over sustained playback. |
-| 09 | Desktop/window capture | Desktop duplication and Windows Graphics Capture publish GPU leases, survive device/display reset, and share sources safely. |
-| 10 | Webcam source | Media Foundation capture enumerates devices, uses `KeepLatest`, immediately uploads any OS raw boundary to GPU, and recovers from device loss. |
+| 09 | Desktop/window capture | Desktop duplication is validated; Windows Graphics Capture must publish GPU leases, survive device/display reset, and share sources safely. |
+| 10 | Webcam source hardening | Media Foundation capture is validated for immediate GPU upload; next work is sustained capture, device-loss/reconnect, and richer format selection tests. |
 | 11 | SceneRuntime and physical RenderGraph | Source acquisition, canvas/effect/output passes, encoded routes, and resource lifetime are compiled into executable GPU pass plans. |
 | 12 | GPU resource pooling | Render/effect/export intermediates are pooled, bounded, and retired after GPU fences without leaks or stale handles. |
 | 13 | Effects/text through graph | Layer effects, scene effects, text atlas reuse, and route transitions become graph nodes with backend capability diagnostics. |
@@ -114,10 +116,10 @@ docs truthful before it is considered complete.
 | Static image source | Supported | Windows PNG/JPEG static asset load path. |
 | MP4 recording | Hardware-dependent | Composite capability promotes to `Supported` only when hardware encode, render-to-encode, MP4 recording, and MP4 output proofs pass. |
 | RTMP streaming | Hardware-dependent experimental | Composite capability promotes to `Experimental` only when hardware encode, render-to-encode, and RTMP network proofs pass. |
-| MP4 video input | Unavailable until proofs pass | Real decoder/provider exists, but product capability requires hardware decode, decode-to-render, and MP4 input proofs. |
+| MP4 video input | Hardware-dependent experimental | Promotes when hardware decode, decode-to-render, and MP4 input product proofs pass on the current machine. |
 | Desktop capture | Experimental | Product hardening for reset/reconnect and multi-display remains active. |
 | Window capture | Planned | Windows Graphics Capture provider is not product implemented. |
-| Webcam | Planned | Product source with immediate GPU upload remains active work. |
+| Webcam | Hardware-dependent experimental | Promotes when the Media Foundation webcam proof validates immediate D3D11 upload, `KeepLatest` GPU slot lifetime, and Vulkan render on the current machine. |
 | NDI | Unsupported | Requires license approval and GPU-safe source/output design. |
 | SRT/HLS/virtual camera/audio | Planned | Out of scope until core video pipeline is sustained. |
 | RenderGraph physical executor | Active work | Logical plan exists; physical GPU pass executor is not complete. |
@@ -209,8 +211,9 @@ macOS planned adapters:
 
 - MP4/RTMP proof paths are now real but must graduate from short proof runs to
   sustained engine route tests and performance gates.
-- Decode proof and MP4 video input need sustained validation on hardware that
-  returns `IMFDXGIBuffer` GPU samples.
+- Decode proof, MP4 video input, and webcam input now have short product proofs
+  on the current Windows AMD/Radeon validation target; they still need
+  sustained playback/capture validation and fault-recovery/performance gates.
 - RenderGraph remains logical until it owns physical GPU pass scheduling,
   resource pooling, effect intermediates, and encoded route fanout.
 - Fault recovery needs product tests that inject encoder, decoder, export,

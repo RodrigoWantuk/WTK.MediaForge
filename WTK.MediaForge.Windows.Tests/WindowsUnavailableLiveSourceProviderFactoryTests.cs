@@ -39,30 +39,10 @@ public sealed class WindowsUnavailableLiveSourceProviderFactoryTests
     }
 
     [Fact]
-    public void Webcam_provider_reports_planned_immediate_gpu_upload_path()
+    public void Unavailable_live_factory_no_longer_claims_webcam()
     {
-        var diagnostics = new InMemoryDiagnosticsSink();
-        var factory = new WindowsUnavailableLiveSourceProviderFactory(diagnostics);
-        var source = new MediaForgeSourceDefinition
-        {
-            Id = SourceId.New(),
-            Name = "Camera",
-            TypeId = MediaSourceTypes.Webcam,
-            Settings = MediaSourceSettingsSerializer.ToJson(new WebcamSourceSettings
-            {
-                DeviceId = "camera-1"
-            })
-        };
+        var factory = new WindowsUnavailableLiveSourceProviderFactory();
 
-        Assert.True(factory.CanCreate(MediaSourceTypes.Webcam));
-
-        var ex = Assert.Throws<MediaForgeUnsupportedFeatureException>(() =>
-            factory.CreateProvider(source));
-
-        Assert.Equal($"source.{MediaSourceTypes.Webcam.Value}", ex.FeatureCode);
-        Assert.Contains("uploads system frames to GPU immediately", ex.Message, StringComparison.Ordinal);
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Code == "source.provider_unavailable" &&
-            diagnostic.SourceId == source.Id.Value);
+        Assert.False(factory.CanCreate(MediaSourceTypes.Webcam));
     }
 }
