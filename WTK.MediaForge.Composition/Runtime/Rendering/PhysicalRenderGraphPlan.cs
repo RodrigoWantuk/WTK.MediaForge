@@ -28,6 +28,10 @@ internal sealed class PhysicalRenderGraphOperation
     public WTK.MediaForge.Core.Identifiers.CanvasId? CanvasId { get; init; }
 
     public WTK.MediaForge.Core.Identifiers.CanvasId? PreviousCanvasId { get; init; }
+
+    public WTK.MediaForge.Core.Identifiers.SourceId? SourceId { get; init; }
+
+    public WTK.MediaForge.Core.Identifiers.DrawObjectId? DrawObjectId { get; init; }
 }
 
 internal sealed class PhysicalRenderGraphPlan
@@ -108,7 +112,9 @@ internal static class PhysicalRenderGraphPlanner
                     : [],
                 OutputId = node.OutputId,
                 CanvasId = node.CanvasId,
-                PreviousCanvasId = node.PreviousCanvasId
+                PreviousCanvasId = node.PreviousCanvasId,
+                SourceId = node.SourceId,
+                DrawObjectId = node.DrawObjectId
             });
         }
 

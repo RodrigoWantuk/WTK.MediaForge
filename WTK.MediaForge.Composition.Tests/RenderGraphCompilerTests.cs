@@ -58,7 +58,7 @@ public class RenderGraphCompilerTests
     }
 
     [Fact]
-    public void Same_source_and_blur_chain_across_scenes_reuses_effect_node()
+    public void Same_source_and_blur_chain_across_scenes_uses_placement_specific_effect_nodes()
     {
         var project = MediaForgeProjectBuilder.Create()
             .Scene("Preview", 1280, 720, out var preview)
@@ -83,7 +83,7 @@ public class RenderGraphCompilerTests
         var graph = MediaForgeRenderGraphCompiler.Compile(project);
 
         Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceFrame));
-        Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
+        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.OutputPass));
     }

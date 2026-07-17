@@ -74,8 +74,9 @@ operations for old canvas, current canvas, route transition, and output pass.
 Vulkan output composition consumes the physical output-pass dependencies; the
 offscreen compositor also reuses rendered physical canvas targets across
 compatible output passes in a submission. The next renderer milestone is moving
-source acquisition, effect intermediates, full canvas pass ownership, and
-encoded routes behind the same physical executor.
+source acquisition, remaining effect intermediates, full canvas pass ownership,
+and encoded routes behind the same physical executor. Blur is the first
+placement-aware physical effect intermediate in Vulkan.
 
 ## Render Graph
 
@@ -103,9 +104,10 @@ The compiler builds a DAG and deduplicates stable nodes:
 The current repository contains the first internal render-graph planning
 foundation for these dedupe rules, including output transition passes. Vulkan
 now uses physical output-pass dependencies for offscreen composition and reuses
-rendered canvas targets for output fanout. It is not yet the full Vulkan
-execution planner for source, effect intermediate, full canvas lifecycle, or
-encoded-route passes.
+rendered canvas targets for output fanout. Vulkan blur source-layer
+intermediates are executed as physical, placement-aware prepasses. It is not
+yet the full Vulkan execution planner for source acquisition, remaining effect
+intermediates, full canvas lifecycle, or encoded-route passes.
 
 ## Public Authoring API
 
@@ -244,13 +246,16 @@ Finish product composition primitives before broad media I/O:
 3. Color correction. Current status: product-validated in the Vulkan
    source-layer shader.
 4. Blur. Current status: product-validated for Vulkan source-layer blur using
-   pooled intermediate targets.
+   placement-aware physical effect intermediate prepasses and pooled
+   intermediate targets.
 5. Transitions. Current status: product-validated for output route cut/fade in
    the Vulkan output pass. Scene/layer transition effects remain future work.
 6. Effect-chain passes and pooled intermediate targets.
 7. PiP helpers.
 8. Mosaic helpers.
-9. Cached reusable effect intermediates.
+9. Cached reusable effect intermediates. Placement-independent effects can be
+   shared by source/effect key; placement-dependent effects such as the current
+   blur implementation must include canvas/layer placement in the key.
 
 `ChromaKeyEffect`, source-layer `ColorCorrectionEffect`, source-layer
 `BlurEffect`, text layers, and output route cut/fade are accepted real Vulkan

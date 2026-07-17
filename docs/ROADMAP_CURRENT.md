@@ -73,6 +73,10 @@ Product-validated foundations:
 - Vulkan physical canvas fanout is active for offscreen composition. A
   `RenderCanvas` physical operation is rendered once per submission and reused
   by multiple output passes when routes share the same canvas/version/size.
+- Vulkan blur now runs through a physical, placement-aware
+  `RenderEffectIntermediate` prepass for offscreen composition. Blur
+  intermediates carry canvas/source/draw-object metadata and are not reused
+  across incompatible canvas or layer placements.
 
 Implemented but still product-limited:
 
@@ -85,9 +89,10 @@ Implemented but still product-limited:
   plan for source acquisition, primitive layers, effect intermediates, canvas
   passes, output transitions, output passes, and rendered-output fanout. Vulkan
   currently consumes output-pass dependencies and reuses rendered canvas
-  targets for output fanout; source acquisition, effect intermediates,
-  full canvas-pass ownership, and encoded-route scheduling still need to move
-  behind physical pass execution.
+  targets for output fanout. Blur effect intermediates execute as physical
+  prepasses for placement-aware source layers; source acquisition, remaining
+  effect intermediates, full canvas-pass ownership, and encoded-route
+  scheduling still need to move behind physical pass execution.
 - Fault recovery coordination. Scenario policies now distinguish recovery,
   recovered, exhausted, and canceled states and isolate encoded routes, RTMP,
   export, source, and device faults, but end-to-end runtime wiring still needs
@@ -159,7 +164,7 @@ docs truthful before it is considered complete.
 | Webcam | Hardware-dependent experimental | Promotes when the Media Foundation webcam proof validates immediate D3D11 upload, `KeepLatest` GPU slot lifetime, and Vulkan render on the current machine. |
 | NDI | Discovery supported / video blocked | Windows detects loadable NDI runtime when installed and can enumerate sources; product video support still requires GPU-safe source/output proofs. |
 | SRT/HLS/virtual camera/audio | Planned | Out of scope until core video pipeline is sustained. |
-| RenderGraph physical executor | Active work | Vulkan consumes physical output-pass dependencies and reuses physical canvas targets for output fanout; source/effect/intermediate execution still needs to move from snapshot traversal to physical passes. |
+| RenderGraph physical executor | Active work | Vulkan consumes physical output-pass dependencies, reuses physical canvas targets for output fanout, and executes blur as a placement-aware physical effect intermediate; source acquisition, remaining effects, and encoded routes still need physical ownership. |
 | Performance suite | Active work | Synthetic coverage exists; sustained real workloads are required. |
 
 ## Acceptance Suites
@@ -254,9 +259,10 @@ macOS planned adapters:
   on the current Windows AMD/Radeon validation target; they still need
   sustained playback/capture validation and fault-recovery/performance gates.
 - RenderGraph remains partially physical. Vulkan uses physical output
-  dependencies and canvas fanout, but source acquisition, effect intermediates,
-  full pass resource ownership, and encoded route fanout still need to move
-  behind the physical executor.
+  dependencies, canvas fanout, and placement-aware blur intermediates, but
+  source acquisition, remaining effect intermediates, full pass resource
+  ownership, and encoded route fanout still need to move behind the physical
+  executor.
 - Fault recovery needs product tests that inject encoder, decoder, export,
   source, sink, network, and device failures.
 - Docs outside this roadmap may contain historical gate wording; current work

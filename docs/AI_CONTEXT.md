@@ -75,9 +75,12 @@ The legacy WinForms preview path has been removed as a product path because it u
   physical graph with explicit old-canvas, current-canvas, output-transition,
   and output-pass operations. Vulkan output composition consumes those physical
   output-pass dependencies and caches physical canvas targets per submission so
-  multiple outputs can reuse the same rendered canvas target. Source
-  acquisition, effect intermediates, full canvas-pass ownership, and encoded
-  routes still need to move behind physical pass execution.
+  multiple outputs can reuse the same rendered canvas target. Vulkan blur
+  source-layer intermediates execute as physical, placement-aware
+  `RenderEffectIntermediate` prepasses and carry canvas/source/draw-object
+  metadata. Source acquisition, remaining effect intermediates, full
+  canvas-pass ownership, and encoded routes still need to move behind physical
+  pass execution.
 - The public authoring foundation includes typed source/output helper factories, `Scene(...)`, route helpers, and package export/import APIs.
 - Multiple canvases/scenes can be routed independently to outputs and sinks. The same source can feed multiple scenes/layers, and the renderer must minimize redundant GPU work.
 - The render graph target is `Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects`. The current internal planner deduplicates source frame, reusable source effect-chain, primitive layer, canvas render, output-transition, and output pass nodes by stable keys.
@@ -215,8 +218,12 @@ The legacy WinForms preview path has been removed as a product path because it u
   so backends can audit/consume the DAG for the submitted frame. Vulkan output
   composition resolves physical output and transition dependencies from this
   plan and reuses physical canvas targets across compatible output passes in
-  the same submission. The graph still does not allocate source/effect
-  intermediates directly or own the full canvas GPU pass lifecycle.
+  the same submission. Blur is the first physical effect intermediate consumed
+  by Vulkan; because the current blur implementation pre-renders the positioned
+  layer into a canvas-sized target, blur nodes are placement-dependent and are
+  keyed with canvas and draw-object metadata. The graph still does not own
+  source acquisition, remaining effect intermediates, or the full canvas GPU
+  pass lifecycle.
   A physical pass checkpoint now exposes source acquisition, effect
   intermediates, canvas passes, output passes, output transitions, and
   rendered-output fanout, but `GpuTextureLease` output resources are reserved
@@ -228,7 +235,9 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `BlurEffect` is implemented for Vulkan source layers by rendering the source
   layer into a pooled intermediate target, running horizontal and vertical blur
   shader passes, then compositing the blurred target into the canvas with the
-  layer opacity. The current scope is product-validated by Vulkan pixel and
+  layer opacity. Blur intermediates are now driven by physical graph
+  `RenderEffectIntermediate` operations for offscreen composition. The current
+  scope is product-validated by Vulkan pixel, physical intermediate, and
   intermediate-pool reuse tests.
 - `TextDrawObject` includes `FontFamily`; snapshots propagate it into the Vulkan
   renderer. Text rendering uses a rasterized glyph atlas uploaded to a Vulkan

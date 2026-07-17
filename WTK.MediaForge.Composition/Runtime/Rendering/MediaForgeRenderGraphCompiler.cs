@@ -91,16 +91,20 @@ internal static class MediaForgeRenderGraphCompiler
                         var sourceKey = AddNode(
                             MediaForgeRenderGraphNodeKind.SourceFrame,
                             $"source:{sourceLayer.SourceId}",
-                            sourceLayer.Name);
+                            sourceLayer.Name,
+                            sourceId: sourceLayer.SourceId);
 
                         var enabledEffects = GetEnabledEffects(sourceLayer);
                         if (enabledEffects.Count > 0)
                         {
                             dependencies.Add(AddNode(
                                 MediaForgeRenderGraphNodeKind.SourceEffectChain,
-                                $"source-effect:{sourceLayer.SourceId}:{HashEffects(enabledEffects)}",
+                                CreateSourceEffectKey(canvas, sourceLayer, enabledEffects),
                                 sourceLayer.Name,
-                                [sourceKey]));
+                                [sourceKey],
+                                canvasId: HasPlacementDependentEffects(enabledEffects) ? canvas.Id : null,
+                                sourceId: sourceLayer.SourceId,
+                                drawObjectId: HasPlacementDependentEffects(enabledEffects) ? sourceLayer.Id : null));
                         }
                         else
                         {
@@ -152,7 +156,9 @@ internal static class MediaForgeRenderGraphCompiler
             IReadOnlyList<string>? dependencies = null,
             Core.Identifiers.RenderOutputId? outputId = null,
             Core.Identifiers.CanvasId? canvasId = null,
-            Core.Identifiers.CanvasId? previousCanvasId = null)
+            Core.Identifiers.CanvasId? previousCanvasId = null,
+            Core.Identifiers.SourceId? sourceId = null,
+            Core.Identifiers.DrawObjectId? drawObjectId = null)
         {
             if (_nodes.TryGetValue(key, out _))
                 return key;
@@ -167,7 +173,9 @@ internal static class MediaForgeRenderGraphCompiler
                     Dependencies = dependencies ?? [],
                     OutputId = outputId,
                     CanvasId = canvasId,
-                    PreviousCanvasId = previousCanvasId
+                    PreviousCanvasId = previousCanvasId,
+                    SourceId = sourceId,
+                    DrawObjectId = drawObjectId
                 });
             return key;
         }
@@ -228,15 +236,19 @@ internal static class MediaForgeRenderGraphCompiler
                         var sourceKey = AddNode(
                             MediaForgeRenderGraphNodeKind.SourceFrame,
                             $"source:{sourceLayer.SourceId}",
-                            sourceLayer.Name);
+                            sourceLayer.Name,
+                            sourceId: sourceLayer.SourceId);
 
                         var enabledEffects = GetEnabledEffects(sourceLayer);
                         dependencies.Add(enabledEffects.Count > 0
                             ? AddNode(
                                 MediaForgeRenderGraphNodeKind.SourceEffectChain,
-                                $"source-effect:{sourceLayer.SourceId}:{HashEffects(enabledEffects)}",
+                                CreateSourceEffectKey(canvas, sourceLayer, enabledEffects),
                                 sourceLayer.Name,
-                                [sourceKey])
+                                [sourceKey],
+                                canvasId: HasPlacementDependentEffects(enabledEffects) ? canvas.Id : null,
+                                sourceId: sourceLayer.SourceId,
+                                drawObjectId: HasPlacementDependentEffects(enabledEffects) ? sourceLayer.Id : null)
                             : sourceKey);
                         break;
 
@@ -290,7 +302,9 @@ internal static class MediaForgeRenderGraphCompiler
             IReadOnlyList<string>? dependencies = null,
             Core.Identifiers.RenderOutputId? outputId = null,
             Core.Identifiers.CanvasId? canvasId = null,
-            Core.Identifiers.CanvasId? previousCanvasId = null)
+            Core.Identifiers.CanvasId? previousCanvasId = null,
+            Core.Identifiers.SourceId? sourceId = null,
+            Core.Identifiers.DrawObjectId? drawObjectId = null)
         {
             if (_nodes.TryGetValue(key, out _))
                 return key;
@@ -305,7 +319,9 @@ internal static class MediaForgeRenderGraphCompiler
                     Dependencies = dependencies ?? [],
                     OutputId = outputId,
                     CanvasId = canvasId,
-                    PreviousCanvasId = previousCanvasId
+                    PreviousCanvasId = previousCanvasId,
+                    SourceId = sourceId,
+                    DrawObjectId = drawObjectId
                 });
             return key;
         }
@@ -322,6 +338,33 @@ internal static class MediaForgeRenderGraphCompiler
             .Where(static effect => effect.Enabled)
             .OrderBy(static effect => effect.Order)
             .ToArray();
+
+    private static string CreateSourceEffectKey(
+        CanvasStateSnapshot canvas,
+        SourceLayerDrawObjectSnapshot sourceLayer,
+        IReadOnlyList<EffectStateSnapshot> effects)
+    {
+        var effectHash = HashEffects(effects);
+        if (!HasPlacementDependentEffects(effects))
+            return $"source-effect:{sourceLayer.SourceId}:{effectHash}";
+
+        return $"source-effect:{sourceLayer.SourceId}:canvas:{canvas.Id}:draw:{sourceLayer.Id}:size:{canvas.Size.Width}x{canvas.Size.Height}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
+    }
+
+    private static string CreateSourceEffectKey(
+        RenderCanvasSnapshot canvas,
+        RenderSourceLayerDrawObjectSnapshot sourceLayer,
+        IReadOnlyList<EffectStateSnapshot> effects)
+    {
+        var effectHash = HashEffects(effects);
+        if (!HasPlacementDependentEffects(effects))
+            return $"source-effect:{sourceLayer.SourceId}:{effectHash}";
+
+        return $"source-effect:{sourceLayer.SourceId}:canvas:{canvas.Id}:draw:{sourceLayer.Id}:size:{canvas.Size.Width}x{canvas.Size.Height}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
+    }
+
+    private static bool HasPlacementDependentEffects(IReadOnlyList<EffectStateSnapshot> effects) =>
+        effects.Any(static effect => effect is BlurEffectSnapshot);
 
     private static string HashEffects(IReadOnlyList<EffectStateSnapshot> effects)
     {
@@ -344,6 +387,50 @@ internal static class MediaForgeRenderGraphCompiler
     private static string HashPrimitive(RenderDrawObjectSnapshot drawObject)
     {
         var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), CreateFingerprintJsonOptions());
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static string HashSourceEffectPlacement(
+        CanvasStateSnapshot canvas,
+        SourceLayerDrawObjectSnapshot sourceLayer)
+    {
+        var json = JsonSerializer.Serialize(
+            new
+            {
+                CanvasWidth = canvas.Size.Width,
+                CanvasHeight = canvas.Size.Height,
+                sourceLayer.SourceId,
+                sourceLayer.LayoutMode,
+                LetterboxR = sourceLayer.LetterboxColor.R,
+                LetterboxG = sourceLayer.LetterboxColor.G,
+                LetterboxB = sourceLayer.LetterboxColor.B,
+                LetterboxA = sourceLayer.LetterboxColor.A,
+                sourceLayer.ContentRotationOverride,
+                Common = CreateDrawObjectFingerprint(sourceLayer)
+            },
+            CreateFingerprintJsonOptions());
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static string HashSourceEffectPlacement(
+        RenderCanvasSnapshot canvas,
+        RenderSourceLayerDrawObjectSnapshot sourceLayer)
+    {
+        var json = JsonSerializer.Serialize(
+            new
+            {
+                CanvasWidth = canvas.Size.Width,
+                CanvasHeight = canvas.Size.Height,
+                sourceLayer.SourceId,
+                sourceLayer.LayoutMode,
+                LetterboxR = sourceLayer.LetterboxColor.R,
+                LetterboxG = sourceLayer.LetterboxColor.G,
+                LetterboxB = sourceLayer.LetterboxColor.B,
+                LetterboxA = sourceLayer.LetterboxColor.A,
+                sourceLayer.ContentRotationOverride,
+                Common = CreateDrawObjectFingerprint(sourceLayer)
+            },
+            CreateFingerprintJsonOptions());
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
     }
 

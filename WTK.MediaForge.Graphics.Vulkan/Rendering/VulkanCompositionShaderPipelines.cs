@@ -120,15 +120,44 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         RenderCanvasSnapshot canvas,
         RenderOutputStateSnapshot output,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
-        VulkanSubmissionResourceScope submissionResources)
+        VulkanSubmissionResourceScope submissionResources,
+        IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null)
     {
         var canvasHandle = _intermediateTargetPool.Rent(canvas.Id, canvas.Size);
         submissionResources.RetainOffscreenTarget(canvasHandle);
         var canvasTarget = (VulkanOffscreenRenderTarget)canvasHandle.Target;
         canvasHandle.Retire();
 
-        RenderCanvasPass(commandBuffer, canvas, output, importsByHandle, canvasTarget, submissionResources, depth: 0);
+        RenderCanvasPass(
+            commandBuffer,
+            canvas,
+            output,
+            importsByHandle,
+            canvasTarget,
+            submissionResources,
+            depth: 0,
+            physicalBlurTargets);
         return canvasTarget;
+    }
+
+    internal IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget> RenderBlurEffectIntermediateTargets(
+        CommandBuffer commandBuffer,
+        RenderCanvasSnapshot canvas,
+        IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
+        VulkanSubmissionResourceScope submissionResources,
+        IReadOnlyCollection<DrawObjectId> drawObjectIds)
+    {
+        if (drawObjectIds.Count == 0)
+            return new Dictionary<DrawObjectId, VulkanOffscreenRenderTarget>();
+
+        var effectResolutions = ResolveEffectsForCanvas(canvas);
+        return RenderBlurredSourceTargets(
+            commandBuffer,
+            canvas,
+            importsByHandle,
+            submissionResources,
+            effectResolutions,
+            drawObjectIds);
     }
 
     internal void ComposeOutputFromCanvasTarget(
@@ -211,7 +240,8 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
         VulkanOffscreenRenderTarget canvasTarget,
         VulkanSubmissionResourceScope submissionResources,
-        int depth)
+        int depth,
+        IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null)
     {
         var nestedTargets = RenderNestedCanvasTargets(
             commandBuffer,
@@ -221,12 +251,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             submissionResources,
             depth);
         var effectResolutions = ResolveEffectsForCanvas(canvas);
-        var blurredSourceTargets = RenderBlurredSourceTargets(
-            commandBuffer,
-            canvas,
-            importsByHandle,
-            submissionResources,
-            effectResolutions);
+        var blurredSourceTargets = physicalBlurTargets ?? RenderBlurredSourceTargets(
+                commandBuffer,
+                canvas,
+                importsByHandle,
+                submissionResources,
+                effectResolutions);
 
         TransitionForColorAttachment(_vk, commandBuffer, canvasTarget, canvasTarget.CurrentLayout);
         canvasTarget.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
@@ -411,7 +441,8 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         RenderCanvasSnapshot canvas,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
         VulkanSubmissionResourceScope submissionResources,
-        IReadOnlyDictionary<DrawObjectId, EffectResolution> effectResolutions)
+        IReadOnlyDictionary<DrawObjectId, EffectResolution> effectResolutions,
+        IReadOnlyCollection<DrawObjectId>? drawObjectFilter = null)
     {
         var targets = new Dictionary<DrawObjectId, VulkanOffscreenRenderTarget>();
 
@@ -419,6 +450,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         {
             if (drawObject is not RenderSourceLayerDrawObjectSnapshot sourceLayer ||
                 !sourceLayer.Enabled ||
+                (drawObjectFilter is not null && !drawObjectFilter.Contains(sourceLayer.Id)) ||
                 !effectResolutions.TryGetValue(sourceLayer.Id, out var resolution) ||
                 !resolution.Supported ||
                 resolution.SourceLayerEffects.Blur is not { } blur ||

@@ -1,9 +1,12 @@
 using System.Collections.Immutable;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
+using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Graphics.D3D11;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
 using Xunit;
@@ -75,6 +78,127 @@ public sealed class Cp5BlurEffectTests
                 }
 
                 Assert.Equal(4, firstPoolCount.GetValueOrDefault());
+            }
+            finally
+            {
+                guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Blur_intermediate_is_rendered_once_for_shared_canvas_output_fanout()
+    {
+        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+            return;
+
+        using (context)
+        {
+            var guard = context!.Guard;
+            var backend = context.Backend;
+            guard.BindToCurrentThread();
+
+            try
+            {
+                var fullOutputId = RenderOutputId.New();
+                var halfOutputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var canvasSize = new FrameSize(64, 64);
+                var halfSize = new FrameSize(32, 32);
+
+                backend.BindOutput(VulkanCompositionTestHarness.CreateOffscreenBinding(
+                    fullOutputId,
+                    canvasSize.Width,
+                    canvasSize.Height));
+                backend.BindOutput(VulkanCompositionTestHarness.CreateOffscreenBinding(
+                    halfOutputId,
+                    halfSize.Width,
+                    halfSize.Height));
+                PrepareSourceSquare(context.Device, context.SharedHandle);
+
+                var sourceId = SourceId.New();
+                using var snapshot = new RenderFrameSnapshot
+                {
+                    ProjectStateVersion = 5,
+                    Canvases =
+                    [
+                        new RenderCanvasSnapshot
+                        {
+                            Id = canvasId,
+                            Name = "Blur fanout",
+                            Size = canvasSize,
+                            BackgroundColor = ColorRgba.Black,
+                            Objects =
+                            [
+                                new RenderSourceLayerDrawObjectSnapshot
+                                {
+                                    Id = DrawObjectId.New(),
+                                    Name = "Blurred source",
+                                    SourceId = sourceId,
+                                    Transform = new Transform2D
+                                    {
+                                        Size = new CanvasSize(canvasSize.Width, canvasSize.Height)
+                                    },
+                                    BoundFrame = new GpuFrameReference
+                                    {
+                                        Backend = GpuFrameBackend.D3D11SharedTexture,
+                                        Handle = context.SharedHandle,
+                                        TextureSize = context.SharedHandle.TextureSize,
+                                        LogicalSize = context.SharedHandle.TextureSize,
+                                        SourceId = sourceId,
+                                        FrameNumber = 1
+                                    },
+                                    Effects =
+                                    [
+                                        new BlurEffectSnapshot
+                                        {
+                                            Id = EffectId.New(),
+                                            Name = "Soft blur",
+                                            Radius = 6f
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    Outputs =
+                    [
+                        new RenderOutputStateSnapshot
+                        {
+                            Id = fullOutputId,
+                            Name = "Full",
+                            TypeId = RenderOutputTypes.Offscreen,
+                            CanvasId = canvasId,
+                            OutputSize = canvasSize,
+                            CanvasLayoutMode = LayoutMode.Stretch,
+                            LetterboxColor = ColorRgba.Black
+                        },
+                        new RenderOutputStateSnapshot
+                        {
+                            Id = halfOutputId,
+                            Name = "Half",
+                            TypeId = RenderOutputTypes.Offscreen,
+                            CanvasId = canvasId,
+                            OutputSize = halfSize,
+                            CanvasLayoutMode = LayoutMode.Stretch,
+                            LetterboxColor = ColorRgba.Black
+                        }
+                    ]
+                };
+
+                var submission = backend.Submit(snapshot);
+                await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
+
+                Assert.True(backend.TryReadOffscreenPixel(fullOutputId, 32, 32, out var fullCenter));
+                Assert.True(backend.TryReadOffscreenPixel(halfOutputId, 16, 16, out var halfCenter));
+                Assert.True(fullCenter.R > 20, $"Expected blurred full output to contain red center, got {fullCenter}.");
+                Assert.True(halfCenter.R > 20, $"Expected blurred half output to contain red center, got {halfCenter}.");
+
+                var stats = backend.LastPhysicalCompositionStatsForTests;
+                Assert.Equal(1, stats.EffectIntermediatePasses);
+                Assert.Equal(1, stats.CanvasRenderPasses);
+                Assert.Equal(1, stats.ReusedCanvasPasses);
+                Assert.Equal(2, stats.OutputCompositePasses);
             }
             finally
             {

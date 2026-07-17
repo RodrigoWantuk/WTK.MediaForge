@@ -164,7 +164,7 @@ public sealed class RenderGraphExecutorTests
     }
 
     [Fact]
-    public void Physical_plan_exposes_deduplicated_source_effect_canvas_and_output_passes()
+    public void Physical_plan_exposes_source_reuse_placement_dependent_effect_canvas_and_output_passes()
     {
         var project = MediaForgeProjectBuilder.Create()
             .Scene("Preview", 1280, 720, out var preview)
@@ -191,7 +191,7 @@ public sealed class RenderGraphExecutorTests
         var physical = plan.PhysicalPlan;
 
         Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.AcquireSourceFrame));
-        Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.RenderEffectIntermediate));
+        Assert.Equal(2, physical.Count(PhysicalRenderGraphOperationKind.RenderEffectIntermediate));
         Assert.Equal(2, physical.Count(PhysicalRenderGraphOperationKind.RenderCanvas));
         Assert.Equal(3, physical.Count(PhysicalRenderGraphOperationKind.RenderOutput));
         Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.FanOutRenderedOutput));
@@ -331,6 +331,72 @@ public sealed class RenderGraphExecutorTests
 
         Assert.Equal(1, plan.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
         Assert.Equal(1, plan.PhysicalPlan.Count(PhysicalRenderGraphOperationKind.RenderEffectIntermediate));
+    }
+
+    [Fact]
+    public void Blur_effect_intermediate_carries_canvas_source_and_draw_object_metadata()
+    {
+        var sourceId = SourceId.New();
+        var drawObjectId = DrawObjectId.New();
+        var outputId = RenderOutputId.New();
+        var canvasId = CanvasId.New();
+        var snapshot = new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 13,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Blur scene",
+                    Size = new FrameSize(1920, 1080),
+                    Objects =
+                    [
+                        new RenderSourceLayerDrawObjectSnapshot
+                        {
+                            Id = drawObjectId,
+                            Name = "Blurred source",
+                            SourceId = sourceId,
+                            Transform = new Transform2D { Size = new CanvasSize(1920, 1080) },
+                            Effects =
+                            [
+                                new BlurEffectSnapshot
+                                {
+                                    Id = EffectId.New(),
+                                    Name = "Blur",
+                                    Radius = 6f
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Program",
+                    CanvasId = canvasId,
+                    OutputSize = new FrameSize(1920, 1080)
+                }
+            ]
+        };
+
+        var plan = MediaForgeRenderGraphCompiler.Compile(snapshot);
+        var effectNode = Assert.Single(
+            plan.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.SourceEffectChain);
+        var effectOperation = Assert.Single(
+            plan.PhysicalPlan.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate);
+
+        Assert.Equal(canvasId, effectNode.CanvasId);
+        Assert.Equal(sourceId, effectNode.SourceId);
+        Assert.Equal(drawObjectId, effectNode.DrawObjectId);
+        Assert.Equal(canvasId, effectOperation.CanvasId);
+        Assert.Equal(sourceId, effectOperation.SourceId);
+        Assert.Equal(drawObjectId, effectOperation.DrawObjectId);
     }
 
     [Fact]
