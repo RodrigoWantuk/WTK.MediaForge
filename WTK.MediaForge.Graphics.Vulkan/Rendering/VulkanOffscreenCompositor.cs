@@ -3,13 +3,27 @@ using Silk.NET.Vulkan;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
+internal sealed record VulkanOffscreenCompositionResult(
+    IReadOnlyList<IRenderedOutputSurfaceLease> Surfaces,
+    VulkanPhysicalCompositionStats Stats);
+
+internal sealed record VulkanPhysicalCompositionStats(
+    int CanvasRenderPasses,
+    int ReusedCanvasPasses,
+    int OutputCompositePasses,
+    int TransitionPasses)
+{
+    public static VulkanPhysicalCompositionStats Empty { get; } = new(0, 0, 0, 0);
+}
+
 internal static class VulkanOffscreenCompositor
 {
-    public static IReadOnlyList<IRenderedOutputSurfaceLease> Compose(
+    public static VulkanOffscreenCompositionResult Compose(
         VulkanCompositionShaderPipelines pipelines,
         CommandBuffer commandBuffer,
         RenderFrameSnapshot snapshot,
@@ -32,6 +46,8 @@ internal static class VulkanOffscreenCompositor
         var operationsByKey = physicalPlan.Operations.ToDictionary(
             static operation => operation.Key,
             StringComparer.Ordinal);
+        var canvasCache = new Dictionary<string, RenderedCanvasTarget>(StringComparer.Ordinal);
+        var stats = new PhysicalCompositionStatsBuilder();
 
         foreach (var operation in physicalPlan.Operations.Where(static operation =>
                      operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput))
@@ -55,27 +71,36 @@ internal static class VulkanOffscreenCompositor
 
             submissionResources.RetainOffscreenTarget(targetHandle);
 
-            if (ShouldComposeTransition(output, dependency, canvasesById, out var previousCanvas))
-            {
-                pipelines.ComposeTransitionOutput(
-                    commandBuffer,
-                    output,
-                    previousCanvas,
-                    canvas,
-                    importsByHandle,
-                    outputTarget,
-                    submissionResources);
-            }
-            else
-            {
-                pipelines.ComposeOutput(
-                    commandBuffer,
-                    output,
-                    canvas,
-                    importsByHandle,
-                    outputTarget,
-                    submissionResources);
-            }
+            var composed = dependency?.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition &&
+                output.RouteTransitionKind == OutputRouteTransitionKind.Fade
+                    ? TryComposeTransitionOutput(
+                        pipelines,
+                        commandBuffer,
+                        output,
+                        dependency,
+                        operationsByKey,
+                        canvasesById,
+                        importsByHandle,
+                        outputTarget,
+                        submissionResources,
+                        canvasCache,
+                        stats)
+                    : TryComposeOutput(
+                        pipelines,
+                        commandBuffer,
+                        output,
+                        dependency,
+                        canvasId,
+                        operationsByKey,
+                        canvasesById,
+                        importsByHandle,
+                        outputTarget,
+                        submissionResources,
+                        canvasCache,
+                        stats);
+
+            if (!composed)
+                continue;
 
             renderedSurfaces.Add(new VulkanRenderedOutputSurfaceLease(
                 targetHandle,
@@ -84,7 +109,230 @@ internal static class VulkanOffscreenCompositor
                 RenderPixelFormat.Rgba8Unorm));
         }
 
-        return renderedSurfaces;
+        return new VulkanOffscreenCompositionResult(renderedSurfaces, stats.Build());
+    }
+
+    private static bool TryComposeOutput(
+        VulkanCompositionShaderPipelines pipelines,
+        CommandBuffer commandBuffer,
+        RenderOutputStateSnapshot output,
+        PhysicalRenderGraphOperation? dependency,
+        CanvasId canvasId,
+        IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey,
+        IReadOnlyDictionary<CanvasId, RenderCanvasSnapshot> canvasesById,
+        IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
+        VulkanOffscreenRenderTarget outputTarget,
+        VulkanSubmissionResourceScope submissionResources,
+        Dictionary<string, RenderedCanvasTarget> canvasCache,
+        PhysicalCompositionStatsBuilder stats)
+    {
+        var canvasOperation = dependency?.Kind == PhysicalRenderGraphOperationKind.RenderCanvas
+            ? dependency
+            : ResolveCanvasOperation(dependency, canvasId, operationsByKey);
+
+        if (!TryGetOrRenderCanvasTarget(
+                pipelines,
+                commandBuffer,
+                output,
+                canvasOperation,
+                canvasId,
+                canvasesById,
+                importsByHandle,
+                submissionResources,
+                canvasCache,
+                stats,
+                out var renderedCanvas))
+        {
+            return false;
+        }
+
+        pipelines.ComposeOutputFromCanvasTarget(
+            commandBuffer,
+            output,
+            renderedCanvas.Size,
+            renderedCanvas.Target,
+            outputTarget,
+            submissionResources);
+        stats.RecordOutputCompositePass();
+        return true;
+    }
+
+    private static bool TryComposeTransitionOutput(
+        VulkanCompositionShaderPipelines pipelines,
+        CommandBuffer commandBuffer,
+        RenderOutputStateSnapshot output,
+        PhysicalRenderGraphOperation transitionOperation,
+        IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey,
+        IReadOnlyDictionary<CanvasId, RenderCanvasSnapshot> canvasesById,
+        IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
+        VulkanOffscreenRenderTarget outputTarget,
+        VulkanSubmissionResourceScope submissionResources,
+        Dictionary<string, RenderedCanvasTarget> canvasCache,
+        PhysicalCompositionStatsBuilder stats)
+    {
+        var currentCanvasId = transitionOperation.CanvasId ?? output.CanvasId;
+        var previousCanvasId = transitionOperation.PreviousCanvasId ?? output.PreviousCanvasId;
+        if (previousCanvasId is not { } previousId)
+            return false;
+
+        var progress = Math.Clamp(output.RouteTransitionProgress, 0f, 1f);
+        var previousOperation = ResolveCanvasOperation(transitionOperation, previousId, operationsByKey);
+        var currentOperation = ResolveCanvasOperation(transitionOperation, currentCanvasId, operationsByKey);
+
+        stats.RecordTransitionPass();
+
+        if (progress <= 0f)
+        {
+            return TryComposeOutput(
+                pipelines,
+                commandBuffer,
+                output,
+                previousOperation,
+                previousId,
+                operationsByKey,
+                canvasesById,
+                importsByHandle,
+                outputTarget,
+                submissionResources,
+                canvasCache,
+                stats);
+        }
+
+        if (progress >= 1f)
+        {
+            return TryComposeOutput(
+                pipelines,
+                commandBuffer,
+                output,
+                currentOperation,
+                currentCanvasId,
+                operationsByKey,
+                canvasesById,
+                importsByHandle,
+                outputTarget,
+                submissionResources,
+                canvasCache,
+                stats);
+        }
+
+        if (!TryGetOrRenderCanvasTarget(
+                pipelines,
+                commandBuffer,
+                output,
+                previousOperation,
+                previousId,
+                canvasesById,
+                importsByHandle,
+                submissionResources,
+                canvasCache,
+                stats,
+                out var previousCanvas) ||
+            !TryGetOrRenderCanvasTarget(
+                pipelines,
+                commandBuffer,
+                output,
+                currentOperation,
+                currentCanvasId,
+                canvasesById,
+                importsByHandle,
+                submissionResources,
+                canvasCache,
+                stats,
+                out var currentCanvas))
+        {
+            return false;
+        }
+
+        pipelines.ComposeOutputFromCanvasTarget(
+            commandBuffer,
+            output,
+            previousCanvas.Size,
+            previousCanvas.Target,
+            outputTarget,
+            submissionResources);
+        pipelines.ComposeOutputOverlayFromCanvasTarget(
+            commandBuffer,
+            output,
+            currentCanvas.Size,
+            currentCanvas.Target,
+            outputTarget,
+            progress,
+            submissionResources);
+        stats.RecordOutputCompositePass();
+        stats.RecordOutputCompositePass();
+        return true;
+    }
+
+    private static bool TryGetOrRenderCanvasTarget(
+        VulkanCompositionShaderPipelines pipelines,
+        CommandBuffer commandBuffer,
+        RenderOutputStateSnapshot output,
+        PhysicalRenderGraphOperation? canvasOperation,
+        CanvasId canvasId,
+        IReadOnlyDictionary<CanvasId, RenderCanvasSnapshot> canvasesById,
+        IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
+        VulkanSubmissionResourceScope submissionResources,
+        Dictionary<string, RenderedCanvasTarget> canvasCache,
+        PhysicalCompositionStatsBuilder stats,
+        [NotNullWhen(true)] out RenderedCanvasTarget? renderedCanvas)
+    {
+        renderedCanvas = null;
+        if (!canvasesById.TryGetValue(canvasId, out var canvas))
+            return false;
+
+        var cacheKey = canvasOperation?.Key ?? $"canvas:{canvas.Id}:snapshot:{canvas.Size.Width}x{canvas.Size.Height}";
+        if (canvasCache.TryGetValue(cacheKey, out renderedCanvas))
+        {
+            stats.RecordReusedCanvasPass();
+            return true;
+        }
+
+        var target = pipelines.RenderCanvasToIntermediateTarget(
+            commandBuffer,
+            canvas,
+            output,
+            importsByHandle,
+            submissionResources);
+
+        renderedCanvas = new RenderedCanvasTarget(target, canvas.Size);
+        canvasCache.Add(cacheKey, renderedCanvas);
+        stats.RecordCanvasRenderPass();
+        return true;
+    }
+
+    private static PhysicalRenderGraphOperation? ResolveCanvasOperation(
+        PhysicalRenderGraphOperation? operation,
+        CanvasId canvasId,
+        IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey)
+    {
+        if (operation?.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
+            operation.CanvasId == canvasId)
+        {
+            return operation;
+        }
+
+        if (operation is null)
+            return null;
+
+        foreach (var dependencyKey in operation.Dependencies)
+        {
+            if (!operationsByKey.TryGetValue(dependencyKey, out var dependency))
+                continue;
+
+            if (dependency.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
+                dependency.CanvasId == canvasId)
+            {
+                return dependency;
+            }
+
+            if (dependency.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition &&
+                ResolveCanvasOperation(dependency, canvasId, operationsByKey) is { } nestedCanvasOperation)
+            {
+                return nestedCanvasOperation;
+            }
+        }
+
+        return null;
     }
 
     private static PhysicalRenderGraphPlan ResolvePhysicalPlan(RenderFrameSnapshot snapshot) =>
@@ -103,27 +351,24 @@ internal static class VulkanOffscreenCompositor
         return null;
     }
 
-    private static bool ShouldComposeTransition(
-        RenderOutputStateSnapshot output,
-        PhysicalRenderGraphOperation? dependency,
-        IReadOnlyDictionary<CanvasId, RenderCanvasSnapshot> canvasesById,
-        [NotNullWhen(true)] out RenderCanvasSnapshot? previousCanvas)
+    private sealed record RenderedCanvasTarget(VulkanOffscreenRenderTarget Target, FrameSize Size);
+
+    private sealed class PhysicalCompositionStatsBuilder
     {
-        previousCanvas = null;
+        private int _canvasRenderPasses;
+        private int _reusedCanvasPasses;
+        private int _outputCompositePasses;
+        private int _transitionPasses;
 
-        if (dependency?.Kind != PhysicalRenderGraphOperationKind.RenderOutputTransition ||
-            output.RouteTransitionKind != OutputRouteTransitionKind.Fade)
-        {
-            return false;
-        }
+        public void RecordCanvasRenderPass() => _canvasRenderPasses++;
 
-        var previousCanvasId = dependency.PreviousCanvasId ?? output.PreviousCanvasId;
-        if (previousCanvasId is not { } previousId ||
-            !canvasesById.TryGetValue(previousId, out previousCanvas))
-        {
-            return false;
-        }
+        public void RecordReusedCanvasPass() => _reusedCanvasPasses++;
 
-        return true;
+        public void RecordOutputCompositePass() => _outputCompositePasses++;
+
+        public void RecordTransitionPass() => _transitionPasses++;
+
+        public VulkanPhysicalCompositionStats Build() =>
+            new(_canvasRenderPasses, _reusedCanvasPasses, _outputCompositePasses, _transitionPasses);
     }
 }

@@ -87,6 +87,9 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
     internal int IntermediateTargetPoolLiveCountForTests =>
         _compositionPipelines.IntermediateTargetPoolLiveCountForTests;
 
+    internal VulkanPhysicalCompositionStats LastPhysicalCompositionStatsForTests { get; private set; } =
+        VulkanPhysicalCompositionStats.Empty;
+
     internal bool SupportsWin32PresentationForTests =>
         _deviceContext.SupportsWin32Presentation;
 
@@ -326,13 +329,15 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                 {
                     commandBuffer = BeginCommandBuffer();
 
-                    renderedOutputSurfaces = VulkanOffscreenCompositor.Compose(
+                    var compositionResult = VulkanOffscreenCompositor.Compose(
                         _compositionPipelines,
                         commandBuffer,
                         snapshot,
                         _offscreenTargets,
                         textureLeases,
                         submissionResources);
+                    renderedOutputSurfaces = compositionResult.Surfaces;
+                    LastPhysicalCompositionStatsForTests = compositionResult.Stats;
 
                     if (_deviceContext.Vk.EndCommandBuffer(commandBuffer) != Result.Success)
                         throw new InvalidOperationException("vkEndCommandBuffer failed.");

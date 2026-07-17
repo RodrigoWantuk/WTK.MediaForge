@@ -105,13 +105,53 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         VulkanOffscreenRenderTarget outputTarget,
         VulkanSubmissionResourceScope submissionResources)
     {
+        var canvasTarget = RenderCanvasToIntermediateTarget(
+            commandBuffer,
+            canvas,
+            output,
+            importsByHandle,
+            submissionResources);
+
+        RenderOutputPass(commandBuffer, output, canvas.Size, canvasTarget, outputTarget, submissionResources);
+    }
+
+    internal VulkanOffscreenRenderTarget RenderCanvasToIntermediateTarget(
+        CommandBuffer commandBuffer,
+        RenderCanvasSnapshot canvas,
+        RenderOutputStateSnapshot output,
+        IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
+        VulkanSubmissionResourceScope submissionResources)
+    {
         var canvasHandle = _intermediateTargetPool.Rent(canvas.Id, canvas.Size);
         submissionResources.RetainOffscreenTarget(canvasHandle);
         var canvasTarget = (VulkanOffscreenRenderTarget)canvasHandle.Target;
         canvasHandle.Retire();
 
         RenderCanvasPass(commandBuffer, canvas, output, importsByHandle, canvasTarget, submissionResources, depth: 0);
-        RenderOutputPass(commandBuffer, output, canvas.Size, canvasTarget, outputTarget, submissionResources);
+        return canvasTarget;
+    }
+
+    internal void ComposeOutputFromCanvasTarget(
+        CommandBuffer commandBuffer,
+        RenderOutputStateSnapshot output,
+        FrameSize canvasSize,
+        VulkanOffscreenRenderTarget canvasTarget,
+        VulkanOffscreenRenderTarget outputTarget,
+        VulkanSubmissionResourceScope submissionResources)
+    {
+        RenderOutputPass(commandBuffer, output, canvasSize, canvasTarget, outputTarget, submissionResources);
+    }
+
+    internal void ComposeOutputOverlayFromCanvasTarget(
+        CommandBuffer commandBuffer,
+        RenderOutputStateSnapshot output,
+        FrameSize canvasSize,
+        VulkanOffscreenRenderTarget canvasTarget,
+        VulkanOffscreenRenderTarget outputTarget,
+        float opacity,
+        VulkanSubmissionResourceScope submissionResources)
+    {
+        RenderOutputOverlayPass(commandBuffer, output, canvasSize, canvasTarget, outputTarget, opacity, submissionResources);
     }
 
     public void ComposeTransitionOutput(
