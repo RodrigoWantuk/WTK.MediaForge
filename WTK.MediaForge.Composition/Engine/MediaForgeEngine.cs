@@ -974,8 +974,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
         try
         {
+            var renderGraphPlan = snapshot.Outputs.Any(static output => output.PreviousCanvasId is not null)
+                ? MediaForgeRenderGraphCompiler.Compile(snapshot)
+                : sceneSnapshot.CachedRenderGraphPlan!;
+
             snapshot.RenderGraphExecution = RenderGraphExecutor.Execute(
-                sceneSnapshot.CachedRenderGraphPlan!,
+                renderGraphPlan,
                 new RenderGraphContext
                 {
                     FrameContext = executionContext,

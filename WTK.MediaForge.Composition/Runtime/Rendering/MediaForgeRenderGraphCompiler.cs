@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Serialization;
@@ -29,6 +30,17 @@ internal static class MediaForgeRenderGraphCompiler
         return new MediaForgeRenderGraphPlan(builder.Nodes);
     }
 
+    public static MediaForgeRenderGraphPlan Compile(RenderFrameSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var builder = new RenderSnapshotBuilder(snapshot);
+        foreach (var output in snapshot.Outputs)
+            builder.AddOutput(output);
+
+        return new MediaForgeRenderGraphPlan(builder.Nodes);
+    }
+
     private sealed class Builder(ProjectStateSnapshot projectState)
     {
         private readonly Dictionary<string, MediaForgeRenderGraphNode> _nodes = new(StringComparer.Ordinal);
@@ -38,11 +50,23 @@ internal static class MediaForgeRenderGraphCompiler
         public string AddOutput(RenderOutputStateSnapshot output)
         {
             var canvasKey = AddCanvas(output.CanvasId, output.SceneVersionBinding);
+            var dependency = canvasKey;
+            if (output.RouteTransitionKind != OutputRouteTransitionKind.Cut &&
+                output.PreviousCanvasId is { } previousCanvasId)
+            {
+                var previousCanvasKey = AddCanvas(previousCanvasId, SceneVersionBinding.Published);
+                dependency = AddNode(
+                    MediaForgeRenderGraphNodeKind.OutputTransition,
+                    $"transition:{output.Id}:previous:{previousCanvasId}:current:{output.CanvasId}:progress:{output.RouteTransitionProgress:0.####}",
+                    $"{output.Name} route transition",
+                    [previousCanvasKey, canvasKey]);
+            }
+
             return AddNode(
                 MediaForgeRenderGraphNodeKind.OutputPass,
                 $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.CanvasId, output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
                 output.Name,
-                [canvasKey]);
+                [dependency]);
         }
 
         private string AddCanvas(Core.Identifiers.CanvasId canvasId, SceneVersionBinding binding)
@@ -81,6 +105,14 @@ internal static class MediaForgeRenderGraphCompiler
 
                     case CanvasDrawObjectSnapshot nested:
                         dependencies.Add(AddCanvas(nested.NestedCanvasId, nested.VersionBinding));
+                        break;
+
+                    case TextDrawObjectSnapshot:
+                    case SolidDrawObjectSnapshot:
+                        dependencies.Add(AddNode(
+                            MediaForgeRenderGraphNodeKind.PrimitiveLayer,
+                            $"primitive:{drawObject.Id}:{HashPrimitive(drawObject)}",
+                            drawObject.Name));
                         break;
                 }
             }
@@ -128,7 +160,139 @@ internal static class MediaForgeRenderGraphCompiler
         }
     }
 
+    private sealed class RenderSnapshotBuilder(RenderFrameSnapshot snapshot)
+    {
+        private readonly Dictionary<string, MediaForgeRenderGraphNode> _nodes = new(StringComparer.Ordinal);
+        private readonly Dictionary<Core.Identifiers.CanvasId, RenderCanvasSnapshot> _canvasLookup =
+            snapshot.Canvases.ToDictionary(static canvas => canvas.Id);
+
+        public IReadOnlyList<MediaForgeRenderGraphNode> Nodes => _nodes.Values.ToList();
+
+        public string AddOutput(RenderOutputStateSnapshot output)
+        {
+            var canvasKey = AddCanvas(output.CanvasId);
+            var dependency = canvasKey;
+
+            if (output.RouteTransitionKind != OutputRouteTransitionKind.Cut &&
+                output.PreviousCanvasId is { } previousCanvasId)
+            {
+                var previousCanvasKey = AddCanvas(previousCanvasId);
+                dependency = AddNode(
+                    MediaForgeRenderGraphNodeKind.OutputTransition,
+                    $"transition:{output.Id}:previous:{previousCanvasId}:current:{output.CanvasId}:progress:{output.RouteTransitionProgress:0.####}",
+                    $"{output.Name} route transition",
+                    [previousCanvasKey, canvasKey]);
+            }
+
+            return AddNode(
+                MediaForgeRenderGraphNodeKind.OutputPass,
+                $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
+                output.Name,
+                [dependency]);
+        }
+
+        private string AddCanvas(Core.Identifiers.CanvasId canvasId)
+        {
+            if (!_canvasLookup.TryGetValue(canvasId, out var canvas))
+                return $"missing-canvas:{canvasId}";
+
+            return AddCanvas(canvas);
+        }
+
+        private string AddCanvas(RenderCanvasSnapshot canvas)
+        {
+            var dependencies = new List<string>();
+            foreach (var drawObject in canvas.Objects.Where(static item => item.Enabled))
+            {
+                switch (drawObject)
+                {
+                    case RenderSourceLayerDrawObjectSnapshot sourceLayer:
+                        var sourceKey = AddNode(
+                            MediaForgeRenderGraphNodeKind.SourceFrame,
+                            $"source:{sourceLayer.SourceId}",
+                            sourceLayer.Name);
+
+                        var enabledEffects = GetEnabledEffects(sourceLayer);
+                        dependencies.Add(enabledEffects.Count > 0
+                            ? AddNode(
+                                MediaForgeRenderGraphNodeKind.SourceEffectChain,
+                                $"source-effect:{sourceLayer.SourceId}:{HashEffects(enabledEffects)}",
+                                sourceLayer.Name,
+                                [sourceKey])
+                            : sourceKey);
+                        break;
+
+                    case RenderCanvasDrawObjectSnapshot nested when nested.NestedCanvas is not null:
+                        dependencies.Add(AddCanvas(nested.NestedCanvas));
+                        break;
+
+                    case RenderCanvasDrawObjectSnapshot nested:
+                        dependencies.Add(AddCanvas(nested.NestedCanvasId));
+                        break;
+
+                    case RenderTextDrawObjectSnapshot:
+                    case RenderSolidDrawObjectSnapshot:
+                        dependencies.Add(AddNode(
+                            MediaForgeRenderGraphNodeKind.PrimitiveLayer,
+                            $"primitive:{drawObject.Id}:{HashPrimitive(drawObject)}",
+                            drawObject.Name));
+                        break;
+                }
+            }
+
+            return AddNode(
+                MediaForgeRenderGraphNodeKind.CanvasRender,
+                $"canvas:{canvas.Id}:version:{ResolveCanvasVersionKey(canvas)}:size:{canvas.Size.Width}x{canvas.Size.Height}",
+                canvas.Name,
+                dependencies);
+        }
+
+        private static string ResolveCanvasVersionKey(RenderCanvasSnapshot canvas) =>
+            canvas.VersionId is { } version
+                ? $"render:{version.Value}"
+                : $"render-snapshot:{canvas.Id}";
+
+        private static string ResolveCanvasVersionKey(SceneVersionBinding binding)
+        {
+            binding.Validate();
+            return binding.Kind switch
+            {
+                SceneVersionBindingKind.Published => "published",
+                SceneVersionBindingKind.Draft => $"draft:{binding.DraftSessionId!.Value.Value}",
+                SceneVersionBindingKind.ExplicitVersion => $"explicit:{binding.ExplicitVersionId!.Value.Value}",
+                _ => throw new InvalidOperationException($"Unsupported scene binding kind '{binding.Kind}'.")
+            };
+        }
+
+        private string AddNode(
+            MediaForgeRenderGraphNodeKind kind,
+            string key,
+            string name,
+            IReadOnlyList<string>? dependencies = null)
+        {
+            if (_nodes.TryGetValue(key, out _))
+                return key;
+
+            _nodes.Add(
+                key,
+                new MediaForgeRenderGraphNode
+                {
+                    Kind = kind,
+                    Key = key,
+                    Name = name,
+                    Dependencies = dependencies ?? []
+                });
+            return key;
+        }
+    }
+
     private static IReadOnlyList<EffectStateSnapshot> GetEnabledEffects(DrawObjectStateSnapshot drawObject) =>
+        drawObject.Effects
+            .Where(static effect => effect.Enabled)
+            .OrderBy(static effect => effect.Order)
+            .ToArray();
+
+    private static IReadOnlyList<EffectStateSnapshot> GetEnabledEffects(RenderDrawObjectSnapshot drawObject) =>
         drawObject.Effects
             .Where(static effect => effect.Enabled)
             .OrderBy(static effect => effect.Order)
@@ -145,6 +309,122 @@ internal static class MediaForgeRenderGraphCompiler
         var json = JsonSerializer.Serialize(fingerprints, MediaForgeProjectJsonOptions.Create());
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
     }
+
+    private static string HashPrimitive(DrawObjectStateSnapshot drawObject)
+    {
+        var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), MediaForgeProjectJsonOptions.Create());
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static string HashPrimitive(RenderDrawObjectSnapshot drawObject)
+    {
+        var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), MediaForgeProjectJsonOptions.Create());
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static object CreatePrimitiveFingerprint(DrawObjectStateSnapshot drawObject) =>
+        drawObject switch
+        {
+            TextDrawObjectSnapshot text => new
+            {
+                Type = "primitive.text",
+                text.Text,
+                text.FontFamily,
+                text.FontSize,
+                TextR = text.TextColor.R,
+                TextG = text.TextColor.G,
+                TextB = text.TextColor.B,
+                TextA = text.TextColor.A,
+                Common = CreateDrawObjectFingerprint(text)
+            },
+            SolidDrawObjectSnapshot solid => new
+            {
+                Type = "primitive.solid",
+                FillR = solid.FillColor.R,
+                FillG = solid.FillColor.G,
+                FillB = solid.FillColor.B,
+                FillA = solid.FillColor.A,
+                Common = CreateDrawObjectFingerprint(solid)
+            },
+            _ => new
+            {
+                Type = drawObject.GetType().FullName,
+                Common = CreateDrawObjectFingerprint(drawObject)
+            }
+        };
+
+    private static object CreatePrimitiveFingerprint(RenderDrawObjectSnapshot drawObject) =>
+        drawObject switch
+        {
+            RenderTextDrawObjectSnapshot text => new
+            {
+                Type = "primitive.text",
+                text.Text,
+                text.FontFamily,
+                text.FontSize,
+                TextR = text.TextColor.R,
+                TextG = text.TextColor.G,
+                TextB = text.TextColor.B,
+                TextA = text.TextColor.A,
+                Common = CreateDrawObjectFingerprint(text)
+            },
+            RenderSolidDrawObjectSnapshot solid => new
+            {
+                Type = "primitive.solid",
+                FillR = solid.FillColor.R,
+                FillG = solid.FillColor.G,
+                FillB = solid.FillColor.B,
+                FillA = solid.FillColor.A,
+                Common = CreateDrawObjectFingerprint(solid)
+            },
+            _ => new
+            {
+                Type = drawObject.GetType().FullName,
+                Common = CreateDrawObjectFingerprint(drawObject)
+            }
+        };
+
+    private static object CreateDrawObjectFingerprint(DrawObjectStateSnapshot drawObject) => new
+    {
+        drawObject.Enabled,
+        X = drawObject.Transform.Position.X,
+        Y = drawObject.Transform.Position.Y,
+        Width = drawObject.Transform.Size.Width,
+        Height = drawObject.Transform.Size.Height,
+        PivotX = drawObject.Transform.Pivot.X,
+        PivotY = drawObject.Transform.Pivot.Y,
+        drawObject.Transform.RotationDegrees,
+        drawObject.Opacity,
+        drawObject.BlendMode,
+        CropLeft = drawObject.Crop?.Left,
+        CropTop = drawObject.Crop?.Top,
+        CropRight = drawObject.Crop?.Right,
+        CropBottom = drawObject.Crop?.Bottom,
+        Effects = GetEnabledEffects(drawObject)
+            .Select(CreateEffectFingerprint)
+            .ToArray()
+    };
+
+    private static object CreateDrawObjectFingerprint(RenderDrawObjectSnapshot drawObject) => new
+    {
+        drawObject.Enabled,
+        X = drawObject.Transform.Position.X,
+        Y = drawObject.Transform.Position.Y,
+        Width = drawObject.Transform.Size.Width,
+        Height = drawObject.Transform.Size.Height,
+        PivotX = drawObject.Transform.Pivot.X,
+        PivotY = drawObject.Transform.Pivot.Y,
+        drawObject.Transform.RotationDegrees,
+        drawObject.Opacity,
+        drawObject.BlendMode,
+        CropLeft = drawObject.EffectiveCrop.Left,
+        CropTop = drawObject.EffectiveCrop.Top,
+        CropRight = drawObject.EffectiveCrop.Right,
+        CropBottom = drawObject.EffectiveCrop.Bottom,
+        Effects = GetEnabledEffects(drawObject)
+            .Select(CreateEffectFingerprint)
+            .ToArray()
+    };
 
     private static object CreateEffectFingerprint(EffectStateSnapshot effect) =>
         effect switch

@@ -7,6 +7,8 @@ internal enum RenderGraphNodeKind
 {
     Source = 0,
     Transform = 1,
-    Blend = 2,
-    Output = 3
+    Primitive = 2,
+    Blend = 3,
+    Transition = 4,
+    Output = 5
 }

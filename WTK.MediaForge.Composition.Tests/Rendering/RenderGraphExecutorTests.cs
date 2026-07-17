@@ -1,9 +1,11 @@
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Runtime.Scene;
 using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Frames;
+using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Time;
@@ -198,6 +200,126 @@ public sealed class RenderGraphExecutorTests
     }
 
     [Fact]
+    public void Transition_snapshot_physical_plan_has_explicit_transition_operation()
+    {
+        var sourceId = SourceId.New();
+        var outputId = RenderOutputId.New();
+        var previousCanvasId = CanvasId.New();
+        var currentCanvasId = CanvasId.New();
+        var snapshot = new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 10,
+            Canvases =
+            [
+                CreateSourceCanvas(previousCanvasId, sourceId),
+                CreateSourceCanvas(currentCanvasId, sourceId)
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Program",
+                    CanvasId = currentCanvasId,
+                    PreviousCanvasId = previousCanvasId,
+                    RouteTransitionKind = OutputRouteTransitionKind.Fade,
+                    RouteTransitionProgress = 0.5f,
+                    OutputSize = new FrameSize(1920, 1080)
+                }
+            ]
+        };
+
+        var plan = MediaForgeRenderGraphCompiler.Compile(snapshot);
+        var transitionNode = Assert.Single(
+            plan.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.OutputTransition);
+        var outputNode = Assert.Single(
+            plan.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.OutputPass);
+
+        Assert.Equal(1, plan.Count(MediaForgeRenderGraphNodeKind.SourceFrame));
+        Assert.Equal(2, plan.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
+        Assert.Contains(transitionNode.Key, outputNode.Dependencies);
+        Assert.Equal(2, transitionNode.Dependencies.Count);
+        Assert.Equal(1, plan.PhysicalPlan.Count(PhysicalRenderGraphOperationKind.RenderOutputTransition));
+        Assert.Equal(1, plan.PhysicalPlan.Statistics.OutputTransitionPasses);
+
+        var result = RenderGraphExecutor.Execute(
+            plan,
+            new RenderGraphContext
+            {
+                FrameContext = new FrameExecutionContext
+                {
+                    FrameId = 8,
+                    FrameBudget = TimeSpan.FromSeconds(1d / 60d)
+                },
+                SourceFrames = CreateSourceFrames(sourceId)
+            });
+
+        Assert.Contains(transitionNode.Key, result.ExecutedNodeKeys);
+        Assert.Contains(outputNode.Key, result.ExecutedNodeKeys);
+        Assert.True(result.NodeResults[transitionNode.Key].HasRenderableResource);
+        Assert.True(result.NodeResults[outputNode.Key].HasRenderableResource);
+    }
+
+    [Fact]
+    public void Primitive_layer_canvas_executes_without_source_frame()
+    {
+        var outputId = RenderOutputId.New();
+        var canvasId = CanvasId.New();
+        var snapshot = new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 11,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Slate",
+                    Size = new FrameSize(1920, 1080),
+                    Objects =
+                    [
+                        new RenderSolidDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Background",
+                            Transform = new Transform2D { Size = new CanvasSize(1920, 1080) }
+                        }
+                    ]
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Program",
+                    CanvasId = canvasId,
+                    OutputSize = new FrameSize(1920, 1080)
+                }
+            ]
+        };
+
+        var plan = MediaForgeRenderGraphCompiler.Compile(snapshot);
+        var result = RenderGraphExecutor.Execute(
+            plan,
+            new RenderGraphContext
+            {
+                FrameContext = new FrameExecutionContext
+                {
+                    FrameId = 9,
+                    FrameBudget = TimeSpan.FromSeconds(1d / 60d)
+                }
+            });
+
+        Assert.Equal(1, plan.Count(MediaForgeRenderGraphNodeKind.PrimitiveLayer));
+        Assert.Equal(1, plan.PhysicalPlan.Count(PhysicalRenderGraphOperationKind.RenderPrimitiveLayer));
+        Assert.Contains(result.ExecutedNodeKeys, key => key.StartsWith("primitive:", StringComparison.Ordinal));
+        Assert.Contains(result.ExecutedNodeKeys, key => key.StartsWith("canvas:", StringComparison.Ordinal));
+        Assert.Contains(result.ExecutedNodeKeys, key => key.StartsWith("output:", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Execution_result_contains_stable_node_results_snapshot()
     {
         var project = MediaForgeProjectBuilder.Create()
@@ -305,5 +427,23 @@ public sealed class RenderGraphExecutorTests
             LogicalSize = new FrameSize(1920, 1080),
             FrameNumber = 1,
             Timestamp = MediaTime.Zero
+        };
+
+    private static RenderCanvasSnapshot CreateSourceCanvas(CanvasId canvasId, SourceId sourceId) =>
+        new()
+        {
+            Id = canvasId,
+            Name = "Scene",
+            Size = new FrameSize(1920, 1080),
+            Objects =
+            [
+                new RenderSourceLayerDrawObjectSnapshot
+                {
+                    Id = DrawObjectId.New(),
+                    Name = "Source",
+                    SourceId = sourceId,
+                    Transform = new Transform2D { Size = new CanvasSize(1920, 1080) }
+                }
+            ]
         };
 }

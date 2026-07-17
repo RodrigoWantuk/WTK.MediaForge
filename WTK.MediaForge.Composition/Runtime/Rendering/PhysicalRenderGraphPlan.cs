@@ -4,7 +4,9 @@ internal enum PhysicalRenderGraphOperationKind
 {
     AcquireSourceFrame,
     RenderEffectIntermediate,
+    RenderPrimitiveLayer,
     RenderCanvas,
+    RenderOutputTransition,
     RenderOutput,
     FanOutRenderedOutput
 }
@@ -41,7 +43,9 @@ internal sealed class PhysicalRenderGraphPlan
 internal sealed record PhysicalRenderGraphStatistics(
     int SourceAcquirePasses,
     int EffectIntermediatePasses,
+    int PrimitiveLayerPasses,
     int CanvasPasses,
+    int OutputTransitionPasses,
     int OutputPasses,
     int FanOutGroups,
     int ReusedCanvasOutputs,
@@ -58,17 +62,23 @@ internal sealed record PhysicalRenderGraphStatistics(
             .Sum(static operation => Math.Max(0, operation.Consumers.Count - 1));
         var reusedCanvasOutputs = operations
             .Where(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas)
-            .Sum(static operation => Math.Max(0, operation.Consumers.Count(consumer => consumer.StartsWith("output:", StringComparison.Ordinal)) - 1));
+            .Sum(static operation => Math.Max(0, operation.Consumers.Count(IsRenderedCanvasConsumer) - 1));
 
         return new PhysicalRenderGraphStatistics(
             SourceAcquirePasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame),
             EffectIntermediatePasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate),
+            PrimitiveLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderPrimitiveLayer),
             CanvasPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas),
+            OutputTransitionPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition),
             OutputPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput),
             FanOutGroups: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.FanOutRenderedOutput),
             ReusedCanvasOutputs: reusedCanvasOutputs,
             ReusedSourceConsumers: sourceConsumers + effectIntermediateConsumers);
     }
+
+    private static bool IsRenderedCanvasConsumer(string consumer) =>
+        consumer.StartsWith("output:", StringComparison.Ordinal) ||
+        consumer.StartsWith("transition:", StringComparison.Ordinal);
 }
 
 internal static class PhysicalRenderGraphPlanner
@@ -130,7 +140,7 @@ internal static class PhysicalRenderGraphPlanner
                 continue;
 
             var outputConsumers = nodeConsumers
-                .Where(static consumer => consumer.StartsWith("output:", StringComparison.Ordinal))
+                .Where(IsRenderedCanvasConsumer)
                 .ToArray();
             if (outputConsumers.Length <= 1)
                 continue;
@@ -151,8 +161,14 @@ internal static class PhysicalRenderGraphPlanner
         {
             MediaForgeRenderGraphNodeKind.SourceFrame => PhysicalRenderGraphOperationKind.AcquireSourceFrame,
             MediaForgeRenderGraphNodeKind.SourceEffectChain => PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
+            MediaForgeRenderGraphNodeKind.PrimitiveLayer => PhysicalRenderGraphOperationKind.RenderPrimitiveLayer,
             MediaForgeRenderGraphNodeKind.CanvasRender => PhysicalRenderGraphOperationKind.RenderCanvas,
+            MediaForgeRenderGraphNodeKind.OutputTransition => PhysicalRenderGraphOperationKind.RenderOutputTransition,
             MediaForgeRenderGraphNodeKind.OutputPass => PhysicalRenderGraphOperationKind.RenderOutput,
             _ => throw new NotSupportedException($"Unsupported render graph node kind '{kind}'.")
         };
+
+    private static bool IsRenderedCanvasConsumer(string consumer) =>
+        consumer.StartsWith("output:", StringComparison.Ordinal) ||
+        consumer.StartsWith("transition:", StringComparison.Ordinal);
 }

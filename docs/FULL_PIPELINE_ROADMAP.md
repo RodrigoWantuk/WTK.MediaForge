@@ -69,8 +69,10 @@ committed, parent scenes and output routes that consume it are affected. The
 engine captures the previous and current scene version graph for each affected
 output route, keeps the immutable pre-commit project snapshot alive while a
 transition is active, and exposes the previous canvas plus transition progress
-to the compositor. The next renderer milestone is making these old/new route
-passes first-class physical RenderGraph operations.
+to the compositor. Transition frames now compile into physical RenderGraph
+operations for old canvas, current canvas, route transition, and output pass.
+The next renderer milestone is making Vulkan consume this physical plan
+directly.
 
 ## Render Graph
 
@@ -88,13 +90,16 @@ Outputs/Sinks
 The compiler builds a DAG and deduplicates stable nodes:
 
 - source frame acquisition: once per source per frame
+- primitive layer render: solid/text-only scenes are renderable graph work
 - reusable source effect chain: once for identical source/config/effects
 - canvas render: once for identical canvas size/config/version
+- output transition: once per route transition between old/current canvases
 - output pass: once per output size/layout/target
 - fanout: one completed output frame can feed many sinks
 
 The current repository contains the first internal render-graph planning
-foundation for these dedupe rules. It is not yet the Vulkan execution planner.
+foundation for these dedupe rules, including output transition passes. It is
+not yet the Vulkan execution planner.
 
 ## Public Authoring API
 

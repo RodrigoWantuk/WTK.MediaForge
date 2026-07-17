@@ -42,7 +42,21 @@ internal static class RenderGraphBuilder
                 Dependencies = planNode.Dependencies,
                 PlanNode = planNode
             },
+            RenderGraphNodeKind.Primitive => new PrimitiveRenderGraphNode
+            {
+                Key = planNode.Key,
+                Kind = kind,
+                Dependencies = planNode.Dependencies,
+                PlanNode = planNode
+            },
             RenderGraphNodeKind.Blend => new BlendRenderGraphNode
+            {
+                Key = planNode.Key,
+                Kind = kind,
+                Dependencies = planNode.Dependencies,
+                PlanNode = planNode
+            },
+            RenderGraphNodeKind.Transition => new OutputTransitionRenderGraphNode
             {
                 Key = planNode.Key,
                 Kind = kind,
@@ -65,7 +79,9 @@ internal static class RenderGraphBuilder
         {
             MediaForgeRenderGraphNodeKind.SourceFrame => RenderGraphNodeKind.Source,
             MediaForgeRenderGraphNodeKind.SourceEffectChain => RenderGraphNodeKind.Transform,
+            MediaForgeRenderGraphNodeKind.PrimitiveLayer => RenderGraphNodeKind.Primitive,
             MediaForgeRenderGraphNodeKind.CanvasRender => RenderGraphNodeKind.Blend,
+            MediaForgeRenderGraphNodeKind.OutputTransition => RenderGraphNodeKind.Transition,
             MediaForgeRenderGraphNodeKind.OutputPass => RenderGraphNodeKind.Output,
             _ => throw new NotSupportedException($"Unsupported planner node kind '{planKind}'.")
         };
@@ -166,6 +182,7 @@ internal sealed class TransformRenderGraphNode : RenderGraphNode
                 context,
                 out var sourceFrame,
                 out var outputTexture,
+                out var producedPrimitive,
                 out var failureReason))
         {
             return new RenderGraphNodeResult
@@ -183,7 +200,8 @@ internal sealed class TransformRenderGraphNode : RenderGraphNode
             Kind = Kind,
             WasSkipped = false,
             SourceFrame = sourceFrame,
-            OutputTexture = outputTexture
+            OutputTexture = outputTexture,
+            ProducedPrimitive = producedPrimitive
         };
     }
 }
@@ -210,6 +228,7 @@ internal sealed class BlendRenderGraphNode : RenderGraphNode
                 context,
                 out var sourceFrame,
                 out var outputTexture,
+                out var producedPrimitive,
                 out var failureReason))
         {
             return new RenderGraphNodeResult
@@ -227,7 +246,24 @@ internal sealed class BlendRenderGraphNode : RenderGraphNode
             Kind = Kind,
             WasSkipped = false,
             SourceFrame = sourceFrame,
-            OutputTexture = outputTexture
+            OutputTexture = outputTexture,
+            ProducedPrimitive = producedPrimitive
+        };
+    }
+}
+
+internal sealed class PrimitiveRenderGraphNode : RenderGraphNode
+{
+    public required MediaForgeRenderGraphNode PlanNode { get; init; }
+
+    public override RenderGraphNodeResult Execute(RenderGraphContext context)
+    {
+        return new RenderGraphNodeResult
+        {
+            NodeKey = Key,
+            Kind = Kind,
+            WasSkipped = false,
+            ProducedPrimitive = true
         };
     }
 }
@@ -243,6 +279,7 @@ internal sealed class OutputRenderGraphNode : RenderGraphNode
                 context,
                 out var sourceFrame,
                 out var outputTexture,
+                out var producedPrimitive,
                 out var failureReason))
         {
             return new RenderGraphNodeResult
@@ -260,7 +297,43 @@ internal sealed class OutputRenderGraphNode : RenderGraphNode
             Kind = Kind,
             WasSkipped = false,
             SourceFrame = sourceFrame,
-            OutputTexture = outputTexture
+            OutputTexture = outputTexture,
+            ProducedPrimitive = producedPrimitive
+        };
+    }
+}
+
+internal sealed class OutputTransitionRenderGraphNode : RenderGraphNode
+{
+    public required MediaForgeRenderGraphNode PlanNode { get; init; }
+
+    public override RenderGraphNodeResult Execute(RenderGraphContext context)
+    {
+        if (!RenderGraphNodeResourceFlow.TryGetDependencyResources(
+                this,
+                context,
+                out var sourceFrame,
+                out var outputTexture,
+                out var producedPrimitive,
+                out var failureReason))
+        {
+            return new RenderGraphNodeResult
+            {
+                NodeKey = Key,
+                Kind = Kind,
+                WasSkipped = true,
+                FailureReason = failureReason
+            };
+        }
+
+        return new RenderGraphNodeResult
+        {
+            NodeKey = Key,
+            Kind = Kind,
+            WasSkipped = false,
+            SourceFrame = sourceFrame,
+            OutputTexture = outputTexture,
+            ProducedPrimitive = producedPrimitive
         };
     }
 }
@@ -272,10 +345,12 @@ internal static class RenderGraphNodeResourceFlow
         RenderGraphContext context,
         out GpuFrameReference? sourceFrame,
         out GpuTextureLease? outputTexture,
+        out bool producedPrimitive,
         out string? failureReason)
     {
         sourceFrame = null;
         outputTexture = null;
+        producedPrimitive = false;
         failureReason = null;
 
         if (node.Dependencies.Count == 0)
@@ -306,9 +381,10 @@ internal static class RenderGraphNodeResourceFlow
 
             sourceFrame ??= result.SourceFrame;
             outputTexture ??= result.OutputTexture;
+            producedPrimitive |= result.ProducedPrimitive;
         }
 
-        return sourceFrame.HasValue || outputTexture is not null;
+        return sourceFrame.HasValue || outputTexture is not null || producedPrimitive;
     }
 
     public static bool TryGetAnyDependencyResource(
@@ -316,10 +392,12 @@ internal static class RenderGraphNodeResourceFlow
         RenderGraphContext context,
         out GpuFrameReference? sourceFrame,
         out GpuTextureLease? outputTexture,
+        out bool producedPrimitive,
         out string? failureReason)
     {
         sourceFrame = null;
         outputTexture = null;
+        producedPrimitive = false;
         failureReason = null;
 
         if (node.Dependencies.Count == 0)
@@ -344,6 +422,7 @@ internal static class RenderGraphNodeResourceFlow
 
             sourceFrame ??= result.SourceFrame;
             outputTexture ??= result.OutputTexture;
+            producedPrimitive |= result.ProducedPrimitive;
             return true;
         }
 

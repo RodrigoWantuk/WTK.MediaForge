@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
@@ -14,6 +15,8 @@ internal sealed class RenderCanvasSnapshot
     public FrameSize Size { get; init; }
 
     public ColorRgba BackgroundColor { get; init; } = ColorRgba.Black;
+
+    public SceneVersionId? VersionId { get; init; }
 
     public ImmutableArray<RenderDrawObjectSnapshot> Objects { get; init; } =
         ImmutableArray<RenderDrawObjectSnapshot>.Empty;

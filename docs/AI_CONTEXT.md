@@ -71,11 +71,13 @@ The legacy WinForms preview path has been removed as a product path because it u
   `SceneVersionGraph` state for each affected output route, retains the
   pre-commit project snapshot while the route transition is active, and
   `RenderFrameSnapshotFactory` exposes `PreviousCanvasId` plus progress for the
-  compositor. The remaining product step is to make these old/new route passes
-  first-class operations in the physical RenderGraph executor.
+  compositor. Transition frames now compile from `RenderFrameSnapshot` into a
+  physical graph with explicit old-canvas, current-canvas, output-transition,
+  and output-pass operations. The remaining product step is to make Vulkan
+  consume that physical plan directly instead of traversing the snapshot itself.
 - The public authoring foundation includes typed source/output helper factories, `Scene(...)`, route helpers, and package export/import APIs.
 - Multiple canvases/scenes can be routed independently to outputs and sinks. The same source can feed multiple scenes/layers, and the renderer must minimize redundant GPU work.
-- The render graph target is `Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects`. The current internal planner deduplicates source frame, reusable source effect-chain, canvas render, and output pass nodes by stable keys.
+- The render graph target is `Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects`. The current internal planner deduplicates source frame, reusable source effect-chain, primitive layer, canvas render, output-transition, and output pass nodes by stable keys.
 - Sinks never cause rendering directly. They consume completed `RenderOutput` frame leases after the renderer has produced the surface.
 - Package JSON is product model data only. It may contain schema versions, ids, type ids, typed settings, transforms, effects, canvas graph, routes, and metadata. It must not contain runtime leases, native handles, Vulkan/D3D11 objects, command buffers, fences, backend worker state, sink queues, or secrets unless explicitly exported.
 - Scene package import must build and validate a candidate project first. Replace, merge-as-new-scene, merge-presets-only, and dry-run modes must not mutate the existing engine/project state on failure.

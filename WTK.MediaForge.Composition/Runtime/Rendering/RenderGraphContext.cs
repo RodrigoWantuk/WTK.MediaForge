@@ -32,5 +32,7 @@ internal sealed class RenderGraphNodeResult
 
     public GpuTextureLease? OutputTexture { get; init; }
 
-    public bool HasRenderableResource => SourceFrame.HasValue || OutputTexture is not null;
+    public bool ProducedPrimitive { get; init; }
+
+    public bool HasRenderableResource => SourceFrame.HasValue || OutputTexture is not null || ProducedPrimitive;
 }

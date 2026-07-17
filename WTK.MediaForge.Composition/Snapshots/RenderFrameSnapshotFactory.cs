@@ -145,6 +145,7 @@ internal static class RenderFrameSnapshotFactory
             Name = canvas.Name,
             Size = canvas.Size,
             BackgroundColor = canvas.BackgroundColor,
+            VersionId = canvas.VersionId,
             Objects = canvas.Objects
         };
 
@@ -221,6 +222,9 @@ internal static class RenderFrameSnapshotFactory
             Name = canvas.Name,
             Size = canvas.Size,
             BackgroundColor = canvas.BackgroundColor,
+            VersionId = projectState.CanvasVersionIds.TryGetValue(canvas.Id, out var version)
+                ? version
+                : null,
             Objects = objects
         };
     }

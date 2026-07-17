@@ -63,18 +63,23 @@ Product-validated foundations:
   previous/current scene version graphs per affected output route, preserves the
   immutable pre-commit project snapshot while a fade is active, and the render
   snapshot exposes a previous canvas plus transition progress for the compositor.
+- Physical RenderGraph transition checkpoint. Transition frames compile from
+  the submitted `RenderFrameSnapshot`, include primitive layer nodes for
+  solid/text-only scenes, and expose explicit old-canvas -> current-canvas ->
+  output-transition -> output-pass operations.
 
 Implemented but still product-limited:
 
 - Logical RenderGraph. It carries source-frame resources and skip reasons, but
   the physical GPU pass executor is still the active renderer/snapshot path.
-- Apply transitions still run through the existing snapshot/compositor bridge.
-  The next product step is moving route transitions into the physical
-  RenderGraph executor so old/new version graphs are explicit graph passes.
+- Apply transitions still render through the existing snapshot/compositor
+  bridge, but their old/new route passes now exist in the physical graph plan.
+  The next product step is making the Vulkan renderer consume the physical plan
+  directly instead of executing its current snapshot traversal.
 - Physical RenderGraph checkpoint. The logical graph now exposes a physical
-  pass plan for source acquisition, effect intermediates, canvas passes,
-  output passes, and rendered-output fanout, but the Vulkan renderer still
-  needs to consume that physical plan directly.
+  pass plan for source acquisition, primitive layers, effect intermediates,
+  canvas passes, output transitions, output passes, and rendered-output fanout,
+  but the Vulkan renderer still needs to consume that physical plan directly.
 - Fault recovery coordination. Scenario policies now distinguish recovery,
   recovered, exhausted, and canceled states and isolate encoded routes, RTMP,
   export, source, and device faults, but end-to-end runtime wiring still needs
@@ -120,10 +125,10 @@ docs truthful before it is considered complete.
 | 08 | Decode-to-render sustained | Generated product MP4 asset decodes to GPU leases and renders through Vulkan without CPU frame transport over sustained playback. |
 | 09 | Desktop/window capture | Desktop duplication is validated; Windows Graphics Capture must publish GPU leases, survive device/display reset, and share sources safely. |
 | 10 | Webcam source hardening | Media Foundation capture is validated for immediate GPU upload; next work is sustained capture, device-loss/reconnect, and richer format selection tests. |
-| 11 | SceneRuntime and physical RenderGraph | Source acquisition, canvas/effect/output passes, rendered-output fanout, encoded routes, and resource lifetime are compiled into executable GPU pass plans. |
+| 11 | SceneRuntime and physical RenderGraph | Source acquisition, primitive/effect/canvas/output-transition/output passes, rendered-output fanout, encoded routes, and resource lifetime are compiled into executable GPU pass plans. |
 | 11a | Scene Live/Apply product semantics | Live edits update published sinks next frame; Apply edits remain draft until commit; nested canvas commits propagate affected outputs, capture old/new version graphs, and expose transition snapshots to outputs. |
 | 12 | GPU resource pooling | Render/effect/export intermediates are pooled, bounded, and retired after GPU fences without leaks or stale handles. |
-| 13 | Effects/text through graph | Layer effects, scene effects, text atlas reuse, and route transitions become graph nodes with backend capability diagnostics. |
+| 13 | Effects/text through graph | Layer effects, scene effects, text atlas reuse, and backend capability diagnostics move fully into graph execution. |
 | 14 | Multi-output routing | Same scene/profile renders once, encodes once, and fans out to preview/MP4/RTMP when profile-compatible. |
 | 15 | Product performance suite | Product performance requires sustained render, encode, decode, MP4, and RTMP workloads with render latency, encode latency, dropped frames, CPU, RAM, and VRAM estimates. |
 | 16 | Fault recovery | Encoder failure, RTMP disconnect, MP4 finalize failure, decode EOF/seek failure, source loss, device reset, and export failure isolate affected routes with scenario-specific backoff and pause policy. |
@@ -146,7 +151,7 @@ docs truthful before it is considered complete.
 | Webcam | Hardware-dependent experimental | Promotes when the Media Foundation webcam proof validates immediate D3D11 upload, `KeepLatest` GPU slot lifetime, and Vulkan render on the current machine. |
 | NDI | Discovery supported / video blocked | Windows detects loadable NDI runtime when installed and can enumerate sources; product video support still requires GPU-safe source/output proofs. |
 | SRT/HLS/virtual camera/audio | Planned | Out of scope until core video pipeline is sustained. |
-| RenderGraph physical executor | Active work | Logical plan and physical pass checkpoint exist; Vulkan still needs to consume the physical plan directly. |
+| RenderGraph physical executor | Active work | Physical pass checkpoint includes primitive layers and output transitions; Vulkan still needs to consume the physical plan directly. |
 | Performance suite | Active work | Synthetic coverage exists; sustained real workloads are required. |
 
 ## Acceptance Suites
