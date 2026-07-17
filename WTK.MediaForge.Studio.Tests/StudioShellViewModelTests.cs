@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Input;
 using WTK.MediaForge.Studio.DesignData;
+using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Services;
 using WTK.MediaForge.Studio.ViewModels;
@@ -262,7 +263,7 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public void SceneEditSession_CanApplyOrDiscardChanges()
+    public async Task SceneEditSession_CanApplyOrDiscardChanges()
     {
         var shell = CreateShell();
         var savedScene = shell.Document.Scenes.Single(item => item.Id == "scene-main");
@@ -271,7 +272,7 @@ public sealed class StudioShellViewModelTests
 
         shell.Preview.MoveLayerFromStart(draftLayer, draftLayer.X, draftLayer.Y, new Vector(80, 0), KeyModifiers.None);
         var editedX = draftLayer.X;
-        shell.ApplySceneDraftCommand.Execute(null);
+        await shell.ApplySceneDraftCommand.ExecuteAsync(null);
 
         Assert.False(shell.Preview.HasPendingChanges);
         var updatedSavedLayer = savedScene.Layers.Single(item => item.Id == savedLayer.Id);
@@ -282,11 +283,46 @@ public sealed class StudioShellViewModelTests
         var appliedX = updatedSavedLayer.Transform.X;
         var secondDraft = shell.BottomWorkbench.Layers.Single(item => item.Id == updatedSavedLayer.Id);
         shell.Preview.MoveLayerFromStart(secondDraft, secondDraft.X, secondDraft.Y, new Vector(100, 0), KeyModifiers.None);
-        shell.DiscardSceneDraftCommand.Execute(null);
+        await shell.DiscardSceneDraftCommand.ExecuteAsync(null);
 
         Assert.False(shell.Preview.HasPendingChanges);
         Assert.Equal(appliedX, savedScene.Layers.Single(item => item.Id == updatedSavedLayer.Id).Transform.X);
         Assert.Equal(appliedX, shell.BottomWorkbench.Layers.Single(item => item.Id == updatedSavedLayer.Id).X);
+    }
+
+    [Fact]
+    public async Task SceneEditSession_PushesDraftLayerStateToRuntimeBeforeApply()
+    {
+        var runtime = new RecordingSceneEditRuntimeService();
+        var shell = CreateShell(runtime);
+        var draftLayer = shell.BottomWorkbench.Layers.First(item => !item.IsLocked);
+
+        shell.Preview.MoveLayerFromStart(draftLayer, draftLayer.X, draftLayer.Y, new Vector(80, 0), KeyModifiers.None);
+        var editedX = draftLayer.X;
+
+        await shell.ApplySceneDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(["scene-main"], runtime.BegunSceneIds);
+        Assert.Equal(1, runtime.ApplyCallCount);
+        Assert.True(runtime.AppliedAfterTracking);
+        Assert.Contains(runtime.TrackedLayers, item => item.Id == draftLayer.Id && item.X == editedX);
+        Assert.False(shell.Preview.HasPendingChanges);
+    }
+
+    [Fact]
+    public async Task SceneEditSession_DiscardDiscardsRuntimeDraftWithoutApplying()
+    {
+        var runtime = new RecordingSceneEditRuntimeService();
+        var shell = CreateShell(runtime);
+        var draftLayer = shell.BottomWorkbench.Layers.First(item => !item.IsLocked);
+
+        shell.Preview.MoveLayerFromStart(draftLayer, draftLayer.X, draftLayer.Y, new Vector(80, 0), KeyModifiers.None);
+
+        await shell.DiscardSceneDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, runtime.DiscardCallCount);
+        Assert.Equal(0, runtime.ApplyCallCount);
+        Assert.False(shell.Preview.HasPendingChanges);
     }
 
     [Fact]
@@ -319,11 +355,69 @@ public sealed class StudioShellViewModelTests
         Assert.DoesNotContain("mock", visibleText, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static StudioShellViewModel CreateShell()
+    private static StudioShellViewModel CreateShell(IStudioSceneEditRuntimeService? sceneEditRuntimeService = null)
     {
-        var services = StudioServiceFactory.CreateFake(uiTimer: new FakeStudioUiTimer());
+        var services = StudioServiceFactory.CreateFake(
+            sceneEditRuntimeService: sceneEditRuntimeService,
+            uiTimer: new FakeStudioUiTimer());
         return StudioDesignData.CreateShellViewModel(services);
     }
+
+    private sealed class RecordingSceneEditRuntimeService : IStudioSceneEditRuntimeService
+    {
+        private readonly List<TrackedLayerState> _trackedLayers = [];
+        private int _trackCallCount;
+
+        public bool IsEngineBacked => true;
+
+        public List<string> BegunSceneIds { get; } = [];
+
+        public IReadOnlyList<TrackedLayerState> TrackedLayers => _trackedLayers;
+
+        public int ApplyCallCount { get; private set; }
+
+        public int DiscardCallCount { get; private set; }
+
+        public bool AppliedAfterTracking { get; private set; }
+
+        public ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
+            StudioScene scene,
+            CancellationToken cancellationToken = default)
+        {
+            BegunSceneIds.Add(scene.Id);
+            return ValueTask.FromResult(new StudioSceneEditRuntimeSession(Guid.NewGuid().ToString("N"), scene.Id, true));
+        }
+
+        public ValueTask TrackLayerVisualStateAsync(
+            StudioSceneEditRuntimeSession session,
+            StudioLayer layer,
+            CancellationToken cancellationToken = default)
+        {
+            _trackCallCount++;
+            _trackedLayers.Add(new TrackedLayerState(layer.Id, layer.Transform.X, layer.Transform.Y, layer.Transform.Width, layer.Transform.Height));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<StudioSceneEditApplyResult> ApplySceneDraftAsync(
+            StudioSceneEditRuntimeSession session,
+            StudioTransition? transition,
+            CancellationToken cancellationToken = default)
+        {
+            ApplyCallCount++;
+            AppliedAfterTracking = _trackCallCount > 0;
+            return ValueTask.FromResult(new StudioSceneEditApplyResult(true, []));
+        }
+
+        public ValueTask DiscardSceneDraftAsync(
+            StudioSceneEditRuntimeSession session,
+            CancellationToken cancellationToken = default)
+        {
+            DiscardCallCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed record TrackedLayerState(string Id, double X, double Y, double Width, double Height);
 }
 
 public sealed class SceneEditorTransformTests

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.ViewModels;
 
@@ -85,6 +86,38 @@ public interface IStudioEngineService
     Task StartAsync(CancellationToken cancellationToken);
 
     Task StopAsync(CancellationToken cancellationToken);
+}
+
+public sealed record StudioSceneEditRuntimeSession(
+    string RuntimeSessionId,
+    string StudioSceneId,
+    bool IsEngineBacked);
+
+public sealed record StudioSceneEditApplyResult(
+    bool IsEngineBacked,
+    IReadOnlyList<string> AffectedOutputIds);
+
+public interface IStudioSceneEditRuntimeService
+{
+    bool IsEngineBacked { get; }
+
+    ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
+        StudioScene scene,
+        CancellationToken cancellationToken = default);
+
+    ValueTask TrackLayerVisualStateAsync(
+        StudioSceneEditRuntimeSession session,
+        StudioLayer layer,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<StudioSceneEditApplyResult> ApplySceneDraftAsync(
+        StudioSceneEditRuntimeSession session,
+        StudioTransition? transition,
+        CancellationToken cancellationToken = default);
+
+    ValueTask DiscardSceneDraftAsync(
+        StudioSceneEditRuntimeSession session,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class StudioOutputStatusChangedEventArgs : EventArgs
@@ -198,6 +231,7 @@ public sealed class StudioServiceBundle
     public StudioServiceBundle(
         IStudioProjectService projectService,
         IStudioEngineService engineService,
+        IStudioSceneEditRuntimeService sceneEditRuntimeService,
         IStudioOutputService outputService,
         IStudioCapabilityService capabilityService,
         IStudioDiagnosticsService diagnosticsService,
@@ -207,6 +241,7 @@ public sealed class StudioServiceBundle
     {
         ProjectService = projectService;
         EngineService = engineService;
+        SceneEditRuntimeService = sceneEditRuntimeService;
         OutputService = outputService;
         CapabilityService = capabilityService;
         DiagnosticsService = diagnosticsService;
@@ -218,6 +253,8 @@ public sealed class StudioServiceBundle
     public IStudioProjectService ProjectService { get; }
 
     public IStudioEngineService EngineService { get; }
+
+    public IStudioSceneEditRuntimeService SceneEditRuntimeService { get; }
 
     public IStudioOutputService OutputService { get; }
 

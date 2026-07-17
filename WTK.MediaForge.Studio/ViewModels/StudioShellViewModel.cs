@@ -20,6 +20,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private readonly IStudioCapabilityService _capabilityService;
     private readonly IStudioDiagnosticsService _diagnosticsService;
     private readonly IStudioSelectionService _selectionService;
+    private readonly IStudioSceneEditRuntimeService _sceneEditRuntimeService;
     private readonly IStudioUiTimer _uiTimer;
     private readonly StudioLayoutService _layoutService = new();
     private readonly SceneEditSessionService _sceneEditSessionService = new();
@@ -33,6 +34,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private StudioSelectionState _currentSelection = StudioSelectionState.None;
     private IDock? _dockLayout;
     private SceneEditSession? _editSession;
+    private StudioSceneEditRuntimeSession? _runtimeEditSession;
 
     public StudioShellViewModel()
         : this(StudioServiceFactory.CreateFake())
@@ -46,6 +48,7 @@ public sealed class StudioShellViewModel : ViewModelBase
             services.CapabilityService,
             services.DiagnosticsService,
             services.SelectionService,
+            services.SceneEditRuntimeService,
             services.UiTimer)
     {
     }
@@ -56,6 +59,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         IStudioCapabilityService capabilityService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
+        IStudioSceneEditRuntimeService sceneEditRuntimeService,
         IStudioUiTimer uiTimer)
     {
         _projectService = projectService;
@@ -63,6 +67,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         _capabilityService = capabilityService;
         _diagnosticsService = diagnosticsService;
         _selectionService = selectionService;
+        _sceneEditRuntimeService = sceneEditRuntimeService;
         _uiTimer = uiTimer;
 
         BottomWorkbench = new BottomWorkbenchViewModel();
@@ -85,8 +90,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         SettingsCommand = new RelayCommand(OpenSettingsDialog);
         RestoreLayoutCommand = new RelayCommand(RestoreDefaultLayout);
         RedockAllPanelsCommand = new RelayCommand(RedockAllPanels);
-        ApplySceneDraftCommand = new RelayCommand(ApplySceneDraft, () => _editSession?.HasChanges == true);
-        DiscardSceneDraftCommand = new RelayCommand(DiscardSceneDraft, () => _editSession?.HasChanges == true);
+        ApplySceneDraftCommand = new AsyncRelayCommand(ApplySceneDraftAsync, () => _editSession?.HasChanges == true);
+        DiscardSceneDraftCommand = new AsyncRelayCommand(DiscardSceneDraftAsync, () => _editSession?.HasChanges == true);
         ToggleStreamingCommand = new AsyncRelayCommand(ToggleStreamingAsync, CanToggleStreaming);
         ToggleRecordingCommand = new AsyncRelayCommand(ToggleRecordingAsync, CanToggleRecording);
         SelectProjectItemCommand = new RelayCommand<ProjectTreeItemViewModel>(SelectProjectItem, item => item is not null);
@@ -176,9 +181,9 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public ICommand RedockAllPanelsCommand { get; }
 
-    public IRelayCommand ApplySceneDraftCommand { get; }
+    public IAsyncRelayCommand ApplySceneDraftCommand { get; }
 
-    public IRelayCommand DiscardSceneDraftCommand { get; }
+    public IAsyncRelayCommand DiscardSceneDraftCommand { get; }
 
     public IAsyncRelayCommand ToggleStreamingCommand { get; }
 
@@ -770,7 +775,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         SetStatus("Painéis reencaixados.");
     }
 
-    private void ApplySceneDraft()
+    private async Task ApplySceneDraftAsync()
     {
         if (_editSession is null || !_editSession.HasChanges)
         {
@@ -779,6 +784,26 @@ public sealed class StudioShellViewModel : ViewModelBase
 
         var sceneId = _editSession.SceneId;
         var sceneName = _editSession.Draft.DisplayName;
+        try
+        {
+            if (_sceneEditRuntimeService.IsEngineBacked)
+            {
+                var runtimeSession = await EnsureRuntimeEditSessionAsync(CancellationToken.None)
+                    .ConfigureAwait(true);
+                await PushCurrentDraftToRuntimeAsync(runtimeSession, CancellationToken.None)
+                    .ConfigureAwait(true);
+                await _sceneEditRuntimeService
+                    .ApplySceneDraftAsync(runtimeSession, transition: null, CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _diagnosticsService.Append("ERROR", "Studio", $"Falha ao aplicar cena na engine: {ex.Message}");
+            SetStatus($"Não foi possível aplicar {sceneName}: {ex.Message}");
+            return;
+        }
+
         _sceneEditSessionService.Apply(_editSession);
         foreach (var output in _document.Outputs.Where(item => item.AssignedSceneId == sceneId))
         {
@@ -788,6 +813,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         _document.HasUnsavedChanges = true;
         _editSession = _sceneEditSessionService.Create(_editSession.Original);
         CurrentScene = _editSession.Draft;
+        _runtimeEditSession = null;
         Preview.HasPendingChanges = false;
         RebuildAll();
         ClearLayerSelectionAndShowScene();
@@ -797,7 +823,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         SetStatus($"{sceneName} aplicada à cena salva. Saídas vinculadas têm atualização disponível.");
     }
 
-    private void DiscardSceneDraft()
+    private async Task DiscardSceneDraftAsync()
     {
         if (_editSession is null)
         {
@@ -805,15 +831,73 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         var sceneName = _editSession.Original.DisplayName;
+        var runtimeDiscardFailed = false;
+        try
+        {
+            if (_sceneEditRuntimeService.IsEngineBacked)
+            {
+                var runtimeSession = await EnsureRuntimeEditSessionAsync(CancellationToken.None)
+                    .ConfigureAwait(true);
+                await _sceneEditRuntimeService
+                    .DiscardSceneDraftAsync(runtimeSession, CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            runtimeDiscardFailed = true;
+            _diagnosticsService.Append("WARN", "Studio", $"Falha ao descartar draft runtime: {ex.Message}");
+            SetStatus($"Draft visual descartado; engine reportou falha ao descartar: {ex.Message}");
+        }
+
         _editSession = _sceneEditSessionService.Create(_editSession.Original);
         CurrentScene = _editSession.Draft;
+        _runtimeEditSession = null;
         Preview.HasPendingChanges = false;
         RebuildAll();
         ClearLayerSelectionAndShowScene();
         ApplyProjectDocument();
         ApplySceneDraftCommand.NotifyCanExecuteChanged();
         DiscardSceneDraftCommand.NotifyCanExecuteChanged();
-        SetStatus($"Alterações em {sceneName} descartadas.");
+        if (!runtimeDiscardFailed)
+        {
+            SetStatus($"Alterações em {sceneName} descartadas.");
+        }
+    }
+
+    private async ValueTask<StudioSceneEditRuntimeSession> EnsureRuntimeEditSessionAsync(CancellationToken cancellationToken)
+    {
+        if (_runtimeEditSession is not null && _editSession is not null && _runtimeEditSession.StudioSceneId == _editSession.SceneId)
+        {
+            return _runtimeEditSession;
+        }
+
+        if (_editSession is null)
+        {
+            throw new InvalidOperationException("No scene draft is active.");
+        }
+
+        _runtimeEditSession = await _sceneEditRuntimeService
+            .BeginApplySessionAsync(_editSession.Original, cancellationToken)
+            .ConfigureAwait(true);
+        return _runtimeEditSession;
+    }
+
+    private async ValueTask PushCurrentDraftToRuntimeAsync(
+        StudioSceneEditRuntimeSession runtimeSession,
+        CancellationToken cancellationToken)
+    {
+        if (_editSession is null)
+        {
+            throw new InvalidOperationException("No scene draft is active.");
+        }
+
+        foreach (var layer in _editSession.Draft.Layers.OrderBy(layer => layer.Order))
+        {
+            await _sceneEditRuntimeService
+                .TrackLayerVisualStateAsync(runtimeSession, layer, cancellationToken)
+                .ConfigureAwait(true);
+        }
     }
 
     private void OnPreviewSceneEdited(object? sender, EventArgs e)
@@ -959,6 +1043,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private void SelectScene(StudioScene scene, bool updateProjectSelection)
     {
         _editSession = _sceneEditSessionService.Create(scene);
+        _runtimeEditSession = null;
         CurrentScene = _editSession.Draft;
         _document.SelectedSceneId = scene.Id;
         Preview.SceneName = CurrentScene.DisplayName;

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Avalonia.Threading;
 using WTK.MediaForge.Studio.DesignData;
+using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.ViewModels;
 
@@ -69,6 +70,50 @@ public sealed class FakeStudioEngineService : IStudioEngineService
     {
         _currentStatus = status;
         StatusChanged?.Invoke(this, new StudioEngineStatusChangedEventArgs(status));
+    }
+}
+
+public sealed class FakeStudioSceneEditRuntimeService : IStudioSceneEditRuntimeService
+{
+    public bool IsEngineBacked => false;
+
+    public ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
+        StudioScene scene,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(new StudioSceneEditRuntimeSession(Guid.NewGuid().ToString("N"), scene.Id, false));
+    }
+
+    public ValueTask TrackLayerVisualStateAsync(
+        StudioSceneEditRuntimeSession session,
+        StudioLayer layer,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(layer);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<StudioSceneEditApplyResult> ApplySceneDraftAsync(
+        StudioSceneEditRuntimeSession session,
+        StudioTransition? transition,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(new StudioSceneEditApplyResult(false, []));
+    }
+
+    public ValueTask DiscardSceneDraftAsync(
+        StudioSceneEditRuntimeSession session,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.CompletedTask;
     }
 }
 
@@ -384,12 +429,14 @@ public static class StudioServiceFactory
     public static StudioServiceBundle CreateFake(
         IEnumerable<DiagnosticLogItemViewModel>? diagnostics = null,
         IStudioClock? clock = null,
+        IStudioSceneEditRuntimeService? sceneEditRuntimeService = null,
         IStudioUiTimer? uiTimer = null)
     {
         clock ??= new SystemStudioClock();
         return new StudioServiceBundle(
             new FakeStudioProjectService(),
             new FakeStudioEngineService(),
+            sceneEditRuntimeService ?? new FakeStudioSceneEditRuntimeService(),
             new FakeStudioOutputService(clock),
             new FakeStudioCapabilityService(),
             new StudioDiagnosticsService(diagnostics),
