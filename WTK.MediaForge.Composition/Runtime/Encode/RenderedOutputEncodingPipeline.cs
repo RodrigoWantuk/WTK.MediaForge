@@ -200,6 +200,7 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
         private readonly CancellationTokenSource _stop = new();
         private readonly Task _worker;
         private int _disposed;
+        private int _fatalFailure;
         private long _framesSubmitted;
         private long _framesDropped;
         private volatile RenderedOutputEncodingRuntimeStatus _status;
@@ -347,6 +348,12 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
             {
                 await foreach (var item in _queue.Reader.ReadAllAsync(_stop.Token).ConfigureAwait(false))
                 {
+                    if (IsFatalFailure)
+                    {
+                        await DisposeWorkItemAsync(item).ConfigureAwait(false);
+                        continue;
+                    }
+
                     ScheduledRenderedFrame? scheduledFrame = null;
                     try
                     {
@@ -358,6 +365,14 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                                 _auditSink,
                                 _stop.Token)
                             .ConfigureAwait(false);
+
+                        if (IsFatalFailure)
+                        {
+                            scheduledFrame.Dispose();
+                            scheduledFrame = null;
+                            await DisposeQueuedWorkItemsAsync().ConfigureAwait(false);
+                            break;
+                        }
 
                         _schedulerTarget.EnqueueRenderedFrame(scheduledFrame);
                         scheduledFrame = null;
@@ -375,8 +390,7 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                     catch (Exception ex)
                     {
                         scheduledFrame?.Dispose();
-                        _status = RenderedOutputEncodingRuntimeStatus.Failed;
-                        Volatile.Write(ref _statusReason, ex.Message);
+                        SetFailed(ex.Message);
                         MediaForgeDiagnostics.Report(
                             _diagnostics,
                             MediaForgeDiagnosticSeverity.Error,
@@ -385,6 +399,13 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                             nameof(RenderedOutputEncodingPipeline),
                             ex,
                             frameNumber: item.Context.FrameId);
+
+                        if (!_backpressurePolicy.AllowFrameDrop)
+                        {
+                            SetFatalFailure(ex.Message);
+                            await DisposeQueuedWorkItemsAsync().ConfigureAwait(false);
+                            break;
+                        }
                     }
                 }
             }
@@ -403,16 +424,38 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
             }
             else
             {
-                _status = RenderedOutputEncodingRuntimeStatus.Failed;
-                Volatile.Write(ref _statusReason, "Encoding export queue is full; recording output does not allow frame drops.");
+                var reason = "Encoding export queue is full; recording output does not allow frame drops.";
+                SetFatalFailure(reason);
             }
 
             MediaForgeDiagnostics.Report(
                 _diagnostics,
-                MediaForgeDiagnosticSeverity.Warning,
-                "engine.encoding_pipeline_frame_dropped_backpressure",
-                $"Rendered output {OutputId} dropped an encoding frame because the export queue is full.",
+                _backpressurePolicy.AllowFrameDrop
+                    ? MediaForgeDiagnosticSeverity.Warning
+                    : MediaForgeDiagnosticSeverity.Error,
+                _backpressurePolicy.AllowFrameDrop
+                    ? "engine.encoding_pipeline_frame_dropped_backpressure"
+                    : "engine.encoding_pipeline_backpressure_failed",
+                _backpressurePolicy.AllowFrameDrop
+                    ? $"Rendered output {OutputId} dropped an encoding frame because the export queue is full."
+                    : $"Rendered output {OutputId} failed because the encoding export queue is full.",
                 nameof(RenderedOutputEncodingPipeline));
+        }
+
+        private bool IsFatalFailure => Volatile.Read(ref _fatalFailure) != 0;
+
+        private void SetFailed(string reason)
+        {
+            _status = RenderedOutputEncodingRuntimeStatus.Failed;
+            Volatile.Write(ref _statusReason, reason);
+        }
+
+        private void SetFatalFailure(string reason)
+        {
+            if (Interlocked.Exchange(ref _fatalFailure, 1) == 0)
+                _queue.Writer.TryComplete();
+
+            SetFailed(reason);
         }
 
         private static EncodedOutputRuntimeStatus MapStatus(RenderedOutputEncodingRuntimeStatus status) =>
@@ -446,22 +489,25 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
         private async ValueTask DisposeQueuedWorkItemsAsync()
         {
             while (_queue.Reader.TryRead(out var item))
+                await DisposeWorkItemAsync(item).ConfigureAwait(false);
+        }
+
+        private async ValueTask DisposeWorkItemAsync(EncodingWorkItem item)
+        {
+            try
             {
-                try
-                {
-                    await item.Lease.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    MediaForgeDiagnostics.Report(
-                        _diagnostics,
-                        MediaForgeDiagnosticSeverity.Error,
-                        "engine.encoding_pipeline_queued_frame_dispose_failed",
-                        $"Rendered output {OutputId} failed to release a queued encoding frame lease during shutdown.",
-                        nameof(RenderedOutputEncodingPipeline),
-                        ex,
-                        frameNumber: item.Context.FrameId);
-                }
+                await item.Lease.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "engine.encoding_pipeline_queued_frame_dispose_failed",
+                    $"Rendered output {OutputId} failed to release a queued encoding frame lease during shutdown.",
+                    nameof(RenderedOutputEncodingPipeline),
+                    ex,
+                    frameNumber: item.Context.FrameId);
             }
         }
     }

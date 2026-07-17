@@ -59,6 +59,14 @@ Product-validated foundations:
   version ids, version binding for nested canvases, published/draft runtime
   stores, dependency graph propagation, output route transition state, and
   affected-output reporting for nested-scene apply commits.
+- Scene versioning now includes canonical effect fingerprints with typed
+  effect parameters, so blur radius, chroma similarity/smoothness, color
+  correction values, transition settings, effect enable/order/type changes,
+  and effect identity changes invalidate dirty regions and scene versions.
+- Explicit nested scene version binding is backed by an immutable internal
+  version store. A parent scene that references `Canvas A` at explicit version
+  `v10` renders the stored `v10` canvas snapshot even after `Canvas A` is
+  published as `v11`.
 - Apply transition runtime for nested scene version graphs. The engine captures
   previous/current scene version graphs per affected output route, preserves the
   immutable pre-commit project snapshot while a fade is active, and the render
@@ -97,6 +105,9 @@ Implemented but still product-limited:
   recovered, exhausted, and canceled states and isolate encoded routes, RTMP,
   export, source, and device faults, but end-to-end runtime wiring still needs
   sustained fault-injection coverage.
+- Rendered-output encoding routes now fail closed for non-dropping recording
+  policy when export/schedule/backpressure fails, draining queued leases and
+  rejecting new frames instead of continuing work after a fatal route failure.
 - Performance suites. Contracts exist, but product performance must be
   measured with sustained render, encode, decode, MP4, and RTMP workloads.
 

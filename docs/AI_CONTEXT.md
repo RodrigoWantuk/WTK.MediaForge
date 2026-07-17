@@ -59,12 +59,22 @@ The legacy WinForms preview path has been removed as a product path because it u
   sessions mutate published scene state after validation and normal sinks see
   the next frame. `Apply` sessions mutate an isolated draft; published sinks
   continue using the published version until commit.
+- Scene dirty tracking and `SceneVersionId` generation use canonical effect
+  state fingerprints. Effect id, name, enabled/order/schema, and typed
+  parameters such as chroma similarity, color correction values, blur radius,
+  and transition parameters are included, so visual effect changes cannot reuse
+  stale scene versions or dirty regions.
 - Each runtime canvas has a `SceneVersionId`. `CanvasDrawObject` carries a
   `SceneVersionBinding` (`Published`, `Draft`, or `ExplicitVersion`) so nested
   scenes, draft previews, cache keys, and apply transitions can render the
   correct version graph. `MediaForgeRenderOutput.SceneVersionBinding` lets an
   output route target a published, draft, or explicit scene version; normal
   output routes use published binding.
+- Explicit nested scene versions are backed by an internal immutable version
+  store (`SceneVersionId -> CanvasStateSnapshot`) attached to
+  `ProjectStateSnapshot`. Rendering a `CanvasDrawObject` with
+  `ExplicitVersion` materializes that historical canvas snapshot instead of
+  reading the current canvas state with an old id.
 - Scene dependency graph/planner identifies direct consumers, transitive
   consumers, and affected output routes when a scene draft is applied. Apply
   transition policy is reported at commit time. The engine captures old/new
@@ -178,6 +188,10 @@ The legacy WinForms preview path has been removed as a product path because it u
   exposing encoder workers or backend surfaces. Recording policies do not use
   `KeepLatest`; queue exhaustion becomes observable failure/backpressure, not
   a silent frame drop.
+- Rendered-output encoding routes with non-dropping policy fail closed on
+  export/schedule/backpressure faults: the route is marked failed, the writer
+  is completed, queued frame leases are drained, new frames are rejected, and
+  no frames are scheduled into the encoder after the fatal failure.
 - `CapabilityProofAggregator` resolves MP4 recording, RTMP streaming, and MP4
   video-file input capability from required hardware media proofs. The Windows
   capability report also promotes the webcam source entry when the webcam

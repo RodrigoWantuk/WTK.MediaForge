@@ -9,6 +9,7 @@ namespace WTK.MediaForge.Composition.Runtime.Scene;
 internal sealed class SceneVersionIndex
 {
     private readonly Dictionary<CanvasId, Entry> _entries = [];
+    private readonly Dictionary<SceneVersionId, CanvasStateSnapshot> _snapshotsByVersion = [];
 
     public IReadOnlyDictionary<CanvasId, ScenePublishedState> PublishedStates =>
         _entries.ToDictionary(
@@ -42,15 +43,20 @@ internal sealed class SceneVersionIndex
                 continue;
             }
 
-            _entries[canvas.Id] = new Entry(
+            var entry = new Entry(
                 SceneVersionId.New(),
                 fingerprint,
                 existing?.Revision + 1 ?? 1);
+            _entries[canvas.Id] = entry;
+            _snapshotsByVersion[entry.VersionId] = canvas;
         }
     }
 
     public IReadOnlyDictionary<CanvasId, SceneVersionId> CreateVersionMap() =>
         _entries.ToDictionary(static pair => pair.Key, static pair => pair.Value.VersionId);
+
+    public IReadOnlyDictionary<SceneVersionId, CanvasStateSnapshot> CreateVersionSnapshotMap() =>
+        _snapshotsByVersion.ToDictionary(static pair => pair.Key, static pair => pair.Value);
 
     private static string CreateFingerprint(CanvasStateSnapshot canvas)
     {
@@ -98,12 +104,7 @@ internal sealed class SceneVersionIndex
             }
 
             foreach (var effect in drawObject.Effects.OrderBy(static effect => effect.Order))
-            {
-                builder.Append(":effect=").Append(effect.GetType().Name)
-                    .Append('/').Append(effect.Enabled)
-                    .Append('/').Append(effect.Order)
-                    .Append('/').Append(effect.SchemaVersion);
-            }
+                builder.Append(":effect=").Append(EffectStateFingerprint.Create(effect));
         }
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));

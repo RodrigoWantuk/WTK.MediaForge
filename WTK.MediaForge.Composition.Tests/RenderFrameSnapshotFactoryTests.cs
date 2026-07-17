@@ -516,6 +516,63 @@ public class RenderFrameSnapshotFactoryTests
     }
 
     [Fact]
+    public void Build_resolves_explicit_nested_canvas_version_from_version_store()
+    {
+        var parentCanvasId = CanvasId.New();
+        var childCanvasId = CanvasId.New();
+        var parentVersion = SceneVersionId.New();
+        var childV1 = SceneVersionId.New();
+        var childV2 = SceneVersionId.New();
+        var oldChildCanvas = CreateTextCanvas(childCanvasId, "Child", "old title");
+        var currentChildCanvas = CreateTextCanvas(childCanvasId, "Child", "new title");
+        var parentCanvas = new CanvasStateSnapshot
+        {
+            Id = parentCanvasId,
+            Name = "Parent",
+            Size = new FrameSize(1920, 1080),
+            Objects =
+            [
+                new CanvasDrawObjectSnapshot
+                {
+                    Id = DrawObjectId.New(),
+                    Name = "Child Layer",
+                    NestedCanvasId = childCanvasId,
+                    VersionBinding = SceneVersionBinding.ExplicitVersion(childV1),
+                    Transform = new Transform2D { Size = new CanvasSize(640, 360) }
+                }
+            ]
+        };
+        var projectState = new ProjectStateSnapshot
+        {
+            Version = 1,
+            CanvasVersionIds = new Dictionary<CanvasId, SceneVersionId>
+            {
+                [parentCanvasId] = parentVersion,
+                [childCanvasId] = childV2
+            },
+            CanvasVersionSnapshots = new Dictionary<SceneVersionId, CanvasStateSnapshot>
+            {
+                [childV1] = oldChildCanvas,
+                [childV2] = currentChildCanvas
+            },
+            Canvases = [parentCanvas, currentChildCanvas]
+        };
+
+        using var result = RenderFrameSnapshotFactory.Build(projectState, new CompositionRuntime());
+        var snapshot = result.TakeSnapshot();
+        Assert.NotNull(snapshot);
+
+        var parent = snapshot!.Canvases.Single(canvas => canvas.Id == parentCanvasId);
+        var nestedLayer = Assert.IsType<RenderCanvasDrawObjectSnapshot>(Assert.Single(parent.Objects));
+        Assert.Equal(childV1, nestedLayer.NestedCanvasVersionId);
+        Assert.NotNull(nestedLayer.NestedCanvas);
+        var nestedText = Assert.IsType<RenderTextDrawObjectSnapshot>(Assert.Single(nestedLayer.NestedCanvas!.Objects));
+        Assert.Equal("old title", nestedText.Text);
+
+        snapshot.Dispose();
+    }
+
+    [Fact]
     public void Build_applies_custom_crop_to_effective_crop()
     {
         var sourceId = SourceId.New();
@@ -645,6 +702,24 @@ public class RenderFrameSnapshotFactoryTests
                             }
                         }
                     ]
+                }
+            ]
+        };
+
+    private static CanvasStateSnapshot CreateTextCanvas(CanvasId canvasId, string name, string text) =>
+        new()
+        {
+            Id = canvasId,
+            Name = name,
+            Size = new FrameSize(640, 360),
+            Objects =
+            [
+                new TextDrawObjectSnapshot
+                {
+                    Id = DrawObjectId.New(),
+                    Name = "Title",
+                    Text = text,
+                    Transform = new Transform2D { Size = new CanvasSize(300, 80) }
                 }
             ]
         };

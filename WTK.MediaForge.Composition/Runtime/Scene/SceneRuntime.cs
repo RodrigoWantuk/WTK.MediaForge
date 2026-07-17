@@ -286,14 +286,16 @@ internal sealed class SceneRuntime
             Canvases = canvases,
             Outputs = projectState.Outputs,
             Sources = projectState.Sources,
-            CanvasVersionIds = projectState.CanvasVersionIds
+            CanvasVersionIds = projectState.CanvasVersionIds,
+            CanvasVersionSnapshots = projectState.CanvasVersionSnapshots
         };
     }
 
     private ProjectStateSnapshot AttachPublishedVersions(ProjectStateSnapshot projectState) =>
         projectState with
         {
-            CanvasVersionIds = _publishedStore.CreateVersionMap()
+            CanvasVersionIds = _publishedStore.CreateVersionMap(),
+            CanvasVersionSnapshots = _publishedStore.CreateVersionSnapshotMap()
         };
 
     private static ProjectStateSnapshot AttachDraftVersion(
@@ -302,12 +304,25 @@ internal sealed class SceneRuntime
         PublishedSceneStateStore publishedStore)
     {
         var map = publishedStore.CreateVersionMap().ToDictionary(pair => pair.Key, pair => pair.Value);
+        var snapshotsByVersion = publishedStore.CreateVersionSnapshotMap()
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
+
         foreach (var pair in projectState.CanvasVersionIds)
             map[pair.Key] = pair.Value;
+
+        foreach (var pair in projectState.CanvasVersionSnapshots)
+            snapshotsByVersion[pair.Key] = pair.Value;
+
         map[draftState.CanvasId] = draftState.DraftVersionId;
+
+        var draftCanvas = projectState.Canvases.FirstOrDefault(canvas => canvas.Id == draftState.CanvasId);
+        if (draftCanvas is not null)
+            snapshotsByVersion[draftState.DraftVersionId] = draftCanvas;
+
         return projectState with
         {
-            CanvasVersionIds = map
+            CanvasVersionIds = map,
+            CanvasVersionSnapshots = snapshotsByVersion
         };
     }
 
@@ -337,10 +352,7 @@ internal sealed class SceneRuntime
     private static bool EffectsEqual(
         ImmutableArray<EffectStateSnapshot> left,
         ImmutableArray<EffectStateSnapshot> right) =>
-        left.Length == right.Length &&
-        left.Zip(right).All(pair => pair.First.Order == pair.Second.Order &&
-                                    pair.First.Enabled == pair.Second.Enabled &&
-                                    pair.First.GetType() == pair.Second.GetType());
+        EffectStateFingerprint.SequenceEquals(left, right);
 
     private void NotifyDirtyRegionChanged(SceneDirtyRegion region)
     {

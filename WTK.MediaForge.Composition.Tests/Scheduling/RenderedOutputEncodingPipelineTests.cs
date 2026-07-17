@@ -150,9 +150,64 @@ public sealed class RenderedOutputEncodingPipelineTests
         Assert.Equal(EncodedOutputRuntimeStatus.Failed, failedSnapshot.Status);
         Assert.Contains("does not allow frame drops", failedSnapshot.Reason, StringComparison.OrdinalIgnoreCase);
         Assert.True(failedSnapshot.FramesDropped >= 1);
+        Assert.Contains(
+            diagnostics.Diagnostics,
+            diagnostic => diagnostic.Code == "engine.encoding_pipeline_backpressure_failed" &&
+                diagnostic.Severity == MediaForgeDiagnosticSeverity.Error);
 
         exporter.ReleaseExport();
         await first.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        await second.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        await third.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.Equal(0, encoder.EncodeAsyncCalls);
+    }
+
+    [Fact]
+    public async Task Recording_policy_fatal_export_failure_drains_pending_frames_and_stops_encoding()
+    {
+        var outputId = RenderOutputId.New();
+        var diagnostics = new ListDiagnosticsSink();
+        var exporter = new FailingRenderedOutputExporter();
+        var encoder = new PreExportedInputRecordingEncoder();
+
+        await using var scheduler = new EncodeSchedulerTarget(
+            encoder,
+            new ThrowingGpuFrameExporter(),
+            new CollectingMediaTransportAuditSink(),
+            _ => { },
+            encodeTimeout: TimeSpan.FromSeconds(5));
+
+        await using var pipeline = new RenderedOutputEncodingPipeline(diagnostics);
+        pipeline.RegisterOutput(
+            outputId,
+            new RenderedOutputEncodeFrameAdapter(exporter),
+            scheduler,
+            CreateRequirement(),
+            new CollectingMediaTransportAuditSink(),
+            queueCapacity: 2,
+            backpressurePolicy: EncodedOutputBackpressurePolicy.Recording());
+
+        var first = CreateBatch(outputId, frameNumber: 1);
+        var second = CreateBatch(outputId, frameNumber: 2);
+
+        pipeline.PublishCompletedFrames(first);
+        await exporter.WaitUntilExportStartedAsync(TimeSpan.FromSeconds(2));
+        pipeline.PublishCompletedFrames(second);
+        exporter.FailExport();
+
+        await WaitForConditionAsync(
+            () => pipeline.TryGetSnapshot(outputId, out var snapshot) &&
+                  snapshot.Status == EncodedOutputRuntimeStatus.Failed,
+            TimeSpan.FromSeconds(2));
+
+        await first.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        await second.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+
+        Assert.Equal(0, encoder.EncodeAsyncCalls);
+        Assert.Contains(
+            diagnostics.Diagnostics,
+            diagnostic => diagnostic.Code == "engine.encoding_pipeline_frame_failed" &&
+                diagnostic.Severity == MediaForgeDiagnosticSeverity.Error);
     }
 
     private static RenderedOutputFrameBatch CreateBatch(RenderOutputId outputId, long frameNumber) =>
@@ -221,6 +276,35 @@ public sealed class RenderedOutputEncodingPipelineTests
             _exportStarted.Task.WaitAsync(timeout);
 
         public void ReleaseExport() => _releaseExport.TrySetResult();
+    }
+
+    private sealed class FailingRenderedOutputExporter : IRenderedOutputEncoderSurfaceExporter
+    {
+        private readonly TaskCompletionSource _exportStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _failExport =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool CanExport(
+            IRenderedOutputSurfaceLease surface,
+            HardwareEncoderInputRequirement requirement) =>
+            surface.BackendSurface is ExportableSurface;
+
+        public async ValueTask<HardwareEncoderInputLease> ExportAsync(
+            IRenderedOutputSurfaceLease surface,
+            HardwareEncoderInputRequirement requirement,
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken)
+        {
+            _exportStarted.TrySetResult();
+            await _failExport.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("Synthetic export failure.");
+        }
+
+        public Task WaitUntilExportStartedAsync(TimeSpan timeout) =>
+            _exportStarted.Task.WaitAsync(timeout);
+
+        public void FailExport() => _failExport.TrySetResult();
     }
 
     private sealed class TrackingRenderedOutputSurfaceLease(

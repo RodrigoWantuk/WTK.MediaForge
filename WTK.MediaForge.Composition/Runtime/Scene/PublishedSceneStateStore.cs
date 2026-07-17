@@ -24,4 +24,7 @@ internal sealed class PublishedSceneStateStore
 
     public IReadOnlyDictionary<CanvasId, SceneVersionId> CreateVersionMap() =>
         _versionIndex.CreateVersionMap();
+
+    public IReadOnlyDictionary<SceneVersionId, CanvasStateSnapshot> CreateVersionSnapshotMap() =>
+        _versionIndex.CreateVersionSnapshotMap();
 }

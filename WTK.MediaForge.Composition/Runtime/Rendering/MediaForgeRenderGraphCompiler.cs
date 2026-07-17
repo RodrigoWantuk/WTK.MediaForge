@@ -545,49 +545,6 @@ internal static class MediaForgeRenderGraphCompiler
             .ToArray()
     };
 
-    private static object CreateEffectFingerprint(EffectStateSnapshot effect) =>
-        effect switch
-        {
-            ChromaKeyEffectSnapshot chroma => new
-            {
-                Type = "effect.chroma",
-                chroma.Order,
-                KeyR = chroma.KeyColor.R,
-                KeyG = chroma.KeyColor.G,
-                KeyB = chroma.KeyColor.B,
-                KeyA = chroma.KeyColor.A,
-                chroma.Similarity,
-                chroma.Smoothness,
-                chroma.SpillReduction
-            },
-            ColorCorrectionEffectSnapshot color => new
-            {
-                Type = "effect.color",
-                color.Order,
-                color.Brightness,
-                color.Contrast,
-                color.Saturation,
-                color.HueDegrees
-            },
-            BlurEffectSnapshot blur => new
-            {
-                Type = "effect.blur",
-                blur.Order,
-                blur.Radius
-            },
-            TransitionEffectSnapshot transition => new
-            {
-                Type = "effect.transition",
-                transition.Order,
-                transition.Kind,
-                transition.Progress,
-                transition.DurationSeconds
-            },
-            _ => new
-            {
-                Type = effect.GetType().FullName,
-                effect.Order,
-                effect.SchemaVersion
-            }
-        };
+    private static string CreateEffectFingerprint(EffectStateSnapshot effect) =>
+        EffectStateFingerprint.CreateSemanticConfiguration(effect);
 }

@@ -88,6 +88,8 @@ Before considering a change complete, verify:
 - [ ] Apply scene edits mutate only the draft session until `ApplySceneDraftAsync` commits.
 - [ ] Discarding an Apply draft leaves the published project unchanged and removes draft runtime state.
 - [ ] Canvas-as-source uses `SceneVersionBinding`; normal outputs use published binding, draft previews use draft binding, and transitions may use explicit versions.
+- [ ] Explicit scene version binding resolves an immutable `SceneVersionId -> CanvasStateSnapshot`, not the current canvas with an old version id.
+- [ ] Scene dirty/version fingerprints include typed effect parameters, not only effect type/order/enabled state.
 - [ ] Apply in a nested canvas computes direct/transitive canvas consumers and affected output routes before transition execution.
 - [ ] RenderGraph/cache keys include canvas version binding; no cache key relies only on canvas id and size.
 - [ ] Routes use `CanvasId -> RenderOutput -> RenderOutputSink(s)` and never direct canvas-to-encoder/NDI/preview shortcuts.

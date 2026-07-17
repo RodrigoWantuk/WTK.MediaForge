@@ -352,12 +352,12 @@ internal static class RenderFrameSnapshotFactory
                 drawObjectId: nested.Id,
                 canvasId: nested.NestedCanvasId);
         }
-        else if (!canvasLookup.TryGetValue(nested.NestedCanvasId, out var nestedCanvasState))
+        else if (!TryResolveNestedCanvasState(projectState, canvasLookup, nested, out var nestedCanvasState))
         {
             AddDiagnostic(
                 diagnostics,
                 SnapshotDiagnosticKind.NestedCanvasMissing,
-                $"Nested canvas {nested.NestedCanvasId} not found for draw object '{nested.Name}'.",
+                CreateNestedCanvasMissingMessage(nested),
                 drawObjectId: nested.Id,
                 canvasId: nested.NestedCanvasId);
         }
@@ -399,6 +399,34 @@ internal static class RenderFrameSnapshotFactory
             : projectState.CanvasVersionIds.TryGetValue(nested.NestedCanvasId, out var version)
                 ? version
                 : null;
+
+    private static bool TryResolveNestedCanvasState(
+        ProjectStateSnapshot projectState,
+        IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
+        CanvasDrawObjectSnapshot nested,
+        out CanvasStateSnapshot nestedCanvasState)
+    {
+        if (nested.VersionBinding.Kind == Scenes.Editing.SceneVersionBindingKind.ExplicitVersion)
+        {
+            if (nested.VersionBinding.ExplicitVersionId is { } explicitVersion &&
+                projectState.CanvasVersionSnapshots.TryGetValue(explicitVersion, out var versionedCanvas) &&
+                versionedCanvas.Id == nested.NestedCanvasId)
+            {
+                nestedCanvasState = versionedCanvas;
+                return true;
+            }
+
+            nestedCanvasState = default!;
+            return false;
+        }
+
+        return canvasLookup.TryGetValue(nested.NestedCanvasId, out nestedCanvasState!);
+    }
+
+    private static string CreateNestedCanvasMissingMessage(CanvasDrawObjectSnapshot nested) =>
+        nested.VersionBinding.Kind == Scenes.Editing.SceneVersionBindingKind.ExplicitVersion
+            ? $"Nested canvas {nested.NestedCanvasId} explicit version {nested.VersionBinding.ExplicitVersionId} not found for draw object '{nested.Name}'."
+            : $"Nested canvas {nested.NestedCanvasId} not found for draw object '{nested.Name}'.";
 
     private static GpuFrameReference? TryAcquireSourceFrame(
         SourceId sourceId,

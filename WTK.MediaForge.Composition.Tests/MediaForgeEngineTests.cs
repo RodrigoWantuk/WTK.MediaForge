@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition;
 using WTK.MediaForge.Composition.Editor;
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Engine;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Outputs.Settings;
@@ -301,6 +302,55 @@ public class MediaForgeEngineTests
         Assert.Equal(result.OldVersionId, transition.PreviousVersionGraph.CanvasVersions[childCanvas.Id]);
         Assert.Equal(result.NewVersionId, transition.CurrentVersionGraph.CanvasVersions[childCanvas.Id]);
         Assert.NotNull(transition.PreviousProjectState);
+    }
+
+    [Fact]
+    public async Task Apply_nested_scene_effect_parameter_edit_reports_parent_output_as_affected()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateNestedSceneProject();
+        var childCanvas = project.Canvases.Single(canvas => canvas.Name == "Child");
+        var childLayer = childCanvas.Objects[0];
+        var effect = new BlurEffect { Radius = 4f, Order = 0 };
+        childLayer.Effects.Add(effect);
+        var parentCanvas = project.Canvases.Single(canvas => canvas.Name == "Parent");
+        var parentOutput = project.Outputs.Single(output => output.CanvasId == parentCanvas.Id);
+
+        await engine.LoadProjectAsync(project);
+        var session = await engine.BeginSceneEditSessionAsync(childCanvas.Id, SceneEditMode.Apply);
+
+        await engine.ApplySceneMutationAsync(
+            session.SessionId,
+            new SceneMutationPatch.SetLayerEffects(
+                childLayer.Id,
+                [
+                    new BlurEffect
+                    {
+                        Id = effect.Id,
+                        Radius = 12f,
+                        Order = effect.Order
+                    }
+                ]));
+
+        var result = await engine.ApplySceneDraftAsync(
+            session.SessionId,
+            new SceneCommitRequest
+            {
+                TransitionPolicy = new SceneApplyTransitionPolicy
+                {
+                    Kind = SceneApplyTransitionKind.Fade,
+                    Duration = TimeSpan.FromMilliseconds(300)
+                }
+            });
+
+        Assert.NotEqual(result.OldVersionId, result.NewVersionId);
+        Assert.Contains(childCanvas.Id, result.AffectedCanvases);
+        Assert.Contains(parentCanvas.Id, result.AffectedCanvases);
+        Assert.Contains(parentOutput.Id, result.AffectedOutputs);
+        Assert.True(result.TransitionRequested);
+        Assert.True(engine.OutputRouteTransitionRuntimeForTests.TryGetTransition(parentOutput.Id, out var transition));
+        Assert.Equal(result.OldVersionId, transition.PreviousVersionGraph.CanvasVersions[childCanvas.Id]);
+        Assert.Equal(result.NewVersionId, transition.CurrentVersionGraph.CanvasVersions[childCanvas.Id]);
     }
 
     [Fact]
