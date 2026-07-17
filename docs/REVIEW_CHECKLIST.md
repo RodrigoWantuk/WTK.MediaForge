@@ -84,6 +84,12 @@ Before considering a change complete, verify:
 ## Scene Routing, Packages, And Render Graph
 
 - [ ] Public `Scene` APIs remain aliases over `MediaForgeCanvas`, not a competing scene primitive.
+- [ ] Live scene edits mutate the published canvas only after validation and request a new frame for sinks.
+- [ ] Apply scene edits mutate only the draft session until `ApplySceneDraftAsync` commits.
+- [ ] Discarding an Apply draft leaves the published project unchanged and removes draft runtime state.
+- [ ] Canvas-as-source uses `SceneVersionBinding`; normal outputs use published binding, draft previews use draft binding, and transitions may use explicit versions.
+- [ ] Apply in a nested canvas computes direct/transitive canvas consumers and affected output routes before transition execution.
+- [ ] RenderGraph/cache keys include canvas version binding; no cache key relies only on canvas id and size.
 - [ ] Routes use `CanvasId -> RenderOutput -> RenderOutputSink(s)` and never direct canvas-to-encoder/NDI/preview shortcuts.
 - [ ] NDI Standard SDK runtime detection/source discovery is not treated as video product support; NDI source/output video paths remain blocked unless GPU-safe product proofs pass.
 - [ ] Same scene routed to multiple sinks/outputs does not require duplicate canvas rendering when size/config/version match.
@@ -141,7 +147,7 @@ Before considering a change complete, verify:
 - [ ] Continuous video decode/encode paths use validated hardware acceleration or report unavailable; no software fallback or CPU staging is introduced.
 - [ ] OS-specific media adapters stay in OS-specific projects and capability reports expose runtime-detected backend/vendor status.
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
-- [ ] v8 render-to-encode, hardware encode, MP4 recording, MP4 input/output, webcam input, RTMP network output, and NDI input/output proofs pass before those media I/O paths are marked Supported.
+- [ ] v12 render-to-encode, hardware encode, MP4 recording, MP4 input/output, webcam input, RTMP network output, and NDI input/output proofs pass before those media I/O paths are marked Supported.
 - [ ] `scripts/generate-media-proof-report.ps1` writes `test-reports/media-proof-report.json` and `test-reports/media-proof-report.md` with explicit reasons for every non-passed proof or feature.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
 - [ ] Product MP4 recording and public RTMP streaming reject packets without trusted `BackendOutputValidated` evidence; public callers cannot forge that evidence through packet initializers.

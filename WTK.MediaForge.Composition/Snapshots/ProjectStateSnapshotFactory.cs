@@ -114,7 +114,8 @@ internal static class ProjectStateSnapshotFactory
                 Opacity = nested.Opacity,
                 BlendMode = nested.BlendMode,
                 Effects = effects,
-                NestedCanvasId = nested.NestedCanvasId
+                NestedCanvasId = nested.NestedCanvasId,
+                VersionBinding = nested.VersionBinding
             },
             _ => throw new NotSupportedException($"Unsupported draw object type: {drawObject.GetType().Name}.")
         };

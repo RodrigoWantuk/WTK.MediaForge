@@ -4,6 +4,7 @@ using System.Text.Json;
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Serialization;
 using WTK.MediaForge.Composition.Snapshots;
 
@@ -36,7 +37,7 @@ internal static class MediaForgeRenderGraphCompiler
 
         public string AddOutput(RenderOutputStateSnapshot output)
         {
-            var canvasKey = AddCanvas(output.CanvasId);
+            var canvasKey = AddCanvas(output.CanvasId, SceneVersionBinding.Published);
             return AddNode(
                 MediaForgeRenderGraphNodeKind.OutputPass,
                 $"output:{output.Id}:canvas:{output.CanvasId}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
@@ -44,12 +45,13 @@ internal static class MediaForgeRenderGraphCompiler
                 [canvasKey]);
         }
 
-        private string AddCanvas(Core.Identifiers.CanvasId canvasId)
+        private string AddCanvas(Core.Identifiers.CanvasId canvasId, SceneVersionBinding binding)
         {
             var canvas = projectState.Canvases.FirstOrDefault(candidate => candidate.Id == canvasId);
             if (canvas is null)
                 return $"missing-canvas:{canvasId}";
 
+            var versionKey = ResolveCanvasVersionKey(canvasId, binding);
             var dependencies = new List<string>();
             foreach (var drawObject in canvas.Objects.Where(static item => item.Enabled))
             {
@@ -78,16 +80,30 @@ internal static class MediaForgeRenderGraphCompiler
                         break;
 
                     case CanvasDrawObjectSnapshot nested:
-                        dependencies.Add(AddCanvas(nested.NestedCanvasId));
+                        dependencies.Add(AddCanvas(nested.NestedCanvasId, nested.VersionBinding));
                         break;
                 }
             }
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.CanvasRender,
-                $"canvas:{canvas.Id}:size:{canvas.Size.Width}x{canvas.Size.Height}",
+                $"canvas:{canvas.Id}:version:{versionKey}:size:{canvas.Size.Width}x{canvas.Size.Height}",
                 canvas.Name,
                 dependencies);
+        }
+
+        private string ResolveCanvasVersionKey(Core.Identifiers.CanvasId canvasId, SceneVersionBinding binding)
+        {
+            binding.Validate();
+            return binding.Kind switch
+            {
+                SceneVersionBindingKind.Published => projectState.CanvasVersionIds.TryGetValue(canvasId, out var version)
+                    ? $"published:{version.Value}"
+                    : "published:unversioned",
+                SceneVersionBindingKind.Draft => $"draft:{binding.DraftSessionId!.Value.Value}",
+                SceneVersionBindingKind.ExplicitVersion => $"explicit:{binding.ExplicitVersionId!.Value.Value}",
+                _ => throw new InvalidOperationException($"Unsupported scene binding kind '{binding.Kind}'.")
+            };
         }
 
         private string AddNode(

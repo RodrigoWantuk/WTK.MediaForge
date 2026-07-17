@@ -53,6 +53,20 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `MediaForgeRenderPump` publishes frames continuously while running and reports backpressure drops instead of flooding the render thread.
 - Public output consumption is `RenderOutput -> RenderOutputSink(s)`. The internal surface remains GPU/backend-owned; public sinks receive leases and metadata without exposing Vulkan/D3D11 handles.
 - Public `Scene` terminology is an ergonomic alias over `MediaForgeCanvas`. Do not introduce a second scene primitive unless the product model is explicitly revised.
+- Scene editing semantics are engine-owned. `BeginSceneEditSessionAsync`,
+  `ApplySceneMutationAsync`, `ApplySceneDraftAsync`, and
+  `DiscardSceneDraftAsync` are the public contract for Studio/hosts. `Live`
+  sessions mutate published scene state after validation and normal sinks see
+  the next frame. `Apply` sessions mutate an isolated draft; published sinks
+  continue using the published version until commit.
+- Each runtime canvas has a `SceneVersionId`. `CanvasDrawObject` carries a
+  `SceneVersionBinding` (`Published`, `Draft`, or `ExplicitVersion`) so nested
+  scenes, draft previews, cache keys, and future apply transitions can render
+  the correct version graph. Normal output routes use published binding.
+- Scene dependency graph/planner identifies direct consumers, transitive
+  consumers, and affected output routes when a scene draft is applied. Apply
+  transition policy is reported at commit time; full physical old/new version
+  graph rendering remains part of the physical RenderGraph/output-route track.
 - The public authoring foundation includes typed source/output helper factories, `Scene(...)`, route helpers, and package export/import APIs.
 - Multiple canvases/scenes can be routed independently to outputs and sinks. The same source can feed multiple scenes/layers, and the renderer must minimize redundant GPU work.
 - The render graph target is `Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects`. The current internal planner deduplicates source frame, reusable source effect-chain, canvas render, and output pass nodes by stable keys.

@@ -42,6 +42,19 @@ Current public authoring types:
 - `OutputRouteTransition`
 - `OutputRouteTransitionKind`
 - `OutputRouteTransitionRuntime`
+- `SceneEditMode`
+- `SceneEditSessionId`
+- `SceneVersionId`
+- `SceneVersionBinding`
+- `SceneVersionBindingKind`
+- `SceneMutationPatch`
+- `SceneEditSessionDescriptor`
+- `SceneDraftState`
+- `ScenePublishedState`
+- `SceneApplyTransitionPolicy`
+- `SceneApplyTransitionKind`
+- `SceneCommitRequest`
+- `SceneCommitResult`
 
 Applications should not directly construct render snapshots, runtime snapshots, GPU leases, render threads, or backend submissions.
 
@@ -102,6 +115,11 @@ Engine operations are observable:
 - `GetEncodedOutputRuntimeSnapshots()` exposes high-level encoded output state
   (`Running`, `Backpressure`, `Failed`, etc.) and counters without exposing
   encoder workers, GPU surfaces, command buffers, or native handles
+- `BeginSceneEditSessionAsync(...)`, `ApplySceneMutationAsync(...)`,
+  `ApplySceneDraftAsync(...)`, and `DiscardSceneDraftAsync(...)` are the public
+  scene-editing APIs. `Live` sessions update the published scene after
+  validation; `Apply` sessions mutate an isolated draft until commit. Drafts do
+  not affect published sinks before `ApplySceneDraftAsync`.
 - `MediaForgeWindows.FindNdiSourcesAsync(...)` performs Standard NDI SDK source
   discovery on Windows when a licensed/loadable runtime is present. It returns
   names and addresses only; it does not receive video frames, allocate raw
@@ -186,7 +204,7 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. Product recording and streaming sinks consume `EncodedVideoPacket` after hardware encode only. Encoded packets must identify codec, bitstream format (`AnnexB` or `Avcc` for H.264), presentation time, optional duration, optional codec configuration data, and `EncodedVideoPacketEvidence`. `EvidenceKind` is observable but not publicly settable; backend-output-validated evidence is created only by trusted implementation assemblies after a real hardware backend produces a packet. Product MP4 recording and public RTMP streaming accept only H.264 packets with `BackendOutputValidated` evidence and reject prototype, contract-only, and unknown bitstream packets. Test-only prototype packet transports must require explicit opt-in. Sinks must reject unknown bitstream format instead of guessing. `PreviewPanelSink` is an **experimental** GPU preview sink: it consumes a completed rendered output surface and presents it to a Win32 panel handle through an internal Vulkan swapchain blit, without CPU readback. Keep it experimental until the preview local reliability milestone in `docs/ROADMAP_CURRENT.md` is complete.
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. Product recording and streaming sinks consume `EncodedVideoPacket` after hardware encode only. Encoded packets must identify codec, bitstream format (`AnnexB` or `Avcc` for H.264), presentation time, optional duration, optional codec configuration data, and `EncodedVideoPacketEvidence`. `EvidenceKind` is observable but not publicly settable; backend-output-validated evidence is created only by trusted implementation assemblies after a real hardware backend produces a packet. Product MP4 recording and public RTMP streaming accept only H.264 packets with `BackendOutputValidated` evidence and reject prototype, contract-only, and unknown bitstream packets. Test-only prototype packet transports must require explicit opt-in. Sinks must reject unknown bitstream format instead of guessing. `PreviewPanelSink` is the validated Win32/Vulkan GPU preview sink for completed rendered output surfaces; it must stay on the GPU path and must not introduce CPU readback.
 
 FFmpeg is not used in the first hardware MP4/RTMP product path. Future FFmpeg integration requires LGPL-only build, no GPL components, no libx264/libx265, no rawvideo pipe, and license review.
 

@@ -7,6 +7,7 @@ using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Runtime.Sources;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Composition.Sources.Settings;
 using WTK.MediaForge.Composition.Tests.Engine;
@@ -193,6 +194,108 @@ public class MediaForgeEngineTests
             editor.AddText(canvasId, "Updated", new Transform2D { Size = new CanvasSize(100, 40) }));
 
         Assert.Contains(engine.CurrentProject!.Canvases[0].Objects, item => item.Name == "Text");
+    }
+
+    [Fact]
+    public async Task Live_scene_edit_mutates_published_scene_immediately()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        var canvasId = project.Canvases[0].Id;
+        var layerId = project.Canvases[0].Objects[0].Id;
+
+        await engine.LoadProjectAsync(project);
+        var session = await engine.BeginSceneEditSessionAsync(canvasId, SceneEditMode.Live);
+
+        await engine.ApplySceneMutationAsync(
+            session.SessionId,
+            new SceneMutationPatch.SetLayerVisibility(layerId, false));
+
+        var current = GetCurrentProject(engine);
+        Assert.False(current.Canvases[0].Objects[0].Enabled);
+        Assert.NotEqual(
+            session.BasePublishedVersionId,
+            engine.SceneRuntimeForTests!.PublishedStates[canvasId].VersionId);
+    }
+
+    [Fact]
+    public async Task Apply_scene_edit_keeps_published_scene_until_commit()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        var canvasId = project.Canvases[0].Id;
+        var layerId = project.Canvases[0].Objects[0].Id;
+
+        await engine.LoadProjectAsync(project);
+        var session = await engine.BeginSceneEditSessionAsync(canvasId, SceneEditMode.Apply);
+
+        await engine.ApplySceneMutationAsync(
+            session.SessionId,
+            new SceneMutationPatch.SetLayerVisibility(layerId, false));
+
+        Assert.True(GetCurrentProject(engine).Canvases[0].Objects[0].Enabled);
+        Assert.True(engine.SceneRuntimeForTests!.TryGetDraft(session.SessionId, out var draft));
+        Assert.True(draft!.HasChanges);
+
+        var result = await engine.ApplySceneDraftAsync(session.SessionId, new SceneCommitRequest());
+
+        Assert.False(GetCurrentProject(engine).Canvases[0].Objects[0].Enabled);
+        Assert.Equal(canvasId, result.CanvasId);
+        Assert.NotEqual(result.OldVersionId, result.NewVersionId);
+        Assert.Contains(canvasId, result.AffectedCanvases);
+    }
+
+    [Fact]
+    public async Task Discard_scene_draft_does_not_mutate_published_scene()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        var canvasId = project.Canvases[0].Id;
+        var layerId = project.Canvases[0].Objects[0].Id;
+
+        await engine.LoadProjectAsync(project);
+        var session = await engine.BeginSceneEditSessionAsync(canvasId, SceneEditMode.Apply);
+        await engine.ApplySceneMutationAsync(
+            session.SessionId,
+            new SceneMutationPatch.SetLayerVisibility(layerId, false));
+
+        await engine.DiscardSceneDraftAsync(session.SessionId);
+
+        Assert.True(GetCurrentProject(engine).Canvases[0].Objects[0].Enabled);
+        Assert.False(engine.SceneRuntimeForTests!.TryGetDraft(session.SessionId, out _));
+    }
+
+    [Fact]
+    public async Task Apply_nested_scene_edit_reports_parent_scene_output_as_affected()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateNestedSceneProject();
+        var childCanvas = project.Canvases.Single(canvas => canvas.Name == "Child");
+        var childLayerId = childCanvas.Objects[0].Id;
+        var parentCanvas = project.Canvases.Single(canvas => canvas.Name == "Parent");
+        var parentOutput = project.Outputs.Single(output => output.CanvasId == parentCanvas.Id);
+
+        await engine.LoadProjectAsync(project);
+        var session = await engine.BeginSceneEditSessionAsync(childCanvas.Id, SceneEditMode.Apply);
+        await engine.ApplySceneMutationAsync(
+            session.SessionId,
+            new SceneMutationPatch.SetLayerOpacity(childLayerId, 0.5f));
+
+        var result = await engine.ApplySceneDraftAsync(
+            session.SessionId,
+            new SceneCommitRequest
+            {
+                TransitionPolicy = new SceneApplyTransitionPolicy
+                {
+                    Kind = SceneApplyTransitionKind.Fade,
+                    Duration = TimeSpan.FromMilliseconds(300)
+                }
+            });
+
+        Assert.Contains(childCanvas.Id, result.AffectedCanvases);
+        Assert.Contains(parentCanvas.Id, result.AffectedCanvases);
+        Assert.Contains(parentOutput.Id, result.AffectedOutputs);
+        Assert.True(result.TransitionRequested);
     }
 
     [Fact]
@@ -1959,6 +2062,31 @@ public class MediaForgeEngineTests
             canvas.Id,
             new PreviewWindowOutputSettings(),
             new FrameSize(1280, 720));
+        editor.ValidateOrThrow();
+        return editor.Project;
+    }
+
+    private static MediaForgeProject CreateNestedSceneProject()
+    {
+        var editor = new MediaForgeProjectEditor(new());
+        var source = editor.CreateSource("Desktop", new DesktopCaptureSourceSettings());
+        var child = editor.CreateCanvas("Child", new FrameSize(640, 360));
+        editor.AddSourceLayer(
+            child.Id,
+            source.Id,
+            new Transform2D { Size = new CanvasSize(640, 360) });
+
+        var parent = editor.CreateCanvas("Parent", new FrameSize(1920, 1080));
+        editor.AddCanvasLayer(
+            parent.Id,
+            child.Id,
+            new Transform2D { Size = new CanvasSize(960, 540) });
+
+        editor.CreateOutput(
+            "Program",
+            parent.Id,
+            new PreviewWindowOutputSettings(),
+            new FrameSize(1920, 1080));
         editor.ValidateOrThrow();
         return editor.Project;
     }

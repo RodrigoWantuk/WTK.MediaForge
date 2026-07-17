@@ -19,7 +19,7 @@ Product / Composition Model            Runtime / GPU Execution Model
 --------------------------------        --------------------------------
 MediaForgeProject                       CompositionRuntime
 MediaForgeSourceDefinition              SourceRuntimeManager
-MediaForgeCanvas                        ProjectStateSnapshot
+MediaForgeCanvas                        SceneRuntime published/draft stores
 MediaForgeDrawObject                    RenderFrameSnapshot
 MediaForgeEffect                        MediaForgeRenderThread
 MediaForgeRenderOutput                  PendingRenderSubmissionTracker
@@ -71,12 +71,16 @@ Current completed runtime foundations:
 - CP2 multi-layer Vulkan composition.
 - CP3 solid, nested canvas, and first `ChromaKeyEffect` composition.
 - Offscreen target pooling and readback staging pooling.
-- Experimental `PreviewPanelSink` lifecycle hardening.
+- `PreviewPanelSink` lifecycle hardening for the validated Win32/Vulkan GPU preview path.
 - Internal render-graph planning foundation.
+- Engine-owned scene editing sessions for `Live` and `Apply` modes. Published
+  scene versions feed normal sinks; draft scene versions are isolated until
+  commit. Nested canvas dependency propagation identifies downstream canvases
+  and output routes affected by an apply commit.
 
-`PreviewPanelSink` remains experimental until the preview local reliability
-milestone is complete. Real webcam, RTSP/IP camera, MP4 timeline, NDI, encoded
-file, streaming, virtual camera, UI shell, plugin, and audio work must follow
+`PreviewPanelSink` is the validated Win32/Vulkan GPU preview sink for completed
+rendered surfaces. Runtime-connected Studio preview, RTSP/IP camera, NDI,
+additional encoded formats, virtual camera, plugin, and audio work must follow
 `docs/ROADMAP_CURRENT.md`.
 
 ## Render Graph Direction
@@ -95,8 +99,24 @@ The graph must deduplicate by stable product/runtime keys:
 - different output sizes/layouts: split only output-fit/presentation passes
 - same output with multiple sinks: render once and fan out leases
 
-The current render-graph compiler is a planning foundation and test target. It is
-not yet the Vulkan execution scheduler.
+Canvas render keys include scene version binding. This prevents nested scene
+cache reuse across old/new/draft versions. The current render-graph compiler is
+a planning foundation and test target. It is not yet the Vulkan execution
+scheduler for full physical pass execution.
+
+## Scene Versioning And Apply Boundaries
+
+The scene runtime owns two state classes:
+
+- published state: stable versions used by normal preview, recording, streaming,
+  and rendered-output sinks;
+- draft state: edit-session versions used only by draft/preview bindings.
+
+`Live` mutations update published state transactionally and request a new frame.
+`Apply` mutations update a draft project copy. Commit replaces only the edited
+canvas in the published project, recalculates the scene dependency graph, and
+returns affected canvases/output routes. Visual apply transitions are output
+route transitions over old/new version graphs; they are not layer effects.
 
 ## GPU Lifetime Contract
 
@@ -176,9 +196,9 @@ Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s
 ```
 
 `CpuReadbackSink` is for debug, samples, and validation. It is not the primary
-preview, encoder, or streaming path. `PreviewPanelSink` is the experimental GPU
-preview path and consumes completed Vulkan offscreen surfaces without CPU
-readback.
+preview, encoder, or streaming path. `PreviewPanelSink` is the GPU preview path
+for the validated Win32/Vulkan scope and consumes completed Vulkan offscreen
+surfaces without CPU readback.
 
 Future encoder, streaming, NDI, and virtual camera sinks must consume completed
 rendered outputs. They must not add direct renderer branches.
@@ -291,7 +311,7 @@ Static image load is **not** an exception; it uses `MediaTransportKind.StaticCpu
 
 ### Output sinks
 
-- `PreviewPanelSink`: GPU surface (product/experimental)
+- `PreviewPanelSink`: GPU surface preview for the validated Win32/Vulkan scope
 - `CpuReadbackSink`: debug/test/validation only (`DebugOnlyCpuReadback`)
 - Recording/streaming sinks: encoded packets after hardware encode only
 

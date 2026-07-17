@@ -23,6 +23,12 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
 - Static image load uses `StaticCpuAsset` (load-time CPU decode, GPU render); not a `RawCpuVideoFrameException`.
 - FFmpeg is deferred until the native hardware MP4/RTMP product path is sustained and a separate encoded-packet/container-only legal review approves the scope.
 - Hardware MP4/RTMP routes require composite runtime proofs: render-to-encode, hardware encode, packet mux/transport, and sustained route validation.
+- Scene editing semantics belong to the engine. `Live` edits update published
+  scene state transactionally; `Apply` edits stay in draft state until commit.
+  Do not make Studio duplicate projects to simulate this behavior.
+- Canvas-as-source is a product feature. Nested canvas references must carry
+  version binding, detect cycles/depth, and propagate Apply commits to affected
+  output routes.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; never block the UI thread.
 
 

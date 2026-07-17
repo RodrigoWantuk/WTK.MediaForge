@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Identifiers;
 
@@ -18,4 +19,6 @@ internal sealed class SceneRuntimeSnapshot
     public MediaForgeRenderGraphPlan? CachedRenderGraphPlan { get; init; }
 
     public IReadOnlySet<DrawObjectId> HiddenLayerIds { get; init; } = new HashSet<DrawObjectId>();
+
+    public SceneVersionBinding VersionBinding { get; init; } = SceneVersionBinding.Published;
 }

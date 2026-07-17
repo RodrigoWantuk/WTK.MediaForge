@@ -10,6 +10,8 @@ using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Runtime.Recovery;
 using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Composition.Runtime.Sources;
+using WTK.MediaForge.Composition.Scenes.Editing;
+using WTK.MediaForge.Composition.Scenes.Graph;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Gpu;
@@ -30,6 +32,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<RenderOutputId, OutputSinkEntry> _outputSinks = [];
+    private readonly Dictionary<SceneEditSessionId, ActiveSceneEditSession> _sceneEditSessions = [];
     private readonly RenderOutputSinkDispatcher _sinkDispatcher;
 
     private SourceRuntimeManager? _sourceRuntimeManager;
@@ -181,6 +184,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             await _sinkDispatcher.DetachAllAsync(cancellationToken).ConfigureAwait(false);
 
             _currentProject = migrateResult.Project!;
+            _sceneEditSessions.Clear();
+            RefreshPublishedRuntimeAfterProjectMutation(requestFrame: false);
             SetState(MediaForgeEngineState.Loaded);
         }
         finally
@@ -249,9 +254,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                         cancellationToken).ConfigureAwait(false);
                 }
 
-                _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(_currentProject);
-                _sceneRuntime = new SceneRuntime();
-                _sceneRuntime.SyncFrom(_projectState);
+                RefreshPublishedRuntimeAfterProjectMutation(requestFrame: false);
                 _faultRecoveryCoordinator = new FaultRecoveryCoordinator(_diagnostics);
                 _renderThread.Start();
 
@@ -338,12 +341,199 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
             _currentProject = workingCopy;
 
-            if (State == MediaForgeEngineState.Running)
+            RefreshPublishedRuntimeAfterProjectMutation();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async ValueTask<SceneEditSessionDescriptor> BeginSceneEditSessionAsync(
+        CanvasId canvasId,
+        SceneEditMode mode,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureCanMutateProject();
+            if (mode is not (SceneEditMode.Live or SceneEditMode.Apply))
+                throw CreateEngineException($"Unsupported scene edit mode '{mode}'.");
+
+            EnsureCanvasExists(_currentProject!, canvasId);
+
+            var sessionId = SceneEditSessionId.New();
+            var baseVersion = GetPublishedSceneVersion(canvasId);
+            var now = DateTimeOffset.UtcNow;
+            SceneVersionId? draftVersion = mode == SceneEditMode.Apply
+                ? SceneVersionId.New()
+                : null;
+
+            var descriptor = new SceneEditSessionDescriptor
             {
-                _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(_currentProject);
-                _sceneRuntime?.SyncFrom(_projectState);
-                _renderPump?.RequestFrame();
+                SessionId = sessionId,
+                CanvasId = canvasId,
+                Mode = mode,
+                BasePublishedVersionId = baseVersion,
+                DraftVersionId = draftVersion,
+                CreatedAt = now
+            };
+
+            MediaForgeProject? draftProject = null;
+            if (mode == SceneEditMode.Apply)
+            {
+                draftProject = MediaForgeProjectCloner.DeepClone(_currentProject!);
+                UpsertDraftRuntimeState(descriptor, draftProject, hasChanges: false);
             }
+
+            _sceneEditSessions.Add(
+                sessionId,
+                new ActiveSceneEditSession(
+                    descriptor,
+                    draftProject,
+                    HasChanges: false));
+
+            return descriptor;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async ValueTask ApplySceneMutationAsync(
+        SceneEditSessionId sessionId,
+        SceneMutationPatch patch,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(patch);
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureCanMutateProject();
+            var session = RequireSceneEditSession(sessionId);
+
+            if (session.Descriptor.Mode == SceneEditMode.Live)
+            {
+                var workingCopy = MediaForgeProjectCloner.DeepClone(_currentProject!);
+                SceneMutationPatchApplier.Apply(workingCopy, session.Descriptor.CanvasId, patch);
+                MediaForgeProjectValidator.Validate(workingCopy).ThrowIfInvalid();
+
+                _currentProject = workingCopy;
+                RefreshPublishedRuntimeAfterProjectMutation();
+                ReplaceSceneEditSession(session with { HasChanges = true });
+                return;
+            }
+
+            var draftProject = session.DraftProject
+                ?? throw CreateEngineException("Apply-mode scene edit session does not have a draft project.");
+
+            var draftWorkingCopy = MediaForgeProjectCloner.DeepClone(draftProject);
+            SceneMutationPatchApplier.Apply(draftWorkingCopy, session.Descriptor.CanvasId, patch);
+            MediaForgeProjectValidator.Validate(draftWorkingCopy).ThrowIfInvalid();
+
+            var updated = session with
+            {
+                DraftProject = draftWorkingCopy,
+                HasChanges = true
+            };
+
+            ReplaceSceneEditSession(updated);
+            UpsertDraftRuntimeState(updated.Descriptor, draftWorkingCopy, hasChanges: true);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async ValueTask<SceneCommitResult> ApplySceneDraftAsync(
+        SceneEditSessionId sessionId,
+        SceneCommitRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureCanMutateProject();
+            ValidateSceneCommitRequest(request);
+            var session = RequireSceneEditSession(sessionId);
+            if (session.Descriptor.Mode != SceneEditMode.Apply)
+                throw CreateEngineException("Only Apply-mode scene edit sessions can be committed.");
+
+            var draftProject = session.DraftProject
+                ?? throw CreateEngineException("Apply-mode scene edit session does not have a draft project.");
+
+            var currentVersion = GetPublishedSceneVersion(session.Descriptor.CanvasId);
+            if (!request.AllowStaleBase && currentVersion != session.Descriptor.BasePublishedVersionId)
+            {
+                throw CreateEngineException(
+                    $"Scene draft is stale. Base version {session.Descriptor.BasePublishedVersionId} no longer matches published version {currentVersion}.");
+            }
+
+            var committedCanvas = EnsureCanvasExists(draftProject, session.Descriptor.CanvasId);
+            var workingCopy = MediaForgeProjectCloner.DeepClone(_currentProject!);
+            ReplaceCanvas(workingCopy, committedCanvas);
+            MediaForgeProjectValidator.Validate(workingCopy).ThrowIfInvalid();
+
+            var oldVersion = currentVersion;
+            _sceneRuntime?.DiscardDraft(sessionId);
+            _sceneEditSessions.Remove(sessionId);
+
+            _currentProject = workingCopy;
+            RefreshPublishedRuntimeAfterProjectMutation(requestFrame: false);
+            var newVersion = GetPublishedSceneVersion(session.Descriptor.CanvasId);
+
+            var graph = SceneDependencyGraphBuilder.Build(_currentProject);
+            SceneDependencyGraphValidator.Validate(graph).ThrowIfInvalid();
+            var propagation = new SceneCommitPropagationPlanner(graph)
+                .Plan(session.Descriptor.CanvasId, oldVersion, newVersion, request.TransitionPolicy);
+
+            _renderPump?.RequestFrame();
+
+            return new SceneCommitResult
+            {
+                SessionId = sessionId,
+                CanvasId = session.Descriptor.CanvasId,
+                OldVersionId = oldVersion,
+                NewVersionId = newVersion,
+                AffectedCanvases = propagation.AffectedCanvases.AllAffected,
+                AffectedOutputs = propagation.AffectedOutputs.OutputRouteIds,
+                TransitionRequested = propagation.UsesTransition
+            };
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async ValueTask DiscardSceneDraftAsync(
+        SceneEditSessionId sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var session = RequireSceneEditSession(sessionId);
+            if (session.Descriptor.Mode == SceneEditMode.Apply)
+                _sceneRuntime?.DiscardDraft(sessionId);
+
+            _sceneEditSessions.Remove(sessionId);
         }
         finally
         {
@@ -794,6 +984,100 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     {
         foreach (var outputId in _outputSinks.Keys.ToArray())
             await RemoveSurfaceBindingAsync(outputId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private ActiveSceneEditSession RequireSceneEditSession(SceneEditSessionId sessionId)
+    {
+        if (sessionId.IsEmpty)
+            throw CreateEngineException("Scene edit session id cannot be empty.");
+
+        return _sceneEditSessions.TryGetValue(sessionId, out var session)
+            ? session
+            : throw CreateEngineException($"Scene edit session {sessionId} was not found.");
+    }
+
+    private void ReplaceSceneEditSession(ActiveSceneEditSession session) =>
+        _sceneEditSessions[session.Descriptor.SessionId] = session;
+
+    private SceneVersionId GetPublishedSceneVersion(CanvasId canvasId)
+    {
+        EnsureSceneRuntimeCurrent();
+        return _sceneRuntime!.GetPublishedVersion(canvasId);
+    }
+
+    private void EnsureSceneRuntimeCurrent()
+    {
+        if (_currentProject is null)
+            throw CreateEngineException("A project must be loaded before scene runtime can be used.");
+
+        if (_sceneRuntime is not null && _projectState is not null)
+            return;
+
+        RefreshPublishedRuntimeAfterProjectMutation(requestFrame: false);
+    }
+
+    private void RefreshPublishedRuntimeAfterProjectMutation(bool requestFrame = true)
+    {
+        if (_currentProject is null)
+            return;
+
+        _projectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(_currentProject);
+        _sceneRuntime ??= new SceneRuntime();
+        _sceneRuntime.SyncFrom(_projectState);
+
+        foreach (var session in _sceneEditSessions.Values)
+        {
+            if (session.Descriptor.Mode == SceneEditMode.Apply && session.DraftProject is not null)
+                UpsertDraftRuntimeState(session.Descriptor, session.DraftProject, session.HasChanges);
+        }
+
+        if (requestFrame && State == MediaForgeEngineState.Running)
+            _renderPump?.RequestFrame();
+    }
+
+    private void UpsertDraftRuntimeState(
+        SceneEditSessionDescriptor descriptor,
+        MediaForgeProject draftProject,
+        bool hasChanges)
+    {
+        EnsureSceneRuntimeCurrent();
+
+        var draftVersion = descriptor.DraftVersionId
+            ?? throw CreateEngineException("Apply-mode scene edit session does not have a draft version id.");
+
+        var draftProjectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(draftProject);
+        _sceneRuntime!.UpsertDraft(
+            new SceneDraftState
+            {
+                SessionId = descriptor.SessionId,
+                CanvasId = descriptor.CanvasId,
+                BasePublishedVersionId = descriptor.BasePublishedVersionId,
+                DraftVersionId = draftVersion,
+                HasChanges = hasChanges
+            },
+            draftProjectState);
+    }
+
+    private MediaForgeCanvas EnsureCanvasExists(MediaForgeProject project, CanvasId canvasId) =>
+        project.Canvases.FirstOrDefault(canvas => canvas.Id == canvasId)
+        ?? throw CreateEngineException($"Canvas {canvasId} was not found in the current project.");
+
+    private static void ReplaceCanvas(MediaForgeProject project, MediaForgeCanvas committedCanvas)
+    {
+        var index = project.Canvases.FindIndex(canvas => canvas.Id == committedCanvas.Id);
+        if (index < 0)
+            throw new InvalidOperationException($"Canvas {committedCanvas.Id} was not found in the target project.");
+
+        project.Canvases[index] = committedCanvas;
+    }
+
+    private static void ValidateSceneCommitRequest(SceneCommitRequest request)
+    {
+        if (request.TransitionPolicy is null)
+            throw new ArgumentException("Scene commit transition policy cannot be null.", nameof(request));
+
+        if (request.TransitionPolicy.Duration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(request), "Scene commit transition duration must be positive.");
     }
 
     private async Task RollbackStartAsync(CancellationToken cancellationToken)
@@ -1273,6 +1557,11 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             onDiagnostic(diagnostic);
         }
     }
+
+    private sealed record ActiveSceneEditSession(
+        SceneEditSessionDescriptor Descriptor,
+        MediaForgeProject? DraftProject,
+        bool HasChanges);
 
     private sealed class OutputSinkEntry(
         RuntimeRenderOutputSink sink,

@@ -10,7 +10,7 @@ If a GPU/driver/OS backend cannot provide a validated GPU surface path, the
 feature must report unavailable instead of falling back to software decode,
 software encode, CPU staging, or raw video pipes.
 Even when a codec/backend is legally acceptable, it is not product-supported
-until the matching v8 `HardwareMediaProof` entries pass with
+until the matching v12 `HardwareMediaProof` entries pass with
 `BackendOutputValidated` evidence. Codec proofs do not automatically promote
 real media I/O: MP4 input/output, webcam input, RTMP network output, and NDI
 input/output each require their own product proof.

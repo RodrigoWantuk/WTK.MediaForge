@@ -5,6 +5,7 @@ using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Composition.Scenes.Editing;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
@@ -58,5 +59,11 @@ internal sealed class RenderSolidDrawObjectSnapshot : RenderDrawObjectSnapshot
 
 internal sealed class RenderCanvasDrawObjectSnapshot : RenderDrawObjectSnapshot
 {
+    public CanvasId NestedCanvasId { get; init; }
+
+    public SceneVersionBinding VersionBinding { get; init; } = SceneVersionBinding.Published;
+
+    public SceneVersionId? NestedCanvasVersionId { get; init; }
+
     public RenderCanvasSnapshot? NestedCanvas { get; init; }
 }

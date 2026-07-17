@@ -41,6 +41,7 @@ internal static class RenderFrameSnapshotFactory
             var canvases = projectState.Canvases
                 .Select(canvas => BuildCanvas(
                     canvas,
+                    projectState,
                     canvasLookup,
                     runtime,
                     context,
@@ -93,6 +94,7 @@ internal static class RenderFrameSnapshotFactory
 
     private static RenderCanvasSnapshot BuildCanvas(
         CanvasStateSnapshot canvas,
+        ProjectStateSnapshot projectState,
         IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
         CompositionRuntime runtime,
         RenderFrameContext context,
@@ -103,6 +105,7 @@ internal static class RenderFrameSnapshotFactory
         var objects = canvas.Objects
             .Select(drawObject => BuildDrawObject(
                 drawObject,
+                projectState,
                 canvasLookup,
                 runtime,
                 context,
@@ -123,6 +126,7 @@ internal static class RenderFrameSnapshotFactory
 
     private static RenderDrawObjectSnapshot BuildDrawObject(
         DrawObjectStateSnapshot drawObject,
+        ProjectStateSnapshot projectState,
         IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
         CompositionRuntime runtime,
         RenderFrameContext context,
@@ -189,19 +193,21 @@ internal static class RenderFrameSnapshotFactory
                 ? BuildNestedCanvasDrawObject(
                     nested,
                     effectiveCrop,
+                    projectState,
                     canvasLookup,
                     runtime,
                     context,
                     leasesBySource,
                     diagnostics,
                     nestingDepth)
-                : CreateDisabledCanvasDrawObjectSnapshot(nested, effectiveCrop),
+                : CreateDisabledCanvasDrawObjectSnapshot(nested, projectState, effectiveCrop),
             _ => throw new NotSupportedException($"Unsupported draw object snapshot type: {drawObject.GetType().Name}.")
         };
     }
 
     private static RenderCanvasDrawObjectSnapshot CreateDisabledCanvasDrawObjectSnapshot(
         CanvasDrawObjectSnapshot nested,
+        ProjectStateSnapshot projectState,
         NormalizedRect effectiveCrop) =>
         new()
         {
@@ -213,12 +219,16 @@ internal static class RenderFrameSnapshotFactory
             Opacity = nested.Opacity,
             BlendMode = nested.BlendMode,
             Effects = nested.Effects,
+            NestedCanvasId = nested.NestedCanvasId,
+            VersionBinding = nested.VersionBinding,
+            NestedCanvasVersionId = ResolveNestedVersion(projectState, nested),
             NestedCanvas = null
         };
 
     private static RenderCanvasDrawObjectSnapshot BuildNestedCanvasDrawObject(
         CanvasDrawObjectSnapshot nested,
         NormalizedRect effectiveCrop,
+        ProjectStateSnapshot projectState,
         IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
         CompositionRuntime runtime,
         RenderFrameContext context,
@@ -250,6 +260,7 @@ internal static class RenderFrameSnapshotFactory
         {
             nestedCanvas = BuildCanvas(
                 nestedCanvasState,
+                projectState,
                 canvasLookup,
                 runtime,
                 context,
@@ -268,9 +279,21 @@ internal static class RenderFrameSnapshotFactory
             Opacity = nested.Opacity,
             BlendMode = nested.BlendMode,
             Effects = nested.Effects,
+            NestedCanvasId = nested.NestedCanvasId,
+            VersionBinding = nested.VersionBinding,
+            NestedCanvasVersionId = ResolveNestedVersion(projectState, nested),
             NestedCanvas = nestedCanvas
         };
     }
+
+    private static Scenes.Editing.SceneVersionId? ResolveNestedVersion(
+        ProjectStateSnapshot projectState,
+        CanvasDrawObjectSnapshot nested) =>
+        nested.VersionBinding.Kind == Scenes.Editing.SceneVersionBindingKind.ExplicitVersion
+            ? nested.VersionBinding.ExplicitVersionId
+            : projectState.CanvasVersionIds.TryGetValue(nested.NestedCanvasId, out var version)
+                ? version
+                : null;
 
     private static GpuFrameReference? TryAcquireSourceFrame(
         SourceId sourceId,

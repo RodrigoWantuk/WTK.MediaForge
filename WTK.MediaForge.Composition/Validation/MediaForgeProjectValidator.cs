@@ -180,6 +180,17 @@ public static class MediaForgeProjectValidator
                     issues.Add(ValidationIssue.Error("drawobject.canvas.empty", $"Canvas object '{drawObject.Name}' has empty NestedCanvasId."));
                 else if (!canvasIds.Contains(nested.NestedCanvasId))
                     issues.Add(ValidationIssue.Error("drawobject.canvas.missing", $"Canvas object '{drawObject.Name}' references missing canvas {nested.NestedCanvasId}."));
+
+                try
+                {
+                    nested.VersionBinding.Validate();
+                }
+                catch (Exception ex)
+                {
+                    issues.Add(ValidationIssue.Error(
+                        "drawobject.canvas.version_binding",
+                        $"Canvas object '{drawObject.Name}' has invalid scene version binding: {ex.Message}"));
+                }
                 break;
         }
     }

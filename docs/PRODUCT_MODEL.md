@@ -105,6 +105,67 @@ Rules:
 - a canvas can be routed to multiple outputs
 - reusable canvases should become render-graph dedupe points when size/config/version match
 
+### Scene Editing Modes
+
+Scene editing semantics are owned by the engine, not by Studio or another host
+application.
+
+`Live` editing mutates the published scene version transactionally. Once the
+mutation validates, normal sinks and output routes observe the change on the
+next rendered frame without restarting the route.
+
+`Apply` editing creates a draft version for an edit session. Draft mutations are
+visible only to draft/preview bindings for that session. Published sinks keep
+rendering the currently published version until `ApplySceneDraftAsync` commits
+the draft. `DiscardSceneDraftAsync` removes the draft without changing the
+published project.
+
+The public contracts are:
+
+- `SceneEditMode`
+- `SceneEditSessionId`
+- `SceneVersionId`
+- `SceneVersionBinding`
+- `SceneMutationPatch`
+- `SceneCommitRequest`
+- `SceneCommitResult`
+
+### Scene Versions And Nested Canvases
+
+Every canvas has a published `SceneVersionId` in runtime state. A
+`CanvasDrawObject` also carries a `SceneVersionBinding`:
+
+- `Published` for normal outputs and sinks.
+- `Draft` for edit-session previews.
+- `ExplicitVersion` for transition boundaries that need to render old and new
+  version graphs.
+
+Canvas-as-source is a product feature. A canvas may be used as a layer inside
+another canvas, but cycles are invalid and nesting depth remains bounded by
+`CanvasGraphLimits.MaxNestedCanvasDepth`.
+
+### Apply Propagation
+
+When a draft is committed, the engine computes:
+
+- direct canvas consumers;
+- transitive canvas consumers;
+- affected output routes;
+- whether the requested transition policy should be applied by the output route.
+
+For example:
+
+```text
+Canvas A v10 -> Canvas A v11
+Canvas B contains Canvas A
+Output Program renders Canvas B
+```
+
+Applying the draft for Canvas A publishes v11, invalidates Canvas B's version
+graph, and reports the Program output as affected. Visual transition execution
+belongs at the output route boundary; it must not become a permanent layer
+effect.
+
 ## Effects
 
 Effects are ordered product-model objects on draw objects:
@@ -146,8 +207,9 @@ directly. Slow sinks must use explicit backpressure and must not block the rende
 thread.
 
 `CpuReadbackSink` is a debug/sample/validation sink. `PreviewPanelSink` is the
-experimental GPU preview sink. Productive preview shells and real encoder,
-streaming, NDI, virtual camera, and audio outputs follow the roadmap order.
+validated Win32/Vulkan GPU preview sink for completed rendered surfaces without
+CPU readback. Runtime-connected Studio preview, additional encoded sinks, NDI,
+virtual camera, and audio outputs follow the roadmap order.
 
 ## Routing And Render Graph
 

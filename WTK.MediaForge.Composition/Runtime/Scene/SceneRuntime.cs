@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
@@ -14,6 +15,8 @@ internal sealed class SceneRuntime
     private readonly Dictionary<SourceId, int> _resourceRefCounts = [];
     private readonly HashSet<DrawObjectId> _hiddenLayers = [];
     private readonly Dictionary<DrawObjectId, DrawObjectStateSnapshot> _previousDrawObjects = [];
+    private readonly PublishedSceneStateStore _publishedStore = new();
+    private readonly DraftSceneStateStore _draftStore = new();
 
     private ProjectStateSnapshot? _projectState;
     private SceneDirtyRegion _dirtyRegion = SceneDirtyRegion.Full;
@@ -21,6 +24,8 @@ internal sealed class SceneRuntime
     private long _version;
 
     public IReadOnlyDictionary<SourceId, int> ResourceRefCounts => _resourceRefCounts;
+
+    public IReadOnlyDictionary<CanvasId, ScenePublishedState> PublishedStates => _publishedStore.States;
 
     public void AddObserver(ISceneRuntimeObserver observer)
     {
@@ -72,7 +77,8 @@ internal sealed class SceneRuntime
 
         _hiddenLayers.RemoveWhere(layerId => !currentDrawObjects.ContainsKey(layerId));
 
-        _projectState = projectState;
+        _publishedStore.Sync(projectState);
+        _projectState = AttachPublishedVersions(projectState);
         _version++;
 
         _dirtyRegion = structureChanged
@@ -147,6 +153,51 @@ internal sealed class SceneRuntime
             HiddenLayerIds = _hiddenLayers.ToHashSet()
         };
     }
+
+    public SceneRuntimeSnapshot CreateSnapshot(SceneVersionBinding binding)
+    {
+        binding.Validate();
+
+        if (binding.Kind == SceneVersionBindingKind.Published)
+            return CreateSnapshot();
+
+        if (binding.Kind != SceneVersionBindingKind.Draft ||
+            binding.DraftSessionId is not { } sessionId ||
+            !_draftStore.TryGetProjectState(sessionId, out var draftProjectState) ||
+            draftProjectState is null)
+        {
+            throw new InvalidOperationException($"Scene version binding '{binding}' cannot be resolved by the runtime.");
+        }
+
+        var visibleProjectState = CreateVisibleProjectState(draftProjectState, _hiddenLayers);
+        return new SceneRuntimeSnapshot
+        {
+            ProjectState = visibleProjectState,
+            Layers = _layers.ToDictionary(pair => pair.Key, pair => pair.Value),
+            DirtyRegion = _dirtyRegion,
+            Version = _version,
+            CachedRenderGraphPlan = MediaForgeRenderGraphCompiler.Compile(visibleProjectState),
+            HiddenLayerIds = _hiddenLayers.ToHashSet(),
+            VersionBinding = binding
+        };
+    }
+
+    public SceneVersionId GetPublishedVersion(CanvasId canvasId) =>
+        _publishedStore.GetVersion(canvasId);
+
+    public void UpsertDraft(SceneDraftState draftState, ProjectStateSnapshot projectState)
+    {
+        ArgumentNullException.ThrowIfNull(draftState);
+        ArgumentNullException.ThrowIfNull(projectState);
+
+        _draftStore.Upsert(draftState.SessionId, AttachDraftVersion(projectState, draftState, _publishedStore), draftState);
+    }
+
+    public bool TryGetDraft(SceneEditSessionId sessionId, out SceneDraftState? state) =>
+        _draftStore.TryGet(sessionId, out state);
+
+    public void DiscardDraft(SceneEditSessionId sessionId) =>
+        _draftStore.Remove(sessionId);
 
     public SnapshotBuildResult BuildRenderSnapshot(
         CompositionRuntime runtime,
@@ -225,7 +276,29 @@ internal sealed class SceneRuntime
             Version = projectState.Version,
             Canvases = canvases,
             Outputs = projectState.Outputs,
-            Sources = projectState.Sources
+            Sources = projectState.Sources,
+            CanvasVersionIds = projectState.CanvasVersionIds
+        };
+    }
+
+    private ProjectStateSnapshot AttachPublishedVersions(ProjectStateSnapshot projectState) =>
+        projectState with
+        {
+            CanvasVersionIds = _publishedStore.CreateVersionMap()
+        };
+
+    private static ProjectStateSnapshot AttachDraftVersion(
+        ProjectStateSnapshot projectState,
+        SceneDraftState draftState,
+        PublishedSceneStateStore publishedStore)
+    {
+        var map = publishedStore.CreateVersionMap().ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (var pair in projectState.CanvasVersionIds)
+            map[pair.Key] = pair.Value;
+        map[draftState.CanvasId] = draftState.DraftVersionId;
+        return projectState with
+        {
+            CanvasVersionIds = map
         };
     }
 

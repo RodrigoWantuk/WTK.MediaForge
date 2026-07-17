@@ -266,7 +266,7 @@ place that promotes those capabilities from proof results.
 
 Windows recording product path: Media Foundation hardware MFT H.264,
 `EncodedPacketMp4Muxer` packet-only muxing, Vulkan -> D3D11 encoder surface
-export, and the v8 `HardwareMediaProof` set. Product recording is unavailable
+export, and the v12 `HardwareMediaProof` set. Product recording is unavailable
 until render-to-encode, hardware encode, MP4 recording, and MP4 output product
 proofs pass with trusted `BackendOutputValidated` evidence created by the
 backend that produced the encoded packet. MP4 input, webcam input, RTMP network

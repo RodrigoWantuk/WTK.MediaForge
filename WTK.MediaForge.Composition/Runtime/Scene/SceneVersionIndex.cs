@@ -1,0 +1,113 @@
+using System.Security.Cryptography;
+using System.Text;
+using WTK.MediaForge.Composition.Scenes.Editing;
+using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Identifiers;
+
+namespace WTK.MediaForge.Composition.Runtime.Scene;
+
+internal sealed class SceneVersionIndex
+{
+    private readonly Dictionary<CanvasId, Entry> _entries = [];
+
+    public IReadOnlyDictionary<CanvasId, ScenePublishedState> PublishedStates =>
+        _entries.ToDictionary(
+            static pair => pair.Key,
+            static pair => new ScenePublishedState
+            {
+                CanvasId = pair.Key,
+                VersionId = pair.Value.VersionId,
+                Revision = pair.Value.Revision
+            });
+
+    public SceneVersionId GetPublishedVersion(CanvasId canvasId) =>
+        _entries.TryGetValue(canvasId, out var entry)
+            ? entry.VersionId
+            : throw new InvalidOperationException($"Canvas {canvasId} does not have a published scene version.");
+
+    public void Sync(ProjectStateSnapshot projectState)
+    {
+        ArgumentNullException.ThrowIfNull(projectState);
+
+        var currentIds = projectState.Canvases.Select(static canvas => canvas.Id).ToHashSet();
+        foreach (var stale in _entries.Keys.Where(id => !currentIds.Contains(id)).ToArray())
+            _entries.Remove(stale);
+
+        foreach (var canvas in projectState.Canvases)
+        {
+            var fingerprint = CreateFingerprint(canvas);
+            if (_entries.TryGetValue(canvas.Id, out var existing) &&
+                string.Equals(existing.Fingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            _entries[canvas.Id] = new Entry(
+                SceneVersionId.New(),
+                fingerprint,
+                existing?.Revision + 1 ?? 1);
+        }
+    }
+
+    public IReadOnlyDictionary<CanvasId, SceneVersionId> CreateVersionMap() =>
+        _entries.ToDictionary(static pair => pair.Key, static pair => pair.Value.VersionId);
+
+    private static string CreateFingerprint(CanvasStateSnapshot canvas)
+    {
+        var builder = new StringBuilder();
+        builder.Append(canvas.Id.Value).Append('|')
+            .Append(canvas.Name).Append('|')
+            .Append(canvas.Size.Width).Append('x').Append(canvas.Size.Height).Append('|')
+            .Append(canvas.BackgroundColor.R).Append(',')
+            .Append(canvas.BackgroundColor.G).Append(',')
+            .Append(canvas.BackgroundColor.B).Append(',')
+            .Append(canvas.BackgroundColor.A);
+
+        var order = 0;
+        foreach (var drawObject in canvas.Objects)
+        {
+            builder.Append('|').Append(order++).Append(':').Append(drawObject.GetType().Name)
+                .Append(':').Append(drawObject.Id.Value)
+                .Append(':').Append(drawObject.Name)
+                .Append(':').Append(drawObject.Enabled)
+                .Append(':').Append(drawObject.Transform)
+                .Append(':').Append(drawObject.Opacity)
+                .Append(':').Append(drawObject.BlendMode)
+                .Append(':').Append(drawObject.Crop?.ToString() ?? "crop-null");
+
+            switch (drawObject)
+            {
+                case SourceLayerDrawObjectSnapshot source:
+                    builder.Append(":source=").Append(source.SourceId.Value);
+                    break;
+                case CanvasDrawObjectSnapshot nested:
+                    builder.Append(":canvas=").Append(nested.NestedCanvasId.Value)
+                        .Append(":binding=").Append(nested.VersionBinding);
+                    break;
+                case TextDrawObjectSnapshot text:
+                    builder.Append(":text=").Append(text.Text)
+                        .Append(":font=").Append(text.FontFamily)
+                        .Append(":size=").Append(text.FontSize);
+                    break;
+                case SolidDrawObjectSnapshot solid:
+                    builder.Append(":solid=").Append(solid.FillColor.R).Append(',')
+                        .Append(solid.FillColor.G).Append(',')
+                        .Append(solid.FillColor.B).Append(',')
+                        .Append(solid.FillColor.A);
+                    break;
+            }
+
+            foreach (var effect in drawObject.Effects.OrderBy(static effect => effect.Order))
+            {
+                builder.Append(":effect=").Append(effect.GetType().Name)
+                    .Append('/').Append(effect.Enabled)
+                    .Append('/').Append(effect.Order)
+                    .Append('/').Append(effect.SchemaVersion);
+            }
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+    }
+
+    private sealed record Entry(SceneVersionId VersionId, string Fingerprint, long Revision);
+}
