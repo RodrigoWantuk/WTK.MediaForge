@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Snapshots;
@@ -203,12 +204,20 @@ internal sealed class SceneRuntime
         CompositionRuntime runtime,
         RenderFrameContext context,
         IMediaForgeDiagnosticsSink? diagnostics = null)
+        => BuildRenderSnapshot(runtime, context, outputRouteTransitions: null, diagnostics);
+
+    public SnapshotBuildResult BuildRenderSnapshot(
+        CompositionRuntime runtime,
+        RenderFrameContext context,
+        OutputRouteTransitionRuntime? outputRouteTransitions,
+        IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         var sceneSnapshot = CreateSnapshot();
         return RenderFrameSnapshotFactory.Build(
             sceneSnapshot.ProjectState,
             runtime,
             context,
+            outputRouteTransitions,
             diagnostics);
     }
 

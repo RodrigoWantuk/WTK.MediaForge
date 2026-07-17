@@ -1,4 +1,6 @@
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Scenes.Editing;
+using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Identifiers;
 using Xunit;
 
@@ -65,5 +67,41 @@ public sealed class OutputRouteTransitionRuntimeTests
         runtime.Advance(outputId, TimeSpan.FromMilliseconds(1_000));
 
         Assert.False(runtime.TryGetProgress(outputId, out _));
+    }
+
+    [Fact]
+    public void Scene_version_transition_exposes_previous_and_current_graphs()
+    {
+        using var runtime = new OutputRouteTransitionRuntime();
+        var outputId = RenderOutputId.New();
+        var rootCanvasId = CanvasId.New();
+        var nestedCanvasId = CanvasId.New();
+        var oldNestedVersion = SceneVersionId.New();
+        var newNestedVersion = SceneVersionId.New();
+        var previousProjectState = new ProjectStateSnapshot();
+
+        runtime.BeginSceneVersionTransition(
+            outputId,
+            OutputRouteTransition.Fade("apply-fade", durationMs: 1_000),
+            new SceneVersionGraph(
+                rootCanvasId,
+                new Dictionary<CanvasId, SceneVersionId>
+                {
+                    [nestedCanvasId] = oldNestedVersion
+                }),
+            new SceneVersionGraph(
+                rootCanvasId,
+                new Dictionary<CanvasId, SceneVersionId>
+                {
+                    [nestedCanvasId] = newNestedVersion
+                }),
+            previousProjectState);
+
+        Assert.True(runtime.TryGetTransition(outputId, out var state));
+        Assert.Equal(rootCanvasId, state.FromCanvasId);
+        Assert.Equal(rootCanvasId, state.ToCanvasId);
+        Assert.Same(previousProjectState, state.PreviousProjectState);
+        Assert.Equal(oldNestedVersion, state.PreviousVersionGraph.CanvasVersions[nestedCanvasId]);
+        Assert.Equal(newNestedVersion, state.CurrentVersionGraph.CanvasVersions[nestedCanvasId]);
     }
 }

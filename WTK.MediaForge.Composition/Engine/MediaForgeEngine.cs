@@ -34,6 +34,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private readonly Dictionary<RenderOutputId, OutputSinkEntry> _outputSinks = [];
     private readonly Dictionary<SceneEditSessionId, ActiveSceneEditSession> _sceneEditSessions = [];
     private readonly RenderOutputSinkDispatcher _sinkDispatcher;
+    private readonly OutputRouteTransitionRuntime _outputRouteTransitions = new();
 
     private SourceRuntimeManager? _sourceRuntimeManager;
     private CompositionRuntime? _runtime;
@@ -127,6 +128,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     internal SceneRuntime? SceneRuntimeForTests => _sceneRuntime;
 
+    internal OutputRouteTransitionRuntime OutputRouteTransitionRuntimeForTests => _outputRouteTransitions;
+
     internal FaultRecoveryCoordinator? FaultRecoveryCoordinatorForTests => _faultRecoveryCoordinator;
 
     internal CompositionRuntime? RuntimeForTests => _runtime;
@@ -185,6 +188,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
             _currentProject = migrateResult.Project!;
             _sceneEditSessions.Clear();
+            _outputRouteTransitions.Clear();
             RefreshPublishedRuntimeAfterProjectMutation(requestFrame: false);
             SetState(MediaForgeEngineState.Loaded);
         }
@@ -488,17 +492,28 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             MediaForgeProjectValidator.Validate(workingCopy).ThrowIfInvalid();
 
             var oldVersion = currentVersion;
+            var previousProjectState = _sceneRuntime?.CreateSnapshot().ProjectState
+                ?? _projectState
+                ?? ProjectStateSnapshotFactory.CreateImmutableSnapshot(_currentProject!);
+            var previousVersionMap = CreateCurrentCanvasVersionMap();
             _sceneRuntime?.DiscardDraft(sessionId);
             _sceneEditSessions.Remove(sessionId);
 
             _currentProject = workingCopy;
             RefreshPublishedRuntimeAfterProjectMutation(requestFrame: false);
             var newVersion = GetPublishedSceneVersion(session.Descriptor.CanvasId);
+            var currentVersionMap = CreateCurrentCanvasVersionMap();
 
             var graph = SceneDependencyGraphBuilder.Build(_currentProject);
             SceneDependencyGraphValidator.Validate(graph).ThrowIfInvalid();
             var propagation = new SceneCommitPropagationPlanner(graph)
                 .Plan(session.Descriptor.CanvasId, oldVersion, newVersion, request.TransitionPolicy);
+            BeginOutputRouteTransitions(
+                propagation,
+                graph,
+                previousVersionMap,
+                currentVersionMap,
+                previousProjectState);
 
             _renderPump?.RequestFrame();
 
@@ -517,6 +532,95 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         {
             _gate.Release();
         }
+    }
+
+    private IReadOnlyDictionary<CanvasId, SceneVersionId> CreateCurrentCanvasVersionMap()
+    {
+        var publishedVersions = _sceneRuntime?.PublishedStates.ToDictionary(
+            static pair => pair.Key,
+            static pair => pair.Value.VersionId);
+
+        if (publishedVersions is { Count: > 0 })
+            return publishedVersions;
+
+        return _projectState?.CanvasVersionIds.ToDictionary(static pair => pair.Key, static pair => pair.Value)
+            ?? new Dictionary<CanvasId, SceneVersionId>();
+    }
+
+    private void BeginOutputRouteTransitions(
+        SceneCommitPropagationPlan propagation,
+        SceneDependencyGraph graph,
+        IReadOnlyDictionary<CanvasId, SceneVersionId> previousVersionMap,
+        IReadOnlyDictionary<CanvasId, SceneVersionId> currentVersionMap,
+        ProjectStateSnapshot previousProjectState)
+    {
+        ArgumentNullException.ThrowIfNull(previousProjectState);
+
+        if (_currentProject is null || !propagation.UsesTransition)
+            return;
+
+        foreach (var outputId in propagation.AffectedOutputs.OutputRouteIds)
+        {
+            var output = _currentProject.Outputs.FirstOrDefault(candidate => candidate.Id == outputId);
+            if (output is null)
+                continue;
+
+            var transition = ResolveApplyTransition(output, propagation.TransitionPolicy);
+            if (transition.Kind == OutputRouteTransitionKind.Cut)
+                continue;
+
+            _outputRouteTransitions.BeginSceneVersionTransition(
+                output.Id,
+                transition,
+                CreateSceneVersionGraph(output.CanvasId, previousVersionMap, graph),
+                CreateSceneVersionGraph(output.CanvasId, currentVersionMap, graph),
+                previousProjectState);
+        }
+    }
+
+    private static OutputRouteTransition ResolveApplyTransition(
+        MediaForgeRenderOutput output,
+        SceneApplyTransitionPolicy policy)
+    {
+        return policy.Kind switch
+        {
+            SceneApplyTransitionKind.UseOutputRoutePolicy => output.RouteTransition,
+            SceneApplyTransitionKind.Cut => OutputRouteTransition.Cut("apply-cut", "Apply cut"),
+            SceneApplyTransitionKind.Fade => OutputRouteTransition.Fade(
+                "apply-fade",
+                durationMs: Math.Max(1, (int)Math.Ceiling(policy.Duration.TotalMilliseconds)),
+                displayName: "Apply fade"),
+            _ => throw CreateInvalidTransitionPolicyException(policy)
+        };
+    }
+
+    private static InvalidOperationException CreateInvalidTransitionPolicyException(SceneApplyTransitionPolicy policy) =>
+        new($"Unsupported scene apply transition kind '{policy.Kind}'.");
+
+    private static SceneVersionGraph CreateSceneVersionGraph(
+        CanvasId rootCanvasId,
+        IReadOnlyDictionary<CanvasId, SceneVersionId> versionMap,
+        SceneDependencyGraph dependencyGraph)
+    {
+        var versions = new Dictionary<CanvasId, SceneVersionId>();
+        var visited = new HashSet<CanvasId>();
+        var stack = new Stack<CanvasId>();
+        stack.Push(rootCanvasId);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!visited.Add(current))
+                continue;
+
+            if (versionMap.TryGetValue(current, out var version))
+                versions[current] = version;
+
+            foreach (var nested in dependencyGraph.GetNestedCanvases(current))
+                stack.Push(nested);
+        }
+
+        return new SceneVersionGraph(rootCanvasId, versions);
     }
 
     public async ValueTask DiscardSceneDraftAsync(
@@ -793,6 +897,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                         ex);
                 }
 
+                _outputRouteTransitions.Dispose();
+
                 if (cleanupErrors is null)
                     SetState(MediaForgeEngineState.Disposed);
             }
@@ -854,8 +960,13 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             RenderFramesPerSecond,
             CancellationToken.None);
 
+        _outputRouteTransitions.AdvanceAll(executionContext.FrameBudget);
         var sceneSnapshot = _sceneRuntime.CreateSnapshot();
-        using var buildResult = _sceneRuntime.BuildRenderSnapshot(_runtime, context, _diagnostics);
+        using var buildResult = _sceneRuntime.BuildRenderSnapshot(
+            _runtime,
+            context,
+            _outputRouteTransitions,
+            _diagnostics);
         var snapshot = buildResult.TakeSnapshot();
 
         if (snapshot is null)
@@ -1304,6 +1415,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _sceneRuntime = null;
         _faultRecoveryCoordinator = null;
         _projectState = null;
+        _outputRouteTransitions.Clear();
 
         SetState(renderThreadStopped && cleanupErrors.Count == 0
             ? (_currentProject is null ? MediaForgeEngineState.Idle : MediaForgeEngineState.Loaded)

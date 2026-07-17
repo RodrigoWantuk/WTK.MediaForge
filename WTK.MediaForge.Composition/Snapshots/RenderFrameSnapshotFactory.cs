@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Validation;
@@ -27,6 +28,14 @@ internal static class RenderFrameSnapshotFactory
         CompositionRuntime runtime,
         RenderFrameContext context,
         IMediaForgeDiagnosticsSink? diagnosticsSink = null)
+        => Build(projectState, runtime, context, outputRouteTransitions: null, diagnosticsSink);
+
+    public static SnapshotBuildResult Build(
+        ProjectStateSnapshot projectState,
+        CompositionRuntime runtime,
+        RenderFrameContext context,
+        OutputRouteTransitionRuntime? outputRouteTransitions,
+        IMediaForgeDiagnosticsSink? diagnosticsSink = null)
     {
         ArgumentNullException.ThrowIfNull(projectState);
         ArgumentNullException.ThrowIfNull(runtime);
@@ -48,13 +57,24 @@ internal static class RenderFrameSnapshotFactory
                     leasesBySource,
                     diagnostics,
                     nestingDepth: 0))
+                .ToList();
+
+            var outputs = projectState.Outputs
+                .Select(output => BuildOutputState(
+                    output,
+                    outputRouteTransitions,
+                    runtime,
+                    context,
+                    leasesBySource,
+                    diagnostics,
+                    canvases))
                 .ToImmutableArray();
 
             var snapshot = new RenderFrameSnapshot
             {
                 ProjectStateVersion = projectState.Version,
-                Canvases = canvases,
-                Outputs = projectState.Outputs,
+                Canvases = canvases.ToImmutableArray(),
+                Outputs = outputs,
                 FrameLeases = leasesBySource.Values.ToImmutableArray(),
                 Context = context,
                 Diagnostics = diagnosticsSink
@@ -68,6 +88,87 @@ internal static class RenderFrameSnapshotFactory
             throw;
         }
     }
+
+    private static RenderOutputStateSnapshot BuildOutputState(
+        RenderOutputStateSnapshot output,
+        OutputRouteTransitionRuntime? outputRouteTransitions,
+        CompositionRuntime runtime,
+        RenderFrameContext context,
+        Dictionary<SourceId, GpuFrameLease> leasesBySource,
+        List<SnapshotDiagnostic> diagnostics,
+        List<RenderCanvasSnapshot> canvases)
+    {
+        if (outputRouteTransitions is null ||
+            !outputRouteTransitions.TryGetTransition(output.Id, out var transition) ||
+            transition.Transition.Kind != OutputRouteTransitionKind.Fade ||
+            transition.PreviousProjectState is null ||
+            transition.Progress >= 1f)
+        {
+            return output;
+        }
+
+        var previousProjectState = transition.PreviousProjectState;
+        var previousCanvasLookup = previousProjectState.Canvases.ToDictionary(static canvas => canvas.Id);
+        if (!previousCanvasLookup.TryGetValue(transition.PreviousVersionGraph.RootCanvasId, out var previousCanvasState))
+        {
+            AddDiagnostic(
+                diagnostics,
+                SnapshotDiagnosticKind.NestedCanvasMissing,
+                $"Previous route canvas {transition.PreviousVersionGraph.RootCanvasId} is no longer available for output transition.",
+                canvasId: transition.PreviousVersionGraph.RootCanvasId);
+            return output;
+        }
+
+        var previousCanvas = BuildCanvas(
+            previousCanvasState,
+            previousProjectState,
+            previousCanvasLookup,
+            runtime,
+            context,
+            leasesBySource,
+            diagnostics,
+            nestingDepth: 0);
+        var previousCanvasId = CanvasId.New();
+        canvases.Add(CloneCanvasWithId(previousCanvas, previousCanvasId));
+
+        return CloneOutputWithTransition(
+            output,
+            transition.Transition.Kind,
+            previousCanvasId,
+            transition.Progress);
+    }
+
+    private static RenderCanvasSnapshot CloneCanvasWithId(RenderCanvasSnapshot canvas, CanvasId canvasId) =>
+        new()
+        {
+            Id = canvasId,
+            Name = canvas.Name,
+            Size = canvas.Size,
+            BackgroundColor = canvas.BackgroundColor,
+            Objects = canvas.Objects
+        };
+
+    private static RenderOutputStateSnapshot CloneOutputWithTransition(
+        RenderOutputStateSnapshot output,
+        OutputRouteTransitionKind transitionKind,
+        CanvasId previousCanvasId,
+        float progress) =>
+        new()
+        {
+            Id = output.Id,
+            Name = output.Name,
+            TypeId = output.TypeId,
+            SchemaVersion = output.SchemaVersion,
+            Settings = output.Settings,
+            CanvasId = output.CanvasId,
+            OutputSize = output.OutputSize,
+            CanvasLayoutMode = output.CanvasLayoutMode,
+            LetterboxColor = output.LetterboxColor,
+            SceneVersionBinding = output.SceneVersionBinding,
+            RouteTransitionKind = transitionKind,
+            PreviousCanvasId = previousCanvasId,
+            RouteTransitionProgress = Math.Clamp(progress, 0f, 1f)
+        };
 
     private static void ReleaseLeases(
         IEnumerable<GpuFrameLease> leases,

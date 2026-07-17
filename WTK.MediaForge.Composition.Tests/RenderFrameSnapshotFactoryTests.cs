@@ -1,8 +1,11 @@
 using System.Collections.Immutable;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Composition.Sources;
+using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
@@ -175,6 +178,59 @@ public class RenderFrameSnapshotFactoryTests
         Assert.Equal(effectId, effect.Id);
     }
 
+    [Fact]
+    public void Build_attaches_previous_canvas_for_active_output_route_transition()
+    {
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var previousVersion = SceneVersionId.New();
+        var currentVersion = SceneVersionId.New();
+        var previousProjectState = CreateSolidProjectState(
+            canvasId,
+            outputId,
+            previousVersion,
+            ColorRgba.From(1, 0, 0, 1));
+        var currentProjectState = CreateSolidProjectState(
+            canvasId,
+            outputId,
+            currentVersion,
+            ColorRgba.From(0, 1, 0, 1));
+
+        using var transitions = new OutputRouteTransitionRuntime();
+        transitions.BeginSceneVersionTransition(
+            outputId,
+            OutputRouteTransition.Fade("apply-fade", durationMs: 1_000),
+            new SceneVersionGraph(
+                canvasId,
+                new Dictionary<CanvasId, SceneVersionId>
+                {
+                    [canvasId] = previousVersion
+                }),
+            new SceneVersionGraph(
+                canvasId,
+                new Dictionary<CanvasId, SceneVersionId>
+                {
+                    [canvasId] = currentVersion
+                }),
+            previousProjectState);
+        transitions.Advance(outputId, TimeSpan.FromMilliseconds(250));
+
+        using var result = RenderFrameSnapshotFactory.Build(
+            currentProjectState,
+            new CompositionRuntime(),
+            RenderFrameSnapshotFactory.CreateDefaultContext(),
+            transitions);
+        var snapshot = result.TakeSnapshot()!;
+        var output = Assert.Single(snapshot.Outputs);
+
+        Assert.Equal(OutputRouteTransitionKind.Fade, output.RouteTransitionKind);
+        Assert.NotNull(output.PreviousCanvasId);
+        Assert.Equal(0.25f, output.RouteTransitionProgress, precision: 3);
+        Assert.Equal(2, snapshot.Canvases.Length);
+        Assert.Contains(snapshot.Canvases, canvas => canvas.Id == output.PreviousCanvasId);
+        Assert.Contains(snapshot.Canvases, canvas => canvas.Id == output.CanvasId);
+    }
+
     private static void AssertEffectsPreserved<TRender, TEffect>(
         ProjectStateSnapshot projectState,
         FakeVideoFrameSource? source,
@@ -215,6 +271,49 @@ public class RenderFrameSnapshotFactoryTests
             ]
         };
     }
+
+    private static ProjectStateSnapshot CreateSolidProjectState(
+        CanvasId canvasId,
+        RenderOutputId outputId,
+        SceneVersionId versionId,
+        ColorRgba fillColor) =>
+        new()
+        {
+            Version = 1,
+            CanvasVersionIds = new Dictionary<CanvasId, SceneVersionId>
+            {
+                [canvasId] = versionId
+            },
+            Canvases =
+            [
+                new CanvasStateSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Program",
+                    Size = new FrameSize(1920, 1080),
+                    Objects =
+                    [
+                        new SolidDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Background",
+                            Transform = new Transform2D { Size = new CanvasSize(1920, 1080) },
+                            FillColor = fillColor
+                        }
+                    ]
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Program",
+                    CanvasId = canvasId,
+                    OutputSize = new FrameSize(1920, 1080)
+                }
+            ]
+        };
 
     [Fact]
     public void Build_binds_source_frames_with_effective_crop()

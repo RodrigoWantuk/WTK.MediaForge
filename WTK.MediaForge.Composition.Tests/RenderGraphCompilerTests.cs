@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Color;
 using Xunit;
 
@@ -175,5 +176,36 @@ public class RenderGraphCompilerTests
 
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.OutputPass));
+    }
+
+    [Fact]
+    public void Output_scene_version_binding_participates_in_canvas_cache_key()
+    {
+        var draftSessionId = SceneEditSessionId.New();
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
+            .OffscreenOutput("Published", scene, 1920, 1080, out _)
+            .OffscreenOutput(
+                "Draft",
+                scene,
+                1920,
+                1080,
+                out _,
+                output => output.SceneVersionBinding = SceneVersionBinding.DraftForSession(draftSessionId))
+            .BuildValidated();
+
+        var graph = MediaForgeRenderGraphCompiler.Compile(project);
+
+        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
+        Assert.Contains(
+            graph.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender &&
+                    node.Key.Contains($"draft:{draftSessionId.Value}", StringComparison.Ordinal));
+        Assert.Contains(
+            graph.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.OutputPass &&
+                    node.Key.Contains($"binding:draft:{draftSessionId.Value}", StringComparison.Ordinal));
     }
 }

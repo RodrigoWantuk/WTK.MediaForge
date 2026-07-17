@@ -55,6 +55,23 @@ Sinks never trigger rendering directly. They subscribe to completed
 `RenderOutput` frames and consume surface leases or sync-aware frames after the
 renderer has produced the output.
 
+## Scene Versioning And Apply
+
+Scene editing has two product modes:
+
+- `Live`: validated mutations update the published scene state and published
+  outputs see the next frame.
+- `Apply`: mutations are isolated in a draft scene version until commit.
+  Published outputs continue to render the published version.
+
+Nested scenes are versioned as part of the route graph. When a child scene is
+committed, parent scenes and output routes that consume it are affected. The
+engine captures the previous and current scene version graph for each affected
+output route, keeps the immutable pre-commit project snapshot alive while a
+transition is active, and exposes the previous canvas plus transition progress
+to the compositor. The next renderer milestone is making these old/new route
+passes first-class physical RenderGraph operations.
+
 ## Render Graph
 
 The target per-frame graph is:

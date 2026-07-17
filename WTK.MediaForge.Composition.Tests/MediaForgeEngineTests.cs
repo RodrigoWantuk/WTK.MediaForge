@@ -296,6 +296,11 @@ public class MediaForgeEngineTests
         Assert.Contains(parentCanvas.Id, result.AffectedCanvases);
         Assert.Contains(parentOutput.Id, result.AffectedOutputs);
         Assert.True(result.TransitionRequested);
+        Assert.True(engine.OutputRouteTransitionRuntimeForTests.TryGetTransition(parentOutput.Id, out var transition));
+        Assert.Equal(parentCanvas.Id, transition.CurrentVersionGraph.RootCanvasId);
+        Assert.Equal(result.OldVersionId, transition.PreviousVersionGraph.CanvasVersions[childCanvas.Id]);
+        Assert.Equal(result.NewVersionId, transition.CurrentVersionGraph.CanvasVersions[childCanvas.Id]);
+        Assert.NotNull(transition.PreviousProjectState);
     }
 
     [Fact]

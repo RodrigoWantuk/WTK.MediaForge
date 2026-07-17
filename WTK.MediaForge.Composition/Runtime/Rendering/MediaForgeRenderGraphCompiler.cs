@@ -37,10 +37,10 @@ internal static class MediaForgeRenderGraphCompiler
 
         public string AddOutput(RenderOutputStateSnapshot output)
         {
-            var canvasKey = AddCanvas(output.CanvasId, SceneVersionBinding.Published);
+            var canvasKey = AddCanvas(output.CanvasId, output.SceneVersionBinding);
             return AddNode(
                 MediaForgeRenderGraphNodeKind.OutputPass,
-                $"output:{output.Id}:canvas:{output.CanvasId}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
+                $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.CanvasId, output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
                 output.Name,
                 [canvasKey]);
         }

@@ -57,17 +57,20 @@ Product-validated foundations:
   upload through a bounded `KeepLatest` GPU slot ring -> Vulkan render.
 - Scene editing model foundation: `Live` and `Apply` edit sessions, scene
   version ids, version binding for nested canvases, published/draft runtime
-  stores, dependency graph propagation, and affected-output reporting for
-  nested-scene apply commits.
+  stores, dependency graph propagation, output route transition state, and
+  affected-output reporting for nested-scene apply commits.
+- Apply transition runtime for nested scene version graphs. The engine captures
+  previous/current scene version graphs per affected output route, preserves the
+  immutable pre-commit project snapshot while a fade is active, and the render
+  snapshot exposes a previous canvas plus transition progress for the compositor.
 
 Implemented but still product-limited:
 
 - Logical RenderGraph. It carries source-frame resources and skip reasons, but
   the physical GPU pass executor is still the active renderer/snapshot path.
-- Apply transition execution for nested scene version graphs. The engine now
-  computes affected outputs and carries transition policy in commit results;
-  the physical output-route transition executor still needs to render explicit
-  old/new version graphs as its main path.
+- Apply transitions still run through the existing snapshot/compositor bridge.
+  The next product step is moving route transitions into the physical
+  RenderGraph executor so old/new version graphs are explicit graph passes.
 - Physical RenderGraph checkpoint. The logical graph now exposes a physical
   pass plan for source acquisition, effect intermediates, canvas passes,
   output passes, and rendered-output fanout, but the Vulkan renderer still
@@ -118,7 +121,7 @@ docs truthful before it is considered complete.
 | 09 | Desktop/window capture | Desktop duplication is validated; Windows Graphics Capture must publish GPU leases, survive device/display reset, and share sources safely. |
 | 10 | Webcam source hardening | Media Foundation capture is validated for immediate GPU upload; next work is sustained capture, device-loss/reconnect, and richer format selection tests. |
 | 11 | SceneRuntime and physical RenderGraph | Source acquisition, canvas/effect/output passes, rendered-output fanout, encoded routes, and resource lifetime are compiled into executable GPU pass plans. |
-| 11a | Scene Live/Apply product semantics | Live edits update published sinks next frame; Apply edits remain draft until commit; nested canvas commits propagate affected outputs and transition policy. |
+| 11a | Scene Live/Apply product semantics | Live edits update published sinks next frame; Apply edits remain draft until commit; nested canvas commits propagate affected outputs, capture old/new version graphs, and expose transition snapshots to outputs. |
 | 12 | GPU resource pooling | Render/effect/export intermediates are pooled, bounded, and retired after GPU fences without leaks or stale handles. |
 | 13 | Effects/text through graph | Layer effects, scene effects, text atlas reuse, and route transitions become graph nodes with backend capability diagnostics. |
 | 14 | Multi-output routing | Same scene/profile renders once, encodes once, and fans out to preview/MP4/RTMP when profile-compatible. |

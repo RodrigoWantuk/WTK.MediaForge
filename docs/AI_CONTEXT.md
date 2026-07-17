@@ -61,12 +61,18 @@ The legacy WinForms preview path has been removed as a product path because it u
   continue using the published version until commit.
 - Each runtime canvas has a `SceneVersionId`. `CanvasDrawObject` carries a
   `SceneVersionBinding` (`Published`, `Draft`, or `ExplicitVersion`) so nested
-  scenes, draft previews, cache keys, and future apply transitions can render
-  the correct version graph. Normal output routes use published binding.
+  scenes, draft previews, cache keys, and apply transitions can render the
+  correct version graph. `MediaForgeRenderOutput.SceneVersionBinding` lets an
+  output route target a published, draft, or explicit scene version; normal
+  output routes use published binding.
 - Scene dependency graph/planner identifies direct consumers, transitive
   consumers, and affected output routes when a scene draft is applied. Apply
-  transition policy is reported at commit time; full physical old/new version
-  graph rendering remains part of the physical RenderGraph/output-route track.
+  transition policy is reported at commit time. The engine captures old/new
+  `SceneVersionGraph` state for each affected output route, retains the
+  pre-commit project snapshot while the route transition is active, and
+  `RenderFrameSnapshotFactory` exposes `PreviousCanvasId` plus progress for the
+  compositor. The remaining product step is to make these old/new route passes
+  first-class operations in the physical RenderGraph executor.
 - The public authoring foundation includes typed source/output helper factories, `Scene(...)`, route helpers, and package export/import APIs.
 - Multiple canvases/scenes can be routed independently to outputs and sinks. The same source can feed multiple scenes/layers, and the renderer must minimize redundant GPU work.
 - The render graph target is `Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects`. The current internal planner deduplicates source frame, reusable source effect-chain, canvas render, and output pass nodes by stable keys.

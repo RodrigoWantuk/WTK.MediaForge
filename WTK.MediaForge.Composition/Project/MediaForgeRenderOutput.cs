@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
@@ -26,6 +27,9 @@ public sealed class MediaForgeRenderOutput
     public LayoutMode CanvasLayoutMode { get; set; } = LayoutMode.Fit;
 
     public ColorRgba LetterboxColor { get; set; } = ColorRgba.Black;
+
+    public SceneVersionBinding SceneVersionBinding { get; set; } =
+        SceneVersionBinding.Published;
 
     public OutputRouteTransition RouteTransition { get; set; } =
         OutputRouteTransition.Cut("cut");
