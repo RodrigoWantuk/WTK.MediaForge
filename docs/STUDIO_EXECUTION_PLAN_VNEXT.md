@@ -24,7 +24,10 @@ This document is the canonical ordered execution plan for the next WTK MediaForg
 7. Add Scene/Add Source/Add Output dialogs.
 8. Data-driven canvas mock.
 9. Effects and output monitor model-backed.
-10. Engine service bridge without real preview.
+10. Engine service bridge without real preview. The foundation exists:
+    deterministic Studio-to-engine ids, StudioDocument-to-MediaForgeProject
+    mapping, StudioLayer-to-SceneMutationPatch mapping, and an async
+    StudioSceneEditBridge over the engine Live/Apply contract.
 11. Preview reliability harness.
 12. Studio preview surface host after reliability gate.
 
@@ -45,13 +48,16 @@ Do not implement these before their owning gates open:
 
 ## Current vNext Slice
 
-The active slice is commits 1 through 3:
+The active slice has advanced through the engine bridge foundation:
 
-- remove selectable row `Button` wrappers and avoid nested buttons;
-- make preview header bindings observable;
-- add typed toolbar state, busy state, and recording elapsed state;
-- normalize product-facing state text;
-- keep Studio tests in the Fast tier;
-- document required resize checks.
+- source/output dialogs are capability-driven instead of hardcoded available;
+- the mock scene editor supports rotated layer hit-test and visual handles;
+- `StudioProjectEngineMapper` creates a validated engine project from the
+  Studio document model;
+- `StudioSceneMutationFactory` creates real engine mutation patches for layer
+  transform, bounds, visibility, opacity, and supported layer effects;
+- `StudioSceneEditBridge` wraps the engine Live/Apply session contract without
+  forcing a real preview path.
 
-The next slice starts with `StudioWorkspaceDocument` and model-backed project state.
+The next slice is wiring shell edit commands to the async bridge through a
+Studio service, preserving mock/design mode and never blocking the UI thread.

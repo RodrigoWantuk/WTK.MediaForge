@@ -377,6 +377,14 @@ Current Studio state:
 - Fake Studio services own mock project, output, diagnostics, selection, and
   contextual properties behavior. Engine service types may exist internally for
   future bridge work, but the main UI must not expose Start/Stop Engine.
+- Studio has an engine bridge foundation under `WTK.MediaForge.Studio/Engine`:
+  `StudioEngineIdMap`, `StudioProjectEngineMapper`,
+  `StudioSceneMutationFactory`, and `StudioSceneEditBridge`. These map the
+  Studio document model to deterministic engine ids, valid `MediaForgeProject`
+  objects, and real `SceneMutationPatch` calls for Live/Apply editing. The
+  visual shell still runs in mock/design mode by default; wiring shell commands
+  to the async bridge must go through Studio services without blocking the UI
+  thread.
 - `StudioSelectionState` is the single selection contract for explorer/layer/canvas/output selection.
 - Output UI states are typed enums, not only booleans.
 - The internal Studio header is an app header; native OS chrome remains active for now.
