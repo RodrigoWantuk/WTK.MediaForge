@@ -22,6 +22,12 @@ internal sealed class PhysicalRenderGraphOperation
     public IReadOnlyList<string> Dependencies { get; init; } = [];
 
     public IReadOnlyList<string> Consumers { get; init; } = [];
+
+    public WTK.MediaForge.Core.Identifiers.RenderOutputId? OutputId { get; init; }
+
+    public WTK.MediaForge.Core.Identifiers.CanvasId? CanvasId { get; init; }
+
+    public WTK.MediaForge.Core.Identifiers.CanvasId? PreviousCanvasId { get; init; }
 }
 
 internal sealed class PhysicalRenderGraphPlan
@@ -99,7 +105,10 @@ internal static class PhysicalRenderGraphPlanner
                 Dependencies = node.Dependencies,
                 Consumers = consumers.TryGetValue(node.Key, out var nodeConsumers)
                     ? nodeConsumers
-                    : []
+                    : [],
+                OutputId = node.OutputId,
+                CanvasId = node.CanvasId,
+                PreviousCanvasId = node.PreviousCanvasId
             });
         }
 
@@ -151,7 +160,8 @@ internal static class PhysicalRenderGraphPlanner
                 Key = $"fanout:{canvas.Key}",
                 Name = $"{canvas.Name} output fanout",
                 Dependencies = [canvas.Key],
-                Consumers = outputConsumers
+                Consumers = outputConsumers,
+                CanvasId = canvas.CanvasId
             };
         }
     }

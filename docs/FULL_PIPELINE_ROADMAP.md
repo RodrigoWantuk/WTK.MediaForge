@@ -71,8 +71,9 @@ output route, keeps the immutable pre-commit project snapshot alive while a
 transition is active, and exposes the previous canvas plus transition progress
 to the compositor. Transition frames now compile into physical RenderGraph
 operations for old canvas, current canvas, route transition, and output pass.
-The next renderer milestone is making Vulkan consume this physical plan
-directly.
+Vulkan output composition consumes the physical output-pass dependencies; the
+next renderer milestone is moving source acquisition, effect intermediates,
+canvas execution, and encoded routes behind the same physical executor.
 
 ## Render Graph
 
@@ -98,8 +99,10 @@ The compiler builds a DAG and deduplicates stable nodes:
 - fanout: one completed output frame can feed many sinks
 
 The current repository contains the first internal render-graph planning
-foundation for these dedupe rules, including output transition passes. It is
-not yet the Vulkan execution planner.
+foundation for these dedupe rules, including output transition passes. Vulkan
+now uses physical output-pass dependencies for offscreen composition. It is not
+yet the full Vulkan execution planner for source, effect, canvas intermediate,
+or encoded-route passes.
 
 ## Public Authoring API
 

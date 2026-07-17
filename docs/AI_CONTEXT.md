@@ -73,8 +73,10 @@ The legacy WinForms preview path has been removed as a product path because it u
   `RenderFrameSnapshotFactory` exposes `PreviousCanvasId` plus progress for the
   compositor. Transition frames now compile from `RenderFrameSnapshot` into a
   physical graph with explicit old-canvas, current-canvas, output-transition,
-  and output-pass operations. The remaining product step is to make Vulkan
-  consume that physical plan directly instead of traversing the snapshot itself.
+  and output-pass operations. Vulkan output composition consumes those physical
+  output-pass dependencies; source acquisition, effect intermediates, canvas
+  execution, and encoded routes still need to move behind physical pass
+  execution.
 - The public authoring foundation includes typed source/output helper factories, `Scene(...)`, route helpers, and package export/import APIs.
 - Multiple canvases/scenes can be routed independently to outputs and sinks. The same source can feed multiple scenes/layers, and the renderer must minimize redundant GPU work.
 - The render graph target is `Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects`. The current internal planner deduplicates source frame, reusable source effect-chain, primitive layer, canvas render, output-transition, and output pass nodes by stable keys.
@@ -209,12 +211,15 @@ The legacy WinForms preview path has been removed as a product path because it u
   resources through source/effect/canvas/output nodes and skips downstream work
   when a source frame is unavailable. The engine attaches the per-frame graph
   execution result to `RenderFrameSnapshot` after source leases are acquired,
-  so backends can audit/consume the DAG for the submitted frame. It still does
-  not allocate Vulkan intermediate targets or execute GPU passes directly.
+  so backends can audit/consume the DAG for the submitted frame. Vulkan output
+  composition resolves physical output and transition dependencies from this
+  plan. The graph still does not allocate Vulkan intermediate targets or
+  execute source/effect/canvas GPU passes directly.
   A physical pass checkpoint now exposes source acquisition, effect
-  intermediates, canvas passes, output passes, and rendered-output fanout, but
-  `GpuTextureLease` output resources are reserved for the future bridge where
-  Vulkan consumes that physical plan directly.
+  intermediates, canvas passes, output passes, output transitions, and
+  rendered-output fanout, but `GpuTextureLease` output resources are reserved
+  for the future bridge where source/effect/canvas passes are fully owned by
+  the physical executor.
 - `ColorCorrectionEffect` is implemented in the Vulkan source-layer fragment
   shader for brightness, contrast, saturation, and hue. The shader applies
   source sample -> color correction -> chroma key -> opacity.

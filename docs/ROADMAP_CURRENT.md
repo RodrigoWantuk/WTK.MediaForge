@@ -67,19 +67,23 @@ Product-validated foundations:
   the submitted `RenderFrameSnapshot`, include primitive layer nodes for
   solid/text-only scenes, and expose explicit old-canvas -> current-canvas ->
   output-transition -> output-pass operations.
+- Vulkan output composition is now driven by physical `RenderOutput`
+  operations. The compositor resolves output and transition dependencies from
+  the physical plan instead of enumerating snapshot outputs directly.
 
 Implemented but still product-limited:
 
 - Logical RenderGraph. It carries source-frame resources and skip reasons, but
   the physical GPU pass executor is still the active renderer/snapshot path.
-- Apply transitions still render through the existing snapshot/compositor
-  bridge, but their old/new route passes now exist in the physical graph plan.
-  The next product step is making the Vulkan renderer consume the physical plan
-  directly instead of executing its current snapshot traversal.
-- Physical RenderGraph checkpoint. The logical graph now exposes a physical
-  pass plan for source acquisition, primitive layers, effect intermediates,
-  canvas passes, output transitions, output passes, and rendered-output fanout,
-  but the Vulkan renderer still needs to consume that physical plan directly.
+- Apply transitions still reuse the existing Vulkan composition pipelines, but
+  output routing and transition selection now flow through physical graph
+  operations.
+- Physical RenderGraph checkpoint. The logical graph exposes a physical pass
+  plan for source acquisition, primitive layers, effect intermediates, canvas
+  passes, output transitions, output passes, and rendered-output fanout. Vulkan
+  currently consumes the output-pass portion of that plan; source acquisition,
+  effect intermediates, canvas execution, and encoded-route scheduling still
+  need to move behind physical pass execution.
 - Fault recovery coordination. Scenario policies now distinguish recovery,
   recovered, exhausted, and canceled states and isolate encoded routes, RTMP,
   export, source, and device faults, but end-to-end runtime wiring still needs
@@ -151,7 +155,7 @@ docs truthful before it is considered complete.
 | Webcam | Hardware-dependent experimental | Promotes when the Media Foundation webcam proof validates immediate D3D11 upload, `KeepLatest` GPU slot lifetime, and Vulkan render on the current machine. |
 | NDI | Discovery supported / video blocked | Windows detects loadable NDI runtime when installed and can enumerate sources; product video support still requires GPU-safe source/output proofs. |
 | SRT/HLS/virtual camera/audio | Planned | Out of scope until core video pipeline is sustained. |
-| RenderGraph physical executor | Active work | Physical pass checkpoint includes primitive layers and output transitions; Vulkan still needs to consume the physical plan directly. |
+| RenderGraph physical executor | Active work | Vulkan consumes physical output-pass dependencies; source/effect/canvas/intermediate execution still needs to move from snapshot traversal to physical passes. |
 | Performance suite | Active work | Synthetic coverage exists; sustained real workloads are required. |
 
 ## Acceptance Suites

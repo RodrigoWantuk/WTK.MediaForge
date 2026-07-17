@@ -1,3 +1,5 @@
+using WTK.MediaForge.Core.Identifiers;
+
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 internal sealed class MediaForgeRenderGraphNode
@@ -9,4 +11,10 @@ internal sealed class MediaForgeRenderGraphNode
     public string Name { get; init; } = string.Empty;
 
     public IReadOnlyList<string> Dependencies { get; init; } = [];
+
+    public RenderOutputId? OutputId { get; init; }
+
+    public CanvasId? CanvasId { get; init; }
+
+    public CanvasId? PreviousCanvasId { get; init; }
 }

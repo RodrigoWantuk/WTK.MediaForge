@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Outputs;
@@ -59,14 +60,19 @@ internal static class MediaForgeRenderGraphCompiler
                     MediaForgeRenderGraphNodeKind.OutputTransition,
                     $"transition:{output.Id}:previous:{previousCanvasId}:current:{output.CanvasId}:progress:{output.RouteTransitionProgress:0.####}",
                     $"{output.Name} route transition",
-                    [previousCanvasKey, canvasKey]);
+                    [previousCanvasKey, canvasKey],
+                    outputId: output.Id,
+                    canvasId: output.CanvasId,
+                    previousCanvasId: previousCanvasId);
             }
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.OutputPass,
                 $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.CanvasId, output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
                 output.Name,
-                [dependency]);
+                [dependency],
+                outputId: output.Id,
+                canvasId: output.CanvasId);
         }
 
         private string AddCanvas(Core.Identifiers.CanvasId canvasId, SceneVersionBinding binding)
@@ -121,7 +127,8 @@ internal static class MediaForgeRenderGraphCompiler
                 MediaForgeRenderGraphNodeKind.CanvasRender,
                 $"canvas:{canvas.Id}:version:{versionKey}:size:{canvas.Size.Width}x{canvas.Size.Height}",
                 canvas.Name,
-                dependencies);
+                dependencies,
+                canvasId: canvas.Id);
         }
 
         private string ResolveCanvasVersionKey(Core.Identifiers.CanvasId canvasId, SceneVersionBinding binding)
@@ -142,7 +149,10 @@ internal static class MediaForgeRenderGraphCompiler
             MediaForgeRenderGraphNodeKind kind,
             string key,
             string name,
-            IReadOnlyList<string>? dependencies = null)
+            IReadOnlyList<string>? dependencies = null,
+            Core.Identifiers.RenderOutputId? outputId = null,
+            Core.Identifiers.CanvasId? canvasId = null,
+            Core.Identifiers.CanvasId? previousCanvasId = null)
         {
             if (_nodes.TryGetValue(key, out _))
                 return key;
@@ -154,7 +164,10 @@ internal static class MediaForgeRenderGraphCompiler
                     Kind = kind,
                     Key = key,
                     Name = name,
-                    Dependencies = dependencies ?? []
+                    Dependencies = dependencies ?? [],
+                    OutputId = outputId,
+                    CanvasId = canvasId,
+                    PreviousCanvasId = previousCanvasId
                 });
             return key;
         }
@@ -181,14 +194,19 @@ internal static class MediaForgeRenderGraphCompiler
                     MediaForgeRenderGraphNodeKind.OutputTransition,
                     $"transition:{output.Id}:previous:{previousCanvasId}:current:{output.CanvasId}:progress:{output.RouteTransitionProgress:0.####}",
                     $"{output.Name} route transition",
-                    [previousCanvasKey, canvasKey]);
+                    [previousCanvasKey, canvasKey],
+                    outputId: output.Id,
+                    canvasId: output.CanvasId,
+                    previousCanvasId: previousCanvasId);
             }
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.OutputPass,
                 $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
                 output.Name,
-                [dependency]);
+                [dependency],
+                outputId: output.Id,
+                canvasId: output.CanvasId);
         }
 
         private string AddCanvas(Core.Identifiers.CanvasId canvasId)
@@ -244,7 +262,8 @@ internal static class MediaForgeRenderGraphCompiler
                 MediaForgeRenderGraphNodeKind.CanvasRender,
                 $"canvas:{canvas.Id}:version:{ResolveCanvasVersionKey(canvas)}:size:{canvas.Size.Width}x{canvas.Size.Height}",
                 canvas.Name,
-                dependencies);
+                dependencies,
+                canvasId: canvas.Id);
         }
 
         private static string ResolveCanvasVersionKey(RenderCanvasSnapshot canvas) =>
@@ -268,7 +287,10 @@ internal static class MediaForgeRenderGraphCompiler
             MediaForgeRenderGraphNodeKind kind,
             string key,
             string name,
-            IReadOnlyList<string>? dependencies = null)
+            IReadOnlyList<string>? dependencies = null,
+            Core.Identifiers.RenderOutputId? outputId = null,
+            Core.Identifiers.CanvasId? canvasId = null,
+            Core.Identifiers.CanvasId? previousCanvasId = null)
         {
             if (_nodes.TryGetValue(key, out _))
                 return key;
@@ -280,7 +302,10 @@ internal static class MediaForgeRenderGraphCompiler
                     Kind = kind,
                     Key = key,
                     Name = name,
-                    Dependencies = dependencies ?? []
+                    Dependencies = dependencies ?? [],
+                    OutputId = outputId,
+                    CanvasId = canvasId,
+                    PreviousCanvasId = previousCanvasId
                 });
             return key;
         }
@@ -306,20 +331,27 @@ internal static class MediaForgeRenderGraphCompiler
             .Select(CreateEffectFingerprint)
             .ToArray();
 
-        var json = JsonSerializer.Serialize(fingerprints, MediaForgeProjectJsonOptions.Create());
+        var json = JsonSerializer.Serialize(fingerprints, CreateFingerprintJsonOptions());
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
     }
 
     private static string HashPrimitive(DrawObjectStateSnapshot drawObject)
     {
-        var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), MediaForgeProjectJsonOptions.Create());
+        var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), CreateFingerprintJsonOptions());
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
     }
 
     private static string HashPrimitive(RenderDrawObjectSnapshot drawObject)
     {
-        var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), MediaForgeProjectJsonOptions.Create());
+        var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), CreateFingerprintJsonOptions());
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static JsonSerializerOptions CreateFingerprintJsonOptions()
+    {
+        var options = MediaForgeProjectJsonOptions.Create();
+        options.NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals;
+        return options;
     }
 
     private static object CreatePrimitiveFingerprint(DrawObjectStateSnapshot drawObject) =>

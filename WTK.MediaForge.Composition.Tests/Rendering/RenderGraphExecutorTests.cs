@@ -241,8 +241,24 @@ public sealed class RenderGraphExecutorTests
         Assert.Equal(2, plan.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
         Assert.Contains(transitionNode.Key, outputNode.Dependencies);
         Assert.Equal(2, transitionNode.Dependencies.Count);
+        Assert.Equal(outputId, transitionNode.OutputId);
+        Assert.Equal(currentCanvasId, transitionNode.CanvasId);
+        Assert.Equal(previousCanvasId, transitionNode.PreviousCanvasId);
+        Assert.Equal(outputId, outputNode.OutputId);
+        Assert.Equal(currentCanvasId, outputNode.CanvasId);
         Assert.Equal(1, plan.PhysicalPlan.Count(PhysicalRenderGraphOperationKind.RenderOutputTransition));
         Assert.Equal(1, plan.PhysicalPlan.Statistics.OutputTransitionPasses);
+        var physicalTransition = Assert.Single(
+            plan.PhysicalPlan.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition);
+        var physicalOutput = Assert.Single(
+            plan.PhysicalPlan.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput);
+        Assert.Equal(outputId, physicalTransition.OutputId);
+        Assert.Equal(currentCanvasId, physicalTransition.CanvasId);
+        Assert.Equal(previousCanvasId, physicalTransition.PreviousCanvasId);
+        Assert.Equal(outputId, physicalOutput.OutputId);
+        Assert.Equal(currentCanvasId, physicalOutput.CanvasId);
 
         var result = RenderGraphExecutor.Execute(
             plan,
@@ -260,6 +276,61 @@ public sealed class RenderGraphExecutorTests
         Assert.Contains(outputNode.Key, result.ExecutedNodeKeys);
         Assert.True(result.NodeResults[transitionNode.Key].HasRenderableResource);
         Assert.True(result.NodeResults[outputNode.Key].HasRenderableResource);
+    }
+
+    [Fact]
+    public void Render_snapshot_graph_compilation_tolerates_non_finite_effect_values_for_later_diagnostics()
+    {
+        var sourceId = SourceId.New();
+        var outputId = RenderOutputId.New();
+        var canvasId = CanvasId.New();
+        var snapshot = new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 12,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Invalid effect scene",
+                    Size = new FrameSize(1920, 1080),
+                    Objects =
+                    [
+                        new RenderSourceLayerDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Source",
+                            SourceId = sourceId,
+                            Transform = new Transform2D { Size = new CanvasSize(1920, 1080) },
+                            Effects =
+                            [
+                                new ChromaKeyEffectSnapshot
+                                {
+                                    Id = EffectId.New(),
+                                    Name = "Invalid key",
+                                    Similarity = float.PositiveInfinity
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Program",
+                    CanvasId = canvasId,
+                    OutputSize = new FrameSize(1920, 1080)
+                }
+            ]
+        };
+
+        var plan = MediaForgeRenderGraphCompiler.Compile(snapshot);
+
+        Assert.Equal(1, plan.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
+        Assert.Equal(1, plan.PhysicalPlan.Count(PhysicalRenderGraphOperationKind.RenderEffectIntermediate));
     }
 
     [Fact]
