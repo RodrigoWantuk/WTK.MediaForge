@@ -105,7 +105,11 @@ The legacy WinForms preview path has been removed as a product path because it u
 - `MediaForgeEngine.StopAsync` must not dispose the backend if the render thread is still alive after dispose timeout. It reports `engine.backend_dispose_skipped_render_thread_alive` as fatal and leaves a controlled leak instead of risking use-after-free.
 - `MediaForgeEngine.StopAsync` attempts runtime cleanup even when the engine is already `Failed`; it no longer returns silently while runtime resources remain alive.
 - CP1 visual correctness is proven by Vulkan offscreen pixel readback tests for center pixel, Fit transparency, Fill, Stretch, opacity, output letterbox color, canvas background, transparent layer over background, and clipped/fully outside layer geometry.
-- CP1 descriptor capacity is explicitly sized for larger submits, and `VulkanExternalTextureRegistry` waiters use timeout diagnostics instead of indefinite blocking.
+- CP1 descriptor capacity is explicitly sized for larger submits, and
+  `VulkanExternalTextureRegistry` waiters use explicit timeout diagnostics,
+  fail future waiters fast after a timed-out import, unwrap import failures
+  without silent retry loops, and avoid async-over-sync waits in the registry
+  import waiter path.
 - `DesktopDuplicationFrameProvider` reconnect replaces the D3D11 slot ring when
   a new duplication session/device is created, retires the old ring through
   `RetiredGpuResourceManager`, and marks the provider `Failed` if reconnect

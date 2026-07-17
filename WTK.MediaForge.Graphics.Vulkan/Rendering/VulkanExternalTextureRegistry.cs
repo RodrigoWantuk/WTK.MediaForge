@@ -184,11 +184,20 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
     {
         var task = entry.Creation.Task;
 
-        try
+        var completed = task.IsCompleted;
+        if (!completed)
         {
-            task.WaitAsync(_creationWaitTimeout).GetAwaiter().GetResult();
+            try
+            {
+                completed = task.Wait(_creationWaitTimeout);
+            }
+            catch (AggregateException)
+            {
+                completed = true;
+            }
         }
-        catch (TimeoutException)
+
+        if (!completed)
         {
             lock (_gate)
             {
@@ -197,6 +206,15 @@ internal sealed class VulkanExternalTextureRegistry : IAsyncDisposable
             }
 
             ThrowImportWaitTimeout(entry, alreadyTimedOut: false);
+        }
+
+        try
+        {
+            if (task.IsFaulted && task.Exception is { } exception)
+                throw exception.GetBaseException();
+
+            if (task.IsCanceled)
+                throw new TaskCanceledException(task);
         }
         catch
         {

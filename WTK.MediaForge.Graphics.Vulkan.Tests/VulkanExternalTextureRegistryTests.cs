@@ -443,6 +443,9 @@ public class VulkanExternalTextureRegistryTests
                 diagnostics.Diagnostics,
                 d => d.Code == "vulkan.texture_import_wait_timeout" &&
                     d.Severity == MediaForgeDiagnosticSeverity.Error);
+            Assert.Equal(
+                1,
+                diagnostics.Diagnostics.Count(d => d.Code == "vulkan.texture_import_wait_timeout"));
 
             releaseImport.Set();
 
