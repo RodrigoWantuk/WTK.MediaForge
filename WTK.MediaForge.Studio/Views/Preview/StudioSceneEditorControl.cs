@@ -123,8 +123,8 @@ public sealed class StudioSceneEditorControl : Control
         var selectedLayer = vm.SelectedLayer;
         if (selectedLayer is not null)
         {
-            var selectedRect = vm.Transform.SceneToViewport(SceneEditorHitTest.LayerSceneRect(selectedLayer));
-            if (SceneEditorHitTest.HitTestVisibilityToggle(selectedRect, _dragStartViewport))
+            var selectedCorners = SceneEditorHitTest.LayerViewportCorners(selectedLayer, vm.Transform);
+            if (SceneEditorHitTest.HitTestVisibilityToggle(selectedCorners, _dragStartViewport))
             {
                 vm.ToggleLayerVisibility(selectedLayer);
                 InvalidateVisual();
@@ -132,7 +132,7 @@ public sealed class StudioSceneEditorControl : Control
                 return;
             }
 
-            var handle = SceneEditorHitTest.HitTestResizeHandle(selectedRect, _dragStartViewport, HandleSize + 8);
+            var handle = SceneEditorHitTest.HitTestResizeHandle(selectedCorners, _dragStartViewport, HandleSize + 8);
             if (handle != ResizeHandleKind.None)
             {
                 vm.RequestLayerSelection(selectedLayer);
@@ -400,26 +400,52 @@ public sealed class StudioSceneEditorControl : Control
             var isHover = ReferenceEquals(layer, _hoverLayer);
             var fill = layer.IsSelected ? Brush("MfSelectedBrush", Brushes.DarkSlateBlue) : Brush("MfOverlayBrush", Brushes.Black);
             var border = layer.IsSelected ? Pen("MfAccentBrush", 2) : isHover ? Pen("MfAccentBrush", 1.5) : Pen("MfBorderNormalBrush", 1);
-            context.DrawRectangle(fill, border, rect, 8, 8);
-            DrawText(context, layer.Name, rect.TopLeft + new Vector(14, 12), 14, Brush("MfTextPrimaryBrush", Brushes.White), FontWeight.SemiBold);
-            DrawText(context, layer.Source, rect.TopLeft + new Vector(14, 32), 12, Brush("MfTextSecondaryBrush", Brushes.LightGray), FontWeight.Normal);
+
+            if (Math.Abs(layer.RotationDegrees) < double.Epsilon)
+            {
+                DrawLayerContent(context, layer, rect, fill, border);
+            }
+            else
+            {
+                using (context.PushTransform(Matrix.CreateRotation(layer.RotationDegrees * Math.PI / 180d, rect.Center)))
+                {
+                    DrawLayerContent(context, layer, rect, fill, border);
+                }
+            }
         }
 
         if (layer.IsSelected)
         {
-            DrawSelection(context, rect, layer.IsLocked, layer.IsVisible);
+            DrawSelection(context, SceneEditorHitTest.LayerViewportCorners(layer, vm.Transform), layer.IsLocked, layer.IsVisible);
         }
     }
 
-    private void DrawSelection(DrawingContext context, Rect rect, bool isLocked, bool isVisible)
+    private void DrawLayerContent(DrawingContext context, LayerItemViewModel layer, Rect rect, IBrush fill, Pen border)
     {
-        context.DrawRectangle(null, Pen(isLocked ? "MfWarningBrush" : "MfAccentBrush", 2), rect, 8, 8);
-        foreach (var handle in SceneEditorHitTest.HandleRects(rect, HandleSize))
+        context.DrawRectangle(fill, border, rect, 8, 8);
+        DrawText(context, layer.Name, rect.TopLeft + new Vector(14, 12), 14, Brush("MfTextPrimaryBrush", Brushes.White), FontWeight.SemiBold);
+        DrawText(context, layer.Source, rect.TopLeft + new Vector(14, 32), 12, Brush("MfTextSecondaryBrush", Brushes.LightGray), FontWeight.Normal);
+    }
+
+    private void DrawSelection(DrawingContext context, IReadOnlyList<Point> corners, bool isLocked, bool isVisible)
+    {
+        if (corners.Count < 4)
+        {
+            return;
+        }
+
+        var pen = Pen(isLocked ? "MfWarningBrush" : "MfAccentBrush", 2);
+        for (var i = 0; i < corners.Count; i++)
+        {
+            context.DrawLine(pen, corners[i], corners[(i + 1) % corners.Count]);
+        }
+
+        foreach (var handle in SceneEditorHitTest.HandleRects(corners, HandleSize))
         {
             context.DrawRectangle(Brush("MfAccentBrush", Brushes.DeepSkyBlue), Pen("MfCanvasOutsideBrush", 1), handle.Rect, 2, 2);
         }
 
-        DrawVisibilityToggle(context, SceneEditorHitTest.VisibilityToggleRect(rect), isVisible);
+        DrawVisibilityToggle(context, SceneEditorHitTest.VisibilityToggleRect(corners), isVisible);
     }
 
     private void DrawVisibilityToggle(DrawingContext context, Rect rect, bool isVisible)
@@ -559,8 +585,8 @@ public sealed class StudioSceneEditorControl : Control
         var selectedLayer = vm.SelectedLayer;
         if (selectedLayer is not null && selectedLayer.IsVisible)
         {
-            var selectedRect = vm.Transform.SceneToViewport(SceneEditorHitTest.LayerSceneRect(selectedLayer));
-            _isHoveringVisibilityToggle = SceneEditorHitTest.HitTestVisibilityToggle(selectedRect, viewportPoint);
+            var selectedCorners = SceneEditorHitTest.LayerViewportCorners(selectedLayer, vm.Transform);
+            _isHoveringVisibilityToggle = SceneEditorHitTest.HitTestVisibilityToggle(selectedCorners, viewportPoint);
             if (_isHoveringVisibilityToggle)
             {
                 _hoverLayer = selectedLayer;
@@ -569,7 +595,7 @@ public sealed class StudioSceneEditorControl : Control
                 return;
             }
 
-            _hoverHandle = SceneEditorHitTest.HitTestResizeHandle(selectedRect, viewportPoint, HandleSize + 8);
+            _hoverHandle = SceneEditorHitTest.HitTestResizeHandle(selectedCorners, viewportPoint, HandleSize + 8);
             if (_hoverHandle != ResizeHandleKind.None)
             {
                 _hoverLayer = selectedLayer;

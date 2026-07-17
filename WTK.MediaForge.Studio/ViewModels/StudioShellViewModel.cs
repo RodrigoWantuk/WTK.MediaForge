@@ -17,6 +17,7 @@ public sealed class StudioShellViewModel : ViewModelBase
 {
     private readonly IStudioProjectService _projectService;
     private readonly IStudioOutputService _outputService;
+    private readonly IStudioCapabilityService _capabilityService;
     private readonly IStudioDiagnosticsService _diagnosticsService;
     private readonly IStudioSelectionService _selectionService;
     private readonly IStudioUiTimer _uiTimer;
@@ -42,6 +43,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         : this(
             services.ProjectService,
             services.OutputService,
+            services.CapabilityService,
             services.DiagnosticsService,
             services.SelectionService,
             services.UiTimer)
@@ -51,12 +53,14 @@ public sealed class StudioShellViewModel : ViewModelBase
     public StudioShellViewModel(
         IStudioProjectService projectService,
         IStudioOutputService outputService,
+        IStudioCapabilityService capabilityService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
         IStudioUiTimer uiTimer)
     {
         _projectService = projectService;
         _outputService = outputService;
+        _capabilityService = capabilityService;
         _diagnosticsService = diagnosticsService;
         _selectionService = selectionService;
         _uiTimer = uiTimer;
@@ -570,37 +574,25 @@ public sealed class StudioShellViewModel : ViewModelBase
     private void OpenAddSourceDialog()
     {
         Dialog.Options.Clear();
-        var options = new[]
-        {
-            SourceOption("source.webcam", "Webcam", "Capturar câmera local", StudioIconKind.Camera, "Disponível", true),
-            SourceOption("source.desktop", "Tela", "Capturar monitor ou janela", StudioIconKind.Desktop, "Disponível", true),
-            SourceOption("source.image", "Imagem", "PNG, JPG, WebP", StudioIconKind.Image, "Disponível", true),
-            SourceOption("source.media", "Vídeo", "MP4, MOV, WebM", StudioIconKind.Video, "Disponível", true),
-            SourceOption("source.text", "Texto", "Título, legenda ou tarja", StudioIconKind.Text, "Disponível", true),
-            SourceOption("source.solid", "Cor sólida", "Fundo ou shape simples", StudioIconKind.Source, "Disponível", true),
-            SourceOption("source.ndi", "NDI", "Entrada de rede planejada", StudioIconKind.Stream, "Planejado", false),
-            SourceOption("source.rtsp", "RTSP/IP", "Câmera IP planejada", StudioIconKind.Camera, "Planejado", false)
-        };
-
-        foreach (var option in options)
-        {
-            Dialog.Options.Add(option);
-        }
+        foreach (var capability in _capabilityService.GetSourceCapabilities())
+            Dialog.Options.Add(SourceOption(capability));
 
         Dialog.NotifyOptionsChanged();
         ShowDialog("Adicionar fonte", $"Escolha uma fonte para adicionar à cena {CurrentScene?.DisplayName ?? "atual"}.", "source-library", "Fechar");
     }
 
-    private StudioDialogOptionViewModel SourceOption(string typeId, string title, string description, StudioIconKind icon, string badge, bool isEnabled)
+    private StudioDialogOptionViewModel SourceOption(StudioCapabilityDescriptor capability)
     {
         return new StudioDialogOptionViewModel(
-            typeId,
-            title,
-            description,
-            icon,
-            badge,
-            isEnabled,
-            isEnabled ? new RelayCommand(() => AddSourceFromLibrary(typeId, title)) : null);
+            capability.TypeId,
+            capability.DisplayName,
+            capability.DialogDescription,
+            capability.IconKind,
+            capability.Badge,
+            capability.IsSelectable,
+            capability.IsSelectable
+                ? new RelayCommand(() => AddSourceFromLibrary(capability.TypeId, capability.DisplayName))
+                : null);
     }
 
     private void OpenAddSceneDialog()
@@ -612,15 +604,36 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void OpenConfigureOutputDialog()
     {
-        var output = _selectedOutput ?? _document.Outputs.FirstOrDefault(item => !item.IsConfigured) ?? _document.Outputs.FirstOrDefault();
-        if (output is null)
-        {
-            ShowDialog("Configurar saídas", "Nenhuma saída disponível no projeto.", "message", "Fechar");
-            return;
-        }
+        Dialog.Options.Clear();
+        foreach (var capability in _capabilityService.GetOutputCapabilities())
+            Dialog.Options.Add(OutputOption(capability));
 
-        SelectOutput(output);
-        SetStatus($"Configure {output.DisplayName} no painel de propriedades.");
+        Dialog.NotifyOptionsChanged();
+        ShowDialog("Configurar saídas", "Escolha uma saída validada para revisar ou configurar.", "output-library", "Fechar");
+    }
+
+    private StudioDialogOptionViewModel OutputOption(StudioCapabilityDescriptor capability)
+    {
+        var existing = _document.Outputs.FirstOrDefault(output => output.TypeId == capability.TypeId);
+        var description = existing is null
+            ? capability.DialogDescription
+            : $"{capability.DialogDescription}. Atual: {existing.DisplayName} -> {AssignedSceneName(existing)}";
+
+        return new StudioDialogOptionViewModel(
+            capability.TypeId,
+            capability.DisplayName,
+            description,
+            capability.IconKind,
+            capability.Badge,
+            capability.IsSelectable && existing is not null,
+            capability.IsSelectable && existing is not null
+                ? new RelayCommand(() =>
+                {
+                    SelectOutput(existing);
+                    SetStatus($"Configure {existing.DisplayName} no painel de propriedades.");
+                    CloseDialog();
+                })
+                : null);
     }
 
     private void OpenSettingsDialog()
@@ -699,6 +712,7 @@ public sealed class StudioShellViewModel : ViewModelBase
             case "settings":
             case "message":
             case "source-library":
+            case "output-library":
                 CloseDialog();
                 break;
             case "route-output":

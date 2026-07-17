@@ -68,6 +68,60 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
+    public void Add_source_dialog_is_capability_driven()
+    {
+        var shell = CreateShell();
+
+        shell.AddSourceCommand.Execute(null);
+
+        var image = shell.Dialog.Options.Single(option => option.Id == "source.image");
+        var webcam = shell.Dialog.Options.Single(option => option.Id == "source.webcam");
+        var media = shell.Dialog.Options.Single(option => option.Id == "source.media");
+        var ndi = shell.Dialog.Options.Single(option => option.Id == "source.ndi");
+
+        Assert.True(image.IsEnabled);
+        Assert.Equal("Suportado", image.Badge);
+        Assert.False(webcam.IsEnabled);
+        Assert.Equal("Indisponível", webcam.Badge);
+        Assert.Contains("capability", webcam.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.False(media.IsEnabled);
+        Assert.Contains("decode hardware", media.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.False(ndi.IsEnabled);
+        Assert.Equal("Bloqueado", ndi.Badge);
+        Assert.DoesNotContain(shell.Dialog.Options, option => option.Badge == "Disponível");
+    }
+
+    [Fact]
+    public void Configure_output_dialog_is_capability_driven()
+    {
+        var shell = CreateShell();
+
+        shell.ConfigureOutputCommand.Execute(null);
+
+        var preview = shell.Dialog.Options.Single(option => option.Id == "output.preview");
+        var mp4 = shell.Dialog.Options.Single(option => option.Id == "output.file.mp4");
+        var rtmp = shell.Dialog.Options.Single(option => option.Id == "output.rtmp");
+        var virtualCamera = shell.Dialog.Options.Single(option => option.Id == "output.virtual-camera");
+
+        Assert.True(preview.IsEnabled);
+        Assert.Equal("Suportado", preview.Badge);
+        Assert.False(mp4.IsEnabled);
+        Assert.Equal("Indisponível", mp4.Badge);
+        Assert.Contains("hardware encode", mp4.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.False(rtmp.IsEnabled);
+        Assert.Contains("prova RTMP", rtmp.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.False(virtualCamera.IsEnabled);
+        Assert.Equal("Planejado", virtualCamera.Badge);
+
+        preview.SelectCommand!.Execute(null);
+
+        Assert.False(shell.Dialog.IsOpen);
+        Assert.IsType<OutputInspectorViewModel>(shell.Inspector.SelectedPage);
+        Assert.Equal(StudioSelectionKind.Output, shell.CurrentSelection.Kind);
+        Assert.Equal("output-preview", shell.CurrentSelection.EntityId);
+    }
+
+    [Fact]
     public void LayerSelectionSynchronizesPreviewLayersAndInspector()
     {
         var shell = CreateShell();
@@ -387,6 +441,70 @@ public sealed class PreviewHitTestTests
 
         Assert.True(SceneEditorHitTest.HitTestVisibilityToggle(rect, toggle.Center));
         Assert.False(SceneEditorHitTest.HitTestVisibilityToggle(rect, new Point(rect.Left + 4, rect.Bottom - 4)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(45)]
+    [InlineData(90)]
+    public void Hit_test_selects_rotated_layer_visual_area(double rotationDegrees)
+    {
+        var layer = CreateLayer("Rotated", 100, 100, 200, 100, order: 1);
+        layer.RotationDegrees = rotationDegrees;
+        var center = new Point(layer.X + layer.Width / 2d, layer.Y + layer.Height / 2d);
+
+        var hit = SceneEditorHitTest.HitTestLayer([layer], center);
+
+        Assert.Equal(layer, hit);
+    }
+
+    [Fact]
+    public void Rotated_layer_hit_test_rejects_axis_aligned_corner_outside_visual_shape()
+    {
+        var layer = CreateLayer("Rotated", 100, 100, 200, 100, order: 1);
+        layer.RotationDegrees = 45;
+        var axisAlignedCorner = new Point(layer.X + 2, layer.Y + 2);
+
+        Assert.False(SceneEditorHitTest.LayerContainsScenePoint(layer, axisAlignedCorner));
+        Assert.Null(SceneEditorHitTest.HitTestLayer([layer], axisAlignedCorner));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(45)]
+    [InlineData(90)]
+    public void Resize_handles_follow_rotated_layer_corners(double rotationDegrees)
+    {
+        var layer = CreateLayer("Rotated", 100, 100, 200, 100, order: 1);
+        layer.RotationDegrees = rotationDegrees;
+        var transform = new SceneEditorTransform();
+
+        var corners = SceneEditorHitTest.LayerViewportCorners(layer, transform);
+        var handles = SceneEditorHitTest.HandleRects(corners, 10);
+
+        Assert.Equal(ResizeHandleKind.TopLeft, SceneEditorHitTest.HitTestResizeHandle(corners, corners[0], 10));
+        Assert.Equal(ResizeHandleKind.TopRight, SceneEditorHitTest.HitTestResizeHandle(corners, corners[1], 10));
+        Assert.Equal(ResizeHandleKind.BottomRight, SceneEditorHitTest.HitTestResizeHandle(corners, corners[2], 10));
+        Assert.Equal(ResizeHandleKind.BottomLeft, SceneEditorHitTest.HitTestResizeHandle(corners, corners[3], 10));
+        Assert.All(handles, handle => Assert.True(handle.Rect.Width > 0 && handle.Rect.Height > 0));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(45)]
+    [InlineData(90)]
+    public void Visibility_toggle_follows_rotated_layer_top_right_corner(double rotationDegrees)
+    {
+        var layer = CreateLayer("Rotated", 100, 100, 200, 100, order: 1);
+        layer.RotationDegrees = rotationDegrees;
+        var transform = new SceneEditorTransform();
+
+        var corners = SceneEditorHitTest.LayerViewportCorners(layer, transform);
+        var toggle = SceneEditorHitTest.VisibilityToggleRect(corners);
+
+        Assert.True(SceneEditorHitTest.HitTestVisibilityToggle(corners, toggle.Center));
+        Assert.Equal(corners[1].X - SceneEditorHitTest.VisibilityToggleSize - 8, toggle.X, precision: 3);
+        Assert.Equal(corners[1].Y + 8, toggle.Y, precision: 3);
     }
 
     private static LayerItemViewModel CreateLayer(string name, double x, double y, double width, double height, int order)

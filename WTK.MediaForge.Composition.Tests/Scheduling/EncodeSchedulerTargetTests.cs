@@ -119,6 +119,7 @@ public sealed class EncodeSchedulerTargetTests
 
         var second = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
         var third = CreateRenderedFrame(pool, 3, TimeSpan.FromMilliseconds(99));
+        var queuedLease = second.TextureLease!;
         var rejectedLease = third.TextureLease!;
 
         target.OnRenderedFrame(second);
@@ -128,11 +129,17 @@ public sealed class EncodeSchedulerTargetTests
             () => diagnostics.Diagnostics.Any(d => d.Code == "engine.encode_scheduler_frame_dropped_backpressure"),
             TimeSpan.FromSeconds(2));
 
-        Assert.True(target.PendingFrameCount <= 1);
+        Assert.Equal(0, target.PendingFrameCount);
+        Assert.Equal(default, queuedLease.TextureId);
         Assert.Equal(default, rejectedLease.TextureId);
         Assert.Equal(EncodedOutputRuntimeStatus.Failed, target.Status);
         Assert.Contains("does not allow frame drops", target.StatusReason, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(1, target.FramesDropped);
+
+        var afterFailure = CreateRenderedFrame(pool, 4, TimeSpan.FromMilliseconds(132));
+        var afterFailureLease = afterFailure.TextureLease!;
+        target.OnRenderedFrame(afterFailure);
+        Assert.Equal(default, afterFailureLease.TextureId);
     }
 
     [Fact]

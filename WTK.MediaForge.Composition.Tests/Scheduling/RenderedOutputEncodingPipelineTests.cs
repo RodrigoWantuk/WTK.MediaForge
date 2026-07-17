@@ -210,6 +210,60 @@ public sealed class RenderedOutputEncodingPipelineTests
                 diagnostic.Severity == MediaForgeDiagnosticSeverity.Error);
     }
 
+    [Fact]
+    public async Task Recording_policy_stops_accepting_frames_after_scheduler_failure()
+    {
+        var outputId = RenderOutputId.New();
+        var diagnostics = new ListDiagnosticsSink();
+        var exporter = new CountingRenderedOutputExporter();
+        var encoder = new FailingPreExportedInputEncoder();
+
+        await using var scheduler = new EncodeSchedulerTarget(
+            encoder,
+            new ThrowingGpuFrameExporter(),
+            new CollectingMediaTransportAuditSink(),
+            _ => { },
+            diagnostics,
+            encodeTimeout: TimeSpan.FromSeconds(5));
+
+        await using var pipeline = new RenderedOutputEncodingPipeline(diagnostics);
+        pipeline.RegisterOutput(
+            outputId,
+            new RenderedOutputEncodeFrameAdapter(exporter),
+            scheduler,
+            CreateRequirement(),
+            new CollectingMediaTransportAuditSink(),
+            queueCapacity: 2,
+            backpressurePolicy: EncodedOutputBackpressurePolicy.Recording());
+
+        var first = CreateBatch(outputId, frameNumber: 1);
+        pipeline.PublishCompletedFrames(first);
+
+        await WaitForConditionAsync(
+            () => pipeline.TryGetSnapshot(outputId, out var snapshot) &&
+                  snapshot.Status == EncodedOutputRuntimeStatus.Failed,
+            TimeSpan.FromSeconds(2));
+
+        Assert.Equal(1, exporter.ExportCalls);
+        Assert.Equal(1, encoder.EncodeAsyncCalls);
+
+        var second = CreateBatch(outputId, frameNumber: 2);
+        pipeline.PublishCompletedFrames(second);
+        await Task.Delay(100);
+
+        Assert.Equal(1, exporter.ExportCalls);
+        Assert.False(second.HasOutstandingLeases);
+        Assert.True(pipeline.TryGetSnapshot(outputId, out var failedSnapshot));
+        Assert.Equal(EncodedOutputRuntimeStatus.Failed, failedSnapshot.Status);
+        Assert.Contains("Synthetic encoder failure", failedSnapshot.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            diagnostics.Diagnostics,
+            diagnostic => diagnostic.Code == "engine.encoding_pipeline_scheduler_failed" &&
+                diagnostic.Severity == MediaForgeDiagnosticSeverity.Error);
+
+        await first.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+    }
+
     private static RenderedOutputFrameBatch CreateBatch(RenderOutputId outputId, long frameNumber) =>
         RenderedOutputFrameBatch.FromRenderedSurfaces(
             [new TrackingRenderedOutputSurfaceLease(outputId, new FrameSize(320, 180))],
@@ -307,6 +361,34 @@ public sealed class RenderedOutputEncodingPipelineTests
         public void FailExport() => _failExport.TrySetResult();
     }
 
+    private sealed class CountingRenderedOutputExporter : IRenderedOutputEncoderSurfaceExporter
+    {
+        private int _exportCalls;
+
+        public int ExportCalls => Volatile.Read(ref _exportCalls);
+
+        public bool CanExport(
+            IRenderedOutputSurfaceLease surface,
+            HardwareEncoderInputRequirement requirement) =>
+            surface.BackendSurface is ExportableSurface;
+
+        public ValueTask<HardwareEncoderInputLease> ExportAsync(
+            IRenderedOutputSurfaceLease surface,
+            HardwareEncoderInputRequirement requirement,
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _exportCalls);
+            return ValueTask.FromResult(HardwareEncoderInputLease.Create(new GpuVideoFrameDescriptor
+            {
+                Width = checked((int)surface.Size.Width),
+                Height = checked((int)surface.Size.Height),
+                Format = requirement.PixelFormat,
+                TransportKind = MediaTransportKind.GpuSurface
+            }));
+        }
+    }
+
     private sealed class TrackingRenderedOutputSurfaceLease(
         RenderOutputId outputId,
         FrameSize size)
@@ -364,6 +446,39 @@ public sealed class RenderedOutputEncodingPipelineTests
                 Duration = TimeSpan.FromMilliseconds(33),
                 IsKeyFrame = true
             });
+        }
+
+        public ValueTask<EncodedVideoPacket?> SubmitFrameAsync(
+            GpuTextureLease textureLease,
+            HardwareEncodeFrameContext context,
+            IGpuFrameExporter frameExporter,
+            IMediaTransportAuditSink auditSink) =>
+            throw new InvalidOperationException("Pipeline should pass a pre-exported encoder input lease.");
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class FailingPreExportedInputEncoder : IHardwareVideoEncoder
+    {
+        private int _encodeAsyncCalls;
+
+        public HardwareEncoderInfo Info { get; } = new()
+        {
+            Name = "Failing test encoder",
+            Codec = EncodedVideoCodec.H264,
+            Backend = "Test"
+        };
+
+        public HardwareEncoderInputRequirement InputRequirement => CreateRequirement();
+
+        public int EncodeAsyncCalls => Volatile.Read(ref _encodeAsyncCalls);
+
+        public ValueTask<EncodedVideoPacket?> EncodeAsync(
+            EncodeFrameContext context,
+            IMediaTransportAuditSink auditSink)
+        {
+            Interlocked.Increment(ref _encodeAsyncCalls);
+            throw new InvalidOperationException("Synthetic encoder failure.");
         }
 
         public ValueTask<EncodedVideoPacket?> SubmitFrameAsync(

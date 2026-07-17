@@ -137,6 +137,112 @@ public sealed class FakeStudioOutputService : IStudioOutputService
     }
 }
 
+public sealed class FakeStudioCapabilityService : IStudioCapabilityService
+{
+    private readonly List<StudioCapabilityDescriptor> _sources =
+    [
+        new(
+            "source.image",
+            "Imagem",
+            "PNG e JPEG como asset estático",
+            StudioIconKind.Image,
+            StudioCapabilityStatus.Supported,
+            "decode ocorre uma vez no carregamento e segue como textura GPU no produto"),
+        new(
+            "source.text",
+            "Texto",
+            "Título, legenda ou tarja",
+            StudioIconKind.Text,
+            StudioCapabilityStatus.Supported,
+            "fonte visual interna da composição"),
+        new(
+            "source.solid",
+            "Cor sólida",
+            "Fundo ou shape simples",
+            StudioIconKind.Source,
+            StudioCapabilityStatus.Supported,
+            "fonte visual interna da composição"),
+        new(
+            "source.desktop",
+            "Tela",
+            "Capturar monitor ou janela",
+            StudioIconKind.Desktop,
+            StudioCapabilityStatus.Experimental,
+            "desktop duplication existe, mas window capture ainda depende de provider Windows Graphics Capture"),
+        new(
+            "source.webcam",
+            "Webcam",
+            "Capturar câmera local",
+            StudioIconKind.Camera,
+            StudioCapabilityStatus.Unavailable,
+            "capability de webcam deve vir da prova Media Foundation/GPU upload da máquina atual"),
+        new(
+            "source.media",
+            "Vídeo",
+            "Arquivo MP4 com decode por hardware",
+            StudioIconKind.Video,
+            StudioCapabilityStatus.Unavailable,
+            "decode hardware e decode-to-render precisam estar validados no capability report"),
+        new(
+            "source.ndi",
+            "NDI",
+            "Entrada de rede NDI",
+            StudioIconKind.Stream,
+            StudioCapabilityStatus.Blocked,
+            "Standard SDK raw frame-buffer não é aceito como caminho de vídeo contínuo do produto"),
+        new(
+            "source.rtsp",
+            "RTSP/IP",
+            "Câmera IP ou stream RTSP",
+            StudioIconKind.Camera,
+            StudioCapabilityStatus.Planned,
+            "adapter de ingestão ainda não foi implementado")
+    ];
+
+    private readonly List<StudioCapabilityDescriptor> _outputs =
+    [
+        new(
+            "output.preview",
+            "Prévia local",
+            "Painel de prévia GPU",
+            StudioIconKind.Output,
+            StudioCapabilityStatus.Supported,
+            "PreviewPanelSink é o caminho de preview GPU validado"),
+        new(
+            "output.file.mp4",
+            "Gravação MP4",
+            "Arquivo H.264 em MP4",
+            StudioIconKind.Record,
+            StudioCapabilityStatus.Unavailable,
+            "requer hardware encode, render-to-encode e prova MP4 da máquina atual"),
+        new(
+            "output.rtmp",
+            "RTMP",
+            "Transmissão H.264 para servidor RTMP",
+            StudioIconKind.Stream,
+            StudioCapabilityStatus.Unavailable,
+            "requer hardware encode, render-to-encode e prova RTMP da máquina atual"),
+        new(
+            "output.ndi",
+            "NDI",
+            "Saída NDI",
+            StudioIconKind.Stream,
+            StudioCapabilityStatus.Blocked,
+            "aguarda prova de caminho GPU-safe para envio NDI"),
+        new(
+            "output.virtual-camera",
+            "Câmera virtual",
+            "Dispositivo de câmera virtual",
+            StudioIconKind.Camera,
+            StudioCapabilityStatus.Planned,
+            "adapter de câmera virtual ainda não foi implementado")
+    ];
+
+    public IReadOnlyList<StudioCapabilityDescriptor> GetSourceCapabilities() => _sources;
+
+    public IReadOnlyList<StudioCapabilityDescriptor> GetOutputCapabilities() => _outputs;
+}
+
 public sealed class SystemStudioClock : IStudioClock
 {
     public DateTimeOffset Now => DateTimeOffset.Now;
@@ -285,6 +391,7 @@ public static class StudioServiceFactory
             new FakeStudioProjectService(),
             new FakeStudioEngineService(),
             new FakeStudioOutputService(clock),
+            new FakeStudioCapabilityService(),
             new StudioDiagnosticsService(diagnostics),
             new StudioSelectionService(),
             new StudioInspectorPageFactory(),

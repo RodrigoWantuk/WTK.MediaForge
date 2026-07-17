@@ -272,8 +272,11 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
             if (Volatile.Read(ref _disposed) != 0)
                 return;
 
-            if (_status == RenderedOutputEncodingRuntimeStatus.Failed)
+            if (_status == RenderedOutputEncodingRuntimeStatus.Failed ||
+                TryFailFromSchedulerStatus())
+            {
                 return;
+            }
 
             var lease = frameBatch.CreateLease(
                 frame,
@@ -376,6 +379,12 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
 
                         _schedulerTarget.EnqueueRenderedFrame(scheduledFrame);
                         scheduledFrame = null;
+                        if (TryFailFromSchedulerStatus())
+                        {
+                            await DisposeQueuedWorkItemsAsync().ConfigureAwait(false);
+                            break;
+                        }
+
                         if (_status != RenderedOutputEncodingRuntimeStatus.Failed)
                         {
                             _status = RenderedOutputEncodingRuntimeStatus.Running;
@@ -444,18 +453,39 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
 
         private bool IsFatalFailure => Volatile.Read(ref _fatalFailure) != 0;
 
+        private bool TryFailFromSchedulerStatus()
+        {
+            if (_schedulerTarget.Status != EncodedOutputRuntimeStatus.Failed)
+                return false;
+
+            var reason = _schedulerTarget.StatusReason ?? "Hardware encode scheduler failed.";
+            if (SetFatalFailure(reason))
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "engine.encoding_pipeline_scheduler_failed",
+                    $"Rendered output {OutputId} stopped accepting frames because the hardware encode scheduler failed.",
+                    nameof(RenderedOutputEncodingPipeline));
+            }
+
+            return true;
+        }
+
         private void SetFailed(string reason)
         {
             _status = RenderedOutputEncodingRuntimeStatus.Failed;
             Volatile.Write(ref _statusReason, reason);
         }
 
-        private void SetFatalFailure(string reason)
+        private bool SetFatalFailure(string reason)
         {
-            if (Interlocked.Exchange(ref _fatalFailure, 1) == 0)
+            var first = Interlocked.Exchange(ref _fatalFailure, 1) == 0;
+            if (first)
                 _queue.Writer.TryComplete();
 
             SetFailed(reason);
+            return first;
         }
 
         private static EncodedOutputRuntimeStatus MapStatus(RenderedOutputEncodingRuntimeStatus status) =>

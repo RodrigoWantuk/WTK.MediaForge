@@ -55,6 +55,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
     private readonly EncodeSchedulerBackpressurePolicy _backpressurePolicy;
     private int _queueSignalSet;
     private int _disposed;
+    private int _fatalFailure;
     private long _framesSubmitted;
     private long _framesDropped;
     private long _packetsProduced;
@@ -230,6 +231,12 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
     {
         while (!_stop.IsCancellationRequested)
         {
+            if (_status == EncodedOutputRuntimeStatus.Failed)
+            {
+                ClearPendingFrames();
+                break;
+            }
+
             if (!TryDequeue(out var scheduledFrame))
             {
                 try
@@ -299,6 +306,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     ex,
                     frameNumber: frameContext.FrameId);
                 SetFailed("Hardware encode timed out.");
+                break;
             }
             catch (InvalidOperationException ex)
             {
@@ -311,6 +319,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     ex,
                     frameNumber: frameContext.FrameId);
                 SetFailed(ex.Message);
+                break;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -323,6 +332,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     ex,
                     frameNumber: frameContext.FrameId);
                 SetFailed(ex.Message);
+                break;
             }
         }
     }
@@ -405,5 +415,11 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
     {
         _status = EncodedOutputRuntimeStatus.Failed;
         Volatile.Write(ref _statusReason, reason);
+
+        if (Interlocked.Exchange(ref _fatalFailure, 1) == 0)
+        {
+            ClearPendingFrames();
+            SignalQueue();
+        }
     }
 }

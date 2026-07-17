@@ -119,6 +119,49 @@ public interface IStudioOutputService
     Task StopAllAsync(CancellationToken cancellationToken);
 }
 
+public enum StudioCapabilityStatus
+{
+    Supported,
+    Experimental,
+    Unavailable,
+    Planned,
+    Blocked
+}
+
+public sealed record StudioCapabilityDescriptor(
+    string TypeId,
+    string DisplayName,
+    string Description,
+    StudioIconKind IconKind,
+    StudioCapabilityStatus Status,
+    string Reason = "")
+{
+    public bool IsSelectable =>
+        Status is StudioCapabilityStatus.Supported or StudioCapabilityStatus.Experimental;
+
+    public string Badge => Status switch
+    {
+        StudioCapabilityStatus.Supported => "Suportado",
+        StudioCapabilityStatus.Experimental => "Experimental",
+        StudioCapabilityStatus.Unavailable => "Indisponível",
+        StudioCapabilityStatus.Planned => "Planejado",
+        StudioCapabilityStatus.Blocked => "Bloqueado",
+        _ => string.Empty
+    };
+
+    public string DialogDescription =>
+        string.IsNullOrWhiteSpace(Reason)
+            ? Description
+            : $"{Description}. {Badge}: {Reason}";
+}
+
+public interface IStudioCapabilityService
+{
+    IReadOnlyList<StudioCapabilityDescriptor> GetSourceCapabilities();
+
+    IReadOnlyList<StudioCapabilityDescriptor> GetOutputCapabilities();
+}
+
 public interface IStudioDiagnosticsService
 {
     ObservableCollection<DiagnosticLogItemViewModel> Items { get; }
@@ -156,6 +199,7 @@ public sealed class StudioServiceBundle
         IStudioProjectService projectService,
         IStudioEngineService engineService,
         IStudioOutputService outputService,
+        IStudioCapabilityService capabilityService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
         IInspectorPageFactory inspectorPageFactory,
@@ -164,6 +208,7 @@ public sealed class StudioServiceBundle
         ProjectService = projectService;
         EngineService = engineService;
         OutputService = outputService;
+        CapabilityService = capabilityService;
         DiagnosticsService = diagnosticsService;
         SelectionService = selectionService;
         InspectorPageFactory = inspectorPageFactory;
@@ -175,6 +220,8 @@ public sealed class StudioServiceBundle
     public IStudioEngineService EngineService { get; }
 
     public IStudioOutputService OutputService { get; }
+
+    public IStudioCapabilityService CapabilityService { get; }
 
     public IStudioDiagnosticsService DiagnosticsService { get; }
 
