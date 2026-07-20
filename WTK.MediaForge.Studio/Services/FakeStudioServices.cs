@@ -78,9 +78,11 @@ public sealed class FakeStudioSceneEditRuntimeService : IStudioSceneEditRuntimeS
     public bool IsEngineBacked => false;
 
     public ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
+        StudioDocument document,
         StudioScene scene,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(scene);
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(new StudioSceneEditRuntimeSession(Guid.NewGuid().ToString("N"), scene.Id, false));
@@ -93,6 +95,21 @@ public sealed class FakeStudioSceneEditRuntimeService : IStudioSceneEditRuntimeS
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(layer);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask TrackSceneDraftAsync(
+        StudioSceneEditRuntimeSession session,
+        StudioDocument document,
+        StudioScene originalScene,
+        StudioScene draftScene,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(originalScene);
+        ArgumentNullException.ThrowIfNull(draftScene);
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.CompletedTask;
     }

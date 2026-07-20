@@ -304,9 +304,37 @@ public sealed class StudioShellViewModelTests
 
         Assert.Equal(["scene-main"], runtime.BegunSceneIds);
         Assert.Equal(1, runtime.ApplyCallCount);
-        Assert.True(runtime.AppliedAfterTracking);
+        Assert.Equal(1, runtime.TrackedSceneDraftCount);
         Assert.Contains(runtime.TrackedLayers, item => item.Id == draftLayer.Id && item.X == editedX);
         Assert.False(shell.Preview.HasPendingChanges);
+    }
+
+    [Fact]
+    public async Task SceneEditSession_PushesNewDraftLayersToRuntimeBeforeApply()
+    {
+        var runtime = new RecordingSceneEditRuntimeService();
+        var shell = CreateShell(runtime);
+
+        shell.AddSourceCommand.Execute(null);
+        shell.Dialog.Options.Single(option => option.Id == "source.image").SelectCommand!.Execute(null);
+        var newLayer = shell.SelectedLayer!;
+
+        await shell.ApplySceneDraftCommand.ExecuteAsync(null);
+
+        Assert.Contains(runtime.TrackedLayers, item => item.Id == newLayer.Id);
+        Assert.Contains(runtime.TrackedSceneLayerIds.Single(), id => id == newLayer.Id);
+    }
+
+    [Fact]
+    public void Layer_order_visibility_and_effect_commands_mark_scene_draft_changed()
+    {
+        var shell = CreateShell();
+        var layer = shell.BottomWorkbench.Layers.First(item => !item.IsLocked);
+
+        shell.ToggleLayerVisibilityCommand.Execute(layer);
+
+        Assert.True(shell.Preview.HasPendingChanges);
+        Assert.True(shell.ApplySceneDraftCommand.CanExecute(null));
     }
 
     [Fact]
@@ -366,7 +394,6 @@ public sealed class StudioShellViewModelTests
     private sealed class RecordingSceneEditRuntimeService : IStudioSceneEditRuntimeService
     {
         private readonly List<TrackedLayerState> _trackedLayers = [];
-        private int _trackCallCount;
 
         public bool IsEngineBacked => true;
 
@@ -378,9 +405,12 @@ public sealed class StudioShellViewModelTests
 
         public int DiscardCallCount { get; private set; }
 
-        public bool AppliedAfterTracking { get; private set; }
+        public int TrackedSceneDraftCount { get; private set; }
+
+        public List<string[]> TrackedSceneLayerIds { get; } = [];
 
         public ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
+            StudioDocument document,
             StudioScene scene,
             CancellationToken cancellationToken = default)
         {
@@ -393,8 +423,24 @@ public sealed class StudioShellViewModelTests
             StudioLayer layer,
             CancellationToken cancellationToken = default)
         {
-            _trackCallCount++;
             _trackedLayers.Add(new TrackedLayerState(layer.Id, layer.Transform.X, layer.Transform.Y, layer.Transform.Width, layer.Transform.Height));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask TrackSceneDraftAsync(
+            StudioSceneEditRuntimeSession session,
+            StudioDocument document,
+            StudioScene originalScene,
+            StudioScene draftScene,
+            CancellationToken cancellationToken = default)
+        {
+            TrackedSceneDraftCount++;
+            TrackedSceneLayerIds.Add(draftScene.Layers.Select(layer => layer.Id).ToArray());
+            foreach (var layer in draftScene.Layers)
+            {
+                _trackedLayers.Add(new TrackedLayerState(layer.Id, layer.Transform.X, layer.Transform.Y, layer.Transform.Width, layer.Transform.Height));
+            }
+
             return ValueTask.CompletedTask;
         }
 
@@ -404,7 +450,6 @@ public sealed class StudioShellViewModelTests
             CancellationToken cancellationToken = default)
         {
             ApplyCallCount++;
-            AppliedAfterTracking = _trackCallCount > 0;
             return ValueTask.FromResult(new StudioSceneEditApplyResult(true, []));
         }
 

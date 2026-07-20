@@ -1,4 +1,7 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
+using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
@@ -6,18 +9,31 @@ using WTK.MediaForge.Studio.Services;
 
 namespace WTK.MediaForge.Studio.Engine;
 
-public sealed class StudioSceneEditRuntimeService(StudioSceneEditBridge bridge) : IStudioSceneEditRuntimeService
+public sealed class StudioSceneEditRuntimeService(
+    StudioSceneEditBridge bridge,
+    StudioProjectEngineMapper? projectMapper = null) : IStudioSceneEditRuntimeService
 {
     private readonly StudioSceneEditBridge _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
+    private readonly StudioProjectEngineMapper _projectMapper = projectMapper ?? new StudioProjectEngineMapper();
     private readonly ConcurrentDictionary<string, StudioSceneEditBridgeSession> _sessions = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _projectSyncGate = new(1, 1);
+    private string? _syncedProjectFingerprint;
 
     public bool IsEngineBacked => true;
 
     public async ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
+        StudioDocument document,
         StudioScene scene,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(scene);
+        if (!document.Scenes.Any(candidate => string.Equals(candidate.Id, scene.Id, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"Scene '{scene.Id}' does not belong to the Studio document.");
+
+        await SynchronizeProjectAsync(document, cancellationToken)
+            .ConfigureAwait(false);
+
         var engineSession = await _bridge
             .BeginAsync(scene, SceneEditMode.Apply, cancellationToken)
             .ConfigureAwait(false);
@@ -37,6 +53,73 @@ public sealed class StudioSceneEditRuntimeService(StudioSceneEditBridge bridge) 
         var engineSession = Resolve(session);
 
         return _bridge.ApplyLayerVisualStateAsync(engineSession, layer, cancellationToken);
+    }
+
+    public async ValueTask TrackSceneDraftAsync(
+        StudioSceneEditRuntimeSession session,
+        StudioDocument document,
+        StudioScene originalScene,
+        StudioScene draftScene,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(originalScene);
+        ArgumentNullException.ThrowIfNull(draftScene);
+        if (!string.Equals(session.StudioSceneId, originalScene.Id, StringComparison.Ordinal) ||
+            !string.Equals(session.StudioSceneId, draftScene.Id, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Runtime scene edit session and draft scenes are bound to different Studio scenes.");
+        }
+
+        var engineSession = Resolve(session);
+        var originalById = originalScene.Layers.ToDictionary(layer => layer.Id, StringComparer.Ordinal);
+        var draftById = draftScene.Layers.ToDictionary(layer => layer.Id, StringComparer.Ordinal);
+
+        foreach (var removedLayer in originalScene.Layers.Where(layer => !draftById.ContainsKey(layer.Id)))
+        {
+            await _bridge
+                .ApplyPatchAsync(
+                    engineSession,
+                    new SceneMutationPatch.RemoveLayer(StudioEngineIdMap.DrawObjectId(removedLayer.Id)),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var orderedDraftLayers = draftScene.Layers
+            .OrderBy(static layer => layer.Order)
+            .ToArray();
+
+        for (var index = 0; index < orderedDraftLayers.Length; index++)
+        {
+            var layer = orderedDraftLayers[index];
+            if (originalById.ContainsKey(layer.Id))
+                continue;
+
+            var drawObject = _projectMapper.CreateLayer(layer, document.Sources);
+            await _bridge
+                .ApplyPatchAsync(
+                    engineSession,
+                    new SceneMutationPatch.AddLayer(drawObject, index),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        foreach (var layer in orderedDraftLayers)
+        {
+            await TrackLayerVisualStateAsync(session, layer, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        for (var index = 0; index < orderedDraftLayers.Length; index++)
+        {
+            await _bridge
+                .ApplyPatchAsync(
+                    engineSession,
+                    new SceneMutationPatch.SetLayerOrder(StudioEngineIdMap.DrawObjectId(orderedDraftLayers[index].Id), index),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     public async ValueTask<StudioSceneEditApplyResult> ApplySceneDraftAsync(
@@ -87,5 +170,41 @@ public sealed class StudioSceneEditRuntimeService(StudioSceneEditBridge bridge) 
             throw new InvalidOperationException("Runtime scene edit session is bound to a different Studio scene.");
 
         return engineSession;
+    }
+
+    private async ValueTask SynchronizeProjectAsync(
+        StudioDocument document,
+        CancellationToken cancellationToken)
+    {
+        var project = _projectMapper.CreateProject(document);
+        var fingerprint = ComputeProjectFingerprint(project);
+        if (string.Equals(_syncedProjectFingerprint, fingerprint, StringComparison.Ordinal))
+            return;
+
+        await _projectSyncGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            if (string.Equals(_syncedProjectFingerprint, fingerprint, StringComparison.Ordinal))
+                return;
+
+            await _bridge
+                .SynchronizeProjectAsync(project, cancellationToken)
+                .ConfigureAwait(false);
+
+            _sessions.Clear();
+            _syncedProjectFingerprint = fingerprint;
+        }
+        finally
+        {
+            _projectSyncGate.Release();
+        }
+    }
+
+    private static string ComputeProjectFingerprint(MediaForgeProject project)
+    {
+        var json = MediaForgeProjectSerializer.Serialize(project);
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        return Convert.ToHexString(bytes);
     }
 }

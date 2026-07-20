@@ -1,8 +1,10 @@
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Studio.DesignData;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Engine;
 using WTK.MediaForge.Studio.Models;
+using WTK.MediaForge.Studio.Services;
 using Xunit;
 
 namespace WTK.MediaForge.Studio.Tests;
@@ -14,13 +16,15 @@ public sealed class StudioSceneEditRuntimeServiceTests
     {
         var engine = new RecordingSceneEditEngine();
         var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
-        var scene = new StudioScene { Id = "scene-main", DisplayName = "Cena principal" };
-        var layer = CreateLayer();
+        var document = StudioMockDocumentFactory.Create();
+        var scene = document.Scenes.Single(item => item.Id == "scene-main");
+        var layer = scene.Layers.First();
 
-        var session = await service.BeginApplySessionAsync(scene);
+        var session = await service.BeginApplySessionAsync(document, scene);
         await service.TrackLayerVisualStateAsync(session, layer);
         await service.ApplySceneDraftAsync(session, transition: null);
 
+        Assert.Equal(1, engine.SyncCallCount);
         Assert.Equal(4, engine.Patches.Count);
         Assert.Equal(1, engine.CommitCallCount);
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.TrackLayerVisualStateAsync(session, layer));
@@ -31,38 +35,76 @@ public sealed class StudioSceneEditRuntimeServiceTests
     {
         var engine = new RecordingSceneEditEngine();
         var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
-        var scene = new StudioScene { Id = "scene-main", DisplayName = "Cena principal" };
+        var document = StudioMockDocumentFactory.Create();
+        var scene = document.Scenes.Single(item => item.Id == "scene-main");
 
-        var session = await service.BeginApplySessionAsync(scene);
+        var session = await service.BeginApplySessionAsync(document, scene);
         await service.DiscardSceneDraftAsync(session);
 
+        Assert.Equal(1, engine.SyncCallCount);
         Assert.Equal(1, engine.DiscardCallCount);
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.ApplySceneDraftAsync(session, transition: null));
     }
 
-    private static StudioLayer CreateLayer()
+    [Fact]
+    public async Task Begin_synchronizes_project_once_while_document_is_unchanged()
     {
-        var layer = new StudioLayer
+        var engine = new RecordingSceneEditEngine();
+        var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
+        var document = StudioMockDocumentFactory.Create();
+        var scene = document.Scenes.Single(item => item.Id == "scene-main");
+
+        _ = await service.BeginApplySessionAsync(document, scene);
+        _ = await service.BeginApplySessionAsync(document, scene);
+
+        Assert.Equal(1, engine.SyncCallCount);
+        Assert.Equal(2, engine.BeginCallCount);
+    }
+
+    [Fact]
+    public async Task Begin_resynchronizes_project_when_document_changes()
+    {
+        var engine = new RecordingSceneEditEngine();
+        var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
+        var document = StudioMockDocumentFactory.Create();
+        var scene = document.Scenes.Single(item => item.Id == "scene-main");
+
+        _ = await service.BeginApplySessionAsync(document, scene);
+        scene.DisplayName = "Cena principal editada";
+        _ = await service.BeginApplySessionAsync(document, scene);
+
+        Assert.Equal(2, engine.SyncCallCount);
+    }
+
+    [Fact]
+    public async Task TrackSceneDraft_adds_new_layers_and_orders_final_draft()
+    {
+        var engine = new RecordingSceneEditEngine();
+        var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
+        var document = StudioMockDocumentFactory.Create();
+        var original = document.Scenes.Single(item => item.Id == "scene-main");
+        var draft = SceneEditSessionService.CloneScene(original);
+        var newLayer = new StudioLayer
         {
-            Id = "layer-camera",
-            Name = "Camera",
-            SourceName = "Camera",
-            Type = "Source",
+            Id = "layer-new-logo",
+            Name = "New Logo",
+            SourceId = "source-logo",
+            SourceName = "Logo.png",
+            Type = "Image",
+            Order = original.Layers.Max(layer => layer.Order) + 1,
             IsVisible = true
         };
-        layer.Transform.X = 10;
-        layer.Transform.Y = 20;
-        layer.Transform.Width = 320;
-        layer.Transform.Height = 180;
-        layer.Transform.Opacity = 75;
-        layer.Effects.Add(new StudioEffect
-        {
-            Id = "layer-camera-effect-chroma",
-            Name = "Chroma Key",
-            IsEnabled = true
-        });
+        newLayer.Transform.X = 80;
+        newLayer.Transform.Y = 90;
+        newLayer.Transform.Width = 220;
+        newLayer.Transform.Height = 120;
+        draft.Layers.Add(newLayer);
 
-        return layer;
+        var session = await service.BeginApplySessionAsync(document, original);
+        await service.TrackSceneDraftAsync(session, document, original, draft);
+
+        Assert.Contains(engine.Patches, patch => patch is SceneMutationPatch.AddLayer add && add.Layer.Id == StudioEngineIdMap.DrawObjectId(newLayer.Id));
+        Assert.Contains(engine.Patches, patch => patch is SceneMutationPatch.SetLayerOrder order && order.LayerId == StudioEngineIdMap.DrawObjectId(newLayer.Id));
     }
 
     private sealed class RecordingSceneEditEngine : IStudioSceneEditEngine
@@ -71,15 +113,28 @@ public sealed class StudioSceneEditRuntimeServiceTests
 
         public List<SceneMutationPatch> Patches { get; } = [];
 
+        public int SyncCallCount { get; private set; }
+
+        public int BeginCallCount { get; private set; }
+
         public int CommitCallCount { get; private set; }
 
         public int DiscardCallCount { get; private set; }
+
+        public Task SynchronizeProjectAsync(
+            WTK.MediaForge.Composition.Project.MediaForgeProject project,
+            CancellationToken cancellationToken = default)
+        {
+            SyncCallCount++;
+            return Task.CompletedTask;
+        }
 
         public ValueTask<SceneEditSessionDescriptor> BeginSceneEditSessionAsync(
             CanvasId canvasId,
             SceneEditMode mode,
             CancellationToken cancellationToken = default)
         {
+            BeginCallCount++;
             _canvasId = canvasId;
             return ValueTask.FromResult(new SceneEditSessionDescriptor
             {

@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Scenes.Editing;
+using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Engine;
@@ -126,6 +127,11 @@ public sealed class StudioSceneEditBridgeTests
         public List<SceneMutationPatch> Patches { get; } = [];
 
         public SceneCommitRequest? CommitRequest { get; private set; }
+
+        public Task SynchronizeProjectAsync(
+            MediaForgeProject project,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
 
         public ValueTask<SceneEditSessionDescriptor> BeginSceneEditSessionAsync(
             CanvasId canvasId,

@@ -48,6 +48,19 @@ public sealed class StudioProjectEngineMapper
         return project;
     }
 
+    public MediaForgeDrawObject CreateLayer(StudioLayer layer, IEnumerable<StudioSource> sources)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        ArgumentNullException.ThrowIfNull(sources);
+
+        var sourceIds = sources
+            .Where(source => CreateSourceSettings(source) is not null)
+            .Select(source => source.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return CreateDrawObject(layer, sourceIds);
+    }
+
     private static MediaForgeCanvas CreateCanvas(
         StudioScene scene,
         IReadOnlySet<string> sourceIds)

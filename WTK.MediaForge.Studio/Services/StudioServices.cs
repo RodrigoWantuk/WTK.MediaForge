@@ -102,12 +102,20 @@ public interface IStudioSceneEditRuntimeService
     bool IsEngineBacked { get; }
 
     ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
+        StudioDocument document,
         StudioScene scene,
         CancellationToken cancellationToken = default);
 
     ValueTask TrackLayerVisualStateAsync(
         StudioSceneEditRuntimeSession session,
         StudioLayer layer,
+        CancellationToken cancellationToken = default);
+
+    ValueTask TrackSceneDraftAsync(
+        StudioSceneEditRuntimeSession session,
+        StudioDocument document,
+        StudioScene originalScene,
+        StudioScene draftScene,
         CancellationToken cancellationToken = default);
 
     ValueTask<StudioSceneEditApplyResult> ApplySceneDraftAsync(

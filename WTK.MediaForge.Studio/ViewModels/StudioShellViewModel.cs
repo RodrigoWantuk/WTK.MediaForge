@@ -521,6 +521,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         layer.IsVisible = !layer.IsVisible;
+        MarkSceneDraftChanged();
         SetStatus($"{layer.Name}: {layer.VisibilityGlyph}.");
     }
 
@@ -532,6 +533,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         layer.IsLocked = !layer.IsLocked;
+        MarkSceneDraftChanged();
         SetStatus($"{layer.Name}: {layer.LockGlyph}.");
     }
 
@@ -562,6 +564,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         BottomWorkbench.Layers.Move(index, targetIndex);
         Preview.Layers.Move(index, targetIndex);
         RefreshLayerOrder();
+        MarkSceneDraftChanged();
         SetStatus($"Ordem de {layer.Name} atualizada.");
     }
 
@@ -573,6 +576,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         effect.IsEnabled = !effect.IsEnabled;
+        MarkSceneDraftChanged();
         SetStatus($"{effect.Name}: {effect.EnabledText}.");
     }
 
@@ -878,7 +882,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
 
         _runtimeEditSession = await _sceneEditRuntimeService
-            .BeginApplySessionAsync(_editSession.Original, cancellationToken)
+            .BeginApplySessionAsync(_document, _editSession.Original, cancellationToken)
             .ConfigureAwait(true);
         return _runtimeEditSession;
     }
@@ -892,12 +896,9 @@ public sealed class StudioShellViewModel : ViewModelBase
             throw new InvalidOperationException("No scene draft is active.");
         }
 
-        foreach (var layer in _editSession.Draft.Layers.OrderBy(layer => layer.Order))
-        {
-            await _sceneEditRuntimeService
-                .TrackLayerVisualStateAsync(runtimeSession, layer, cancellationToken)
-                .ConfigureAwait(true);
-        }
+        await _sceneEditRuntimeService
+            .TrackSceneDraftAsync(runtimeSession, _document, _editSession.Original, _editSession.Draft, cancellationToken)
+            .ConfigureAwait(true);
     }
 
     private void OnPreviewSceneEdited(object? sender, EventArgs e)

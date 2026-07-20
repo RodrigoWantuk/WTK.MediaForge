@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Engine;
+using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Studio.DocumentModel;
@@ -8,6 +9,10 @@ namespace WTK.MediaForge.Studio.Engine;
 
 public interface IStudioSceneEditEngine
 {
+    Task SynchronizeProjectAsync(
+        MediaForgeProject project,
+        CancellationToken cancellationToken = default);
+
     ValueTask<SceneEditSessionDescriptor> BeginSceneEditSessionAsync(
         CanvasId canvasId,
         SceneEditMode mode,
@@ -32,6 +37,20 @@ public sealed class MediaForgeStudioSceneEditEngine(MediaForgeEngine engine) : I
 {
     private readonly MediaForgeEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
+    public Task SynchronizeProjectAsync(
+        MediaForgeProject project,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        if (!_engine.HasProject || _engine.State is MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded)
+            return _engine.LoadProjectAsync(project, cancellationToken);
+
+        return _engine.ApplyProjectUpdateAsync(
+            editor => ReplaceProject(editor.Project, project),
+            cancellationToken);
+    }
+
     public ValueTask<SceneEditSessionDescriptor> BeginSceneEditSessionAsync(
         CanvasId canvasId,
         SceneEditMode mode,
@@ -54,6 +73,24 @@ public sealed class MediaForgeStudioSceneEditEngine(MediaForgeEngine engine) : I
         SceneEditSessionId sessionId,
         CancellationToken cancellationToken = default) =>
         _engine.DiscardSceneDraftAsync(sessionId, cancellationToken);
+
+    private static void ReplaceProject(MediaForgeProject target, MediaForgeProject source)
+    {
+        var clone = MediaForgeProjectSerializer.Deserialize(MediaForgeProjectSerializer.Serialize(source));
+
+        target.SchemaVersion = clone.SchemaVersion;
+        target.CreatedWithVersion = clone.CreatedWithVersion;
+        target.SavedWithVersion = clone.SavedWithVersion;
+
+        target.SourceDefinitions.Clear();
+        target.SourceDefinitions.AddRange(clone.SourceDefinitions);
+
+        target.Canvases.Clear();
+        target.Canvases.AddRange(clone.Canvases);
+
+        target.Outputs.Clear();
+        target.Outputs.AddRange(clone.Outputs);
+    }
 }
 
 public sealed record StudioSceneEditBridgeSession(
@@ -70,6 +107,14 @@ public sealed record StudioSceneEditBridgeSession(
 public sealed class StudioSceneEditBridge(IStudioSceneEditEngine engine)
 {
     private readonly IStudioSceneEditEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+
+    public ValueTask SynchronizeProjectAsync(
+        MediaForgeProject project,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        return new ValueTask(_engine.SynchronizeProjectAsync(project, cancellationToken));
+    }
 
     public async ValueTask<StudioSceneEditBridgeSession> BeginAsync(
         StudioScene scene,
