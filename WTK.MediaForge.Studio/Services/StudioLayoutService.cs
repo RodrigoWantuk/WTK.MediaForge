@@ -3,7 +3,14 @@ using WTK.MediaForge.Studio.Models;
 
 namespace WTK.MediaForge.Studio.Services;
 
-public sealed class StudioLayoutService
+public interface IStudioLayoutService
+{
+    StudioLayoutDocument Load();
+
+    void Save(StudioLayoutDocument document);
+}
+
+public sealed class StudioLayoutService : IStudioLayoutService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -12,8 +19,14 @@ public sealed class StudioLayoutService
 
     public string SettingsPath { get; }
 
-    public StudioLayoutService()
+    public StudioLayoutService(string? settingsPath = null)
     {
+        if (!string.IsNullOrWhiteSpace(settingsPath))
+        {
+            SettingsPath = settingsPath;
+            return;
+        }
+
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         if (string.IsNullOrWhiteSpace(appData))
         {
@@ -33,7 +46,7 @@ public sealed class StudioLayoutService
         try
         {
             var json = File.ReadAllText(SettingsPath);
-            return JsonSerializer.Deserialize<StudioLayoutDocument>(json, SerializerOptions) ?? new StudioLayoutDocument();
+            return Validate(JsonSerializer.Deserialize<StudioLayoutDocument>(json, SerializerOptions));
         }
         catch (JsonException)
         {
@@ -47,7 +60,47 @@ public sealed class StudioLayoutService
 
     public void Save(StudioLayoutDocument document)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+        ArgumentNullException.ThrowIfNull(document);
+
+        Validate(document);
+        var directory = Path.GetDirectoryName(SettingsPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(document, SerializerOptions));
+    }
+
+    private static StudioLayoutDocument Validate(StudioLayoutDocument? document)
+    {
+        document ??= new StudioLayoutDocument();
+        document.Layout ??= new StudioLayoutState();
+        document.Layout.LeftProportion = ClampProportion(document.Layout.LeftProportion, 0.20);
+        document.Layout.RightProportion = ClampProportion(document.Layout.RightProportion, 0.25);
+        document.Layout.ProductionProportion = ClampProportion(document.Layout.ProductionProportion, 0.36);
+        document.Layout.PropertiesProportion = ClampProportion(document.Layout.PropertiesProportion, 0.64);
+        document.Layout.BottomProportion = ClampProportion(document.Layout.BottomProportion, 0.28);
+        document.Layout.LeftWidth = ClampPixels(document.Layout.LeftWidth, 280);
+        document.Layout.RightWidth = ClampPixels(document.Layout.RightWidth, 360);
+        document.Layout.BottomHeight = ClampPixels(document.Layout.BottomHeight, 240);
+        document.Layout.Panels ??= StudioPanelLayoutState.CreateDefaults();
+
+        foreach (var pair in StudioPanelLayoutState.CreateDefaults())
+        {
+            document.Layout.Panels.TryAdd(pair.Key, pair.Value);
+        }
+
+        return document;
+    }
+
+    private static double ClampProportion(double value, double fallback)
+    {
+        return double.IsFinite(value) && value is >= 0.05 and <= 0.90 ? value : fallback;
+    }
+
+    private static double ClampPixels(double value, double fallback)
+    {
+        return double.IsFinite(value) && value is >= 96 and <= 4096 ? value : fallback;
     }
 }

@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Localization;
 using WTK.MediaForge.Studio.Models;
+using WTK.MediaForge.Studio.Services;
 using WTK.MediaForge.Studio.Views.Preview;
 
 namespace WTK.MediaForge.Studio.ViewModels;
@@ -410,6 +411,8 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
 
     public ICommand? DiscardSceneDraftCommand { get; set; }
 
+    public Func<StudioShortcutGesture, bool>? ShortcutHandler { get; set; }
+
     public bool IsGridVisible
     {
         get => _isGridVisible;
@@ -571,6 +574,11 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
     public LayerItemViewModel? HitTest(Point scenePoint)
     {
         return SceneEditorHitTest.HitTestLayer(Layers, scenePoint);
+    }
+
+    public bool ExecuteShortcut(StudioShortcutGesture gesture)
+    {
+        return ShortcutHandler?.Invoke(gesture) == true;
     }
 
     public void MoveLayer(LayerItemViewModel layer, double deltaX, double deltaY, bool constrainAxis)

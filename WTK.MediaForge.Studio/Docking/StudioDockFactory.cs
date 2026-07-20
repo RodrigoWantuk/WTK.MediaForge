@@ -24,25 +24,25 @@ public sealed class StudioDockFactory : Factory
         var navigationDock = CreateToolDock(
             "dock.navigation",
             Alignment.Left,
-            0.20,
+            _shell.NavigationLayoutProportion,
             CreateTool("tool.navigation", "Navegação", _shell.ProjectExplorer, minWidth: 240));
 
         var productionDock = CreateToolDock(
             "dock.production",
             Alignment.Right,
-            0.36,
+            _shell.ProductionLayoutProportion,
             CreateTool("tool.production", "Produção", _shell.Production, minWidth: 320, minHeight: 160));
 
         var propertiesDock = CreateToolDock(
             "dock.properties",
             Alignment.Right,
-            0.64,
+            _shell.PropertiesLayoutProportion,
             CreateTool("tool.properties", "Propriedades", _shell.Inspector, minWidth: 340));
 
         var bottomDock = CreateToolDock(
             "dock.workbench",
             Alignment.Bottom,
-            0.28,
+            _shell.WorkbenchLayoutProportion,
             CreateTool("tool.workbench", "Camadas e saídas", _shell.BottomWorkbench, minHeight: 180));
 
         var editor = new Document
@@ -70,7 +70,7 @@ public sealed class StudioDockFactory : Factory
         {
             Id = "dock.right",
             Orientation = Orientation.Vertical,
-            Proportion = 0.25,
+            Proportion = _shell.RightLayoutProportion,
             VisibleDockables = CreateList<IDockable>(
                 productionDock,
                 new ProportionalDockSplitter(),

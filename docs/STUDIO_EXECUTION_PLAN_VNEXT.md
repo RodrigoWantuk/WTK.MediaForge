@@ -64,5 +64,15 @@ The current slice has wired shell edit commands to the async bridge through
 Studio services, preserving mock/design mode and never blocking the UI thread.
 Dialog construction now lives behind `IStudioDialogService`, so the shell
 applies typed dialog requests instead of owning source/output capability and
-routing dialog assembly. The next UI slice is undo/redo command contracts plus
-keyboard shortcut service.
+routing dialog assembly. The shell now also owns bounded scene draft undo/redo
+and resolves keyboard shortcuts through `IStudioShortcutService`, while Avalonia
+controls only map key events into Studio shortcut gestures. Dock proportions are
+restored before Dock creation and persisted through `IStudioLayoutService`.
+Diagnostics, output snapshots, and performance mock metrics moved to the
+Settings `Avançado` surface so the main workspace stays focused on scenes,
+layers, sources, and routed outputs. The toolbar now exposes localized
+icon-only undo/redo controls backed by the same scene draft commands as
+keyboard shortcuts.
+
+The next UI slice is visual QA at the target viewports. The real preview frame
+provider remains gated by runtime readiness.

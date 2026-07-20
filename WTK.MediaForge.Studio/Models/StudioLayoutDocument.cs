@@ -11,6 +11,16 @@ public sealed class StudioLayoutDocument
 
 public sealed class StudioLayoutState
 {
+    public double LeftProportion { get; set; } = 0.20;
+
+    public double RightProportion { get; set; } = 0.25;
+
+    public double ProductionProportion { get; set; } = 0.36;
+
+    public double PropertiesProportion { get; set; } = 0.64;
+
+    public double BottomProportion { get; set; } = 0.28;
+
     public double LeftWidth { get; set; } = 280;
 
     public double RightWidth { get; set; } = 360;

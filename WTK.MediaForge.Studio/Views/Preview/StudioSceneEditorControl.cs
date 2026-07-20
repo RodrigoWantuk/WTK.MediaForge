@@ -246,6 +246,13 @@ public sealed class StudioSceneEditorControl : Control
             return;
         }
 
+        if (AvaloniaStudioShortcutMapper.TryCreate(e, out var gesture) && vm.ExecuteShortcut(gesture))
+        {
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Space:

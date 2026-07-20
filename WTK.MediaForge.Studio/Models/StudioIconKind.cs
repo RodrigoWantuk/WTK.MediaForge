@@ -37,6 +37,8 @@ public enum StudioIconKind
     Fit,
     ZoomIn,
     ZoomOut,
+    Undo,
+    Redo,
     WindowMinimize,
     WindowMaximize,
     WindowClose

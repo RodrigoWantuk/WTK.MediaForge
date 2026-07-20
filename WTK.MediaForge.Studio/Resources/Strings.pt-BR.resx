@@ -17,6 +17,8 @@
   <data name="Common_New" xml:space="preserve"><value>Novo</value></data>
   <data name="Common_Open" xml:space="preserve"><value>Abrir</value></data>
   <data name="Common_Save" xml:space="preserve"><value>Salvar</value></data>
+  <data name="Common_Undo" xml:space="preserve"><value>Desfazer (Ctrl+Z)</value></data>
+  <data name="Common_Redo" xml:space="preserve"><value>Refazer (Ctrl+Y)</value></data>
   <data name="Common_Settings" xml:space="preserve"><value>Configurações</value></data>
   <data name="Common_Search" xml:space="preserve"><value>Buscar</value></data>
   <data name="Common_Planned" xml:space="preserve"><value>Planejado</value></data>

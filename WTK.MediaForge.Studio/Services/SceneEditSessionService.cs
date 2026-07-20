@@ -17,7 +17,7 @@ public sealed class SceneEditSession : ObservableObject
 
     public StudioScene Original { get; }
 
-    public StudioScene Draft { get; }
+    public StudioScene Draft { get; private set; }
 
     public bool HasChanges
     {
@@ -33,6 +33,20 @@ public sealed class SceneEditSession : ObservableObject
     public void MarkClean()
     {
         HasChanges = false;
+    }
+
+    public void SetHasChanges(bool hasChanges)
+    {
+        HasChanges = hasChanges;
+    }
+
+    public void RestoreDraft(StudioScene draft, bool hasChanges)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+
+        Draft = draft;
+        HasChanges = hasChanges;
+        OnPropertyChanged(nameof(Draft));
     }
 }
 

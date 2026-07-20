@@ -19,6 +19,7 @@ namespace WTK.MediaForge.Studio.Views
         {
             if (_shell is not null)
             {
+                _shell.PersistLayout();
                 _shell.SettingsRequested -= OnSettingsRequested;
             }
 

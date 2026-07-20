@@ -447,6 +447,7 @@ public static class StudioServiceFactory
         IEnumerable<DiagnosticLogItemViewModel>? diagnostics = null,
         IStudioClock? clock = null,
         IStudioSceneEditRuntimeService? sceneEditRuntimeService = null,
+        IStudioLayoutService? layoutService = null,
         IStudioUiTimer? uiTimer = null)
     {
         clock ??= new SystemStudioClock();
@@ -458,6 +459,9 @@ public static class StudioServiceFactory
             new FakeStudioOutputService(clock),
             capabilityService,
             new StudioDialogService(capabilityService),
+            new StudioUndoRedoService(),
+            new StudioShortcutService(),
+            layoutService ?? new StudioLayoutService(),
             new StudioDiagnosticsService(diagnostics),
             new StudioSelectionService(),
             new StudioInspectorPageFactory(),

@@ -18,11 +18,13 @@ public sealed class StudioShellViewModel : ViewModelBase
     private readonly IStudioProjectService _projectService;
     private readonly IStudioOutputService _outputService;
     private readonly IStudioDialogService _dialogService;
+    private readonly IStudioUndoRedoService _undoRedoService;
+    private readonly IStudioShortcutService _shortcutService;
+    private readonly IStudioLayoutService _layoutService;
     private readonly IStudioDiagnosticsService _diagnosticsService;
     private readonly IStudioSelectionService _selectionService;
     private readonly IStudioSceneEditRuntimeService _sceneEditRuntimeService;
     private readonly IStudioUiTimer _uiTimer;
-    private readonly StudioLayoutService _layoutService = new();
     private readonly SceneEditSessionService _sceneEditSessionService = new();
     private StudioLayoutDocument _layoutDocument = new();
     private StudioDocument _document = StudioMockDocumentFactory.Create();
@@ -46,6 +48,9 @@ public sealed class StudioShellViewModel : ViewModelBase
             services.ProjectService,
             services.OutputService,
             services.DialogService,
+            services.UndoRedoService,
+            services.ShortcutService,
+            services.LayoutService,
             services.DiagnosticsService,
             services.SelectionService,
             services.SceneEditRuntimeService,
@@ -57,6 +62,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         IStudioProjectService projectService,
         IStudioOutputService outputService,
         IStudioDialogService dialogService,
+        IStudioUndoRedoService undoRedoService,
+        IStudioShortcutService shortcutService,
+        IStudioLayoutService layoutService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
         IStudioSceneEditRuntimeService sceneEditRuntimeService,
@@ -65,6 +73,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         _projectService = projectService;
         _outputService = outputService;
         _dialogService = dialogService;
+        _undoRedoService = undoRedoService;
+        _shortcutService = shortcutService;
+        _layoutService = layoutService;
         _diagnosticsService = diagnosticsService;
         _selectionService = selectionService;
         _sceneEditRuntimeService = sceneEditRuntimeService;
@@ -72,6 +83,7 @@ public sealed class StudioShellViewModel : ViewModelBase
 
         BottomWorkbench = new BottomWorkbenchViewModel();
         PreviewWorkspace = new PreviewWorkspaceViewModel(Preview);
+        _layoutDocument = _layoutService.Load();
         DockFactory = new StudioDockFactory(this);
         DockLayout = DockFactory.CreateLayout();
         DockFactory.InitLayout(DockLayout);
@@ -90,6 +102,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         SettingsCommand = new RelayCommand(OpenSettingsDialog);
         RestoreLayoutCommand = new RelayCommand(RestoreDefaultLayout);
         RedockAllPanelsCommand = new RelayCommand(RedockAllPanels);
+        UndoCommand = new RelayCommand(UndoSceneDraft, () => _editSession is not null && _undoRedoService.CanUndo);
+        RedoCommand = new RelayCommand(RedoSceneDraft, () => _editSession is not null && _undoRedoService.CanRedo);
         ApplySceneDraftCommand = new AsyncRelayCommand(ApplySceneDraftAsync, () => _editSession?.HasChanges == true);
         DiscardSceneDraftCommand = new AsyncRelayCommand(DiscardSceneDraftAsync, () => _editSession?.HasChanges == true);
         ToggleStreamingCommand = new AsyncRelayCommand(ToggleStreamingAsync, CanToggleStreaming);
@@ -111,6 +125,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         Preview.AddSourceCommand = AddSourceCommand;
         Preview.ApplySceneDraftCommand = ApplySceneDraftCommand;
         Preview.DiscardSceneDraftCommand = DiscardSceneDraftCommand;
+        Preview.ShortcutHandler = ExecuteShortcut;
         Preview.SceneEdited += OnPreviewSceneEdited;
 
         _outputService.StatusChanged += OnOutputStatusChanged;
@@ -118,7 +133,6 @@ public sealed class StudioShellViewModel : ViewModelBase
         _uiTimer.Tick += OnUiTimerTick;
         _uiTimer.Start();
 
-        _layoutDocument = _layoutService.Load();
         ApplyLayoutDocument(_layoutDocument);
         LoadDesignData(_document, _diagnosticsService.Items);
         ApplyProjectDocument();
@@ -155,6 +169,16 @@ public sealed class StudioShellViewModel : ViewModelBase
         private set => SetProperty(ref _dockLayout, value);
     }
 
+    internal double NavigationLayoutProportion => ClampLayoutProportion(_layoutDocument.Layout.LeftProportion, 0.20);
+
+    internal double RightLayoutProportion => ClampLayoutProportion(_layoutDocument.Layout.RightProportion, 0.25);
+
+    internal double ProductionLayoutProportion => ClampLayoutProportion(_layoutDocument.Layout.ProductionProportion, 0.36);
+
+    internal double PropertiesLayoutProportion => ClampLayoutProportion(_layoutDocument.Layout.PropertiesProportion, 0.64);
+
+    internal double WorkbenchLayoutProportion => ClampLayoutProportion(_layoutDocument.Layout.BottomProportion, 0.28);
+
     public StudioDockPanelViewModel NavigationDock { get; }
 
     public StudioDockPanelViewModel ProductionDock { get; }
@@ -180,6 +204,10 @@ public sealed class StudioShellViewModel : ViewModelBase
     public ICommand RestoreLayoutCommand { get; }
 
     public ICommand RedockAllPanelsCommand { get; }
+
+    public IRelayCommand UndoCommand { get; }
+
+    public IRelayCommand RedoCommand { get; }
 
     public IAsyncRelayCommand ApplySceneDraftCommand { get; }
 
@@ -216,6 +244,31 @@ public sealed class StudioShellViewModel : ViewModelBase
     public bool IsRecording => _outputService.RecordingState == StudioOutputUiState.Running;
 
     public StudioDocument Document => _document;
+
+    public StudioAdvancedSurfaceSnapshot CreateAdvancedSurfaceSnapshot()
+    {
+        return new StudioAdvancedSurfaceSnapshot(
+            _diagnosticsService.Items.ToArray(),
+            StudioDesignData.CreatePerformanceMetrics(),
+            StudioDesignData.CreateOutputs(_document));
+    }
+
+    public bool ExecuteShortcut(StudioShortcutGesture gesture)
+    {
+        return _shortcutService.Resolve(gesture) switch
+        {
+            StudioShortcutAction.Undo => TryExecute(UndoCommand),
+            StudioShortcutAction.Redo => TryExecute(RedoCommand),
+            StudioShortcutAction.SaveProject => TryExecute(SaveProjectCommand),
+            StudioShortcutAction.OpenProject => TryExecute(OpenProjectCommand),
+            StudioShortcutAction.NewProject => TryExecute(NewProjectCommand),
+            StudioShortcutAction.FitCanvas => ExecuteCanvasAction(Preview.FitZoom),
+            StudioShortcutAction.ActualSize => ExecuteCanvasAction(Preview.SetActualSizeAtCenter),
+            StudioShortcutAction.ZoomIn => ExecuteCanvasAction(() => Preview.ZoomAtCenter(1.12)),
+            StudioShortcutAction.ZoomOut => ExecuteCanvasAction(() => Preview.ZoomAtCenter(1 / 1.12)),
+            _ => false
+        };
+    }
 
     public void SetDockToolVisible(string toolId, bool isVisible)
     {
@@ -418,6 +471,28 @@ public sealed class StudioShellViewModel : ViewModelBase
         {
             target.Add(item);
         }
+    }
+
+    private static bool TryExecute(ICommand command)
+    {
+        if (!command.CanExecute(null))
+        {
+            return false;
+        }
+
+        command.Execute(null);
+        return true;
+    }
+
+    private static bool ExecuteCanvasAction(Action action)
+    {
+        action();
+        return true;
+    }
+
+    private static double ClampLayoutProportion(double value, double fallback)
+    {
+        return double.IsFinite(value) && value is >= 0.05 and <= 0.90 ? value : fallback;
     }
 
     private void InitializeBottomTabs()
@@ -743,6 +818,58 @@ public sealed class StudioShellViewModel : ViewModelBase
         SetStatus("Painéis reencaixados.");
     }
 
+    private void UndoSceneDraft()
+    {
+        if (_editSession is null || !_undoRedoService.CanUndo)
+        {
+            return;
+        }
+
+        RestoreSceneDraftFromHistory(_undoRedoService.Undo(), "Edição desfeita.");
+    }
+
+    private void RedoSceneDraft()
+    {
+        if (_editSession is null || !_undoRedoService.CanRedo)
+        {
+            return;
+        }
+
+        RestoreSceneDraftFromHistory(_undoRedoService.Redo(), "Edição refeita.");
+    }
+
+    private void RestoreSceneDraftFromHistory(StudioScene draft, string status)
+    {
+        if (_editSession is null)
+        {
+            return;
+        }
+
+        var selectedLayerId = SelectedLayer?.Id;
+        var hasChanges = !_undoRedoService.IsCurrentClean;
+        _editSession.RestoreDraft(draft, hasChanges);
+        CurrentScene = _editSession.Draft;
+        Preview.HasPendingChanges = hasChanges;
+        RebuildAll();
+
+        var restoredLayer = selectedLayerId is null
+            ? null
+            : BottomWorkbench.Layers.FirstOrDefault(item => item.Id == selectedLayerId);
+        if (restoredLayer is not null)
+        {
+            SelectLayer(restoredLayer);
+        }
+        else
+        {
+            ClearLayerSelectionAndShowScene();
+        }
+
+        _runtimeEditSession = null;
+        ApplyProjectDocument();
+        NotifySceneEditCommandStates();
+        SetStatus(status);
+    }
+
     private async Task ApplySceneDraftAsync()
     {
         if (_editSession is null || !_editSession.HasChanges)
@@ -781,13 +908,13 @@ public sealed class StudioShellViewModel : ViewModelBase
         _document.HasUnsavedChanges = true;
         _editSession = _sceneEditSessionService.Create(_editSession.Original);
         CurrentScene = _editSession.Draft;
+        _undoRedoService.Reset(CurrentScene);
         _runtimeEditSession = null;
         Preview.HasPendingChanges = false;
         RebuildAll();
         ClearLayerSelectionAndShowScene();
         ApplyProjectDocument();
-        ApplySceneDraftCommand.NotifyCanExecuteChanged();
-        DiscardSceneDraftCommand.NotifyCanExecuteChanged();
+        NotifySceneEditCommandStates();
         SetStatus($"{sceneName} aplicada à cena salva. Saídas vinculadas têm atualização disponível.");
     }
 
@@ -820,13 +947,13 @@ public sealed class StudioShellViewModel : ViewModelBase
 
         _editSession = _sceneEditSessionService.Create(_editSession.Original);
         CurrentScene = _editSession.Draft;
+        _undoRedoService.Reset(CurrentScene);
         _runtimeEditSession = null;
         Preview.HasPendingChanges = false;
         RebuildAll();
         ClearLayerSelectionAndShowScene();
         ApplyProjectDocument();
-        ApplySceneDraftCommand.NotifyCanExecuteChanged();
-        DiscardSceneDraftCommand.NotifyCanExecuteChanged();
+        NotifySceneEditCommandStates();
         if (!runtimeDiscardFailed)
         {
             SetStatus($"Alterações em {sceneName} descartadas.");
@@ -872,12 +999,24 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void MarkSceneDraftChanged()
     {
-        _editSession?.MarkChanged();
+        if (_editSession is not null)
+        {
+            _undoRedoService.Record(_editSession.Draft);
+            _editSession.SetHasChanges(!_undoRedoService.IsCurrentClean);
+        }
+
         Preview.HasPendingChanges = _editSession?.HasChanges == true;
         _document.HasUnsavedChanges = true;
+        NotifySceneEditCommandStates();
+        ApplyProjectDocument();
+    }
+
+    private void NotifySceneEditCommandStates()
+    {
         ApplySceneDraftCommand.NotifyCanExecuteChanged();
         DiscardSceneDraftCommand.NotifyCanExecuteChanged();
-        ApplyProjectDocument();
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanLeaveCurrentScene()
@@ -1010,6 +1149,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         _editSession = _sceneEditSessionService.Create(scene);
         _runtimeEditSession = null;
         CurrentScene = _editSession.Draft;
+        _undoRedoService.Reset(CurrentScene);
         _document.SelectedSceneId = scene.Id;
         Preview.SceneName = CurrentScene.DisplayName;
         Preview.HasPendingChanges = false;
@@ -1021,8 +1161,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         StatusBar.SceneText = $"Cena {scene.DisplayName}";
         StatusBar.OutputText = OutputSummary();
         AddSelectedSourceToCurrentSceneCommand.NotifyCanExecuteChanged();
-        ApplySceneDraftCommand.NotifyCanExecuteChanged();
-        DiscardSceneDraftCommand.NotifyCanExecuteChanged();
+        NotifySceneEditCommandStates();
     }
 
     private void SelectOutput(StudioOutput output)
@@ -1492,8 +1631,18 @@ public sealed class StudioShellViewModel : ViewModelBase
         panel.IsFloating = state.Floating;
     }
 
+    public void PersistLayout()
+    {
+        SaveLayoutDocument();
+    }
+
     private void SaveLayoutDocument()
     {
+        _layoutDocument.Layout.LeftProportion = CaptureDockProportion("dock.navigation", NavigationLayoutProportion);
+        _layoutDocument.Layout.RightProportion = CaptureDockProportion("dock.right", RightLayoutProportion);
+        _layoutDocument.Layout.ProductionProportion = CaptureDockProportion("dock.production", ProductionLayoutProportion);
+        _layoutDocument.Layout.PropertiesProportion = CaptureDockProportion("dock.properties", PropertiesLayoutProportion);
+        _layoutDocument.Layout.BottomProportion = CaptureDockProportion("dock.workbench", WorkbenchLayoutProportion);
         _layoutDocument.Layout.Panels["navigation"] = CapturePanelLayout(NavigationDock);
         _layoutDocument.Layout.Panels["production"] = CapturePanelLayout(ProductionDock);
         _layoutDocument.Layout.Panels["properties"] = CapturePanelLayout(PropertiesDock);
@@ -1509,6 +1658,19 @@ public sealed class StudioShellViewModel : ViewModelBase
             Collapsed = panel.IsCollapsed,
             Floating = panel.IsFloating
         };
+    }
+
+    private double CaptureDockProportion(string dockId, double fallback)
+    {
+        var dockable = EnumerateDockables(DockLayout).FirstOrDefault(item => item.Id == dockId);
+        var value = dockable switch
+        {
+            ToolDock toolDock => toolDock.Proportion,
+            ProportionalDock proportionalDock => proportionalDock.Proportion,
+            _ => fallback
+        };
+
+        return ClampLayoutProportion(value, fallback);
     }
 
     private static IEnumerable<IDockable> EnumerateDockables(IDockable? dockable)

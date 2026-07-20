@@ -6,9 +6,9 @@
         x:Class="WTK.MediaForge.Studio.Views.Settings.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Width="720"
-        Height="520"
+        Height="560"
         MinWidth="640"
-        MinHeight="460"
+        MinHeight="500"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource MfBackgroundBrush}"
         Title="Configurações">
@@ -102,18 +102,82 @@
           </StackPanel>
 
           <StackPanel Spacing="14" IsVisible="{Binding IsAdvancedSelected}">
-            <TextBlock Text="Avançado" Classes="panel-title" />
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Avançado" Classes="panel-title" />
+                <TextBlock Text="Diagnósticos e métricas ficam separados do fluxo principal de produção." Classes="muted" TextWrapping="Wrap" />
+              </StackPanel>
+              <Button Grid.Column="1"
+                      Content="Atualizar"
+                      Command="{Binding RefreshAdvancedSurfaceCommand}" />
+            </Grid>
+
             <Border Classes="section">
-              <StackPanel Spacing="8">
-                <TextBlock Text="Diagnósticos e performance" Classes="secondary" />
-                <TextBlock Text="Logs, métricas detalhadas e opções de backend ficam nesta área avançada. A tela principal permanece focada no fluxo de produção." Classes="muted" TextWrapping="Wrap" />
+              <StackPanel Spacing="10">
+                <TextBlock Text="Performance" Classes="secondary" />
+                <ItemsControl ItemsSource="{Binding PerformanceMetrics}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PerformanceMetricViewModel">
+                      <Border Classes="metric-card" Width="154" Height="86" Margin="0,0,8,8">
+                        <StackPanel Spacing="3">
+                          <TextBlock Text="{Binding Name}" Classes="muted" />
+                          <TextBlock Text="{Binding Value}" Classes="metric" />
+                          <TextBlock Text="{Binding Detail}" Classes="muted" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
             </Border>
+
             <Border Classes="section">
-              <StackPanel Spacing="8">
-                <TextBlock Text="Recursos planejados" Classes="secondary" />
-                <TextBlock Text="Áudio, captura real, streaming real, encoder e preview GPU serão habilitados somente após os gates técnicos do roadmap." Classes="muted" TextWrapping="Wrap" />
+              <StackPanel Spacing="10">
+                <TextBlock Text="Saídas" Classes="secondary" />
+                <ItemsControl ItemsSource="{Binding Outputs}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:OutputMonitorItemViewModel">
+                      <Border Classes="metric-card" Padding="10" Margin="0,0,0,6">
+                        <Grid ColumnDefinitions="*,110,120">
+                          <StackPanel>
+                            <TextBlock Text="{Binding Name}" Classes="secondary" />
+                            <TextBlock Text="{Binding SceneName}" Classes="muted" />
+                          </StackPanel>
+                          <TextBlock Grid.Column="1" Text="{Binding StateText}" Classes="accent" VerticalAlignment="Center" />
+                          <TextBlock Grid.Column="2" Text="{Binding Health}" Classes="muted" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
+            </Border>
+
+            <Border Classes="section">
+              <StackPanel Spacing="10">
+                <TextBlock Text="Diagnósticos" Classes="secondary" />
+                <ItemsControl ItemsSource="{Binding Diagnostics}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DiagnosticLogItemViewModel">
+                      <Grid ColumnDefinitions="70,72,100,*" ColumnSpacing="8" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding Time}" Classes="mono muted" />
+                        <TextBlock Grid.Column="1" Text="{Binding Level}" Classes="mono accent" />
+                        <TextBlock Grid.Column="2" Text="{Binding Category}" Classes="mono secondary" />
+                        <TextBlock Grid.Column="3" Text="{Binding Message}" Classes="mono secondary" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="section">
+              <TextBlock Text="Áudio, captura real, streaming real, encoder e preview GPU serão habilitados somente após os gates técnicos do roadmap." Classes="muted" TextWrapping="Wrap" />
             </Border>
           </StackPanel>
         </Grid>

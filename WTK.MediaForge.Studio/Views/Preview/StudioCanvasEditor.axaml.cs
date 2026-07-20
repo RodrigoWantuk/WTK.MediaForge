@@ -155,6 +155,12 @@ public sealed partial class StudioCanvasEditor : UserControl
             return;
         }
 
+        if (AvaloniaStudioShortcutMapper.TryCreate(e, out var gesture) && vm.ExecuteShortcut(gesture))
+        {
+            e.Handled = true;
+            return;
+        }
+
         var handled = true;
         switch (e.Key)
         {

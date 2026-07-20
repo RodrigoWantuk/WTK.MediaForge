@@ -41,6 +41,15 @@ audio.
   toggle.
 - The bottom workbench contains only `Camadas` and `Saídas da cena`.
 - `SceneViewportState` owns deterministic pan/zoom math.
+- Scene draft editing now has bounded undo/redo history through
+  `IStudioUndoRedoService`; Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y, project shortcuts, and
+  canvas zoom shortcuts resolve through `IStudioShortcutService`.
+- Dock panel proportions are loaded before Dock creation and persisted on
+  window close/settings save through `IStudioLayoutService`.
+- Diagnostics, performance metrics, and output monitor snapshots live in the
+  Settings `Avançado` surface instead of the main production workspace.
+- The toolbar exposes icon-only undo/redo affordances backed by the same
+  commands as keyboard shortcuts.
 - The main UI uses pt-BR terminology and avoids engine/debug language.
 
 ## Required Files/Concepts
@@ -72,10 +81,7 @@ Key implementation areas:
 ## Next UI Work
 
 1. Run visual QA at 1366x768, 1600x900, and 1920x1080.
-2. Add undo/redo command contracts and keyboard shortcut service.
-3. Add panel size persistence.
-4. Move advanced diagnostics/performance to an explicit advanced surface.
-5. After runtime gates: introduce the real preview frame provider below the
+2. After runtime gates: introduce the real preview frame provider below the
    Avalonia overlay.
 
 ## Validation

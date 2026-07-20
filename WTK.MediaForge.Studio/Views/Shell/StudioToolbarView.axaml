@@ -29,6 +29,18 @@
             <TextBlock Text="{loc:Loc Common_Save}" />
           </StackPanel>
         </Button>
+        <Button Classes="flat"
+                Command="{Binding UndoCommand}"
+                Padding="7"
+                ToolTip.Tip="{loc:Loc Common_Undo}">
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Undo}" IconSize="14" />
+        </Button>
+        <Button Classes="flat"
+                Command="{Binding RedoCommand}"
+                Padding="7"
+                ToolTip.Tip="{loc:Loc Common_Redo}">
+          <components:StudioIcon Kind="{x:Static models:StudioIconKind.Redo}" IconSize="14" />
+        </Button>
       </StackPanel>
 
       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

@@ -243,6 +243,9 @@ public sealed class StudioServiceBundle
         IStudioOutputService outputService,
         IStudioCapabilityService capabilityService,
         IStudioDialogService dialogService,
+        IStudioUndoRedoService undoRedoService,
+        IStudioShortcutService shortcutService,
+        IStudioLayoutService layoutService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
         IInspectorPageFactory inspectorPageFactory,
@@ -254,6 +257,9 @@ public sealed class StudioServiceBundle
         OutputService = outputService;
         CapabilityService = capabilityService;
         DialogService = dialogService;
+        UndoRedoService = undoRedoService;
+        ShortcutService = shortcutService;
+        LayoutService = layoutService;
         DiagnosticsService = diagnosticsService;
         SelectionService = selectionService;
         InspectorPageFactory = inspectorPageFactory;
@@ -271,6 +277,12 @@ public sealed class StudioServiceBundle
     public IStudioCapabilityService CapabilityService { get; }
 
     public IStudioDialogService DialogService { get; }
+
+    public IStudioUndoRedoService UndoRedoService { get; }
+
+    public IStudioShortcutService ShortcutService { get; }
+
+    public IStudioLayoutService LayoutService { get; }
 
     public IStudioDiagnosticsService DiagnosticsService { get; }
 

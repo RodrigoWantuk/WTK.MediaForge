@@ -26,6 +26,7 @@ public sealed class SettingsViewModel : ViewModelBase
         SelectTabCommand = new RelayCommand<SettingsTabKind>(SelectTab);
         RestoreLayoutCommand = shell.RestoreLayoutCommand;
         RedockAllPanelsCommand = shell.RedockAllPanelsCommand;
+        RefreshAdvancedSurfaceCommand = new RelayCommand(RefreshAdvancedSurface);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
 
         Tabs =
@@ -34,6 +35,7 @@ public sealed class SettingsViewModel : ViewModelBase
             new SettingsTabViewModel(SettingsTabKind.Language, "Idioma"),
             new SettingsTabViewModel(SettingsTabKind.Advanced, "Avançado")
         ];
+        RefreshAdvancedSurface();
         SelectTab(SettingsTabKind.Interface);
     }
 
@@ -47,7 +49,15 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public ICommand RedockAllPanelsCommand { get; }
 
+    public ICommand RefreshAdvancedSurfaceCommand { get; }
+
     public ICommand CloseCommand { get; }
+
+    public ObservableCollection<DiagnosticLogItemViewModel> Diagnostics { get; } = new();
+
+    public ObservableCollection<PerformanceMetricViewModel> PerformanceMetrics { get; } = new();
+
+    public ObservableCollection<OutputMonitorItemViewModel> Outputs { get; } = new();
 
     public SettingsTabKind SelectedTab
     {
@@ -124,12 +134,39 @@ public sealed class SettingsViewModel : ViewModelBase
     private void SelectTab(SettingsTabKind tab)
     {
         SelectedTab = tab;
+        if (tab == SettingsTabKind.Advanced)
+        {
+            RefreshAdvancedSurface();
+        }
+
         foreach (var item in Tabs)
         {
             item.IsSelected = item.Kind == tab;
         }
     }
+
+    private void RefreshAdvancedSurface()
+    {
+        var snapshot = _shell.CreateAdvancedSurfaceSnapshot();
+        Replace(Diagnostics, snapshot.Diagnostics);
+        Replace(PerformanceMetrics, snapshot.PerformanceMetrics);
+        Replace(Outputs, snapshot.Outputs);
+    }
+
+    private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> values)
+    {
+        target.Clear();
+        foreach (var value in values)
+        {
+            target.Add(value);
+        }
+    }
 }
+
+public sealed record StudioAdvancedSurfaceSnapshot(
+    IReadOnlyList<DiagnosticLogItemViewModel> Diagnostics,
+    IReadOnlyList<PerformanceMetricViewModel> PerformanceMetrics,
+    IReadOnlyList<OutputMonitorItemViewModel> Outputs);
 
 public sealed class SettingsTabViewModel : ViewModelBase
 {

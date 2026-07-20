@@ -168,6 +168,12 @@ public sealed class StudioIcon : Control
                 DrawSearch(context, rect, pen);
                 context.DrawLine(pen, new Point(rect.Center.X - rect.Width * 0.12, rect.Center.Y), new Point(rect.Center.X + rect.Width * 0.12, rect.Center.Y));
                 break;
+            case StudioIconKind.Undo:
+                DrawUndoRedo(context, rect, pen, isRedo: false);
+                break;
+            case StudioIconKind.Redo:
+                DrawUndoRedo(context, rect, pen, isRedo: true);
+                break;
             case StudioIconKind.WindowMinimize:
                 context.DrawLine(pen, new Point(rect.X + rect.Width * 0.24, rect.Center.Y), new Point(rect.Right - rect.Width * 0.24, rect.Center.Y));
                 break;
@@ -394,6 +400,16 @@ public sealed class StudioIcon : Control
         context.DrawLine(pen, new Point(rect.X + rect.Width * 0.18, rect.Y + rect.Height * 0.18), new Point(rect.X + rect.Width * 0.18, rect.Y + rect.Height * 0.36));
         context.DrawLine(pen, new Point(rect.Right - rect.Width * 0.18, rect.Bottom - rect.Height * 0.18), new Point(rect.Right - rect.Width * 0.36, rect.Bottom - rect.Height * 0.18));
         context.DrawLine(pen, new Point(rect.Right - rect.Width * 0.18, rect.Bottom - rect.Height * 0.18), new Point(rect.Right - rect.Width * 0.18, rect.Bottom - rect.Height * 0.36));
+    }
+
+    private static void DrawUndoRedo(DrawingContext context, Rect rect, Pen pen, bool isRedo)
+    {
+        var arrowX = isRedo ? rect.Right - rect.Width * 0.18 : rect.X + rect.Width * 0.18;
+        var direction = isRedo ? -1 : 1;
+        var arrowTip = new Point(arrowX, rect.Y + rect.Height * 0.38);
+        context.DrawLine(pen, arrowTip, new Point(arrowX + direction * rect.Width * 0.18, rect.Y + rect.Height * 0.24));
+        context.DrawLine(pen, arrowTip, new Point(arrowX + direction * rect.Width * 0.18, rect.Y + rect.Height * 0.52));
+        context.DrawArc(pen, rect.Deflate(rect.Width * 0.18), isRedo ? 205 : 335, 245);
     }
 
     private static void DrawLayer(DrawingContext context, Rect rect, Pen pen)
