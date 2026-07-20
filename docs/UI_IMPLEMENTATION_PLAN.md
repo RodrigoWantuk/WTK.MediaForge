@@ -51,6 +51,8 @@ audio.
 - The toolbar exposes icon-only undo/redo affordances backed by the same
   commands as keyboard shortcuts.
 - The main UI uses pt-BR terminology and avoids engine/debug language.
+- `StudioVisualQaService` and `scripts/verify-studio-ui-visual-qa.ps1` validate
+  the Studio shell contract at 1366x768, 1600x900, and 1920x1080.
 
 ## Required Files/Concepts
 
@@ -80,7 +82,8 @@ Key implementation areas:
 
 ## Next UI Work
 
-1. Run visual QA at 1366x768, 1600x900, and 1920x1080.
+1. Keep the automated Studio visual QA gate green whenever layout, shell,
+   preview editor, properties, or workbench views change.
 2. After runtime gates: introduce the real preview frame provider below the
    Avalonia overlay.
 
@@ -92,6 +95,7 @@ Run after UI changes:
 dotnet build
 dotnet test
 ./scripts/test.ps1 -Tier Fast
+./scripts/verify-studio-ui-visual-qa.ps1
 ```
 
 GPU tier is not required for UI-only mock changes.

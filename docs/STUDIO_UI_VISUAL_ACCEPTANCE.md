@@ -2,6 +2,9 @@
 
 Use this checklist before considering a Studio UI reset change complete.
 
+- Automated viewport contract:
+  `./scripts/verify-studio-ui-visual-qa.ps1` must pass and generate
+  `test-reports/studio-visual-qa-report.md`.
 - App looks like a real desktop media editor, not a debug tool.
 - Left panel shows scene cards only, with search, selected state, main-scene
   badge, resolution/FPS, and linked outputs.
@@ -32,3 +35,7 @@ Use this checklist before considering a Studio UI reset change complete.
 - Dark theme uses semantic tokens instead of scattered hard-coded colors.
 - Main shell strings use the localization infrastructure.
 - Runtime/media/audio integrations remain blocked until the roadmap gate opens.
+
+Manual review is still required for visual taste, color balance, perceived
+polish, and interaction feel. The automated QA gate covers regression-prone
+structure, viewport usability, centered fit zoom, and primary UI hygiene.

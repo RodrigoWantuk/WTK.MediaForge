@@ -75,4 +75,6 @@ Use this checklist for the Studio v0.2 Avalonia mock editor.
 - [ ] `dotnet build` passes.
 - [ ] `dotnet test` passes.
 - [ ] `./scripts/test.ps1 -Tier Fast` passes.
+- [ ] `./scripts/verify-studio-ui-visual-qa.ps1` passes and writes
+  `test-reports/studio-visual-qa-report.md`.
 - [ ] GPU tier is only required if runtime/render/GPU code changed.

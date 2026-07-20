@@ -74,5 +74,7 @@ layers, sources, and routed outputs. The toolbar now exposes localized
 icon-only undo/redo controls backed by the same scene draft commands as
 keyboard shortcuts.
 
-The next UI slice is visual QA at the target viewports. The real preview frame
-provider remains gated by runtime readiness.
+The target viewport visual QA slice is now automated through
+`StudioVisualQaService` and `scripts/verify-studio-ui-visual-qa.ps1`. The next
+UI slice is to keep that gate green while the real preview frame provider
+remains gated by runtime readiness.
