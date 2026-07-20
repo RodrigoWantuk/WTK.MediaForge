@@ -213,13 +213,117 @@ internal sealed class SceneRuntime
         IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         var sceneSnapshot = CreateSnapshot();
+        var renderProjectState = MaterializeOutputVersionBindings(sceneSnapshot.ProjectState);
         return RenderFrameSnapshotFactory.Build(
-            sceneSnapshot.ProjectState,
+            renderProjectState,
             runtime,
             context,
             outputRouteTransitions,
             diagnostics);
     }
+
+    // A frame can contain the published and a draft/explicit revision of the same logical
+    // canvas. Render snapshots therefore use a private canvas id for non-published roots.
+    // The project model keeps its stable logical ids; only the physical frame graph sees these ids.
+    private ProjectStateSnapshot MaterializeOutputVersionBindings(ProjectStateSnapshot publishedProjectState)
+    {
+        var canvases = publishedProjectState.Canvases.ToList();
+        var outputs = new List<RenderOutputStateSnapshot>(publishedProjectState.Outputs.Length);
+        var versions = publishedProjectState.CanvasVersionIds.ToDictionary(static pair => pair.Key, static pair => pair.Value);
+
+        foreach (var output in publishedProjectState.Outputs)
+        {
+            output.SceneVersionBinding.Validate();
+            if (output.SceneVersionBinding.Kind == SceneVersionBindingKind.Published)
+            {
+                outputs.Add(output);
+                continue;
+            }
+
+            var resolved = ResolveOutputCanvasVersion(publishedProjectState, output);
+            var renderCanvasId = CanvasId.New();
+            canvases.Add(resolved.Canvas with { Id = renderCanvasId });
+            versions[renderCanvasId] = resolved.VersionId;
+            outputs.Add(CloneOutputWithCanvasId(output, renderCanvasId));
+        }
+
+        return publishedProjectState with
+        {
+            Canvases = canvases.ToImmutableArray(),
+            Outputs = outputs.ToImmutableArray(),
+            CanvasVersionIds = versions
+        };
+    }
+
+    private ResolvedOutputCanvasVersion ResolveOutputCanvasVersion(
+        ProjectStateSnapshot publishedProjectState,
+        RenderOutputStateSnapshot output)
+    {
+        return output.SceneVersionBinding.Kind switch
+        {
+            SceneVersionBindingKind.Draft => ResolveDraftOutputCanvas(output),
+            SceneVersionBindingKind.ExplicitVersion => ResolveExplicitOutputCanvas(publishedProjectState, output),
+            _ => throw new InvalidOperationException(
+                $"Output '{output.Name}' uses an unsupported root scene binding '{output.SceneVersionBinding.Kind}'.")
+        };
+    }
+
+    private ResolvedOutputCanvasVersion ResolveDraftOutputCanvas(RenderOutputStateSnapshot output)
+    {
+        var sessionId = output.SceneVersionBinding.DraftSessionId
+            ?? throw new InvalidOperationException($"Output '{output.Name}' has an invalid draft scene binding.");
+        if (!_draftStore.TryGetProjectState(sessionId, out var draftProjectState) || draftProjectState is null)
+        {
+            throw new InvalidOperationException(
+                $"Output '{output.Name}' references draft session '{sessionId}' which is no longer available.");
+        }
+
+        var canvas = draftProjectState.Canvases.FirstOrDefault(candidate => candidate.Id == output.CanvasId)
+            ?? throw new InvalidOperationException(
+                $"Output '{output.Name}' draft session '{sessionId}' does not contain canvas '{output.CanvasId}'.");
+        var versionId = draftProjectState.CanvasVersionIds.TryGetValue(canvas.Id, out var version)
+            ? version
+            : throw new InvalidOperationException(
+                $"Output '{output.Name}' draft session '{sessionId}' does not provide a version for canvas '{canvas.Id}'.");
+        return new ResolvedOutputCanvasVersion(canvas, versionId);
+    }
+
+    private static ResolvedOutputCanvasVersion ResolveExplicitOutputCanvas(
+        ProjectStateSnapshot publishedProjectState,
+        RenderOutputStateSnapshot output)
+    {
+        var versionId = output.SceneVersionBinding.ExplicitVersionId
+            ?? throw new InvalidOperationException($"Output '{output.Name}' has an invalid explicit scene binding.");
+        if (!publishedProjectState.CanvasVersionSnapshots.TryGetValue(versionId, out var canvas) ||
+            canvas.Id != output.CanvasId)
+        {
+            throw new InvalidOperationException(
+                $"Output '{output.Name}' explicit version '{versionId}' does not resolve canvas '{output.CanvasId}'.");
+        }
+
+        return new ResolvedOutputCanvasVersion(canvas, versionId);
+    }
+
+    private static RenderOutputStateSnapshot CloneOutputWithCanvasId(
+        RenderOutputStateSnapshot output,
+        CanvasId canvasId) =>
+        new()
+        {
+            Id = output.Id,
+            Name = output.Name,
+            TypeId = output.TypeId,
+            SchemaVersion = output.SchemaVersion,
+            Settings = output.Settings,
+            CanvasId = canvasId,
+            OutputSize = output.OutputSize,
+            CanvasLayoutMode = output.CanvasLayoutMode,
+            LetterboxColor = output.LetterboxColor,
+            ColorSpace = output.ColorSpace,
+            SceneVersionBinding = output.SceneVersionBinding,
+            RouteTransitionKind = output.RouteTransitionKind,
+            PreviousCanvasId = output.PreviousCanvasId,
+            RouteTransitionProgress = output.RouteTransitionProgress
+        };
 
     private SceneDirtyKind ComputeLayerDirtyKind(
         DrawObjectStateSnapshot drawObject,
@@ -353,6 +457,8 @@ internal sealed class SceneRuntime
         ImmutableArray<EffectStateSnapshot> left,
         ImmutableArray<EffectStateSnapshot> right) =>
         EffectStateFingerprint.SequenceEquals(left, right);
+
+    private sealed record ResolvedOutputCanvasVersion(CanvasStateSnapshot Canvas, SceneVersionId VersionId);
 
     private void NotifyDirtyRegionChanged(SceneDirtyRegion region)
     {

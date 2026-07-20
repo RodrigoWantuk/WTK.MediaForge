@@ -304,6 +304,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         outputType.Set(MediaTypeAttributeKeys.Subtype, VideoFormatGuids.H264).CheckError();
         outputType.Set(MediaTypeAttributeKeys.AvgBitrate, checked((uint)_settings.BitrateBitsPerSecond)).CheckError();
         outputType.Set(MediaTypeAttributeKeys.MaxKeyframeSpacing, checked((uint)_settings.KeyFrameIntervalFrames)).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.Mpeg2Profile, HardwareVideoEncoderSettings.GetH264ProfileValue(_settings.H264Profile)).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.Mpeg2Level, HardwareVideoEncoderSettings.GetH264LevelValue(_settings.H264Level)).CheckError();
         MediaFactory.MFSetAttributeSize(outputType, MediaTypeAttributeKeys.FrameSize, (uint)_settings.Width, (uint)_settings.Height).CheckError();
         MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.FrameRate, (uint)_settings.FramesPerSecond, 1).CheckError();
         MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.PixelAspectRatio, 1, 1).CheckError();
@@ -318,6 +320,17 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         MediaFactory.MFSetAttributeRatio(inputType, MediaTypeAttributeKeys.PixelAspectRatio, 1, 1).CheckError();
         inputType.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive).CheckError();
         transform.SetInputType(0, inputType, 0);
+
+        using var negotiatedOutputType = transform.GetOutputCurrentType(0);
+        var negotiatedProfile = negotiatedOutputType.GetUInt32(MediaTypeAttributeKeys.Mpeg2Profile);
+        var negotiatedLevel = negotiatedOutputType.GetUInt32(MediaTypeAttributeKeys.Mpeg2Level);
+        if (negotiatedProfile != HardwareVideoEncoderSettings.GetH264ProfileValue(_settings.H264Profile) ||
+            negotiatedLevel != HardwareVideoEncoderSettings.GetH264LevelValue(_settings.H264Level))
+        {
+            throw new InvalidOperationException(
+                $"Media Foundation hardware MFT negotiated H.264 profile/level {negotiatedProfile}/{negotiatedLevel}, " +
+                $"but {_settings.H264Profile}/{_settings.H264Level} was required.");
+        }
 
         transform.ProcessMessage(TMessageType.MessageNotifyBeginStreaming, UIntPtr.Zero);
         transform.ProcessMessage(TMessageType.MessageNotifyStartOfStream, UIntPtr.Zero);

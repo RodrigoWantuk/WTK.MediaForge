@@ -290,7 +290,9 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
             FramesPerSecond = profile.FramesPerSecond,
             BitrateBitsPerSecond = profile.BitrateBitsPerSecond,
             KeyFrameIntervalFrames = profile.KeyFrameIntervalFrames,
-            PixelFormat = profile.PixelFormat
+            PixelFormat = profile.PixelFormat,
+            H264Profile = profile.H264Profile,
+            H264Level = profile.H264Level
         };
     }
 
@@ -334,6 +336,8 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
                 throw new ArgumentOutOfRangeException(nameof(profile.KeyFrameIntervalFrames));
 
             ArgumentException.ThrowIfNullOrWhiteSpace(profile.PixelFormat);
+            _ = HardwareVideoEncoderSettings.GetH264ProfileValue(profile.H264Profile);
+            _ = HardwareVideoEncoderSettings.GetH264LevelValue(profile.H264Level);
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
         {

@@ -8,8 +8,11 @@ namespace WTK.MediaForge.Composition.Runtime.Scene;
 
 internal sealed class SceneVersionIndex
 {
+    internal const int MaximumRetainedVersionsPerCanvas = 32;
+
     private readonly Dictionary<CanvasId, Entry> _entries = [];
     private readonly Dictionary<SceneVersionId, CanvasStateSnapshot> _snapshotsByVersion = [];
+    private readonly Dictionary<CanvasId, LinkedList<SceneVersionId>> _versionsByCanvas = [];
 
     public IReadOnlyDictionary<CanvasId, ScenePublishedState> PublishedStates =>
         _entries.ToDictionary(
@@ -30,9 +33,17 @@ internal sealed class SceneVersionIndex
     {
         ArgumentNullException.ThrowIfNull(projectState);
 
+        var pinnedVersions = CollectExplicitBindings(projectState);
         var currentIds = projectState.Canvases.Select(static canvas => canvas.Id).ToHashSet();
         foreach (var stale in _entries.Keys.Where(id => !currentIds.Contains(id)).ToArray())
+        {
+            if (_versionsByCanvas.Remove(stale, out var staleVersions))
+            {
+                foreach (var version in staleVersions)
+                    _snapshotsByVersion.Remove(version);
+            }
             _entries.Remove(stale);
+        }
 
         foreach (var canvas in projectState.Canvases)
         {
@@ -49,6 +60,14 @@ internal sealed class SceneVersionIndex
                 existing?.Revision + 1 ?? 1);
             _entries[canvas.Id] = entry;
             _snapshotsByVersion[entry.VersionId] = canvas;
+            if (!_versionsByCanvas.TryGetValue(canvas.Id, out var versions))
+            {
+                versions = [];
+                _versionsByCanvas.Add(canvas.Id, versions);
+            }
+
+            versions.AddLast(entry.VersionId);
+            TrimVersions(canvas.Id, pinnedVersions);
         }
     }
 
@@ -57,6 +76,51 @@ internal sealed class SceneVersionIndex
 
     public IReadOnlyDictionary<SceneVersionId, CanvasStateSnapshot> CreateVersionSnapshotMap() =>
         _snapshotsByVersion.ToDictionary(static pair => pair.Key, static pair => pair.Value);
+
+    private void TrimVersions(CanvasId canvasId, IReadOnlySet<SceneVersionId> pinnedVersions)
+    {
+        if (!_versionsByCanvas.TryGetValue(canvasId, out var versions))
+            return;
+
+        var currentVersion = _entries[canvasId].VersionId;
+        while (versions.Count > MaximumRetainedVersionsPerCanvas)
+        {
+            var removable = versions.First;
+            while (removable is not null &&
+                   (removable.Value == currentVersion || pinnedVersions.Contains(removable.Value)))
+            {
+                removable = removable.Next;
+            }
+
+            if (removable is null)
+                return;
+
+            _snapshotsByVersion.Remove(removable.Value);
+            versions.Remove(removable);
+        }
+    }
+
+    private static HashSet<SceneVersionId> CollectExplicitBindings(ProjectStateSnapshot projectState)
+    {
+        var result = new HashSet<SceneVersionId>();
+        foreach (var output in projectState.Outputs)
+            AddBinding(output.SceneVersionBinding, result);
+
+        foreach (var canvas in projectState.Canvases)
+        {
+            foreach (var nested in canvas.Objects.OfType<CanvasDrawObjectSnapshot>())
+                AddBinding(nested.VersionBinding, result);
+        }
+
+        return result;
+    }
+
+    private static void AddBinding(SceneVersionBinding binding, ISet<SceneVersionId> result)
+    {
+        binding.Validate();
+        if (binding.Kind == SceneVersionBindingKind.ExplicitVersion && binding.ExplicitVersionId is { } version)
+            result.Add(version);
+    }
 
     private static string CreateFingerprint(CanvasStateSnapshot canvas)
     {

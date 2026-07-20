@@ -1,8 +1,12 @@
 using WTK.MediaForge.Composition.Effects;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Scene;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Color;
+using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
 using Xunit;
@@ -11,6 +15,114 @@ namespace WTK.MediaForge.Composition.Tests.Scene;
 
 public sealed class SceneRuntimeTests
 {
+    [Fact]
+    public void Explicit_output_binding_materializes_the_requested_canvas_version()
+    {
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var runtime = new SceneRuntime();
+        runtime.SyncFrom(CreateVersionedProjectState(canvasId, outputId, "Published v1", SceneVersionBinding.Published));
+        var firstVersion = runtime.GetPublishedVersion(canvasId);
+
+        runtime.SyncFrom(CreateVersionedProjectState(
+            canvasId,
+            outputId,
+            "Published v2",
+            SceneVersionBinding.ExplicitVersion(firstVersion)));
+
+        using var compositionRuntime = new CompositionRuntime();
+        using var result = runtime.BuildRenderSnapshot(
+            compositionRuntime,
+            RenderFrameSnapshotFactory.CreateDefaultContext());
+        var snapshot = Assert.IsType<RenderFrameSnapshot>(result.TakeSnapshot());
+        try
+        {
+            var output = Assert.Single(snapshot.Outputs);
+            Assert.NotEqual(canvasId, output.CanvasId);
+            var resolvedCanvas = Assert.Single(snapshot.Canvases.Where(canvas => canvas.Id == output.CanvasId));
+            Assert.Equal("Published v1", resolvedCanvas.Name);
+            Assert.Equal(firstVersion, resolvedCanvas.VersionId);
+        }
+        finally
+        {
+            snapshot.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Draft_output_binding_materializes_draft_without_replacing_published_canvas()
+    {
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var runtime = new SceneRuntime();
+        var sessionId = SceneEditSessionId.New();
+        var publishedState = CreateVersionedProjectState(
+            canvasId,
+            outputId,
+            "Published",
+            SceneVersionBinding.DraftForSession(sessionId));
+        runtime.SyncFrom(publishedState);
+        var publishedVersion = runtime.GetPublishedVersion(canvasId);
+        var draftVersion = SceneVersionId.New();
+        var draftState = CreateVersionedProjectState(
+            canvasId,
+            outputId,
+            "Draft",
+            SceneVersionBinding.DraftForSession(sessionId));
+        runtime.UpsertDraft(
+            new SceneDraftState
+            {
+                SessionId = sessionId,
+                CanvasId = canvasId,
+                BasePublishedVersionId = publishedVersion,
+                DraftVersionId = draftVersion,
+                HasChanges = true
+            },
+            draftState);
+
+        using var compositionRuntime = new CompositionRuntime();
+        using var result = runtime.BuildRenderSnapshot(
+            compositionRuntime,
+            RenderFrameSnapshotFactory.CreateDefaultContext());
+        var snapshot = Assert.IsType<RenderFrameSnapshot>(result.TakeSnapshot());
+        try
+        {
+            var output = Assert.Single(snapshot.Outputs);
+            var resolvedCanvas = Assert.Single(snapshot.Canvases.Where(canvas => canvas.Id == output.CanvasId));
+            Assert.Equal("Draft", resolvedCanvas.Name);
+            Assert.Equal(draftVersion, resolvedCanvas.VersionId);
+            Assert.Contains(snapshot.Canvases, canvas => canvas.Id == canvasId && canvas.Name == "Published");
+        }
+        finally
+        {
+            snapshot.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Scene_version_history_is_bounded_but_keeps_explicitly_bound_versions()
+    {
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var runtime = new SceneRuntime();
+        runtime.SyncFrom(CreateVersionedProjectState(canvasId, outputId, "v0", SceneVersionBinding.Published));
+        var pinnedVersion = runtime.GetPublishedVersion(canvasId);
+
+        for (var revision = 1; revision <= SceneVersionIndex.MaximumRetainedVersionsPerCanvas + 8; revision++)
+        {
+            runtime.SyncFrom(CreateVersionedProjectState(
+                canvasId,
+                outputId,
+                $"v{revision}",
+                SceneVersionBinding.ExplicitVersion(pinnedVersion)));
+        }
+
+        var snapshot = runtime.CreateSnapshot().ProjectState;
+        Assert.True(snapshot.CanvasVersionSnapshots.Count <= SceneVersionIndex.MaximumRetainedVersionsPerCanvas + 1);
+        Assert.Contains(pinnedVersion, snapshot.CanvasVersionSnapshots.Keys);
+        Assert.Contains(runtime.GetPublishedVersion(canvasId), snapshot.CanvasVersionSnapshots.Keys);
+    }
+
     [Fact]
     public void Hidden_layer_skips_render_node()
     {
@@ -251,4 +363,36 @@ public sealed class SceneRuntimeTests
             .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
             .OffscreenOutput("Program", scene, 1920, 1080, out _)
             .BuildValidated();
+
+    private static ProjectStateSnapshot CreateVersionedProjectState(
+        CanvasId canvasId,
+        RenderOutputId outputId,
+        string canvasName,
+        SceneVersionBinding binding) =>
+        new()
+        {
+            Version = Random.Shared.NextInt64(),
+            Canvases =
+            [
+                new CanvasStateSnapshot
+                {
+                    Id = canvasId,
+                    Name = canvasName,
+                    Size = new FrameSize(1920, 1080),
+                    Objects = []
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Output",
+                    CanvasId = canvasId,
+                    OutputSize = new FrameSize(1920, 1080),
+                    SceneVersionBinding = binding,
+                    RouteTransitionKind = OutputRouteTransitionKind.Cut
+                }
+            ]
+        };
 }

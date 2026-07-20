@@ -300,7 +300,9 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         {
             Width = width,
             Height = height,
-            PixelFormat = pixelFormat
+            PixelFormat = pixelFormat,
+            H264Profile = "High",
+            H264Level = "4.2"
         };
 
     private static OwnedD3D11EncoderDevice CreateOwnedDefaultDevice()
