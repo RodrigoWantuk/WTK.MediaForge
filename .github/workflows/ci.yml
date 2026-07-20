@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      run_hardware_media:
+        description: Run the strict RX 580 hardware-media qualification job.
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore locked dependencies
+        run: dotnet restore .\\WTK.MediaForge.sln --locked-mode
+      - name: Build
+        run: dotnet build .\\WTK.MediaForge.sln --no-restore --configuration Release --verbosity minimal
+      - name: Unit tests
+        run: dotnet test .\\WTK.MediaForge.sln --no-restore --configuration Release --verbosity minimal
+      - name: Fast gate
+        run: .\\scripts\\test.ps1 -Tier Fast
+      - name: Transport and license policies
+        run: |
+          .\\scripts\\verify-media-transport-rules.ps1
+          .\\scripts\\verify-license-policy.ps1
+      - name: Publish validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports
+          path: test-reports
+          if-no-files-found: ignore
+
+  hardware-media-rx580:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_hardware_media
+    runs-on: [self-hosted, windows, mediaforge-rx580]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore locked dependencies
+        run: dotnet restore .\\WTK.MediaForge.sln --locked-mode
+      - name: Strict hardware-media readiness
+        run: .\\scripts\\verify-engine-readiness-v13.ps1 -RequireHardwareMedia
+      - name: Publish hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rx580-hardware-media-proof
+          path: test-reports
+          if-no-files-found: error

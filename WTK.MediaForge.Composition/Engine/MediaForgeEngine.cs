@@ -451,6 +451,22 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(patch);
+        await ApplySceneMutationsAsync(sessionId, [patch], cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask ApplySceneMutationsAsync(
+        SceneEditSessionId sessionId,
+        IReadOnlyList<SceneMutationPatch> patches,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(patches);
+        if (patches.Count == 0)
+            return;
+
+        var patchBatch = patches.ToArray();
+        if (patchBatch.Any(static patch => patch is null))
+            throw new ArgumentException("Scene mutation batches cannot contain null patches.", nameof(patches));
+
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
@@ -463,7 +479,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (session.Descriptor.Mode == SceneEditMode.Live)
             {
                 var workingCopy = MediaForgeProjectCloner.DeepClone(_currentProject!);
-                SceneMutationPatchApplier.Apply(workingCopy, session.Descriptor.CanvasId, patch);
+                foreach (var patch in patchBatch)
+                    SceneMutationPatchApplier.Apply(workingCopy, session.Descriptor.CanvasId, patch);
                 MediaForgeProjectValidator.Validate(workingCopy).ThrowIfInvalid();
 
                 _currentProject = workingCopy;
@@ -476,7 +493,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 ?? throw CreateEngineException("Apply-mode scene edit session does not have a draft project.");
 
             var draftWorkingCopy = MediaForgeProjectCloner.DeepClone(draftProject);
-            SceneMutationPatchApplier.Apply(draftWorkingCopy, session.Descriptor.CanvasId, patch);
+            foreach (var patch in patchBatch)
+                SceneMutationPatchApplier.Apply(draftWorkingCopy, session.Descriptor.CanvasId, patch);
             MediaForgeProjectValidator.Validate(draftWorkingCopy).ThrowIfInvalid();
 
             var updated = session with
@@ -1236,8 +1254,32 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         if (request.TransitionPolicy is null)
             throw new ArgumentException("Scene commit transition policy cannot be null.", nameof(request));
 
-        if (request.TransitionPolicy.Duration <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(request), "Scene commit transition duration must be positive.");
+        switch (request.TransitionPolicy.Kind)
+        {
+            case SceneApplyTransitionKind.UseOutputRoutePolicy:
+            case SceneApplyTransitionKind.Cut:
+                if (request.TransitionPolicy.Duration < TimeSpan.Zero)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(request),
+                        "Cut and output-route transition policies cannot have a negative duration.");
+                }
+
+                break;
+
+            case SceneApplyTransitionKind.Fade:
+                if (request.TransitionPolicy.Duration <= TimeSpan.Zero)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(request),
+                        "Fade transition duration must be positive.");
+                }
+
+                break;
+
+            default:
+                throw CreateInvalidTransitionPolicyException(request.TransitionPolicy);
+        }
     }
 
     private async Task RollbackStartAsync(CancellationToken cancellationToken)

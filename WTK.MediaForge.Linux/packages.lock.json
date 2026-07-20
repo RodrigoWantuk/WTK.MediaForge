@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net8.0": {
+      "wtk.mediaforge.core": {
+        "type": "Project"
+      },
+      "wtk.mediaforge.diagnostics": {
+        "type": "Project"
+      }
+    }
+  }
+}

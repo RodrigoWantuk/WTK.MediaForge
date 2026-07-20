@@ -96,6 +96,28 @@ public sealed class StudioSceneEditBridgeTests
     }
 
     [Fact]
+    public async Task Commit_maps_studio_cut_to_zero_duration_cut_policy()
+    {
+        var engine = new RecordingSceneEditEngine();
+        var bridge = new StudioSceneEditBridge(engine);
+        var session = await bridge.BeginAsync(new StudioScene { Id = "scene-main" }, SceneEditMode.Apply);
+
+        await bridge.CommitAsync(
+            session,
+            new StudioTransition
+            {
+                Id = "transition-cut",
+                DisplayName = "Cut",
+                Kind = StudioTransitionKind.Cut,
+                DurationMs = 0
+            });
+
+        Assert.NotNull(engine.CommitRequest);
+        Assert.Equal(SceneApplyTransitionKind.Cut, engine.CommitRequest!.TransitionPolicy.Kind);
+        Assert.Equal(TimeSpan.Zero, engine.CommitRequest.TransitionPolicy.Duration);
+    }
+
+    [Fact]
     public async Task Commit_without_explicit_transition_uses_output_route_policy()
     {
         var engine = new RecordingSceneEditEngine();

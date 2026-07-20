@@ -9,9 +9,27 @@ public enum SceneApplyTransitionKind
 
 public sealed record SceneApplyTransitionPolicy
 {
-    public static SceneApplyTransitionPolicy UseOutputRoutePolicy { get; } = new();
+    private SceneApplyTransitionPolicy(SceneApplyTransitionKind kind, TimeSpan duration)
+    {
+        Kind = kind;
+        Duration = duration;
+    }
 
-    public SceneApplyTransitionKind Kind { get; init; } = SceneApplyTransitionKind.UseOutputRoutePolicy;
+    public static SceneApplyTransitionPolicy UseOutputRoutePolicy { get; } =
+        new(SceneApplyTransitionKind.UseOutputRoutePolicy, TimeSpan.Zero);
 
-    public TimeSpan Duration { get; init; } = TimeSpan.FromMilliseconds(250);
+    public SceneApplyTransitionKind Kind { get; }
+
+    public TimeSpan Duration { get; }
+
+    public static SceneApplyTransitionPolicy Cut() =>
+        new(SceneApplyTransitionKind.Cut, TimeSpan.Zero);
+
+    public static SceneApplyTransitionPolicy Fade(TimeSpan duration)
+    {
+        if (duration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(duration), "Fade transition duration must be positive.");
+
+        return new SceneApplyTransitionPolicy(SceneApplyTransitionKind.Fade, duration);
+    }
 }

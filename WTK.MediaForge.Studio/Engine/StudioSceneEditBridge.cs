@@ -197,18 +197,8 @@ public sealed class StudioSceneEditBridge(IStudioSceneEditEngine engine)
             return SceneApplyTransitionPolicy.UseOutputRoutePolicy;
 
         if (transition.Kind == StudioTransitionKind.Cut || transition.DurationMs <= 0)
-        {
-            return new SceneApplyTransitionPolicy
-            {
-                Kind = SceneApplyTransitionKind.Cut,
-                Duration = TimeSpan.Zero
-            };
-        }
+            return SceneApplyTransitionPolicy.Cut();
 
-        return new SceneApplyTransitionPolicy
-        {
-            Kind = SceneApplyTransitionKind.Fade,
-            Duration = TimeSpan.FromMilliseconds(transition.DurationMs)
-        };
+        return SceneApplyTransitionPolicy.Fade(TimeSpan.FromMilliseconds(transition.DurationMs));
     }
 }

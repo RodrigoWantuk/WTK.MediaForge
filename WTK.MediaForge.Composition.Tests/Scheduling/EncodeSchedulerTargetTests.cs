@@ -134,7 +134,10 @@ public sealed class EncodeSchedulerTargetTests
         target.OnRenderedFrame(third);
 
         await WaitForConditionAsync(
-            () => diagnostics.Diagnostics.Any(d => d.Code == "engine.encode_scheduler_frame_dropped_backpressure"),
+            () => diagnostics.Diagnostics.Any(d => d.Code == "engine.encode_scheduler_frame_dropped_backpressure") &&
+                  target.Status == EncodedOutputRuntimeStatus.Failed &&
+                  queuedLease.TextureId == default &&
+                  rejectedLease.TextureId == default,
             TimeSpan.FromSeconds(2));
 
         Assert.Equal(0, target.PendingFrameCount);

@@ -305,6 +305,78 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Apply_scene_mutation_batch_is_atomic_for_apply_session()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        var canvasId = project.Canvases[0].Id;
+        var layerId = project.Canvases[0].Objects[0].Id;
+
+        await engine.LoadProjectAsync(project);
+        var session = await engine.BeginSceneEditSessionAsync(canvasId, SceneEditMode.Apply);
+
+        await engine.ApplySceneMutationsAsync(
+            session.SessionId,
+            [
+                new SceneMutationPatch.SetLayerVisibility(layerId, false),
+                new SceneMutationPatch.SetLayerOpacity(layerId, 0.4f)
+            ]);
+
+        Assert.True(GetCurrentProject(engine).Canvases[0].Objects[0].Enabled);
+        Assert.True(engine.SceneRuntimeForTests!.TryGetDraft(session.SessionId, out var draft));
+        Assert.True(draft!.HasChanges);
+
+        await engine.ApplySceneDraftAsync(session.SessionId, new SceneCommitRequest());
+        var publishedLayer = GetCurrentProject(engine).Canvases[0].Objects[0];
+        Assert.False(publishedLayer.Enabled);
+        Assert.Equal(0.4f, publishedLayer.Opacity);
+    }
+
+    [Fact]
+    public async Task Apply_scene_mutation_batch_preserves_state_when_any_patch_is_invalid()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        var canvasId = project.Canvases[0].Id;
+        var layerId = project.Canvases[0].Objects[0].Id;
+
+        await engine.LoadProjectAsync(project);
+        var session = await engine.BeginSceneEditSessionAsync(canvasId, SceneEditMode.Live);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            await engine.ApplySceneMutationsAsync(
+                session.SessionId,
+                [
+                    new SceneMutationPatch.SetLayerVisibility(layerId, false),
+                    new SceneMutationPatch.SetLayerOpacity(layerId, 2f)
+                ]));
+
+        Assert.True(GetCurrentProject(engine).Canvases[0].Objects[0].Enabled);
+    }
+
+    [Fact]
+    public async Task Apply_scene_draft_accepts_explicit_cut_policy()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        var canvasId = project.Canvases[0].Id;
+        var layerId = project.Canvases[0].Objects[0].Id;
+
+        await engine.LoadProjectAsync(project);
+        var session = await engine.BeginSceneEditSessionAsync(canvasId, SceneEditMode.Apply);
+        await engine.ApplySceneMutationAsync(
+            session.SessionId,
+            new SceneMutationPatch.SetLayerVisibility(layerId, false));
+
+        var result = await engine.ApplySceneDraftAsync(
+            session.SessionId,
+            new SceneCommitRequest { TransitionPolicy = SceneApplyTransitionPolicy.Cut() });
+
+        Assert.False(result.TransitionRequested);
+        Assert.False(GetCurrentProject(engine).Canvases[0].Objects[0].Enabled);
+    }
+
+    [Fact]
     public async Task Discard_scene_draft_does_not_mutate_published_scene()
     {
         await using var engine = CreateEngine();
@@ -344,11 +416,7 @@ public class MediaForgeEngineTests
             session.SessionId,
             new SceneCommitRequest
             {
-                TransitionPolicy = new SceneApplyTransitionPolicy
-                {
-                    Kind = SceneApplyTransitionKind.Fade,
-                    Duration = TimeSpan.FromMilliseconds(300)
-                }
+                TransitionPolicy = SceneApplyTransitionPolicy.Fade(TimeSpan.FromMilliseconds(300))
             });
 
         Assert.Contains(childCanvas.Id, result.AffectedCanvases);
@@ -394,11 +462,7 @@ public class MediaForgeEngineTests
             session.SessionId,
             new SceneCommitRequest
             {
-                TransitionPolicy = new SceneApplyTransitionPolicy
-                {
-                    Kind = SceneApplyTransitionKind.Fade,
-                    Duration = TimeSpan.FromMilliseconds(300)
-                }
+                TransitionPolicy = SceneApplyTransitionPolicy.Fade(TimeSpan.FromMilliseconds(300))
             });
 
         Assert.NotEqual(result.OldVersionId, result.NewVersionId);
