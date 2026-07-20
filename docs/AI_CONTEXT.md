@@ -377,6 +377,10 @@ Current Studio state:
 - Fake Studio services own mock project, output, diagnostics, selection, and
   contextual properties behavior. Engine service types may exist internally for
   future bridge work, but the main UI must not expose Start/Stop Engine.
+- `IStudioDialogService` owns source, scene, output, and route-output dialog
+  requests. `StudioShellViewModel` applies typed dialog requests to the overlay
+  and wires commands; it must not reacquire capability/routing dialog assembly
+  logic inline.
 - Studio has an engine bridge foundation under `WTK.MediaForge.Studio/Engine`:
   `StudioEngineIdMap`, `StudioProjectEngineMapper`,
   `StudioSceneMutationFactory`, and `StudioSceneEditBridge`. These map the

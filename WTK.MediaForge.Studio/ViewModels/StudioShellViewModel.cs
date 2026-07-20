@@ -17,7 +17,7 @@ public sealed class StudioShellViewModel : ViewModelBase
 {
     private readonly IStudioProjectService _projectService;
     private readonly IStudioOutputService _outputService;
-    private readonly IStudioCapabilityService _capabilityService;
+    private readonly IStudioDialogService _dialogService;
     private readonly IStudioDiagnosticsService _diagnosticsService;
     private readonly IStudioSelectionService _selectionService;
     private readonly IStudioSceneEditRuntimeService _sceneEditRuntimeService;
@@ -45,7 +45,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         : this(
             services.ProjectService,
             services.OutputService,
-            services.CapabilityService,
+            services.DialogService,
             services.DiagnosticsService,
             services.SelectionService,
             services.SceneEditRuntimeService,
@@ -56,7 +56,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     public StudioShellViewModel(
         IStudioProjectService projectService,
         IStudioOutputService outputService,
-        IStudioCapabilityService capabilityService,
+        IStudioDialogService dialogService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
         IStudioSceneEditRuntimeService sceneEditRuntimeService,
@@ -64,7 +64,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     {
         _projectService = projectService;
         _outputService = outputService;
-        _capabilityService = capabilityService;
+        _dialogService = dialogService;
         _diagnosticsService = diagnosticsService;
         _selectionService = selectionService;
         _sceneEditRuntimeService = sceneEditRuntimeService;
@@ -582,67 +582,17 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void OpenAddSourceDialog()
     {
-        Dialog.Options.Clear();
-        foreach (var capability in _capabilityService.GetSourceCapabilities())
-            Dialog.Options.Add(SourceOption(capability));
-
-        Dialog.NotifyOptionsChanged();
-        ShowDialog("Adicionar fonte", $"Escolha uma fonte para adicionar à cena {CurrentScene?.DisplayName ?? "atual"}.", "source-library", "Fechar");
-    }
-
-    private StudioDialogOptionViewModel SourceOption(StudioCapabilityDescriptor capability)
-    {
-        return new StudioDialogOptionViewModel(
-            capability.TypeId,
-            capability.DisplayName,
-            capability.DialogDescription,
-            capability.IconKind,
-            capability.Badge,
-            capability.IsSelectable,
-            capability.IsSelectable
-                ? new RelayCommand(() => AddSourceFromLibrary(capability.TypeId, capability.DisplayName))
-                : null);
+        ShowDialog(_dialogService.CreateAddSourceRequest(_document, CurrentScene));
     }
 
     private void OpenAddSceneDialog()
     {
-        Dialog.Options.Clear();
-        Dialog.NotifyOptionsChanged();
-        ShowDialog("Adicionar cena", "Cria uma cena vazia pronta para receber fontes.", "scene", "Criar cena");
+        ShowDialog(_dialogService.CreateAddSceneRequest());
     }
 
     private void OpenConfigureOutputDialog()
     {
-        Dialog.Options.Clear();
-        foreach (var capability in _capabilityService.GetOutputCapabilities())
-            Dialog.Options.Add(OutputOption(capability));
-
-        Dialog.NotifyOptionsChanged();
-        ShowDialog("Configurar saídas", "Escolha uma saída validada para revisar ou configurar.", "output-library", "Fechar");
-    }
-
-    private StudioDialogOptionViewModel OutputOption(StudioCapabilityDescriptor capability)
-    {
-        var existing = _document.Outputs.FirstOrDefault(output => output.TypeId == capability.TypeId);
-        var description = existing is null
-            ? capability.DialogDescription
-            : $"{capability.DialogDescription}. Atual: {existing.DisplayName} -> {AssignedSceneName(existing)}";
-
-        return new StudioDialogOptionViewModel(
-            capability.TypeId,
-            capability.DisplayName,
-            description,
-            capability.IconKind,
-            capability.Badge,
-            capability.IsSelectable && existing is not null,
-            capability.IsSelectable && existing is not null
-                ? new RelayCommand(() =>
-                {
-                    SelectOutput(existing);
-                    SetStatus($"Configure {existing.DisplayName} no painel de propriedades.");
-                    CloseDialog();
-                })
-                : null);
+        ShowDialog(_dialogService.CreateConfigureOutputRequest(_document));
     }
 
     private void OpenSettingsDialog()
@@ -652,43 +602,7 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private void OpenSendSceneDialog(string outputId)
     {
-        var output = _document.Outputs.First(item => item.Id == outputId);
-        var isLive = output.IsLive || output.State == StudioOutputState.Live;
-        var defaultTransition = _document.Transitions.FirstOrDefault(item => item.Id == output.DefaultTransitionId);
-        Dialog.Options.Clear();
-        Dialog.TransitionOptions.Clear();
-        foreach (var transition in _document.Transitions)
-        {
-            Dialog.TransitionOptions.Add(new TransitionOptionViewModel(transition.Id, transition.DisplayName, transition.DurationMs));
-        }
-
-        Dialog.TargetOutputId = outputId;
-        Dialog.SelectedTransitionId = output.DefaultTransitionId;
-        Dialog.TransitionDurationMs = output.TransitionDurationMs > 0
-            ? output.TransitionDurationMs
-            : defaultTransition?.DurationMs ?? 120;
-        Dialog.RequiresLiveConfirmation = isLive;
-        Dialog.SelectedSceneId = CurrentScene?.Id ?? output.AssignedSceneId;
-        foreach (var scene in _document.Scenes)
-        {
-            var option = new StudioDialogOptionViewModel(
-                scene.Id,
-                scene.DisplayName,
-                $"{scene.Canvas.Width:0}×{scene.Canvas.Height:0} • {scene.Canvas.FrameRate:0.##} fps",
-                StudioIconKind.Scene,
-                scene.IsProgram ? "Principal" : string.Empty,
-                true,
-                new RelayCommand(() => SelectRouteDialogScene(scene.Id)));
-            option.IsSelected = option.Id == Dialog.SelectedSceneId;
-            Dialog.Options.Add(option);
-        }
-
-        Dialog.NotifyOptionsChanged();
-        ShowDialog(
-            isLive ? "Transicionar cena da saída" : "Alterar cena da saída",
-            $"Escolha a cena e a transição para {output.DisplayName}.",
-            "route-output",
-            isLive ? "Transicionar" : "Alterar");
+        ShowDialog(_dialogService.CreateRouteOutputRequest(_document, outputId, CurrentScene?.Id));
     }
 
     private void SelectRouteDialogScene(string sceneId)
@@ -700,14 +614,64 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
     }
 
-    private void ShowDialog(string title, string message, string kind, string primaryText)
+    private void ShowDialog(StudioDialogRequest request)
     {
-        Dialog.Title = title;
-        Dialog.Message = message;
-        Dialog.Kind = kind;
-        Dialog.PrimaryText = primaryText;
-        Dialog.SecondaryText = "Cancelar";
+        Dialog.Options.Clear();
+        Dialog.TransitionOptions.Clear();
+        Dialog.Title = request.Title;
+        Dialog.Message = request.Message;
+        Dialog.Kind = request.Kind;
+        Dialog.PrimaryText = request.PrimaryText;
+        Dialog.SecondaryText = request.SecondaryText;
+        Dialog.TargetOutputId = request.TargetOutputId;
+        Dialog.SelectedSceneId = request.SelectedSceneId;
+        Dialog.SelectedTransitionId = request.SelectedTransitionId;
+        Dialog.TransitionDurationMs = request.TransitionDurationMs;
+        Dialog.RequiresLiveConfirmation = request.RequiresLiveConfirmation;
+        foreach (var transition in request.TransitionOptions)
+        {
+            Dialog.TransitionOptions.Add(new TransitionOptionViewModel(transition.Id, transition.Name, transition.DurationMs));
+        }
+
+        foreach (var option in request.Options)
+        {
+            Dialog.Options.Add(CreateDialogOption(request.Kind, option));
+        }
+
+        Dialog.NotifyOptionsChanged();
         Dialog.IsOpen = true;
+    }
+
+    private StudioDialogOptionViewModel CreateDialogOption(
+        string dialogKind,
+        StudioDialogOptionDescriptor option)
+    {
+        ICommand? command = dialogKind switch
+        {
+            "source-library" when option.IsEnabled => new RelayCommand(() => AddSourceFromLibrary(option.Id, option.Title)),
+            "output-library" when option.IsEnabled => new RelayCommand(() => SelectOutputFromDialog(option.Id)),
+            "route-output" when option.IsEnabled => new RelayCommand(() => SelectRouteDialogScene(option.Id)),
+            _ => null
+        };
+
+        var viewModel = new StudioDialogOptionViewModel(
+            option.Id,
+            option.Title,
+            option.Description,
+            option.IconKind,
+            option.Badge,
+            option.IsEnabled,
+            command);
+        viewModel.IsSelected = viewModel.Id == Dialog.SelectedSceneId;
+        return viewModel;
+    }
+
+    private void SelectOutputFromDialog(string outputTypeId)
+    {
+        var existing = _document.Outputs.First(output => output.TypeId == outputTypeId);
+        SelectOutput(existing);
+        SetStatus($"Configure {existing.DisplayName} no painel de propriedades.");
+        CloseDialog();
     }
 
     private void ConfirmDialog()

@@ -28,8 +28,9 @@ This document is the canonical ordered execution plan for the next WTK MediaForg
     deterministic Studio-to-engine ids, StudioDocument-to-MediaForgeProject
     mapping, StudioLayer-to-SceneMutationPatch mapping, and an async
     StudioSceneEditBridge over the engine Live/Apply contract.
-11. Preview reliability harness.
-12. Studio preview surface host after reliability gate.
+11. Dialog workflow service boundary for source/scene/output/routing dialogs.
+12. Preview reliability harness.
+13. Studio preview surface host after reliability gate.
 
 ## Explicit Blocks
 
@@ -59,5 +60,9 @@ The active slice has advanced through the engine bridge foundation:
 - `StudioSceneEditBridge` wraps the engine Live/Apply session contract without
   forcing a real preview path.
 
-The next slice is wiring shell edit commands to the async bridge through a
-Studio service, preserving mock/design mode and never blocking the UI thread.
+The current slice has wired shell edit commands to the async bridge through
+Studio services, preserving mock/design mode and never blocking the UI thread.
+Dialog construction now lives behind `IStudioDialogService`, so the shell
+applies typed dialog requests instead of owning source/output capability and
+routing dialog assembly. The next UI slice is undo/redo command contracts plus
+keyboard shortcut service.

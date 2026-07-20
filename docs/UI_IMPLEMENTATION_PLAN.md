@@ -33,6 +33,10 @@ audio.
   `IsRecording`.
 - Output routing uses `SendSceneToOutput(outputId, sceneId, transitionId,
   durationMs)` and production cards, not a loose scene combo box.
+- Source, scene, output, and route-output workflows are described by
+  `IStudioDialogService` requests. The shell only applies those typed requests
+  to the current overlay and wires commands, which keeps capability/routing
+  dialog construction out of `StudioShellViewModel`.
 - Streaming/recording buttons depend on configured output routes, not an engine
   toggle.
 - The bottom workbench contains only `Camadas` and `Saídas da cena`.
@@ -68,11 +72,10 @@ Key implementation areas:
 ## Next UI Work
 
 1. Run visual QA at 1366x768, 1600x900, and 1920x1080.
-2. Add a real dialog service abstraction for source/scene/output workflows.
-3. Add undo/redo command contracts and keyboard shortcut service.
-4. Add panel size persistence.
-5. Move advanced diagnostics/performance to an explicit advanced surface.
-6. After runtime gates: introduce the real preview frame provider below the
+2. Add undo/redo command contracts and keyboard shortcut service.
+3. Add panel size persistence.
+4. Move advanced diagnostics/performance to an explicit advanced surface.
+5. After runtime gates: introduce the real preview frame provider below the
    Avalonia overlay.
 
 ## Validation

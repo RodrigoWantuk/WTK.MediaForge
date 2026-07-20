@@ -450,12 +450,14 @@ public static class StudioServiceFactory
         IStudioUiTimer? uiTimer = null)
     {
         clock ??= new SystemStudioClock();
+        var capabilityService = new FakeStudioCapabilityService();
         return new StudioServiceBundle(
             new FakeStudioProjectService(),
             new FakeStudioEngineService(),
             sceneEditRuntimeService ?? new FakeStudioSceneEditRuntimeService(),
             new FakeStudioOutputService(clock),
-            new FakeStudioCapabilityService(),
+            capabilityService,
+            new StudioDialogService(capabilityService),
             new StudioDiagnosticsService(diagnostics),
             new StudioSelectionService(),
             new StudioInspectorPageFactory(),

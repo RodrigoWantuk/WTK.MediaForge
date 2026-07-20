@@ -242,6 +242,7 @@ public sealed class StudioServiceBundle
         IStudioSceneEditRuntimeService sceneEditRuntimeService,
         IStudioOutputService outputService,
         IStudioCapabilityService capabilityService,
+        IStudioDialogService dialogService,
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
         IInspectorPageFactory inspectorPageFactory,
@@ -252,6 +253,7 @@ public sealed class StudioServiceBundle
         SceneEditRuntimeService = sceneEditRuntimeService;
         OutputService = outputService;
         CapabilityService = capabilityService;
+        DialogService = dialogService;
         DiagnosticsService = diagnosticsService;
         SelectionService = selectionService;
         InspectorPageFactory = inspectorPageFactory;
@@ -267,6 +269,8 @@ public sealed class StudioServiceBundle
     public IStudioOutputService OutputService { get; }
 
     public IStudioCapabilityService CapabilityService { get; }
+
+    public IStudioDialogService DialogService { get; }
 
     public IStudioDiagnosticsService DiagnosticsService { get; }
 
