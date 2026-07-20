@@ -455,6 +455,11 @@ public sealed class RenderedOutputEncodingPipelineTests
             IMediaTransportAuditSink auditSink) =>
             throw new InvalidOperationException("Pipeline should pass a pre-exported encoder input lease.");
 
+        public ValueTask<IReadOnlyList<EncodedVideoPacket>> DrainAsync(
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<EncodedVideoPacket>>([]);
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
@@ -487,6 +492,11 @@ public sealed class RenderedOutputEncodingPipelineTests
             IGpuFrameExporter frameExporter,
             IMediaTransportAuditSink auditSink) =>
             throw new InvalidOperationException("Pipeline should pass a pre-exported encoder input lease.");
+
+        public ValueTask<IReadOnlyList<EncodedVideoPacket>> DrainAsync(
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<EncodedVideoPacket>>([]);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

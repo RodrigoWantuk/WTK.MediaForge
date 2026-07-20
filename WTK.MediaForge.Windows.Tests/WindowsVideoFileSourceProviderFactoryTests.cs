@@ -44,7 +44,7 @@ public sealed class WindowsVideoFileSourceProviderFactoryTests
     }
 
     [Fact]
-    public async Task Prototype_video_file_provider_decodes_to_renderable_gpu_source_frame()
+    public async Task Product_video_file_provider_decodes_to_renderable_gpu_source_frame()
     {
         var path = Path.Combine(Path.GetTempPath(), $"mf-video-source-{Guid.NewGuid():N}.mp4");
         await File.WriteAllBytesAsync(path, MinimalMp4TestAsset.CreateAnnexBBytes());
@@ -52,7 +52,6 @@ public sealed class WindowsVideoFileSourceProviderFactoryTests
         var decoder = new FakeHardwareFileVideoDecoder();
         var sourceId = SourceId.New();
         var factory = new WindowsVideoFileSourceProviderFactory(
-            enablePrototypeProvider: true,
             decoderFactory: _ => decoder);
         var provider = factory.CreateProvider(CreateSourceDefinition(sourceId, path));
 

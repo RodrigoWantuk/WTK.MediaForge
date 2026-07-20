@@ -101,7 +101,10 @@ public sealed class PreviewPanelSinkVulkanSmokeTests
                     submission.DisposeCompleted();
                 }
 
-                PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+                await PreviewPanelPresenterLifecycle.RemovePresentersForPanelAsync(
+                    panelHandle,
+                    TimeSpan.FromSeconds(5),
+                    CancellationToken.None);
                 Win32TestPanel.Destroy(panelHandle);
             }
         }

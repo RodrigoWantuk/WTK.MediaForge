@@ -14,27 +14,21 @@ namespace WTK.MediaForge.Windows;
 internal sealed class WindowsVideoFileSourceProviderFactory : IMediaSourceProviderFactory
 {
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
-    private readonly bool _enablePrototypeProvider;
     private readonly bool _enableProductProvider;
     private readonly Func<HardwareDecodeOpenContext, IHardwareFileVideoDecoder> _decoderFactory;
 
     public WindowsVideoFileSourceProviderFactory(
         IMediaForgeDiagnosticsSink? diagnostics = null,
-        bool enablePrototypeProvider = false,
         bool enableProductProvider = true,
         Func<HardwareDecodeOpenContext, IHardwareFileVideoDecoder>? decoderFactory = null)
     {
         _diagnostics = diagnostics;
-        _enablePrototypeProvider = enablePrototypeProvider;
         _enableProductProvider = enableProductProvider;
-        _decoderFactory = decoderFactory ??
-                          (enablePrototypeProvider
-                              ? CreatePrototypeDecoder
-                              : CreateProductDecoder);
+        _decoderFactory = decoderFactory ?? CreateProductDecoder;
     }
 
     public bool CanCreate(MediaSourceTypeId typeId) =>
-        (_enableProductProvider || _enablePrototypeProvider) &&
+        _enableProductProvider &&
         MediaSourceTypeRegistry.ResolveCanonical(typeId) == MediaSourceTypes.VideoFile;
 
     public IVideoFrameProvider CreateProvider(MediaForgeSourceDefinition sourceDefinition)
@@ -49,11 +43,11 @@ internal sealed class WindowsVideoFileSourceProviderFactory : IMediaSourceProvid
                 nameof(sourceDefinition));
         }
 
-        if (!_enableProductProvider && !_enablePrototypeProvider)
+        if (!_enableProductProvider)
         {
             throw new MediaForgeUnsupportedFeatureException(
                 $"source.{MediaSourceTypes.VideoFile.Value}",
-                "Windows video file source provider is unavailable because neither the product hardware decoder nor the explicit internal prototype decoder is enabled.");
+                "Windows video file source provider is unavailable because the product hardware decoder is disabled.");
         }
 
         var settings = (VideoFileSourceSettings)MediaSourceSettingsSerializer.Deserialize(
@@ -69,12 +63,6 @@ internal sealed class WindowsVideoFileSourceProviderFactory : IMediaSourceProvid
             sourceDefinition.Name,
             runtime,
             _diagnostics);
-    }
-
-    private static IHardwareFileVideoDecoder CreatePrototypeDecoder(HardwareDecodeOpenContext context)
-    {
-        _ = context;
-        return new MediaFoundationHardwareVideoDecoder(allowPrototypeDecoding: true);
     }
 
     private static IHardwareFileVideoDecoder CreateProductDecoder(HardwareDecodeOpenContext context)

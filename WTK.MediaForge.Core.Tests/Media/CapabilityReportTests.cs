@@ -531,6 +531,31 @@ public sealed class CapabilityReportTests
         Assert.Contains("Proof passed", proofEntry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Applied_hardware_proofs_update_derived_gpu_transport_truth()
+    {
+        var baseline = new HardwareMediaCapabilityReport
+        {
+            Platform = "Test",
+            ExportProofStatus = GpuExportProofStatus.Pending,
+            ExportProofReason = "Not executed."
+        };
+        HardwareMediaProofResult[] results =
+        [
+            PassedResult(MediaForgeCapabilityCatalog.RenderToEncodeProof),
+            PassedResult(MediaForgeCapabilityCatalog.HardwareEncodeProof),
+            PassedResult(MediaForgeCapabilityCatalog.HardwareDecodeProof)
+        ];
+
+        var updated = HardwareMediaProofRegistry.ApplyResults(baseline, results);
+
+        Assert.Equal(GpuExportProofStatus.Passed, updated.ExportProofStatus);
+        Assert.True(updated.AcceptsGpuSurfaceInput);
+        Assert.Contains("H264", updated.HardwareEncodeCodecs);
+        Assert.Contains("H264", updated.HardwareDecodeCodecs);
+        Assert.Contains("passed", updated.ExportProofReason, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class PassingProofRunner(string id, string displayName)
         : HardwareMediaProofRunner(id, displayName)
     {
@@ -564,5 +589,15 @@ public sealed class CapabilityReportTests
             Status = HardwareMediaProofStatus.Passed,
             Backend = "TestBackend",
             Evidence = [evidence]
+        };
+
+    private static HardwareMediaProofResult PassedResult(string id) =>
+        new()
+        {
+            Id = id,
+            DisplayName = id,
+            Status = HardwareMediaProofStatus.Passed,
+            Backend = "TestBackend",
+            Evidence = [nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated)]
         };
 }

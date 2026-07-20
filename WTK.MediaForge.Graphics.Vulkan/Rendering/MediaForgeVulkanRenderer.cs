@@ -4,6 +4,7 @@ using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Capture;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Diagnostics;
@@ -92,6 +93,12 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
     internal bool SupportsWin32PresentationForTests =>
         _deviceContext.SupportsWin32Presentation;
+
+    internal string DeviceName => _deviceContext.DeviceName;
+
+    internal GpuAdapterLuid DeviceLuid => _deviceContext.DeviceLuid;
+
+    internal bool DeviceLuidValid => _deviceContext.DeviceLuidValid;
 
     internal void InvalidateIntermediateTargetCacheForTests() =>
         _compositionPipelines.InvalidateIntermediateTargets();
@@ -322,6 +329,8 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
             PrepareOffscreenTargetsForSubmit(snapshot);
             var previousTargetLayouts = CaptureOffscreenTargetLayouts();
             submissionResources = _compositionPipelines.CreateSubmissionResourceScope();
+            var physicalPlan = ResolvePhysicalPlan(snapshot);
+            physicalPlan.ValidateFor(snapshot);
 
             try
             {
@@ -333,6 +342,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
                         _compositionPipelines,
                         commandBuffer,
                         snapshot,
+                        physicalPlan,
                         _offscreenTargets,
                         textureLeases,
                         submissionResources);
@@ -424,6 +434,16 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
             throw;
         }
+    }
+
+    private static PhysicalRenderGraphPlan ResolvePhysicalPlan(RenderFrameSnapshot snapshot)
+    {
+        if (snapshot.RenderGraphExecution is { } execution)
+            return execution.PhysicalPlan;
+
+        // Direct low-level backend submissions are internal test/diagnostic entry points.
+        // Product engine submissions always arrive with an executed compiled graph.
+        return MediaForgeRenderGraphCompiler.Compile(snapshot).PhysicalPlan;
     }
 
     private static void DisposeRenderedOutputSurfaces(

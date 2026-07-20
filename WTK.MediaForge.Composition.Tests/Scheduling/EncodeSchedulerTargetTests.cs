@@ -2,6 +2,7 @@ using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Gpu.Resources;
+using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Encode;
@@ -80,6 +81,7 @@ public sealed class EncodeSchedulerTargetTests
         using var pool = new GpuResourcePool(new FakeGpuTextureFactory());
         var diagnostics = new ListDiagnosticsSink();
         var encoder = new BlockingEncoder();
+        var outputId = RenderOutputId.New();
 
         await using var target = new EncodeSchedulerTarget(
             encoder,
@@ -87,7 +89,8 @@ public sealed class EncodeSchedulerTargetTests
             new CollectingMediaTransportAuditSink(),
             _ => { },
             diagnostics,
-            encodeTimeout: TimeSpan.FromMilliseconds(50));
+            encodeTimeout: TimeSpan.FromMilliseconds(50),
+            outputId: outputId);
 
         target.OnRenderedFrame(CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33)));
 
@@ -95,6 +98,11 @@ public sealed class EncodeSchedulerTargetTests
             () => encoder.CancellationObserved &&
                   diagnostics.Diagnostics.Any(d => d.Code == "engine.encode_scheduler_frame_timeout"),
             TimeSpan.FromSeconds(2));
+
+        var diagnostic = Assert.Single(
+            diagnostics.Diagnostics,
+            item => item.Code == "engine.encode_scheduler_frame_timeout");
+        Assert.Equal(outputId.Value, diagnostic.OutputId);
     }
 
     [Fact]
@@ -181,16 +189,16 @@ public sealed class EncodeSchedulerTargetTests
     public async Task Stop_releases_processing_and_pending_rendered_frame_leases()
     {
         using var pool = new GpuResourcePool(new FakeGpuTextureFactory());
-        var encoder = new BlockingEncoder();
+        var encoder = new RecordingEncoder();
 
         await using var target = new EncodeSchedulerTarget(
             encoder,
             new FakeGpuFrameExporter(),
             new CollectingMediaTransportAuditSink(),
             _ => { },
-            queueCapacity: 2,
+            queueCapacity: 3,
             backpressurePolicy: EncodeSchedulerBackpressurePolicy.QueueWithBackpressure,
-            encodeTimeout: TimeSpan.FromSeconds(5));
+            encodeTimeout: TimeSpan.FromSeconds(1));
 
         var first = CreateRenderedFrame(pool, 1, TimeSpan.FromMilliseconds(33));
         var second = CreateRenderedFrame(pool, 2, TimeSpan.FromMilliseconds(66));
@@ -200,7 +208,6 @@ public sealed class EncodeSchedulerTargetTests
         var thirdLease = third.TextureLease!;
 
         target.OnRenderedFrame(first);
-        await WaitForConditionAsync(() => encoder.Started, TimeSpan.FromSeconds(2));
         target.OnRenderedFrame(second);
         target.OnRenderedFrame(third);
 
@@ -244,6 +251,54 @@ public sealed class EncodeSchedulerTargetTests
         Assert.Equal(1, encoder.EncodeAsyncCalls);
         Assert.Equal(0, encoder.SubmitFrameAsyncCalls);
         Assert.Equal(TimeSpan.FromMilliseconds(33), packets[0].PresentationTime);
+    }
+
+    [Fact]
+    public async Task Stop_routes_packets_produced_during_encoder_drain()
+    {
+        var drainedPacket = new EncodedVideoPacket
+        {
+            Data = new byte[] { 7, 8, 9 },
+            Codec = EncodedVideoCodec.H264,
+            PresentationTime = TimeSpan.FromMilliseconds(99),
+            Duration = TimeSpan.FromMilliseconds(33),
+            IsKeyFrame = false
+        };
+        var packets = new List<EncodedVideoPacket>();
+        var encoder = new RecordingEncoder([drainedPacket]);
+        await using var target = new EncodeSchedulerTarget(
+            encoder,
+            new FakeGpuFrameExporter(),
+            new CollectingMediaTransportAuditSink(),
+            packets.Add);
+
+        await target.StopAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal([drainedPacket], packets);
+        Assert.Equal(1, target.PacketsProduced);
+    }
+
+    [Fact]
+    public async Task Stop_propagates_encoder_drain_failure_and_marks_route_failed()
+    {
+        var diagnostics = new ListDiagnosticsSink();
+        var encoder = new RecordingEncoder(drainFailure: new InvalidOperationException("Drain failed."));
+        await using var target = new EncodeSchedulerTarget(
+            encoder,
+            new FakeGpuFrameExporter(),
+            new CollectingMediaTransportAuditSink(),
+            _ => { },
+            diagnostics);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await target.StopAsync(TimeSpan.FromSeconds(1), CancellationToken.None));
+
+        Assert.Equal("Drain failed.", exception.Message);
+        Assert.Equal(EncodedOutputRuntimeStatus.Failed, target.Status);
+        Assert.Contains("finalization failed", target.StatusReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Code == "engine.encode_scheduler_drain_failed" &&
+            diagnostic.Exception is InvalidOperationException);
     }
 
     private static FrameExecutionContext CreateContext(long frameId, TimeSpan presentationTime) =>
@@ -290,6 +345,17 @@ public sealed class EncodeSchedulerTargetTests
 
     private sealed class RecordingEncoder : IHardwareVideoEncoder
     {
+        private readonly IReadOnlyList<EncodedVideoPacket> _drainedPackets;
+        private readonly Exception? _drainFailure;
+
+        public RecordingEncoder(
+            IReadOnlyList<EncodedVideoPacket>? drainedPackets = null,
+            Exception? drainFailure = null)
+        {
+            _drainedPackets = drainedPackets ?? [];
+            _drainFailure = drainFailure;
+        }
+
         public List<HardwareEncodeFrameContext> Contexts { get; } = [];
 
         public List<EncodedFrameRecord> EncodedFrames { get; } = [];
@@ -334,6 +400,17 @@ public sealed class EncodeSchedulerTargetTests
                 PresentationTime = context.PresentationTime,
                 IsKeyFrame = context.FrameId == 1
             });
+        }
+
+        public ValueTask<IReadOnlyList<EncodedVideoPacket>> DrainAsync(
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_drainFailure is not null)
+                return ValueTask.FromException<IReadOnlyList<EncodedVideoPacket>>(_drainFailure);
+
+            return ValueTask.FromResult(_drainedPackets);
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -392,6 +469,11 @@ public sealed class EncodeSchedulerTargetTests
 
             return null;
         }
+
+        public ValueTask<IReadOnlyList<EncodedVideoPacket>> DrainAsync(
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<EncodedVideoPacket>>([]);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
@@ -466,6 +548,11 @@ public sealed class EncodeSchedulerTargetTests
             SubmitFrameAsyncCalls++;
             return ValueTask.FromResult<EncodedVideoPacket?>(null);
         }
+
+        public ValueTask<IReadOnlyList<EncodedVideoPacket>> DrainAsync(
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<EncodedVideoPacket>>([]);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

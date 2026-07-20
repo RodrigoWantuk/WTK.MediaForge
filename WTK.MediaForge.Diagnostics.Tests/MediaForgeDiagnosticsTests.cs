@@ -98,4 +98,22 @@ public class MediaForgeDiagnosticsTests
 
         Assert.InRange(diagnostic.Timestamp, before, after);
     }
+
+    [Fact]
+    public void Diagnostic_factory_and_report_preserve_output_identity()
+    {
+        var outputId = Guid.NewGuid();
+        var sink = new InMemoryDiagnosticsSink();
+
+        MediaForgeDiagnostics.Report(
+            sink,
+            MediaForgeDiagnosticSeverity.Error,
+            "output.failed",
+            "Output failed.",
+            "TestOutput",
+            outputId: outputId);
+
+        var diagnostic = Assert.Single(sink.Diagnostics);
+        Assert.Equal(outputId, diagnostic.OutputId);
+    }
 }

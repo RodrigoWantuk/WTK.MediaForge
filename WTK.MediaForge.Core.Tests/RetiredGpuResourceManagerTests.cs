@@ -38,11 +38,15 @@ public class RetiredGpuResourceManagerTests
     public async Task WaitForAllFinalizedAsync_times_out_when_resource_never_finalizes()
     {
         var manager = new RetiredGpuResourceManager();
-        manager.Add(new FakeRetiredGpuResource(finalizeResult: false));
+        manager.Add(new DiagnosticRetiredGpuResource("capture-ring-42", "refs=2"));
 
-        await Assert.ThrowsAsync<TimeoutException>(() =>
+        var exception = await Assert.ThrowsAsync<TimeoutException>(() =>
             manager.WaitForAllFinalizedAsync(TimeSpan.FromMilliseconds(200), CancellationToken.None)
                 .AsTask());
+
+        Assert.Contains("capture-ring-42", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("refs=2", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("attempts=", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -135,6 +139,23 @@ public class RetiredGpuResourceManagerTests
         Assert.True(resource.FullyDisposed.IsCompletedSuccessfully);
     }
 
+    [Fact]
+    public async Task Finalization_exception_is_recorded_even_when_resource_does_not_fault_completion_task()
+    {
+        var manager = new RetiredGpuResourceManager();
+        var resource = new ThrowingRetiredGpuResource();
+
+        manager.Add(resource);
+
+        var exception = await Assert.ThrowsAsync<AggregateException>(() =>
+            manager.WaitForAllFinalizedAsync(TimeSpan.FromSeconds(1), CancellationToken.None)
+                .AsTask());
+
+        Assert.Contains(exception.InnerExceptions, inner => inner.Message == "physical cleanup failed");
+        Assert.Equal(0, manager.PendingCount);
+        Assert.Equal(1, manager.FailedCount);
+    }
+
     private sealed class FakeRetiredGpuResource : IRetiredGpuResource
     {
         private readonly TaskCompletionSource _fullyDisposedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -162,5 +183,31 @@ public class RetiredGpuResourceManagerTests
             _fullyDisposedTcs.TrySetResult();
             return true;
         }
+    }
+
+    private sealed class DiagnosticRetiredGpuResource(string name, string state)
+        : IRetiredGpuResource, IRetiredGpuResourceDiagnostics
+    {
+        private readonly TaskCompletionSource _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task FullyDisposed => _completion.Task;
+
+        public string DiagnosticName { get; } = name;
+
+        public string DescribeState() => state;
+
+        public bool TryFinalizePhysicalResources() => false;
+    }
+
+    private sealed class ThrowingRetiredGpuResource : IRetiredGpuResource
+    {
+        private readonly TaskCompletionSource _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task FullyDisposed => _completion.Task;
+
+        public bool TryFinalizePhysicalResources() =>
+            throw new InvalidOperationException("physical cleanup failed");
     }
 }

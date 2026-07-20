@@ -47,7 +47,7 @@ internal sealed class EncodedOutputBackpressurePolicy
         new(
             "Streaming",
             EncodeSchedulerBackpressurePolicy.KeepLatest,
-            EncodedPacketConsumerBackpressurePolicy.FailOutput,
+            EncodedPacketConsumerBackpressurePolicy.DropOutput,
             allowFrameDrop: true,
             failOnBackpressure: false,
             sinkWriteTimeout: TimeSpan.FromSeconds(5));

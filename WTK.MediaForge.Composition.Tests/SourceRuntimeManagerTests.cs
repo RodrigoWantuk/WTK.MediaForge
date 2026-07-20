@@ -149,6 +149,24 @@ public class SourceRuntimeManagerTests
     }
 
     [Fact]
+    public void SourceRuntimeManager_observes_provider_failed_state_without_calling_acquire()
+    {
+        var diagnostics = new InMemoryDiagnosticsSink();
+        using var manager = new SourceRuntimeManager(diagnostics);
+        var source = new FailedStateVideoFrameProvider(SourceId.New(), "Disconnected");
+        manager.RegisterProvider(source);
+
+        var result = manager.TryAcquireFrame(source.Id, TimeSpan.Zero);
+
+        Assert.Equal(SourceFrameAcquireStatus.SourceFailed, result.Status);
+        Assert.Same(source.LastError, result.Error);
+        Assert.Equal(0, source.AcquireCount);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Code == "source.frame_acquire_failed" &&
+            diagnostic.SourceId == source.Id.Value);
+    }
+
+    [Fact]
     public void MediaSourceRuntime_dispose_disposes_disposable_provider()
     {
         var provider = new DisposableVideoFrameProvider(SourceId.New(), "Disposable");
@@ -157,6 +175,50 @@ public class SourceRuntimeManagerTests
         runtime.Dispose();
 
         Assert.True(provider.Disposed);
+    }
+
+    [Fact]
+    public async Task SourceRuntimeManager_async_dispose_uses_async_provider_ownership()
+    {
+        var manager = new SourceRuntimeManager();
+        var provider = new AsyncDisposableVideoFrameProvider(SourceId.New(), "Async disposable");
+        manager.RegisterProvider(provider);
+
+        await manager.DisposeAsync();
+
+        Assert.Equal(1, provider.AsyncDisposeCount);
+        Assert.Equal(0, provider.SyncDisposeCount);
+    }
+
+    [Fact]
+    public void Duplicate_source_registration_is_rejected_without_disposing_either_provider()
+    {
+        using var manager = new SourceRuntimeManager();
+        var sourceId = SourceId.New();
+        var first = new DisposableVideoFrameProvider(sourceId, "First");
+        var duplicate = new DisposableVideoFrameProvider(sourceId, "Duplicate");
+        manager.RegisterProvider(first);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => manager.RegisterProvider(duplicate));
+
+        Assert.Contains(sourceId.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.False(first.Disposed);
+        Assert.False(duplicate.Disposed);
+        duplicate.Dispose();
+    }
+
+    [Fact]
+    public async Task Unregister_provider_awaits_async_cleanup_before_returning()
+    {
+        await using var manager = new SourceRuntimeManager();
+        var provider = new AsyncDisposableVideoFrameProvider(SourceId.New(), "Async unregister");
+        manager.RegisterProvider(provider);
+
+        await manager.UnregisterProviderAsync(provider.Id);
+
+        Assert.Equal(0, manager.Count);
+        Assert.Equal(1, provider.AsyncDisposeCount);
+        Assert.Equal(0, provider.SyncDisposeCount);
     }
 
     private sealed class RecordingVideoFrameProvider(string name) : IVideoFrameProvider
@@ -220,6 +282,25 @@ public class SourceRuntimeManagerTests
             throw new InvalidOperationException("Configured source acquire failure.");
     }
 
+    private sealed class FailedStateVideoFrameProvider(SourceId id, string name) : IVideoFrameProvider
+    {
+        public SourceId Id { get; } = id;
+        public string Name { get; } = name;
+        public MediaSourceState State => MediaSourceState.Failed;
+        public Exception? LastError { get; } = new InvalidOperationException("Provider disconnected.");
+        public int AcquireCount { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public bool TryAcquireLatestFrame(out GpuFrameLease lease)
+        {
+            AcquireCount++;
+            lease = null!;
+            return false;
+        }
+    }
+
     private sealed class DisposableVideoFrameProvider(SourceId id, string name) : IVideoFrameProvider, IDisposable
     {
         public SourceId Id { get; } = id;
@@ -243,6 +324,40 @@ public class SourceRuntimeManagerTests
         }
 
         public void Dispose() => Disposed = true;
+    }
+
+    private sealed class AsyncDisposableVideoFrameProvider(SourceId id, string name)
+        : IVideoFrameProvider, IAsyncDisposable, IDisposable
+    {
+        public SourceId Id { get; } = id;
+
+        public string Name { get; } = name;
+
+        public MediaSourceState State => MediaSourceState.Stopped;
+
+        public Exception? LastError => null;
+
+        public int AsyncDisposeCount { get; private set; }
+
+        public int SyncDisposeCount { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public bool TryAcquireLatestFrame(out GpuFrameLease lease)
+        {
+            lease = null!;
+            return false;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            AsyncDisposeCount++;
+            return ValueTask.CompletedTask;
+        }
+
+        public void Dispose() => SyncDisposeCount++;
     }
 
     private sealed class EdgeTriggeredVideoFrameProvider(SourceId id, string name) : IVideoFrameProvider

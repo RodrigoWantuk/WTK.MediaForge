@@ -10,11 +10,10 @@ internal sealed class WindowsLocalRtmpProofServer : IAsyncDisposable
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _serverTask;
-    private readonly object _gate = new();
-    private readonly List<byte[]> _videoPackets = [];
     private TcpClient? _client;
     private Exception? _failure;
     private int _chunkSize = 128;
+    private int _videoPacketCount;
 
     public WindowsLocalRtmpProofServer()
     {
@@ -27,14 +26,7 @@ internal sealed class WindowsLocalRtmpProofServer : IAsyncDisposable
 
     public string Url { get; }
 
-    public int VideoPacketCount
-    {
-        get
-        {
-            lock (_gate)
-                return _videoPackets.Count;
-        }
-    }
+    public int VideoPacketCount => Volatile.Read(ref _videoPacketCount);
 
     public async ValueTask WaitForVideoPacketsAsync(
         int count,
@@ -47,11 +39,8 @@ internal sealed class WindowsLocalRtmpProofServer : IAsyncDisposable
             cancellationToken.ThrowIfCancellationRequested();
             ThrowIfFailed();
 
-            lock (_gate)
-            {
-                if (_videoPackets.Count >= count)
-                    return;
-            }
+            if (VideoPacketCount >= count)
+                return;
 
             await Task.Delay(10, cancellationToken).ConfigureAwait(false);
         }
@@ -121,8 +110,7 @@ internal sealed class WindowsLocalRtmpProofServer : IAsyncDisposable
                 }
                 else if (message.Value.MessageTypeId == 9)
                 {
-                    lock (_gate)
-                        _videoPackets.Add(message.Value.Payload);
+                    Interlocked.Increment(ref _videoPacketCount);
                 }
             }
         }

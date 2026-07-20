@@ -165,6 +165,7 @@ internal static class RenderFrameSnapshotFactory
             OutputSize = output.OutputSize,
             CanvasLayoutMode = output.CanvasLayoutMode,
             LetterboxColor = output.LetterboxColor,
+            ColorSpace = output.ColorSpace,
             SceneVersionBinding = output.SceneVersionBinding,
             RouteTransitionKind = transitionKind,
             PreviousCanvasId = previousCanvasId,

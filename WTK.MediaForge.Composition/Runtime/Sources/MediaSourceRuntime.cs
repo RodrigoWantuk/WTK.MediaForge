@@ -5,7 +5,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime.Sources;
 
-internal sealed class MediaSourceRuntime : IDisposable
+internal sealed class MediaSourceRuntime : IDisposable, IAsyncDisposable
 {
     private readonly SourceFrameBuffer _buffer;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
@@ -56,6 +56,14 @@ internal sealed class MediaSourceRuntime : IDisposable
 
         try
         {
+            if (Provider.State == MediaSourceState.Failed)
+            {
+                var failure = Provider.LastError ?? new InvalidOperationException(
+                    $"Source provider '{Name}' entered Failed state without an exception.");
+                ReportAcquireFailure(failure);
+                return SourceFrameAcquireResult.SourceFailed(failure);
+            }
+
             if (Provider.TryAcquireLatestFrame(out providerLease!))
             {
                 _buffer.Publish(providerLease);
@@ -68,13 +76,7 @@ internal sealed class MediaSourceRuntime : IDisposable
         }
         catch (Exception ex)
         {
-            MediaForgeDiagnostics.Report(
-                _diagnostics,
-                MediaForgeDiagnosticSeverity.Error,
-                "source.frame_acquire_failed",
-                $"Source '{Name}' failed while acquiring a frame for render.",
-                nameof(MediaSourceRuntime),
-                ex);
+            ReportAcquireFailure(ex);
 
             return SourceFrameAcquireResult.SourceFailed(ex);
         }
@@ -84,12 +86,39 @@ internal sealed class MediaSourceRuntime : IDisposable
         }
     }
 
+    private void ReportAcquireFailure(Exception exception) =>
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Error,
+            "source.frame_acquire_failed",
+            $"Source '{Name}' failed while acquiring a frame for render.",
+            nameof(MediaSourceRuntime),
+            exception,
+            SourceId.Value,
+            Name);
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
         _buffer.Dispose();
+        if (Provider is IDisposable disposableProvider)
+            disposableProvider.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        _buffer.Dispose();
+        if (Provider is IAsyncDisposable asyncDisposableProvider)
+        {
+            await asyncDisposableProvider.DisposeAsync().ConfigureAwait(false);
+            return;
+        }
+
         if (Provider is IDisposable disposableProvider)
             disposableProvider.Dispose();
     }

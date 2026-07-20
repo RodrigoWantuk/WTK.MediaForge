@@ -6,6 +6,8 @@ using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Encode;
 using WTK.MediaForge.Composition.Runtime.Scheduling;
+using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Core.Capture;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
@@ -24,20 +26,34 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
     private readonly Func<CancellationToken, ValueTask<MediaForgeCapabilityReport>> _capabilityReportFactory;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly bool _allowUnvalidatedRoutes;
+    private readonly GpuAdapterAffinityState? _adapterAffinity;
+    private readonly SemaphoreSlim _registrationGate = new(1, 1);
+    private readonly HashSet<RenderOutputId> _registeredOutputIds = [];
 
     public WindowsEncodedOutputRouteFactory(
         IMediaForgeDiagnosticsSink? diagnostics = null,
         Func<CancellationToken, ValueTask<MediaForgeCapabilityReport>>? capabilityReportFactory = null,
-        bool allowUnvalidatedRoutes = false)
+        bool allowUnvalidatedRoutes = false,
+        GpuAdapterAffinityState? adapterAffinity = null)
     {
         _diagnostics = diagnostics;
         _capabilityReportFactory = capabilityReportFactory ?? MediaForgeWindows.GetCapabilityReportWithHardwareProofsAsync;
         _allowUnvalidatedRoutes = allowUnvalidatedRoutes;
+        _adapterAffinity = adapterAffinity;
     }
 
     public bool CanCreate(RenderOutputTypeId typeId) =>
         typeId == RenderOutputTypes.RecordingMp4 ||
         typeId == RenderOutputTypes.StreamingRtmp;
+
+    public RenderOutputId ResolveSurfaceOutputId(
+        MediaForgeProject project,
+        MediaForgeRenderOutput output)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(output);
+        return GetCompatibleOutputs(project, output)[0].Id;
+    }
 
     public async ValueTask RegisterAsync(
         MediaForgeProject project,
@@ -57,50 +73,139 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
                 nameof(output));
         }
 
-        await EnsureCapabilityAllowsRouteAsync(output, cancellationToken).ConfigureAwait(false);
-
-        var audit = new CollectingMediaTransportAuditSink();
-        var routeResources = WindowsEncodedOutputRouteResources.Create();
-        IHardwareVideoEncoder? encoder = null;
-        var accepted = false;
+        await _registrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var encoderSettings = CreateEncoderSettings(output);
-            encoder = new MediaFoundationHardwareVideoEncoder(
-                routeResources.Device.Device,
-                encoderSettings);
+            if (_registeredOutputIds.Contains(output.Id) && runtime.IsEncodedOutputRegistered(output.Id))
+                return;
 
-            var frameAdapter = new RenderedOutputEncodeFrameAdapter(
-                new RenderedOutputEncoderInputPreparer(
-                    new WindowsRenderedOutputEncoderSurfaceExporter(routeResources.Device.Device),
-                    new WindowsRenderedOutputEncoderInputConverter(routeResources.Device.Device)));
+            if (_registeredOutputIds.Contains(output.Id))
+            {
+                foreach (var groupedOutput in GetCompatibleOutputs(project, output))
+                    _registeredOutputIds.Remove(groupedOutput.Id);
+            }
 
-            var sink = CreateSink(output, audit);
-            await runtime.RegisterEncodedOutputAsync(
-                output.Id,
-                frameAdapter,
-                encoder,
-                routeResources.FrameExporter,
-                CreateSinkContext(output, encoderSettings),
-                [sink],
-                audit,
-                backpressurePolicy: EncodedOutputBackpressurePolicy.ForOutputType(output.TypeId),
-                routeResources: routeResources,
-                cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            var groupedOutputs = GetCompatibleOutputs(project, output);
+            foreach (var groupedOutput in groupedOutputs)
+                await EnsureCapabilityAllowsRouteAsync(groupedOutput, cancellationToken).ConfigureAwait(false);
 
-            accepted = true;
+            var surfaceOutput = groupedOutputs[0];
+            var audit = new CollectingMediaTransportAuditSink();
+            var routeResources = WindowsEncodedOutputRouteResources.Create(_adapterAffinity);
+            IHardwareVideoEncoder? encoder = null;
+            var sinks = new List<IEncodedPacketSink>(groupedOutputs.Count);
+            var ownershipTransferred = false;
+            try
+            {
+                var encoderSettings = CreateEncoderSettings(surfaceOutput);
+                encoder = new MediaFoundationHardwareVideoEncoder(
+                    routeResources.Device.Device,
+                    encoderSettings);
+
+                var frameAdapter = new RenderedOutputEncodeFrameAdapter(
+                    new RenderedOutputEncoderInputPreparer(
+                        new WindowsRenderedOutputEncoderSurfaceExporter(routeResources.Device.Device),
+                        new WindowsRenderedOutputEncoderInputConverter(routeResources.Device.Device)));
+
+                var registrations = new List<EncodedOutputSinkRegistration>(groupedOutputs.Count);
+                foreach (var groupedOutput in groupedOutputs)
+                {
+                    var sink = CreateSink(groupedOutput, audit);
+                    sinks.Add(sink);
+                    registrations.Add(new EncodedOutputSinkRegistration(
+                        groupedOutput.Id,
+                        sink,
+                        EncodedOutputBackpressurePolicy.ForOutputType(groupedOutput.TypeId)));
+                }
+
+                ownershipTransferred = true;
+                await runtime.RegisterEncodedOutputGroupAsync(
+                    surfaceOutput.Id,
+                    frameAdapter,
+                    encoder,
+                    routeResources.FrameExporter,
+                    CreateSinkContext(surfaceOutput, encoderSettings),
+                    registrations,
+                    audit,
+                    routeResources: routeResources,
+                    cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+
+                foreach (var groupedOutput in groupedOutputs)
+                    _registeredOutputIds.Add(groupedOutput.Id);
+            }
+            finally
+            {
+                if (!ownershipTransferred)
+                {
+                    if (encoder is not null)
+                        await encoder.DisposeAsync().ConfigureAwait(false);
+
+                    foreach (var sink in sinks)
+                        await sink.DisposeAsync().ConfigureAwait(false);
+
+                    await routeResources.DisposeAsync().ConfigureAwait(false);
+                }
+            }
         }
         finally
         {
-            if (!accepted)
-            {
-                if (encoder is not null)
-                    await encoder.DisposeAsync().ConfigureAwait(false);
-
-                await routeResources.DisposeAsync().ConfigureAwait(false);
-            }
+            _registrationGate.Release();
         }
+    }
+
+    public async ValueTask RecreateAsync(
+        MediaForgeProject project,
+        MediaForgeRenderOutput output,
+        MediaPipelineRuntime runtime,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(runtime);
+
+        var groupedOutputs = GetCompatibleOutputs(project, output);
+        await _registrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await runtime
+                .UnregisterEncodedOutputAsync(output.Id, timeout, cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var groupedOutput in groupedOutputs)
+                _registeredOutputIds.Remove(groupedOutput.Id);
+        }
+        finally
+        {
+            _registrationGate.Release();
+        }
+
+        await RegisterAsync(project, output, runtime, cancellationToken).ConfigureAwait(false);
+    }
+
+    private IReadOnlyList<MediaForgeRenderOutput> GetCompatibleOutputs(
+        MediaForgeProject project,
+        MediaForgeRenderOutput output)
+    {
+        if (!CanCreate(output.TypeId))
+        {
+            throw new ArgumentException(
+                $"Output type '{output.TypeId.Value}' is not an encoded Windows output route.",
+                nameof(output));
+        }
+
+        var key = EncodedRouteCompatibilityKey.Create(output);
+        if (!project.Outputs.Any(candidate => candidate.Id == output.Id))
+            throw new InvalidOperationException($"Encoded output '{output.Name}' was not found in its project.");
+
+        var compatible = project.Outputs
+            .Where(candidate => CanCreate(candidate.TypeId))
+            .Where(candidate => EncodedRouteCompatibilityKey.Create(candidate) == key)
+            .ToArray();
+        if (compatible.Length == 0)
+            throw new InvalidOperationException($"Encoded output '{output.Name}' was not found in its project.");
+
+        return compatible;
     }
 
     private async ValueTask EnsureCapabilityAllowsRouteAsync(
@@ -263,14 +368,14 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
 
         public VulkanToD3D11EncoderSurfaceExporter FrameExporter { get; }
 
-        public static WindowsEncodedOutputRouteResources Create()
+        public static WindowsEncodedOutputRouteResources Create(GpuAdapterAffinityState? adapterAffinity)
         {
             if (!OperatingSystem.IsWindows())
                 throw new PlatformNotSupportedException("Windows encoded output routes require Windows D3D11.");
 
-            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
-            factory.EnumAdapters1(0, out var adapter).CheckError();
-            var device = D3D11GpuDevice.CreateForAdapter(adapter, requireVideoSupport: true);
+            var device = WindowsD3D11AdapterSelector.CreateDevice(
+                adapterAffinity,
+                requireVideoSupport: true);
             return new WindowsEncodedOutputRouteResources(
                 device,
                 new VulkanToD3D11EncoderSurfaceExporter(device.Device));

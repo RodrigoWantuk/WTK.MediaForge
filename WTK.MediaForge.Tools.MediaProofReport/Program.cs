@@ -8,7 +8,9 @@ namespace WTK.MediaForge.Tools.MediaProofReport;
 public static class Program
 {
     public static Task<int> Main(string[] args) =>
-        MediaProofReportCommand.RunAsync(args);
+        args.Any(static arg => arg.Equals("--sustained-qualification", StringComparison.OrdinalIgnoreCase))
+            ? SustainedQualificationCommand.RunAsync(args)
+            : MediaProofReportCommand.RunAsync(args);
 }
 
 public static class MediaProofReportCommand

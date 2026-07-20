@@ -7,10 +7,19 @@ public sealed record RetiredGpuResourceFailure(
     Exception Exception,
     DateTimeOffset Timestamp);
 
+public sealed record RetiredGpuResourcePendingState(
+    IRetiredGpuResource Resource,
+    string DiagnosticName,
+    string State,
+    DateTimeOffset RetiredAt,
+    int FinalizationAttempts);
+
 public sealed class RetiredGpuResourceManager
 {
     private readonly List<IRetiredGpuResource> _pending = [];
     private readonly List<RetiredGpuResourceFailure> _failed = [];
+    private readonly Dictionary<IRetiredGpuResource, PendingMetadata> _metadata =
+        new(ReferenceEqualityComparer.Instance);
     private readonly object _gate = new();
 
     public int PendingCount
@@ -40,6 +49,19 @@ public sealed class RetiredGpuResourceManager
         }
     }
 
+    public IReadOnlyList<RetiredGpuResourcePendingState> PendingStates
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _pending
+                    .Select(CreatePendingStateLocked)
+                    .ToArray();
+            }
+        }
+    }
+
     internal IReadOnlyList<IRetiredGpuResource> PendingResources
     {
         get
@@ -56,7 +78,10 @@ public sealed class RetiredGpuResourceManager
             foreach (var failure in _failed)
             {
                 if (!_pending.Any(r => ReferenceEquals(r, failure.Resource)))
+                {
                     _pending.Add(failure.Resource);
+                    _metadata[failure.Resource] = new PendingMetadata(DateTimeOffset.UtcNow);
+                }
             }
 
             _failed.Clear();
@@ -70,7 +95,10 @@ public sealed class RetiredGpuResourceManager
         lock (_gate)
         {
             if (!_pending.Any(r => ReferenceEquals(r, resource)))
+            {
                 _pending.Add(resource);
+                _metadata[resource] = new PendingMetadata(DateTimeOffset.UtcNow);
+            }
         }
 
         TryFinalizeAll();
@@ -87,11 +115,21 @@ public sealed class RetiredGpuResourceManager
         {
             try
             {
+                lock (_gate)
+                {
+                    if (_metadata.TryGetValue(resource, out var metadata))
+                        metadata.FinalizationAttempts++;
+                }
+
                 resource.TryFinalizePhysicalResources();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Fase 7: diagnostics. Resource stays until FullyDisposed completes or faults.
+                lock (_gate)
+                {
+                    if (_metadata.TryGetValue(resource, out var metadata))
+                        metadata.LastException = ex;
+                }
             }
         }
 
@@ -115,15 +153,30 @@ public sealed class RetiredGpuResourceManager
                         resource,
                         FlattenException(resource.FullyDisposed.Exception),
                         DateTimeOffset.UtcNow));
+                    continue;
+                }
+
+                if (_metadata.TryGetValue(resource, out var metadata) &&
+                    metadata.LastException is { } finalizationException &&
+                    !_failed.Any(f => ReferenceEquals(f.Resource, resource)))
+                {
+                    failed.Add(new RetiredGpuResourceFailure(
+                        resource,
+                        finalizationException,
+                        DateTimeOffset.UtcNow));
                 }
             }
 
             foreach (var resource in completed)
+            {
                 _pending.Remove(resource);
+                _metadata.Remove(resource);
+            }
 
             foreach (var failure in failed)
             {
                 _pending.Remove(failure.Resource);
+                _metadata.Remove(failure.Resource);
                 _failed.Add(failure);
             }
         }
@@ -227,11 +280,44 @@ public sealed class RetiredGpuResourceManager
 
             if (_pending.Count > 0)
             {
+                var pendingDetails = string.Join(
+                    Environment.NewLine,
+                    _pending.Select(resource => FormatPendingState(CreatePendingStateLocked(resource))));
                 throw new TimeoutException(
-                    "Retired GPU resources were not finalized before timeout.");
+                    $"Retired GPU resources were not finalized before timeout.{Environment.NewLine}{pendingDetails}");
             }
         }
     }
+
+    private RetiredGpuResourcePendingState CreatePendingStateLocked(IRetiredGpuResource resource)
+    {
+        var metadata = _metadata.TryGetValue(resource, out var value)
+            ? value
+            : new PendingMetadata(DateTimeOffset.UtcNow);
+        var diagnostics = resource as IRetiredGpuResourceDiagnostics;
+        var diagnosticName = diagnostics?.DiagnosticName ?? resource.GetType().Name;
+        string state;
+
+        try
+        {
+            state = diagnostics?.DescribeState() ??
+                    $"FullyDisposed={resource.FullyDisposed.Status}";
+        }
+        catch (Exception ex)
+        {
+            state = $"State inspection failed: {ex.GetType().Name}: {ex.Message}";
+        }
+
+        return new RetiredGpuResourcePendingState(
+            resource,
+            diagnosticName,
+            state,
+            metadata.RetiredAt,
+            metadata.FinalizationAttempts);
+    }
+
+    private static string FormatPendingState(RetiredGpuResourcePendingState state) =>
+        $"- {state.DiagnosticName}: {state.State}; retiredAt={state.RetiredAt:O}; attempts={state.FinalizationAttempts}.";
 
     private static Exception FlattenException(Exception exception)
     {
@@ -253,5 +339,14 @@ public sealed class RetiredGpuResourceManager
             return TimeSpan.Zero;
 
         return TimeSpan.FromSeconds((double)remainingTicks / Stopwatch.Frequency);
+    }
+
+    private sealed class PendingMetadata(DateTimeOffset retiredAt)
+    {
+        public DateTimeOffset RetiredAt { get; } = retiredAt;
+
+        public int FinalizationAttempts { get; set; }
+
+        public Exception? LastException { get; set; }
     }
 }

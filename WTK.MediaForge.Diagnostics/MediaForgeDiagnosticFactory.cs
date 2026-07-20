@@ -11,7 +11,8 @@ public static class MediaForgeDiagnosticFactory
         long? frameNumber = null,
         int? slotIndex = null,
         string? component = null,
-        Exception? exception = null) =>
+        Exception? exception = null,
+        Guid? outputId = null) =>
         new(
             severity,
             code,
@@ -22,5 +23,6 @@ public static class MediaForgeDiagnosticFactory
             frameNumber,
             slotIndex,
             component,
-            exception);
+            exception,
+            outputId);
 }

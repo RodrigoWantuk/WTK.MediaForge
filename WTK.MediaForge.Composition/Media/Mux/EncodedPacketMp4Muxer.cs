@@ -4,6 +4,13 @@ using WTK.MediaForge.Core.Media.Encode;
 
 namespace WTK.MediaForge.Composition.Media.Mux;
 
+internal interface IMp4Muxer : IAsyncDisposable
+{
+    ValueTask WritePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken = default);
+
+    ValueTask FinalizeAsync(CancellationToken cancellationToken = default);
+}
+
 internal sealed class EncodedPacketMp4Muxer : IMp4Muxer
 {
     private readonly string _outputPath;

@@ -20,6 +20,7 @@ using Xunit;
 namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 
 [Trait("Category", TestCategories.Gpu)]
+[Trait("Category", "Performance")]
 [Collection("VulkanComposition")]
 public class Cp2MultiLayerStressTests
 {
@@ -27,7 +28,12 @@ public class Cp2MultiLayerStressTests
     public async Task Cp2_repeated_multi_layer_submits_do_not_exhaust_descriptor_pool()
     {
         if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+        {
+            Assert.False(
+                string.Equals(Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"), "1", StringComparison.Ordinal),
+                "Vulkan performance workload was required but no compatible Vulkan/D3D11 interop context was available.");
             return;
+        }
 
         VulkanSubmissionResourceLifetime.Reset();
 
@@ -76,7 +82,12 @@ public class Cp2MultiLayerStressTests
     public async Task Cp2_multi_layer_submission_dispose_releases_framebuffers_descriptors_and_surfaces()
     {
         if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+        {
+            Assert.False(
+                string.Equals(Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"), "1", StringComparison.Ordinal),
+                "Vulkan performance workload was required but no compatible Vulkan/D3D11 interop context was available.");
             return;
+        }
 
         VulkanSubmissionResourceLifetime.Reset();
         VulkanOffscreenRenderTargetLifetime.Reset();

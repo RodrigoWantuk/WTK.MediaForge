@@ -1,5 +1,7 @@
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
+using WTK.MediaForge.Composition.Snapshots;
+
 internal enum PhysicalRenderGraphOperationKind
 {
     AcquireSourceFrame,
@@ -48,6 +50,144 @@ internal sealed class PhysicalRenderGraphPlan
 
     public int Count(PhysicalRenderGraphOperationKind kind) =>
         Operations.Count(operation => operation.Kind == kind);
+
+    public void ValidateFor(RenderFrameSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var operationIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var index = 0; index < Operations.Count; index++)
+        {
+            var operation = Operations[index];
+            if (string.IsNullOrWhiteSpace(operation.Key))
+                throw new InvalidOperationException("Physical RenderGraph operations must have a stable key.");
+
+            if (!operationIndexes.TryAdd(operation.Key, index))
+            {
+                throw new InvalidOperationException(
+                    $"Physical RenderGraph contains duplicate operation key '{operation.Key}'.");
+            }
+        }
+
+        var canvasIds = CollectCanvasIds(snapshot.Canvases);
+        var expectedOutputIds = snapshot.Outputs.Select(static output => output.Id).ToHashSet();
+        var plannedOutputIds = new HashSet<WTK.MediaForge.Core.Identifiers.RenderOutputId>();
+
+        for (var index = 0; index < Operations.Count; index++)
+        {
+            var operation = Operations[index];
+            foreach (var dependency in operation.Dependencies)
+            {
+                if (!operationIndexes.TryGetValue(dependency, out var dependencyIndex))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical RenderGraph operation '{operation.Key}' depends on missing operation '{dependency}'.");
+                }
+
+                if (dependencyIndex >= index)
+                {
+                    throw new InvalidOperationException(
+                        $"Physical RenderGraph operation '{operation.Key}' is not topologically ordered after dependency '{dependency}'.");
+                }
+            }
+
+            foreach (var consumer in operation.Consumers)
+            {
+                if (!operationIndexes.ContainsKey(consumer))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical RenderGraph operation '{operation.Key}' references missing consumer '{consumer}'.");
+                }
+            }
+
+            ValidateOperationIdentity(operation, canvasIds, expectedOutputIds, plannedOutputIds);
+        }
+
+        if (!plannedOutputIds.SetEquals(expectedOutputIds))
+        {
+            var missing = expectedOutputIds.Except(plannedOutputIds).Select(static id => id.ToString());
+            var unexpected = plannedOutputIds.Except(expectedOutputIds).Select(static id => id.ToString());
+            throw new InvalidOperationException(
+                $"Physical RenderGraph output operations do not match the render snapshot. " +
+                $"Missing=[{string.Join(", ", missing)}], Unexpected=[{string.Join(", ", unexpected)}].");
+        }
+    }
+
+    private static HashSet<WTK.MediaForge.Core.Identifiers.CanvasId> CollectCanvasIds(
+        IEnumerable<RenderCanvasSnapshot> rootCanvases)
+    {
+        var result = new HashSet<WTK.MediaForge.Core.Identifiers.CanvasId>();
+        var pending = new Stack<RenderCanvasSnapshot>(rootCanvases.Reverse());
+        while (pending.TryPop(out var canvas))
+        {
+            if (!result.Add(canvas.Id))
+                continue;
+
+            foreach (var nested in canvas.Objects
+                         .OfType<RenderCanvasDrawObjectSnapshot>()
+                         .Select(static drawObject => drawObject.NestedCanvas)
+                         .Where(static nestedCanvas => nestedCanvas is not null))
+            {
+                pending.Push(nested!);
+            }
+        }
+
+        return result;
+    }
+
+    private static void ValidateOperationIdentity(
+        PhysicalRenderGraphOperation operation,
+        IReadOnlySet<WTK.MediaForge.Core.Identifiers.CanvasId> canvasIds,
+        IReadOnlySet<WTK.MediaForge.Core.Identifiers.RenderOutputId> outputIds,
+        ISet<WTK.MediaForge.Core.Identifiers.RenderOutputId> plannedOutputIds)
+    {
+        switch (operation.Kind)
+        {
+            case PhysicalRenderGraphOperationKind.AcquireSourceFrame when operation.SourceId is null:
+                throw new InvalidOperationException(
+                    $"Physical source acquisition '{operation.Key}' does not identify a source.");
+
+            case PhysicalRenderGraphOperationKind.RenderCanvas:
+                if (operation.CanvasId is not { } canvasId || !canvasIds.Contains(canvasId))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical canvas pass '{operation.Key}' references a canvas absent from the render snapshot.");
+                }
+
+                break;
+
+            case PhysicalRenderGraphOperationKind.RenderOutputTransition:
+                if (operation.OutputId is not { } transitionOutputId || !outputIds.Contains(transitionOutputId))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical transition pass '{operation.Key}' references an output absent from the render snapshot.");
+                }
+
+                if (operation.CanvasId is not { } currentCanvasId || !canvasIds.Contains(currentCanvasId) ||
+                    operation.PreviousCanvasId is not { } previousCanvasId || !canvasIds.Contains(previousCanvasId))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical transition pass '{operation.Key}' references a canvas absent from the render snapshot.");
+                }
+
+                break;
+
+            case PhysicalRenderGraphOperationKind.RenderOutput:
+                if (operation.OutputId is not { } outputId || !outputIds.Contains(outputId))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical output pass '{operation.Key}' references an output absent from the render snapshot.");
+                }
+
+                if (!plannedOutputIds.Add(outputId))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical RenderGraph contains more than one output pass for output '{outputId}'.");
+                }
+
+                break;
+        }
+    }
 }
 
 internal sealed record PhysicalRenderGraphStatistics(

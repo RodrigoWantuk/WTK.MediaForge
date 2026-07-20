@@ -11,7 +11,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 public class VulkanWin32PanelPresenterTests
 {
     [Fact]
-    public void Preview_attach_detach_repeated_does_not_leak_presenters()
+    public async Task Preview_attach_detach_repeated_does_not_leak_presenters()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -31,19 +31,19 @@ public class VulkanWin32PanelPresenterTests
                 VulkanWin32PanelPresenterRegistry.Present(target, panelHandle, CancellationToken.None);
                 Assert.Equal(1, VulkanWin32PanelPresenterRegistry.RegisteredPresenterCountForTests);
 
-                PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            await RemovePresentersAsync(panelHandle);
                 Assert.Equal(0, VulkanWin32PanelPresenterRegistry.RegisteredPresenterCountForTests);
             }
         }
         finally
         {
-            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            await RemovePresentersAsync(panelHandle);
             Win32TestPanel.Destroy(panelHandle);
         }
     }
 
     [Fact]
-    public void Preview_present_releases_previous_command_buffer_after_fence()
+    public async Task Preview_present_releases_previous_command_buffer_after_fence()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -66,13 +66,13 @@ public class VulkanWin32PanelPresenterTests
         }
         finally
         {
-            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            await RemovePresentersAsync(panelHandle);
             Win32TestPanel.Destroy(panelHandle);
         }
     }
 
     [Fact]
-    public void Preview_present_repeated_frames_does_not_leak_command_buffers()
+    public async Task Preview_present_repeated_frames_does_not_leak_command_buffers()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -94,13 +94,13 @@ public class VulkanWin32PanelPresenterTests
         }
         finally
         {
-            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            await RemovePresentersAsync(panelHandle);
             Win32TestPanel.Destroy(panelHandle);
         }
     }
 
     [Fact]
-    public void Preview_dispose_releases_pending_command_buffer()
+    public async Task Preview_dispose_releases_pending_command_buffer()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -118,7 +118,7 @@ public class VulkanWin32PanelPresenterTests
             VulkanWin32PanelPresenterRegistry.Present(target, panelHandle, CancellationToken.None);
             Assert.Equal(1, VulkanWin32PanelPresenterRegistry.TotalPendingCommandBuffersForTests);
 
-            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            await RemovePresentersAsync(panelHandle);
             Assert.Equal(0, VulkanWin32PanelPresenterRegistry.RegisteredPresenterCountForTests);
             Assert.Equal(0, VulkanWin32PanelPresenterRegistry.TotalPendingCommandBuffersForTests);
         }
@@ -129,7 +129,7 @@ public class VulkanWin32PanelPresenterTests
     }
 
     [Fact]
-    public void Preview_present_recovers_from_panel_resize()
+    public async Task Preview_present_recovers_from_panel_resize()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -182,13 +182,13 @@ public class VulkanWin32PanelPresenterTests
         }
         finally
         {
-            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            await RemovePresentersAsync(panelHandle);
             Win32TestPanel.Destroy(panelHandle);
         }
     }
 
     [Fact]
-    public void Preview_present_does_not_block_when_swapchain_is_repeatedly_out_of_date()
+    public async Task Preview_present_does_not_block_when_swapchain_is_repeatedly_out_of_date()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -220,13 +220,13 @@ public class VulkanWin32PanelPresenterTests
         }
         finally
         {
-            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            await RemovePresentersAsync(panelHandle);
             Win32TestPanel.Destroy(panelHandle);
         }
     }
 
     [Fact]
-    public void Preview_present_honors_cancellation_during_acquire()
+    public async Task Preview_present_honors_cancellation_during_acquire()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -248,8 +248,76 @@ public class VulkanWin32PanelPresenterTests
         }
         finally
         {
-            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(panelHandle);
+            await RemovePresentersAsync(panelHandle);
             Win32TestPanel.Destroy(panelHandle);
+        }
+    }
+
+    [Fact]
+    public async Task Preview_dispose_timeout_preserves_gpu_resources_until_retry_completes()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        using var device = VulkanHeadlessDevice.Create();
+        if (!device.SupportsWin32Presentation)
+            return;
+
+        var panelHandle = Win32TestPanel.Create();
+        var waiter = new RetryableFenceWaiter { FailNextWait = true };
+        var presenter = new VulkanWin32PanelPresenter(device, panelHandle, waiter);
+        try
+        {
+            using var target = new VulkanOffscreenRenderTarget(device, new FrameSize(64, 64));
+            target.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
+            presenter.Present(target, CancellationToken.None);
+
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                presenter.DisposeAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None).AsTask());
+
+            Assert.Equal(VulkanPanelPresenterState.AwaitingGpu, presenter.StateForTests);
+            Assert.False(presenter.ResourcesDestroyedForTests);
+            Assert.Equal(1, presenter.PendingCommandBufferCountForTests);
+
+            await presenter.DisposeAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+            Assert.Equal(VulkanPanelPresenterState.Disposed, presenter.StateForTests);
+            Assert.True(presenter.ResourcesDestroyedForTests);
+            Assert.Equal(0, presenter.PendingCommandBufferCountForTests);
+        }
+        finally
+        {
+            if (presenter.StateForTests != VulkanPanelPresenterState.Disposed)
+                await presenter.DisposeAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+            Win32TestPanel.Destroy(panelHandle);
+        }
+    }
+
+    private static ValueTask RemovePresentersAsync(nint panelHandle) =>
+        PreviewPanelPresenterLifecycle.RemovePresentersForPanelAsync(
+            panelHandle,
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+    private sealed class RetryableFenceWaiter : IVulkanPresenterFenceWaiter
+    {
+        public bool FailNextWait { get; set; }
+
+        public void Wait(
+            Vk vk,
+            Device device,
+            Fence fence,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            if (FailNextWait)
+            {
+                FailNextWait = false;
+                throw new TimeoutException("Configured presenter fence timeout.");
+            }
+
+            VulkanWin32PanelPresenter.WaitForFence(vk, device, fence, cancellationToken, timeout);
         }
     }
 }

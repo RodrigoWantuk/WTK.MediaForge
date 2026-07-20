@@ -127,21 +127,60 @@ public sealed class HardwareMediaProofRegistry
         foreach (var result in results)
             merged[result.Id] = result.ToProof();
 
+        var renderToEncode = GetStatus(merged, MediaForgeCapabilityCatalog.RenderToEncodeProof);
+        var hardwareEncode = GetStatus(merged, MediaForgeCapabilityCatalog.HardwareEncodeProof);
+        var hardwareDecode = GetStatus(merged, MediaForgeCapabilityCatalog.HardwareDecodeProof);
+        var exportProofStatus = renderToEncode switch
+        {
+            HardwareMediaProofStatus.Passed => GpuExportProofStatus.Passed,
+            HardwareMediaProofStatus.Failed => GpuExportProofStatus.Failed,
+            _ => baseline.ExportProofStatus
+        };
+
         return new HardwareMediaCapabilityReport
         {
             Platform = baseline.Platform,
             GpuVendor = baseline.GpuVendor,
             DeviceName = baseline.DeviceName,
             DriverVersion = baseline.DriverVersion,
+            AdapterId = baseline.AdapterId,
             DetectedApis = baseline.DetectedApis,
-            HardwareDecodeCodecs = baseline.HardwareDecodeCodecs,
-            HardwareEncodeCodecs = baseline.HardwareEncodeCodecs,
+            HardwareDecodeCodecs = AddValidatedCodec(
+                baseline.HardwareDecodeCodecs,
+                hardwareDecode,
+                "H264"),
+            HardwareEncodeCodecs = AddValidatedCodec(
+                baseline.HardwareEncodeCodecs,
+                hardwareEncode,
+                "H264"),
             BackendCapabilities = baseline.BackendCapabilities,
             Proofs = merged.Values.ToArray(),
-            AcceptsGpuSurfaceInput = baseline.AcceptsGpuSurfaceInput,
+            AcceptsGpuSurfaceInput = baseline.AcceptsGpuSurfaceInput ||
+                hardwareEncode == HardwareMediaProofStatus.Passed,
             RequiresCpuStaging = baseline.RequiresCpuStaging,
-            ExportProofStatus = baseline.ExportProofStatus,
-            ExportProofReason = baseline.ExportProofReason
+            ExportProofStatus = exportProofStatus,
+            ExportProofReason = exportProofStatus switch
+            {
+                GpuExportProofStatus.Passed => "Render-to-encode GPU export proof passed in this session.",
+                GpuExportProofStatus.Failed => "Render-to-encode GPU export proof failed in this session.",
+                _ => baseline.ExportProofReason
+            }
         };
     }
+
+    private static HardwareMediaProofStatus GetStatus(
+        IReadOnlyDictionary<string, HardwareMediaProof> proofs,
+        string proofId) =>
+        proofs.TryGetValue(proofId, out var proof)
+            ? proof.Status
+            : HardwareMediaProofStatus.Pending;
+
+    private static IReadOnlyList<string> AddValidatedCodec(
+        IReadOnlyList<string> codecs,
+        HardwareMediaProofStatus status,
+        string codec) =>
+        status == HardwareMediaProofStatus.Passed &&
+        !codecs.Contains(codec, StringComparer.OrdinalIgnoreCase)
+            ? [.. codecs, codec]
+            : codecs;
 }

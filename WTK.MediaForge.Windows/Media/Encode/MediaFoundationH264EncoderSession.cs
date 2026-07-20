@@ -17,71 +17,10 @@ internal readonly struct EncodedSurfaceResult
     public ReadOnlyMemory<byte> CodecConfiguration { get; init; }
 
     public bool IsKeyFrame { get; init; }
-}
 
-/// <summary>
-/// Prototype H.264 encoder session bound to a D3D11 device.
-/// It emits canned packets and is only available through explicit internal test opt-in.
-/// </summary>
-internal sealed class PrototypeMediaFoundationH264EncoderSession : IDisposable
-{
-    private readonly ID3D11Device _device;
-    private readonly int _width;
-    private readonly int _height;
-    private bool _initialized;
-    private bool _disposed;
+    public TimeSpan PresentationTime { get; init; }
 
-    public PrototypeMediaFoundationH264EncoderSession(ID3D11Device device, int width, int height)
-    {
-        _device = device ?? throw new ArgumentNullException(nameof(device));
-        if (width <= 0 || height <= 0)
-            throw new ArgumentOutOfRangeException(nameof(width));
-
-        _width = width;
-        _height = height;
-    }
-
-    public void Initialize()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _initialized = PrototypeMediaFoundationH264Bridge.TryEnsurePrototypeEncoder(_width, _height);
-
-        if (!_initialized)
-            throw new InvalidOperationException("Prototype H.264 encoder is unavailable.");
-    }
-
-    public EncodedSurfaceResult? TryEncodeSurface(D3D11SharedTextureFrameHandle surface, long frameNumber)
-    {
-        ArgumentNullException.ThrowIfNull(surface);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (!_initialized)
-            return null;
-
-        var packet = PrototypeMediaFoundationH264Bridge.TryEncodeSurface(
-            surface.Texture,
-            TimeSpan.FromMilliseconds(frameNumber * 33),
-            new Core.Media.Audit.CollectingMediaTransportAuditSink());
-
-        if (packet is null)
-            return null;
-
-        return new EncodedSurfaceResult
-        {
-            Data = packet.Data,
-            CodecConfiguration = packet.CodecConfiguration,
-            IsKeyFrame = packet.IsKeyFrame
-        };
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        PrototypeMediaFoundationH264Bridge.Reset();
-    }
+    public TimeSpan Duration { get; init; }
 }
 
 /// <summary>
@@ -93,7 +32,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
     private readonly ID3D11Device _device;
     private readonly HardwareVideoEncoderSettings _settings;
-    private readonly Queue<HardwareEncoderInputSurfaceRetention> _pendingInputSurfaces = new();
+    private readonly List<PendingInputSurface> _pendingInputSurfaces = [];
     private readonly Queue<EncodedSurfaceResult> _pendingOutputPackets = new();
     private IMFDXGIDeviceManager? _deviceManager;
     private IMFTransform? _transform;
@@ -102,6 +41,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private ReadOnlyMemory<byte> _codecConfiguration;
     private bool _disposed;
     private bool _initialized;
+    private bool _drained;
+    private bool _acceptedInput;
 
     public MediaFoundationHardwareH264EncoderSession(
         ID3D11Device device,
@@ -126,8 +67,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             _mediaFoundationRuntimeLease = MediaFoundationRuntime.Acquire();
             _deviceManager = MediaFactory.MFCreateDXGIDeviceManager();
             _deviceManager.ResetDevice(_device).CheckError();
-            _transform = CreateHardwareTransform();
-            ConfigureTransform(_transform);
+            _transform = CreateConfiguredHardwareTransform();
+            _drained = false;
             _initialized = true;
         }
         catch (Exception ex) when (ex is not ObjectDisposedException)
@@ -147,6 +88,9 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
         Initialize();
+
+        if (_drained)
+            throw new InvalidOperationException("Cannot submit input after the hardware encoder has been drained.");
 
         if (_transform is null)
             throw CreateUnavailableException();
@@ -172,8 +116,10 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         {
             inputSample = CreateInputSample(inputTexture, presentationTime);
             _transform.ProcessInput(0, inputSample, 0);
+            Interlocked.Exchange(ref _lastSubmittedFrameNumber, frameNumber);
+            _acceptedInput = true;
             acceptedSurface = true;
-            _pendingInputSurfaces.Enqueue(retainedSurface);
+            _pendingInputSurfaces.Add(new PendingInputSurface(presentationTime, retainedSurface));
             EnforcePendingInputSurfaceLimit();
 
             auditSink.Record(new MediaTransportAuditEvent
@@ -274,7 +220,9 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
                 if (packet.IsEmpty)
                     continue;
 
-                ReleaseCompletedInputSurface();
+                var packetPresentationTime = TryGetSampleTime(sample, frameNumber);
+                var packetDuration = TryGetSampleDuration(sample);
+                ReleaseCompletedInputSurface(packetPresentationTime);
 
                 auditSink.Record(new MediaTransportAuditEvent
                 {
@@ -288,7 +236,9 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
                 {
                     Data = packet,
                     CodecConfiguration = TryReadCodecConfiguration(),
-                    IsKeyFrame = IsKeyFrame(sample, frameNumber)
+                    IsKeyFrame = IsKeyFrame(sample, frameNumber),
+                    PresentationTime = packetPresentationTime,
+                    Duration = packetDuration
                 });
             }
             finally
@@ -305,13 +255,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private static bool IsOutputNotReadyQuirk(Result result) =>
         result.Code == unchecked((int)0x8000FFFF);
 
-    private IMFTransform CreateHardwareTransform()
+    private IMFTransform CreateConfiguredHardwareTransform()
     {
-        var inputType = new RegisterTypeInfo
-        {
-            GuidMajorType = MediaTypeGuids.Video,
-            GuidSubtype = ToVideoSubtype(_settings.PixelFormat)
-        };
         var outputType = new RegisterTypeInfo
         {
             GuidMajorType = MediaTypeGuids.Video,
@@ -321,14 +266,32 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         using var activations = MediaFactory.MFTEnumEx(
             TransformCategoryGuids.VideoEncoder,
             (uint)(EnumFlag.EnumFlagHardware | EnumFlag.EnumFlagSortandfilter),
-            inputType,
+            null,
             outputType);
 
-        var activation = activations.FirstOrDefault()
-            ?? throw new InvalidOperationException("No Media Foundation hardware H.264 encoder MFT accepted the requested GPU input/output type.");
+        var failures = new List<string>();
+        foreach (var activation in activations)
+        {
+            var transformName = TryGetTransformName(activation);
+            IMFTransform? candidate = null;
+            try
+            {
+                candidate = activation.ActivateObject<IMFTransform>();
+                ConfigureTransform(candidate);
+                _transformName = transformName;
+                return candidate;
+            }
+            catch (Exception ex) when (ex is not ObjectDisposedException)
+            {
+                failures.Add($"{transformName}: {ex.GetType().Name} 0x{ex.HResult:X8} - {ex.Message}");
+                candidate?.Dispose();
+            }
+        }
 
-        _transformName = TryGetTransformName(activation);
-        return activation.ActivateObject<IMFTransform>();
+        var detail = failures.Count == 0
+            ? "No hardware H.264 encoder MFT was enumerated."
+            : $"No enumerated hardware H.264 encoder accepted {_settings.PixelFormat} GPU input. Candidates: {string.Join(" | ", failures)}";
+        throw new InvalidOperationException(detail);
     }
 
     private void ConfigureTransform(IMFTransform transform)
@@ -336,7 +299,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         UnlockAsyncTransformIfRequired(transform);
         transform.ProcessMessage(TMessageType.MessageSetD3DManager, (UIntPtr)_deviceManager!.NativePointer);
 
-        var outputType = MediaFactory.MFCreateMediaType();
+        using var outputType = MediaFactory.MFCreateMediaType();
         outputType.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video).CheckError();
         outputType.Set(MediaTypeAttributeKeys.Subtype, VideoFormatGuids.H264).CheckError();
         outputType.Set(MediaTypeAttributeKeys.AvgBitrate, checked((uint)_settings.BitrateBitsPerSecond)).CheckError();
@@ -347,7 +310,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         outputType.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive).CheckError();
         transform.SetOutputType(0, outputType, 0);
 
-        var inputType = MediaFactory.MFCreateMediaType();
+        using var inputType = MediaFactory.MFCreateMediaType();
         inputType.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video).CheckError();
         inputType.Set(MediaTypeAttributeKeys.Subtype, ToVideoSubtype(_settings.PixelFormat)).CheckError();
         MediaFactory.MFSetAttributeSize(inputType, MediaTypeAttributeKeys.FrameSize, (uint)_settings.Width, (uint)_settings.Height).CheckError();
@@ -414,6 +377,31 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
     private TimeSpan FrameDuration =>
         TimeSpan.FromTicks(TimeSpan.TicksPerSecond / _settings.FramesPerSecond);
+
+    private TimeSpan TryGetSampleTime(IMFSample sample, long frameNumber)
+    {
+        try
+        {
+            return TimeSpan.FromTicks(sample.SampleTime);
+        }
+        catch (Exception ex) when (ex is SharpGenException or InvalidOperationException)
+        {
+            return TimeSpan.FromTicks(checked((frameNumber - 1) * FrameDuration.Ticks));
+        }
+    }
+
+    private TimeSpan TryGetSampleDuration(IMFSample sample)
+    {
+        try
+        {
+            var duration = TimeSpan.FromTicks(sample.SampleDuration);
+            return duration > TimeSpan.Zero ? duration : FrameDuration;
+        }
+        catch (Exception ex) when (ex is SharpGenException or InvalidOperationException)
+        {
+            return FrameDuration;
+        }
+    }
 
     private static ReadOnlyMemory<byte> ReadEncodedPacket(IMFSample sample)
     {
@@ -512,7 +500,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             ? string.Empty
             : $" Detail: {innerException.GetType().Name}: {innerException.Message}";
         return new NotSupportedException(
-            "Real Media Foundation H.264 hardware encoder output is unavailable on this machine or driver. Product encoding requires a hardware MFT that accepts GPU surface input and produces backend-validated packets; the prototype canned-packet bridge is not a product encoder backend." + detail,
+            "Media Foundation H.264 hardware encoder output is unavailable on this machine or driver. Product encoding requires a hardware MFT that accepts GPU surface input and produces backend-validated packets." + detail,
             innerException);
     }
 
@@ -522,12 +510,19 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             return;
 
         _disposed = true;
+        var abandonedAcceptedInput = _initialized && _acceptedInput && !_drained;
         DisposeTransformResources();
+
+        if (abandonedAcceptedInput)
+        {
+            throw new InvalidOperationException(
+                "Media Foundation hardware encoder was disposed after accepting input but before DrainAsync completed. " +
+                "Delayed packets cannot be discarded during successful route finalization.");
+        }
     }
 
     private void DisposeTransformResources()
     {
-        TryFlushAndEndStream();
         ReleaseAllPendingInputSurfaces();
         _transform?.Dispose();
         _transform = null;
@@ -540,12 +535,18 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         _mediaFoundationRuntimeLease = null;
     }
 
-    private void ReleaseCompletedInputSurface()
+    private void ReleaseCompletedInputSurface(TimeSpan presentationTime)
     {
         if (_pendingInputSurfaces.Count == 0)
             return;
 
-        _pendingInputSurfaces.Dequeue().Dispose();
+        var index = _pendingInputSurfaces.FindIndex(item => item.PresentationTime == presentationTime);
+        if (index < 0)
+            index = 0;
+
+        var pending = _pendingInputSurfaces[index];
+        _pendingInputSurfaces.RemoveAt(index);
+        pending.Retention.Dispose();
     }
 
     private void EnforcePendingInputSurfaceLimit()
@@ -563,45 +564,86 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private void ReleaseAllPendingInputSurfaces()
     {
         while (_pendingInputSurfaces.Count > 0)
-            _pendingInputSurfaces.Dequeue().Dispose();
+        {
+            var pending = _pendingInputSurfaces[0];
+            _pendingInputSurfaces.RemoveAt(0);
+            pending.Retention.Dispose();
+        }
     }
 
-    private void TryFlushAndEndStream()
+    private long _lastSubmittedFrameNumber;
+
+    public IReadOnlyList<EncodedSurfaceResult> Drain(
+        long lastFrameNumber,
+        IMediaTransportAuditSink auditSink)
     {
+        ArgumentNullException.ThrowIfNull(auditSink);
+
+        if (_drained)
+            return DrainPendingOutputPackets();
+
         if (_transform is null)
-            return;
+            return DrainPendingOutputPackets();
 
         try
         {
             _transform.ProcessMessage(TMessageType.MessageNotifyEndOfStream, UIntPtr.Zero);
         }
-        catch (SharpGenException)
+        catch (Exception ex) when (ex is SharpGenException or InvalidOperationException)
         {
-        }
-        catch (InvalidOperationException)
-        {
+            throw new InvalidOperationException("Media Foundation encoder rejected end-of-stream notification.", ex);
         }
 
         try
         {
             _transform.ProcessMessage(TMessageType.MessageCommandDrain, UIntPtr.Zero);
         }
-        catch (SharpGenException)
+        catch (Exception ex) when (ex is SharpGenException or InvalidOperationException)
         {
+            throw new InvalidOperationException("Media Foundation encoder rejected drain command.", ex);
         }
-        catch (InvalidOperationException)
+
+        DrainAvailableOutputPackets(Math.Max(lastFrameNumber, 1), auditSink);
+
+        if (_pendingInputSurfaces.Count > 0)
         {
+            throw new InvalidOperationException(
+                $"Media Foundation encoder completed drain with {_pendingInputSurfaces.Count} retained input surface(s)." );
         }
 
         try
         {
             _transform.ProcessMessage(TMessageType.MessageCommandFlush, UIntPtr.Zero);
         }
-        catch (SharpGenException)
+        catch (Exception ex) when (ex is SharpGenException or InvalidOperationException)
         {
+            throw new InvalidOperationException("Media Foundation encoder rejected flush command after drain.", ex);
         }
-        catch (InvalidOperationException)
+
+        _drained = true;
+        _acceptedInput = false;
+        auditSink.Record(new MediaTransportAuditEvent
         {
-        }
+            Kind = MediaTransportAuditEventKind.HardwareEncoderDrainCompleted,
+            Source = nameof(MediaFoundationHardwareH264EncoderSession),
+            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
+            Detail = "Media Foundation hardware encoder completed end-of-stream, drain, and flush."
+        });
+        return DrainPendingOutputPackets();
     }
+
+    private IReadOnlyList<EncodedSurfaceResult> DrainPendingOutputPackets()
+    {
+        if (_pendingOutputPackets.Count == 0)
+            return Array.Empty<EncodedSurfaceResult>();
+
+        var packets = _pendingOutputPackets.ToArray();
+        _pendingOutputPackets.Clear();
+        return packets;
+    }
+
+    private sealed record PendingInputSurface(
+        TimeSpan PresentationTime,
+        HardwareEncoderInputSurfaceRetention Retention);
+
 }

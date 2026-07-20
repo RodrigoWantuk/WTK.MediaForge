@@ -47,10 +47,10 @@ public static class RenderOutputTypeRegistry
         if (typeId == RenderOutputTypes.PreviewWindow)
         {
             return (
-                MediaForgeSupportStatus.Supported,
-                MediaForgeProductReadinessStatus.ProductValidated,
+                MediaForgeSupportStatus.Experimental,
+                MediaForgeProductReadinessStatus.BackendCallSucceeded,
                 MediaTransportKind.GpuSurface,
-                null);
+                "Experimental until hosted resize and repeated fence-timeout recovery complete the preview reliability gate.");
         }
 
         if (typeId == RenderOutputTypes.RecordingMp4)

@@ -27,7 +27,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private readonly IStudioUiTimer _uiTimer;
     private readonly SceneEditSessionService _sceneEditSessionService = new();
     private StudioLayoutDocument _layoutDocument = new();
-    private StudioDocument _document = StudioMockDocumentFactory.Create();
+    private StudioDocument _document;
     private ProjectTreeItemViewModel? _selectedProjectItem;
     private LayerItemViewModel? _selectedLayer;
     private StudioScene? _currentScene;
@@ -54,7 +54,8 @@ public sealed class StudioShellViewModel : ViewModelBase
             services.DiagnosticsService,
             services.SelectionService,
             services.SceneEditRuntimeService,
-            services.UiTimer)
+            services.UiTimer,
+            services.InitialDocument)
     {
     }
 
@@ -68,7 +69,8 @@ public sealed class StudioShellViewModel : ViewModelBase
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
         IStudioSceneEditRuntimeService sceneEditRuntimeService,
-        IStudioUiTimer uiTimer)
+        IStudioUiTimer uiTimer,
+        StudioDocument initialDocument)
     {
         _projectService = projectService;
         _outputService = outputService;
@@ -80,6 +82,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         _selectionService = selectionService;
         _sceneEditRuntimeService = sceneEditRuntimeService;
         _uiTimer = uiTimer;
+        _document = initialDocument ?? throw new ArgumentNullException(nameof(initialDocument));
 
         BottomWorkbench = new BottomWorkbenchViewModel();
         PreviewWorkspace = new PreviewWorkspaceViewModel(Preview);
@@ -515,10 +518,7 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private async Task NewProjectAsync(CancellationToken cancellationToken)
     {
-        await _projectService.NewAsync(cancellationToken).ConfigureAwait(true);
-        _document = StudioMockDocumentFactory.Create();
-        _document.DisplayName = "Projeto sem título";
-        _document.HasUnsavedChanges = true;
+        _document = await _projectService.NewAsync(cancellationToken).ConfigureAwait(true);
         LoadDesignData(_document, _diagnosticsService.Items);
         ApplyProjectDocument();
         SetStatus("Novo projeto criado.");
@@ -526,31 +526,32 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private async Task OpenProjectAsync(CancellationToken cancellationToken)
     {
-        await _projectService.OpenAsync("mock-project.mforge.json", cancellationToken).ConfigureAwait(true);
-        _document = StudioMockDocumentFactory.Create();
-        _document.DisplayName = "Projeto carregado";
+        var path = _projectService.Current.Path ?? "mediaforge-project.mforge.json";
+        _document = await _projectService.OpenAsync(path, cancellationToken).ConfigureAwait(true);
         LoadDesignData(_document, _diagnosticsService.Items);
         ApplyProjectDocument();
-        SetStatus("Projeto de exemplo aberto.");
+        SetStatus("Projeto aberto.");
     }
 
     private async Task SaveProjectAsync(CancellationToken cancellationToken)
     {
-        await _projectService.SaveAsync(null, cancellationToken).ConfigureAwait(true);
+        await _projectService.SaveAsync(_document, null, cancellationToken).ConfigureAwait(true);
         _document.HasUnsavedChanges = false;
         ApplyProjectDocument();
-        SetStatus("Projeto salvo em pacote visual.");
+        SetStatus("Projeto salvo.");
     }
 
     private bool CanToggleStreaming()
     {
         return GetStreamingOutput() is not null
+            && _outputService.StreamingState is StudioOutputUiState.Ready or StudioOutputUiState.Running
             && _outputService.StreamingState is not StudioOutputUiState.Starting and not StudioOutputUiState.Stopping;
     }
 
     private bool CanToggleRecording()
     {
         return GetRecordingOutput() is not null
+            && _outputService.RecordingState is StudioOutputUiState.Ready or StudioOutputUiState.Running
             && _outputService.RecordingState is not StudioOutputUiState.Starting and not StudioOutputUiState.Stopping;
     }
 

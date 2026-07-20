@@ -27,7 +27,7 @@ internal interface IWindowsWebcamCaptureSession : IDisposable
 
     bool TryCaptureNextFrameTo(D3D11SharedTextureFrameHandle destination, CancellationToken cancellationToken);
 
-    void RequestStop();
+    Exception? RequestStop();
 }
 
 internal interface IWindowsWebcamCaptureSessionFactory
@@ -171,25 +171,33 @@ internal sealed class WindowsWebcamCaptureSession : IWindowsWebcamCaptureSession
         }
     }
 
-    public void RequestStop()
+    public Exception? RequestStop()
     {
+        List<Exception>? errors = null;
         try
         {
             _sourceReader?.Flush(SourceReaderIndex.FirstVideoStream);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort unblock only; Stop/Dispose reports the worker timeout if this fails.
+            (errors ??= []).Add(ex);
         }
 
         try
         {
             _mediaSource?.Stop();
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort unblock only; Stop/Dispose reports the worker timeout if this fails.
+            (errors ??= []).Add(ex);
         }
+
+        return errors switch
+        {
+            null => null,
+            { Count: 1 } => errors[0],
+            _ => new AggregateException("Media Foundation webcam stop requests failed.", errors)
+        };
     }
 
     public void Dispose()

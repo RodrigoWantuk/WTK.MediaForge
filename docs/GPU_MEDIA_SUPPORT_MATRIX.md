@@ -52,7 +52,7 @@ marketing:
 | Source | Transport | Status | Notes |
 |--------|-----------|--------|-------|
 | Desktop capture | GpuSurface | Experimental | D3D11 shared texture |
-| Window capture | GpuSurface | Planned | Requires Windows Graphics Capture provider that publishes D3D11 GPU frame leases |
+| Window capture | GpuSurface | Hardware-dependent experimental | Windows Graphics Capture uses a free-threaded frame pool, GPU-to-GPU copy into engine-owned D3D11 shared slots, KeepLatest backpressure, and `proof.media_io.window_capture.product` before promotion |
 | Webcam | GpuSurface | Hardware-dependent experimental | Windows Media Foundation provider validates immediate OS-boundary upload to D3D11 shared GPU textures through `proof.media_io.webcam_input.product`; raw CPU frames must not circulate beyond that boundary |
 | Static image PNG/JPEG | StaticCpuAsset -> D3D11 shared GpuSurface | Supported on Windows product path | Load-time CPU decode; CPU copy released after GPU upload |
 | Static image WebP | N/A | Planned | Blocked until license review |
@@ -66,10 +66,10 @@ marketing:
 
 | Output | Transport | Status | Notes |
 |--------|-----------|--------|-------|
-| Preview panel | GpuSurface | Supported | Vulkan/Win32 GPU surface presentation, no CPU readback |
+| Preview panel | GpuSurface | Experimental | Vulkan/Win32 GPU presentation with retryable fence-timeout ownership; hosted resize/attach/detach and sustained presentation still gate promotion |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | Hardware-dependent | Windows encoded route factory exists and is capability-gated; recording uses non-dropping backpressure and fails observably if frames would be lost. v12 MP4 recording/output proofs write and validate sustained packet-only MP4 files from hardware-validated packets when the hardware path is available. |
-| RTMP H.264 | EncodedPacket | Hardware-dependent experimental | TCP RTMP handshake/publish and FLV H.264 packetization exist; public sink rejects packets without trusted BackendOutputValidated evidence. v12 RTMP proof publishes sustained real H.264 FLV tags to a local TCP proof server when the hardware path is available. |
+| Recording MP4 H.264 | EncodedPacket | Hardware-dependent | Shared Windows encoded route uses non-dropping backpressure and fails the recording on overflow/finalize failure. v13 requires composite proofs plus sustained route qualification. |
+| RTMP H.264 | EncodedPacket | Hardware-dependent experimental | TCP RTMP/FLV path has bounded queues, drop accounting, and reconnect that is isolated from recording. v13 requires composite proofs plus sustained route qualification. |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | Runtime-detected NDI SDK -> GpuSurface/EncodedPacket required | Blocked/unavailable | Windows adapter can package/detect Standard NDI runtime, but product output requires GPU-safe send without continuous CPU readback |
 | Virtual camera | N/A | Unsupported | |
@@ -78,18 +78,18 @@ marketing:
 
 | Encoder | Status | Notes |
 |---------|--------|-------|
-| Media Foundation hardware MFT H.264 | Proof-runner gated / not product output by itself | Windows session uses typed settings, owned D3D11 device lifetime, shared MF runtime, and backend packet validation. Product MP4/RTMP still requires the full output proof chain. |
+| Media Foundation hardware MFT H.264 | Implemented / adapter proof-gated | Windows session uses typed settings, owned D3D11 device lifetime, pending-input bounds, drain/flush diagnostics, and backend packet validation. Product MP4/RTMP still requires the full composite and sustained route evidence. |
 | NVENC direct | Planned | RequiresLegalReview |
 | Intel QSV direct | Planned | RequiresLegalReview |
 | AMD AMF direct | Planned | RequiresLegalReview |
 | libx264 / software H.264 | Prohibited | |
 | FFmpeg (future) | Deferred / RequiresLegalReview | Future encoded-packet/container-only review; never a raw video frame product path |
 
-## v12 Media I/O Proof Set and Readiness Gates
+## v13 Media I/O Proof Set and Readiness Gate
 
 Recording MP4 and RTMP are **runtime proof-gated** end-to-end product
 features. The static catalog stays conservative, but a hardware proof report can
-promote them when the v12 readiness scripts are green for the current
+promote them when the v13 readiness gate is green for the current
 machine/driver:
 
 ```text
@@ -100,10 +100,11 @@ FrameScheduler -> EncodeSchedulerTarget -> GpuFrameExporter -> hardware H.264 ->
 does not accept prototype or contract-only packets, and it requires
 trusted `BackendOutputValidated` H.264 packet evidence created by an
 implementation backend, not by public packet initializers.
-`PrototypeEncodedPacketMp4Muxer` remains internal-test-only. Capability API
-exposes `HardwareMediaProof` entries for render-to-encode, hardware encode, MP4
+No prototype MP4 muxer or canned packet encoder is shipped in product
+assemblies. Capability API exposes `HardwareMediaProof` entries for
+render-to-encode, hardware encode, MP4
 recording, hardware decode, decode-to-render, MP4 output, MP4 input, webcam
-input, RTMP network output, and NDI input/output. Passed proofs must identify
+input, window capture input, RTMP network output, and NDI input/output. Passed proofs must identify
 the backend and carry the required evidence.
 
 Product availability requires the matching product proof, not only an internal
@@ -114,6 +115,8 @@ codec/backend proof:
 - MP4 input requires hardware decode, decode-to-render, and
   `proof.media_io.mp4_input.product`.
 - Webcam input requires `proof.media_io.webcam_input.product`.
+- Window capture requires `proof.media_io.window_capture.product`, which
+  captures a real HWND into a D3D11 GPU lease and renders it through Vulkan.
 - RTMP output requires hardware encode and
   `proof.media_io.rtmp_output.network`.
 - NDI input/output require runtime detection, a GPU-safe input/output strategy,
@@ -121,19 +124,14 @@ codec/backend proof:
   separately from the current hardware release gate so MP4/RTMP/webcam/decode
   can ship without pretending NDI is complete.
 
-`./scripts/verify-engine-readiness-v12.ps1` is the current official
-product-boundary gate. Older v9/v10/v11 readiness scripts remain layered
-historical evidence, but new hardware-first media promotion must use v12.
-The v12 gate keeps the v11 baseline and adds encoded output profile and D3D11
-encoder ownership checks before media capability promotion.
-The v12 Windows composite runners execute render-to-encode, packet-only MP4,
+`./scripts/verify-engine-readiness-v13.ps1` is the only current
+product-boundary gate. Older scripts are archived under `docs/history` and are
+not executed recursively. The v13 Windows composite runners execute render-to-encode, packet-only MP4,
 TCP RTMP, hardware decode, and decode-to-render product proofs where the
 current machine supports the required hardware/driver/API path.
-On the current AMD/Radeon validation target, render-to-encode, hardware H.264
-encode, MP4 recording/output, RTMP network output, hardware decode,
-decode-to-render, MP4 input, and webcam input pass. NDI runtime probing and
-source discovery exist, but NDI video input/output remain blocked/unavailable
-until GPU-safe input/output proofs pass.
+Proof success is adapter/driver specific and does not replace the 30-minute
+qualification or eight-hour release-candidate workload. NDI runtime probing and
+source discovery exist, but NDI video remains blocked until GPU-safe proofs pass.
 The report artifacts are
 `test-reports/media-proof-report.json` and
 `test-reports/media-proof-report.md`.

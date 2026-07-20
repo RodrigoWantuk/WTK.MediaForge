@@ -1,9 +1,10 @@
 using WTK.MediaForge.Composition.Engine;
 using WTK.MediaForge.Diagnostics;
+using System.Collections.Concurrent;
 
 namespace WTK.MediaForge.Composition.Runtime.Recovery;
 
-public enum FaultRecoveryScenario
+internal enum FaultRecoveryScenario
 {
     VulkanDeviceLost,
     EncoderUnavailable,
@@ -17,7 +18,7 @@ public enum FaultRecoveryScenario
     SourceProviderFailed
 }
 
-public enum FaultRecoveryStatus
+internal enum FaultRecoveryStatus
 {
     Recovering,
     Recovered,
@@ -25,7 +26,7 @@ public enum FaultRecoveryStatus
     Canceled
 }
 
-public sealed record FaultRecoveryPolicy
+internal sealed record FaultRecoveryPolicy
 {
     public int MaxAttempts { get; init; } = 5;
 
@@ -42,6 +43,13 @@ public sealed record FaultRecoveryPolicy
     public static FaultRecoveryPolicy ForScenario(FaultRecoveryScenario scenario) =>
         scenario switch
         {
+            FaultRecoveryScenario.VulkanDeviceLost => new FaultRecoveryPolicy
+            {
+                RequiresRecordingPause = true,
+                RequiresStreamingPause = true,
+                InitialBackoff = TimeSpan.FromMilliseconds(100),
+                MaxBackoff = TimeSpan.FromSeconds(2)
+            },
             FaultRecoveryScenario.EncoderUnavailable => new FaultRecoveryPolicy
             {
                 RequiresRecordingPause = true,
@@ -82,8 +90,10 @@ public sealed record FaultRecoveryPolicy
         };
 }
 
-public sealed record FaultRecoveryState
+internal sealed record FaultRecoveryState
 {
+    public required string ResourceKey { get; init; }
+
     public FaultRecoveryScenario Scenario { get; init; }
 
     public FaultRecoveryStatus Status { get; init; } = FaultRecoveryStatus.Recovering;
@@ -104,12 +114,14 @@ public sealed record FaultRecoveryState
 /// <summary>
 /// Coordinates automatic recovery for GPU/media faults without requiring application restart.
 /// </summary>
-public sealed class FaultRecoveryCoordinator
+internal sealed class FaultRecoveryCoordinator
 {
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly Func<FaultRecoveryScenario, FaultRecoveryPolicy> _policyProvider;
-    private readonly Dictionary<FaultRecoveryScenario, FaultRecoveryState> _states = new();
+    private readonly Dictionary<string, FaultRecoveryState> _states = new(StringComparer.Ordinal);
     private readonly object _gate = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _recoveryGates =
+        new(StringComparer.Ordinal);
 
     public FaultRecoveryCoordinator(
         IMediaForgeDiagnosticsSink? diagnostics = null,
@@ -121,12 +133,12 @@ public sealed class FaultRecoveryCoordinator
 
     public event EventHandler<FaultRecoveryState>? RecoveryStateChanged;
 
-    public IReadOnlyDictionary<FaultRecoveryScenario, FaultRecoveryState> States
+    public IReadOnlyDictionary<string, FaultRecoveryState> States
     {
         get
         {
             lock (_gate)
-                return new Dictionary<FaultRecoveryScenario, FaultRecoveryState>(_states);
+                return new Dictionary<string, FaultRecoveryState>(_states, StringComparer.Ordinal);
         }
     }
 
@@ -161,9 +173,45 @@ public sealed class FaultRecoveryCoordinator
         FaultRecoveryScenario scenario,
         string detail,
         Func<CancellationToken, Task<bool>> recoveryAction,
+        CancellationToken cancellationToken = default) =>
+        await HandleFaultAsync(
+                scenario,
+                scenario.ToString(),
+                detail,
+                recoveryAction,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<FaultRecoveryState> HandleFaultAsync(
+        FaultRecoveryScenario scenario,
+        string resourceKey,
+        string detail,
+        Func<CancellationToken, Task<bool>> recoveryAction,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceKey);
         ArgumentNullException.ThrowIfNull(recoveryAction);
+
+        var recoveryGate = _recoveryGates.GetOrAdd(resourceKey, static _ => new SemaphoreSlim(1, 1));
+        await recoveryGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await HandleFaultCoreAsync(scenario, resourceKey, detail, recoveryAction, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            recoveryGate.Release();
+        }
+    }
+
+    private async Task<FaultRecoveryState> HandleFaultCoreAsync(
+        FaultRecoveryScenario scenario,
+        string resourceKey,
+        string detail,
+        Func<CancellationToken, Task<bool>> recoveryAction,
+        CancellationToken cancellationToken)
+    {
 
         var policy = ValidatePolicy(_policyProvider(scenario));
         var attempt = 0;
@@ -175,6 +223,7 @@ public sealed class FaultRecoveryCoordinator
             {
                 var canceledState = CreateState(
                     scenario,
+                    resourceKey,
                     $"{detail} (recovery canceled)",
                     attempt,
                     FaultRecoveryStatus.Canceled,
@@ -184,7 +233,13 @@ public sealed class FaultRecoveryCoordinator
             }
 
             attempt++;
-            var state = CreateState(scenario, detail, attempt, FaultRecoveryStatus.Recovering, policy);
+            var state = CreateState(
+                scenario,
+                resourceKey,
+                detail,
+                attempt,
+                FaultRecoveryStatus.Recovering,
+                policy);
             PublishState(state);
 
             try
@@ -193,6 +248,7 @@ public sealed class FaultRecoveryCoordinator
                 {
                     var recoveredState = CreateState(
                         scenario,
+                        resourceKey,
                         $"{detail} (recovered)",
                         state.AttemptCount,
                         FaultRecoveryStatus.Recovered,
@@ -204,7 +260,7 @@ public sealed class FaultRecoveryCoordinator
                         "engine.fault_recovery_succeeded",
                         $"Recovered from {scenario}.",
                         nameof(FaultRecoveryCoordinator));
-                    ClearState(scenario);
+                    ClearState(resourceKey);
                     return recoveredState;
                 }
             }
@@ -228,6 +284,7 @@ public sealed class FaultRecoveryCoordinator
 
         var failedState = CreateState(
             scenario,
+            resourceKey,
             $"{detail} (recovery exhausted)",
             attempt,
             FaultRecoveryStatus.Exhausted,
@@ -237,29 +294,52 @@ public sealed class FaultRecoveryCoordinator
     }
 
     public void NotifyEncoderUnavailable(string detail) =>
-        PublishState(CreateState(FaultRecoveryScenario.EncoderUnavailable, detail, 1));
+        PublishState(CreateState(FaultRecoveryScenario.EncoderUnavailable, "encoder", detail, 1));
 
     public void NotifyDecoderUnavailable(string detail) =>
-        PublishState(CreateState(FaultRecoveryScenario.DecoderUnavailable, detail, 1));
+        PublishState(CreateState(FaultRecoveryScenario.DecoderUnavailable, "decoder", detail, 1));
 
     public void NotifyRtmpDisconnected(string detail) =>
-        PublishState(CreateState(FaultRecoveryScenario.RtmpDisconnected, detail, 1));
+        PublishState(CreateState(FaultRecoveryScenario.RtmpDisconnected, "streaming:rtmp", detail, 1));
 
     public void NotifyRenderExportFailed(string detail) =>
-        PublishState(CreateState(FaultRecoveryScenario.RenderExportFailed, detail, 1));
+        PublishState(CreateState(FaultRecoveryScenario.RenderExportFailed, "render-export", detail, 1));
 
     public void NotifySourceProviderFailed(string detail) =>
-        PublishState(CreateState(FaultRecoveryScenario.SourceProviderFailed, detail, 1));
+        PublishState(CreateState(FaultRecoveryScenario.SourceProviderFailed, "source", detail, 1));
+
+    public void NotifyVulkanDeviceLost(string detail) =>
+        PublishState(CreateState(FaultRecoveryScenario.VulkanDeviceLost, "graphics-device", detail, 1));
+
+    public void ClearState(string resourceKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceKey);
+        lock (_gate)
+            _states.Remove(resourceKey);
+    }
 
     public void ClearState(FaultRecoveryScenario scenario)
     {
         lock (_gate)
-            _states.Remove(scenario);
+        {
+            foreach (var key in _states
+                         .Where(pair => pair.Value.Scenario == scenario)
+                         .Select(static pair => pair.Key)
+                         .ToArray())
+            {
+                _states.Remove(key);
+            }
+        }
     }
 
-    private FaultRecoveryState CreateState(FaultRecoveryScenario scenario, string detail, int attempt) =>
+    private FaultRecoveryState CreateState(
+        FaultRecoveryScenario scenario,
+        string resourceKey,
+        string detail,
+        int attempt) =>
         CreateState(
             scenario,
+            resourceKey,
             detail,
             attempt,
             FaultRecoveryStatus.Recovering,
@@ -267,12 +347,14 @@ public sealed class FaultRecoveryCoordinator
 
     private static FaultRecoveryState CreateState(
         FaultRecoveryScenario scenario,
+        string resourceKey,
         string detail,
         int attempt,
         FaultRecoveryStatus status,
         FaultRecoveryPolicy policy) =>
         new()
         {
+            ResourceKey = resourceKey,
             Scenario = scenario,
             Status = status,
             Detail = detail,
@@ -299,7 +381,7 @@ public sealed class FaultRecoveryCoordinator
     private void PublishState(FaultRecoveryState state)
     {
         lock (_gate)
-            _states[state.Scenario] = state;
+            _states[state.ResourceKey] = state;
 
         RecoveryStateChanged?.Invoke(this, state);
     }

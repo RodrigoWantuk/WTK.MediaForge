@@ -165,7 +165,8 @@ internal sealed class SourceRenderGraphNode : RenderGraphNode
         if (!key.StartsWith(prefix, StringComparison.Ordinal))
             return null;
 
-        return Guid.TryParse(key[prefix.Length..], out var value)
+        var sourceIdText = key[prefix.Length..].Split(':', 2)[0];
+        return Guid.TryParse(sourceIdText, out var value)
             ? SourceId.From(value)
             : null;
     }

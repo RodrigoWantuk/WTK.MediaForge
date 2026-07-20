@@ -1,10 +1,10 @@
 # Avalonia Studio Implementation Plan
 
-This plan tracks the current v0.2 reset of `WTK.MediaForge.Studio`.
+This plan tracks the current v13 Studio integration of `WTK.MediaForge.Studio`.
 
 ## Current Goal
 
-Build a usable native Avalonia/MVVM mock editor around the product model:
+Build a usable native Avalonia/MVVM editor around the product model:
 
 ```text
 Project -> Scenes -> Layers -> Outputs
@@ -13,13 +13,17 @@ Project -> Scenes -> Layers -> Outputs
           Sources   Effects in context
 ```
 
-The goal is product UX correctness before runtime integration. The Studio app
-must remain runnable without GPU, capture devices, encoders, streaming, NDI, or
-audio.
+Studio remains runnable when hardware capabilities are unavailable. Runtime
+features are disabled with a reason instead of replaced by fake success.
 
 ## Implemented Direction
 
-- `StudioDocument` is the shared mock document.
+- `StudioDocument` is the editable Studio projection of the canonical engine project.
+- Production bootstrap is distinct from Design/Test bootstrap. Production owns
+  a Windows engine session, canonical `MediaForgeProject` persistence, and an
+  asynchronous cached capability probe.
+- New projects start empty. Open/save validate and atomically write canonical
+  engine JSON; runtime leases and native handles are never serialized.
 - `CurrentScene` drives the canvas, layer table, scene outputs, and properties.
 - The primary left panel lists only scenes.
 - Sources are global and reusable, but are added through the source library
@@ -52,7 +56,7 @@ audio.
   commands as keyboard shortcuts.
 - The main UI uses pt-BR terminology and avoids engine/debug language.
 - `StudioVisualQaService` and `scripts/verify-studio-ui-visual-qa.ps1` validate
-  the Studio shell contract at 1366x768, 1600x900, and 1920x1080.
+  the Studio shell contract at 1366x768, 1920x1080, and 2560x1440.
 - `StudioAppSmokeTests` load `MainWindow` under Avalonia Headless, exercising
   XAML, resources, bindings, and the root shell ViewModel.
 - Primary toolbar, project navigation, production outputs, bottom workbench,
@@ -75,8 +79,8 @@ Key implementation areas:
 ## Constraints
 
 - No WebView, React, Electron, Tailwind runtime, or browser dependency.
-- No real capture/media/source adapters.
-- No real recording/streaming/NDI/virtual-camera sinks.
+- Studio does not instantiate adapters directly; it uses the engine/runtime boundary.
+- No output is presented as active unless the runtime capability and route are real.
 - No real audio capture/mix/mux/equalization.
 - No real GPU preview integration until the preview reliability gate allows it.
 - No legacy direct preview/capture path.
@@ -86,10 +90,13 @@ Key implementation areas:
 
 ## Next UI Work
 
-1. Keep the automated Studio visual QA gate green whenever layout, shell,
+1. Preserve the headless nonblank screenshot regression at 1366x768,
+   1920x1080, and 2560x1440 while adding platform image baselines only after
+   font/rendering variance is normalized.
+2. Keep the automated Studio visual QA gate green whenever layout, shell,
    preview editor, properties, workbench, accessibility, or shell-loading
    behavior changes.
-2. After runtime gates: introduce the real preview frame provider below the
+3. After runtime gates: introduce the real preview frame provider below the
    Avalonia overlay.
 
 ## Validation

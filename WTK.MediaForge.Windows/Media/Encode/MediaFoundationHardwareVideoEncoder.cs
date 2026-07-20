@@ -19,9 +19,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
     private readonly HardwareVideoEncoderSettings _settings;
     private readonly ID3D11Device _device;
     private readonly OwnedD3D11EncoderDevice? _ownedDevice;
-    private readonly bool _allowPrototypeEncoding;
     private readonly IHardwareEncoderFormatConverter? _formatConverter;
-    private PrototypeMediaFoundationH264EncoderSession? _prototypeSession;
     private MediaFoundationHardwareH264EncoderSession? _hardwareSession;
     private long _frameNumber;
     private bool _disposed;
@@ -31,32 +29,14 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int width,
         int height,
         string pixelFormat = "B8G8R8A8_UNORM")
-        : this(device, CreateSettings(width, height, pixelFormat), allowPrototypeEncoding: false)
-    {
-    }
-
-    internal MediaFoundationHardwareVideoEncoder(
-        ID3D11Device device,
-        int width,
-        int height,
-        string pixelFormat,
-        bool allowPrototypeEncoding)
-        : this(device, CreateSettings(width, height, pixelFormat), allowPrototypeEncoding)
+        : this(device, CreateSettings(width, height, pixelFormat), formatConverter: new D3D11BgraToNv12Converter(device))
     {
     }
 
     public MediaFoundationHardwareVideoEncoder(
         ID3D11Device device,
         HardwareVideoEncoderSettings settings)
-        : this(device, settings, allowPrototypeEncoding: false)
-    {
-    }
-
-    internal MediaFoundationHardwareVideoEncoder(
-        ID3D11Device device,
-        HardwareVideoEncoderSettings settings,
-        bool allowPrototypeEncoding)
-        : this(device, settings, allowPrototypeEncoding, formatConverter: new D3D11BgraToNv12Converter(device))
+        : this(device, settings, formatConverter: new D3D11BgraToNv12Converter(device))
     {
     }
 
@@ -65,22 +45,19 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int width,
         int height,
         string pixelFormat,
-        bool allowPrototypeEncoding,
         IHardwareEncoderFormatConverter? formatConverter)
-        : this(device, CreateSettings(width, height, pixelFormat), allowPrototypeEncoding, formatConverter)
+        : this(device, CreateSettings(width, height, pixelFormat), formatConverter)
     {
     }
 
     internal MediaFoundationHardwareVideoEncoder(
         ID3D11Device device,
         HardwareVideoEncoderSettings settings,
-        bool allowPrototypeEncoding,
         IHardwareEncoderFormatConverter? formatConverter)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _settings.Validate();
-        _allowPrototypeEncoding = allowPrototypeEncoding;
         _formatConverter = formatConverter;
         _info = new HardwareEncoderInfo
         {
@@ -104,15 +81,14 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         int width,
         int height,
         string pixelFormat = "NV12")
-        : this(CreateOwnedDefaultDevice(), CreateSettings(width, height, pixelFormat), allowPrototypeEncoding: false)
+        : this(CreateOwnedDefaultDevice(), CreateSettings(width, height, pixelFormat))
     {
     }
 
     private MediaFoundationHardwareVideoEncoder(
         OwnedD3D11EncoderDevice ownedDevice,
-        HardwareVideoEncoderSettings settings,
-        bool allowPrototypeEncoding)
-        : this(ownedDevice.Device, settings, allowPrototypeEncoding)
+        HardwareVideoEncoderSettings settings)
+        : this(ownedDevice.Device, settings)
     {
         _ownedDevice = ownedDevice;
     }
@@ -131,93 +107,46 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
 
         if (context.InputLease.BackendSurface is not (D3D11SharedTextureFrameHandle or ID3D11Texture2D))
         {
-            if (!_allowPrototypeEncoding)
-            {
-                throw MediaFoundationHardwareH264EncoderSession.CreateUnavailableException(
-                    new InvalidOperationException("Encoder requires a D3D11 texture backend surface."));
-            }
-
-            throw new InvalidOperationException("Encoder requires a D3D11 texture backend surface.");
+            throw MediaFoundationHardwareH264EncoderSession.CreateUnavailableException(
+                new InvalidOperationException("Encoder requires a D3D11 texture backend surface."));
         }
 
-        if (!_allowPrototypeEncoding)
+        HardwareEncoderInputSurfaceRetention? retainedSurface =
+            context.InputLease.RetainBackendSurfaceForAsyncConsumer();
+        EncodedSurfaceResult? result;
+        try
         {
-            HardwareEncoderInputSurfaceRetention? retainedSurface =
-                context.InputLease.RetainBackendSurfaceForAsyncConsumer();
-            EncodedSurfaceResult? result;
-            try
-            {
-                result = EnsureProductBackendAvailable()
-                    .TryEncodeSurface(
-                        retainedSurface,
-                        Interlocked.Increment(ref _frameNumber),
-                        context.PresentationTime,
-                        auditSink);
-                retainedSurface = null;
-            }
-            finally
-            {
-                retainedSurface?.Dispose();
-            }
-
-            if (result is null)
-                return ValueTask.FromResult<EncodedVideoPacket?>(null);
-
-            return ValueTask.FromResult<EncodedVideoPacket?>(new EncodedVideoPacket
-            {
-                Data = result.Value.Data,
-                Codec = EncodedVideoCodec.H264,
-                BitstreamFormat = H264NalUtilities.ContainsValidStartCode(result.Value.Data.Span)
-                    ? EncodedVideoBitstreamFormat.AnnexB
-                    : EncodedVideoBitstreamFormat.Avcc,
-                PresentationTime = context.PresentationTime,
-                Duration = FrameDuration,
-                IsKeyFrame = result.Value.IsKeyFrame,
-                CodecConfiguration = result.Value.CodecConfiguration,
-                Evidence = EncodedVideoPacketEvidence.CreateBackendOutputValidated(
-                    nameof(MediaFoundationHardwareVideoEncoder),
-                    _info.Backend,
-                    MediaForgeCapabilityCatalog.HardwareEncodeProof)
-            });
+            result = EnsureProductBackendAvailable()
+                .TryEncodeSurface(
+                    retainedSurface,
+                    Interlocked.Increment(ref _frameNumber),
+                    context.PresentationTime,
+                    auditSink);
+            retainedSurface = null;
+        }
+        finally
+        {
+            retainedSurface?.Dispose();
         }
 
-        if (context.InputLease.BackendSurface is not D3D11SharedTextureFrameHandle surface)
-            throw new InvalidOperationException("Prototype encoder requires a D3D11 shared texture backend surface.");
-
-        _prototypeSession ??= CreatePrototypeSession();
-
-        auditSink.Record(new MediaTransportAuditEvent
-        {
-            Kind = MediaTransportAuditEventKind.HardwareEncoderAcceptedSurface,
-            Source = nameof(MediaFoundationHardwareVideoEncoder),
-            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype,
-            Detail = "Prototype encoder path accepted D3D11 GPU surface input; real MF MFT output validation is not implemented yet."
-        });
-
-        var encoded = _prototypeSession.TryEncodeSurface(surface, Interlocked.Increment(ref _frameNumber));
-        if (encoded is null)
+        if (result is null)
             return ValueTask.FromResult<EncodedVideoPacket?>(null);
-
-        auditSink.Record(new MediaTransportAuditEvent
-        {
-            Kind = MediaTransportAuditEventKind.EncodedPacketProduced,
-            Source = nameof(MediaFoundationHardwareVideoEncoder),
-            EvidenceKind = MediaTransportAuditEvidenceKind.Prototype,
-            Detail = $"Prototype H.264 packet produced ({encoded.Value.Data.Length} bytes)."
-        });
 
         return ValueTask.FromResult<EncodedVideoPacket?>(new EncodedVideoPacket
         {
-            Data = encoded.Value.Data,
+            Data = result.Value.Data,
             Codec = EncodedVideoCodec.H264,
-            BitstreamFormat = EncodedVideoBitstreamFormat.AnnexB,
-            PresentationTime = context.PresentationTime,
-            Duration = FrameDuration,
-            IsKeyFrame = encoded.Value.IsKeyFrame,
-            CodecConfiguration = encoded.Value.CodecConfiguration,
-            Evidence = EncodedVideoPacketEvidence.CreatePrototype(
+            BitstreamFormat = H264NalUtilities.ContainsValidStartCode(result.Value.Data.Span)
+                ? EncodedVideoBitstreamFormat.AnnexB
+                : EncodedVideoBitstreamFormat.Avcc,
+            PresentationTime = result.Value.PresentationTime,
+            Duration = result.Value.Duration,
+            IsKeyFrame = result.Value.IsKeyFrame,
+            CodecConfiguration = result.Value.CodecConfiguration,
+            Evidence = EncodedVideoPacketEvidence.CreateBackendOutputValidated(
                 nameof(MediaFoundationHardwareVideoEncoder),
-                _info.Backend)
+                _info.Backend,
+                MediaForgeCapabilityCatalog.HardwareEncodeProof)
         });
     }
 
@@ -233,8 +162,7 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         ArgumentNullException.ThrowIfNull(auditSink);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (!_allowPrototypeEncoding)
-            EnsureProductBackendAvailable();
+        EnsureProductBackendAvailable();
 
         context.CancellationToken.ThrowIfCancellationRequested();
 
@@ -256,6 +184,22 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         };
 
         return await EncodeAsync(encodeContext, auditSink).ConfigureAwait(false);
+    }
+
+    public ValueTask<IReadOnlyList<EncodedVideoPacket>> DrainAsync(
+        IMediaTransportAuditSink auditSink,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(auditSink);
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_hardwareSession is null)
+            return ValueTask.FromResult<IReadOnlyList<EncodedVideoPacket>>(Array.Empty<EncodedVideoPacket>());
+
+        var drained = _hardwareSession.Drain(Interlocked.Read(ref _frameNumber), auditSink);
+        var packets = drained.Select(ToEncodedVideoPacket).ToArray();
+        return ValueTask.FromResult<IReadOnlyList<EncodedVideoPacket>>(packets);
     }
 
     private async ValueTask<HardwareEncoderInputLease> CreateEncoderInputLeaseAsync(
@@ -290,13 +234,51 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             return ValueTask.CompletedTask;
 
         _disposed = true;
-        _prototypeSession?.Dispose();
-        _prototypeSession = null;
-        _hardwareSession?.Dispose();
-        _hardwareSession = null;
-        _ownedDevice?.Dispose();
+        List<Exception>? errors = null;
+        try
+        {
+            _hardwareSession?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+        finally
+        {
+            _hardwareSession = null;
+        }
+
+        try
+        {
+            _ownedDevice?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
+        }
+
+        if (errors is not null)
+            throw new AggregateException("Failed to finalize Media Foundation hardware encoder resources.", errors);
+
         return ValueTask.CompletedTask;
     }
+
+    private EncodedVideoPacket ToEncodedVideoPacket(EncodedSurfaceResult result) => new()
+    {
+        Data = result.Data,
+        Codec = EncodedVideoCodec.H264,
+        BitstreamFormat = H264NalUtilities.ContainsValidStartCode(result.Data.Span)
+            ? EncodedVideoBitstreamFormat.AnnexB
+            : EncodedVideoBitstreamFormat.Avcc,
+        PresentationTime = result.PresentationTime,
+        Duration = result.Duration > TimeSpan.Zero ? result.Duration : FrameDuration,
+        IsKeyFrame = result.IsKeyFrame,
+        CodecConfiguration = result.CodecConfiguration,
+        Evidence = EncodedVideoPacketEvidence.CreateBackendOutputValidated(
+            nameof(MediaFoundationHardwareVideoEncoder),
+            _info.Backend,
+            MediaForgeCapabilityCatalog.HardwareEncodeProof)
+    };
 
     private MediaFoundationHardwareH264EncoderSession EnsureProductBackendAvailable()
     {
@@ -305,16 +287,6 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             _settings);
         _hardwareSession.Initialize();
         return _hardwareSession;
-    }
-
-    private PrototypeMediaFoundationH264EncoderSession CreatePrototypeSession()
-    {
-        var session = new PrototypeMediaFoundationH264EncoderSession(
-            _device,
-            _inputRequirement.Width,
-            _inputRequirement.Height);
-        session.Initialize();
-        return session;
     }
 
     private TimeSpan FrameDuration =>

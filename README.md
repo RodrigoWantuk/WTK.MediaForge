@@ -29,7 +29,7 @@ WTK MediaForge is being built around a few core principles:
   Scenes, overlays, text, layouts, and media sources should be adjustable while the pipeline is running.
 
 * **Studio application**
-  In addition to the engine/API surface, the project now has an Avalonia-based Studio mock shell for users who want a complete desktop tool for scenes, sources, layers, effects, outputs, and future audio workflows.
+  The Avalonia Studio has a real runtime/design composition boundary, canonical project persistence, capability probing, and an editable overlay. Native preview/output controls remain capability-gated.
 
 ## Technology Direction
 
@@ -46,15 +46,16 @@ The current technical direction is:
 FFmpeg is not part of the first hardware MP4/RTMP product path. Any future FFmpeg/libav usage must pass the dedicated license and GPU media transport review, and may only operate on encoded packets, containers, metadata, or bitstream data.
 
 Product media availability is proof-gated. Continuous decode/encode and real
-media I/O features must pass the v12 hardware media proofs (`HardwareMediaProof`
+media I/O features must pass the v13 hardware media proofs (`HardwareMediaProof`
 entries for render-to-encode, hardware encode, MP4 recording, hardware decode,
 decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI
 input/output) before they can be advertised as supported. The current official
-gate is `./scripts/verify-engine-readiness-v12.ps1`; release hardware
-validation uses `./scripts/verify-engine-readiness-v12.ps1 -RequireHardwareMedia`.
-On the current Windows AMD/Radeon validation target, MP4 recording, RTMP,
-MP4 input, webcam input, desktop capture, and preview paths have passing
-product proof chains. NDI Standard SDK runtime detection and source discovery
+gate is `./scripts/verify-engine-readiness-v13.ps1`; release hardware
+validation uses `./scripts/verify-engine-readiness-v13.ps1 -RequireHardwareMedia`.
+Real Windows implementations exist for MP4 recording, RTMP, MP4 input, webcam,
+desktop capture, and preview, but runtime availability remains adapter/proof
+dependent. Preview is temporarily experimental until hosted resize and
+fence-timeout recovery pass. NDI Standard SDK runtime detection and source discovery
 exist on Windows, and licensed runtime DLLs can be packed as native assets, but
 NDI video input/output remain blocked until GPU-safe product proofs pass.
 
@@ -72,18 +73,15 @@ The approved current UI direction is an Avalonia dark-theme mock workbench with:
 * bottom workbench content limited to the main user workflow: layers, effects, and scene outputs;
 * production/output cards that make scene-to-sink routing and transitions visible without exposing engine, Vulkan, D3D11, command buffers, fences, or native handles.
 
-Diagnostics, performance details, and other low-level runtime information belong in advanced tooling, not in the primary user workflow. The Studio shell remains mock-only until the runtime roadmap explicitly opens each real capture, preview, recording, streaming, NDI, virtual camera, or audio track.
+Diagnostics, performance details, and other low-level runtime information belong in advanced tooling, not in the primary user workflow. The scene editor overlay remains mock-rendered while native preview is experimental; runtime features are shown only from actual capability snapshots.
 
 The React/Lovable prototype is a visual reference only. The Studio implementation must be native Avalonia/MVVM and must not embed React, WebView, Electron, or browser runtime dependencies.
 
 See:
 
 * `docs/UI_STUDIO_DESIGN.md`
-* `docs/UI_REACT_TO_AVALONIA_MAPPING.md`
 * `docs/UI_IMPLEMENTATION_PLAN.md`
 * `docs/UI_ACCEPTANCE_CHECKLIST.md`
-* `docs/STUDIO_UI_RECOVERY_PLAN.md`
-* `docs/STUDIO_UI_VISUAL_ACCEPTANCE.md`
 
 ## License
 

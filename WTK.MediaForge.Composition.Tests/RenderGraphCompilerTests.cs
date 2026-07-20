@@ -2,6 +2,7 @@ using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Color;
+using WTK.MediaForge.Core.Frames;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests;
@@ -207,5 +208,27 @@ public class RenderGraphCompilerTests
             graph.Nodes,
             node => node.Kind == MediaForgeRenderGraphNodeKind.OutputPass &&
                     node.Key.Contains($"binding:draft:{draftSessionId.Value}", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Output_color_space_participates_in_output_cache_key()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
+            .OffscreenOutput("SDR", scene, 1920, 1080, out _, output => output.ColorSpace = RenderColorSpace.Srgb)
+            .OffscreenOutput("Linear", scene, 1920, 1080, out _, output => output.ColorSpace = RenderColorSpace.Rec709Limited)
+            .BuildValidated();
+
+        var graph = MediaForgeRenderGraphCompiler.Compile(project);
+        var outputKeys = graph.Nodes
+            .Where(node => node.Kind == MediaForgeRenderGraphNodeKind.OutputPass)
+            .Select(node => node.Key)
+            .ToArray();
+
+        Assert.Contains(outputKeys, key => key.Contains("color-space:Srgb", StringComparison.Ordinal));
+        Assert.Contains(outputKeys, key => key.Contains("color-space:Rec709Limited", StringComparison.Ordinal));
+        Assert.Equal(2, outputKeys.Distinct(StringComparer.Ordinal).Count());
     }
 }

@@ -1,6 +1,7 @@
 param(
     [ValidateSet("Fast", "Gpu", "Stress", "Performance", "Build")]
-    [string]$Tier = "Fast"
+    [string]$Tier = "Fast",
+    [switch]$SkipPolicyChecks
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,8 +9,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
-$fastFilter = "Category!=GPU&Category!=Stress"
-$gpuFilter = "Category=GPU&Category!=Stress"
+$fastFilter = "Category!=GPU&Category!=Stress&Category!=Performance"
+$gpuFilter = "Category=GPU&Category!=Stress&Category!=Performance"
 $stressFilter = "Category=Stress"
 $performanceFilter = "Category=Performance"
 
@@ -61,16 +62,24 @@ switch ($Tier) {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
     "Fast" {
-        # Explicit projects only — GPU assemblies never run in Fast tier.
+        # All non-GPU/non-performance contracts run here, including platform projects.
         Invoke-TestProject -Project $coreTests -Filter $fastFilter
         Invoke-TestProject -Project $diagnosticsTests -Filter $fastFilter
         Invoke-TestProject -Project $compositionTests -Filter $fastFilter
         Invoke-TestProject -Project $studioTests -Filter $fastFilter
-        & "$PSScriptRoot/verify-media-transport-rules.ps1"
-        & "$PSScriptRoot/verify-license-policy.ps1"
+        Invoke-TestProject -Project $d3d11Tests -Filter $fastFilter -MaxCpuOne
+        Invoke-TestProject -Project $vulkanTests -Filter $fastFilter -MaxCpuOne
+        Invoke-TestProject -Project $captureTests -Filter $fastFilter -MaxCpuOne
+        Invoke-TestProject -Project $windowsTests -Filter $fastFilter -MaxCpuOne
+        if (-not $SkipPolicyChecks) {
+            & "$PSScriptRoot/verify-media-transport-rules.ps1"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & "$PSScriptRoot/verify-license-policy.ps1"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
     }
     "Gpu" {
-        # Never run GPU projects via solution — sequential, one at a time.
+        # Never run GPU projects via solution; run them sequentially, one at a time.
         Invoke-TestProject -Project $d3d11Tests -Filter $gpuFilter -MaxCpuOne
         Invoke-TestProject -Project $vulkanTests -Filter $gpuFilter -MaxCpuOne
         Invoke-TestProject -Project $captureTests -Filter $gpuFilter -MaxCpuOne
@@ -82,8 +91,8 @@ switch ($Tier) {
         Invoke-TestProject -Project $captureTests -Filter $stressFilter -MaxCpuOne
     }
     "Performance" {
-        Invoke-TestProject -Project $diagnosticsTests -Filter $performanceFilter -RequireTests
         Invoke-TestProject -Project $compositionTests -Filter $performanceFilter -RequireTests
+        Invoke-TestProject -Project $vulkanTests -Filter $performanceFilter -MaxCpuOne -RequireTests
     }
 }
 

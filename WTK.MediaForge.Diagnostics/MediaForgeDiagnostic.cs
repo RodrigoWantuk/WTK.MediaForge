@@ -10,4 +10,5 @@ public sealed record MediaForgeDiagnostic(
     long? FrameNumber = null,
     int? SlotIndex = null,
     string? Component = null,
-    Exception? Exception = null);
+    Exception? Exception = null,
+    Guid? OutputId = null);

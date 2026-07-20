@@ -19,7 +19,7 @@ internal sealed class EncodedPacketConsumerOptions
     public EncodedPacketConsumerBackpressurePolicy BackpressurePolicy { get; init; } =
         EncodedPacketConsumerBackpressurePolicy.FailOutput;
 
-    public bool IsProductOutput { get; init; }
+    public bool RequiresLosslessDelivery { get; init; }
 
     public TimeSpan WriteTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
@@ -68,21 +68,24 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
         return _consumers.Select(static consumer => consumer.GetStatistics()).ToArray();
     }
 
-    public void RegisterConsumer(
+    public EncodedPacketConsumerWorker RegisterConsumer(
         IEncodedPacketConsumer consumer,
         EncodedPacketConsumerOptions? options = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(consumer);
 
-        if (_consumers.Any(worker => ReferenceEquals(worker.Consumer, consumer)))
-            return;
+        var existing = _consumers.FirstOrDefault(worker => ReferenceEquals(worker.Consumer, consumer));
+        if (existing is not null)
+            return existing;
 
-        _consumers.Add(new EncodedPacketConsumerWorker(
+        var worker = new EncodedPacketConsumerWorker(
             consumer,
             _consumerQueueCapacity,
             options ?? new EncodedPacketConsumerOptions(),
-            _diagnostics));
+            _diagnostics);
+        _consumers.Add(worker);
+        return worker;
     }
 
     public void RoutePacket(EncodedVideoPacket packet)
@@ -90,7 +93,6 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(packet);
 
-        List<Exception>? failures = null;
         foreach (var consumer in _consumers)
         {
             try
@@ -106,12 +108,8 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
                     $"Encoded packet consumer '{consumer.DisplayName}' failed while accepting a packet.",
                     nameof(EncodedOutputRouter),
                     ex);
-                (failures ??= []).Add(ex);
             }
         }
-
-        if (failures is not null)
-            throw new AggregateException("One or more encoded packet consumers failed while accepting a packet.", failures);
     }
 
     public ValueTask RoutePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
@@ -195,13 +193,13 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
         if (_options.WriteTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "Consumer write timeout must be positive.");
 
-        if (_options.IsProductOutput &&
+        if (_options.RequiresLosslessDelivery &&
             _options.BackpressurePolicy is
                 EncodedPacketConsumerBackpressurePolicy.DropOutput or
                 EncodedPacketConsumerBackpressurePolicy.KeepLatest)
         {
             throw new ArgumentException(
-                "Product encoded outputs cannot use dropping backpressure policies.",
+                "Lossless encoded outputs cannot use dropping backpressure policies.",
                 nameof(options));
         }
 

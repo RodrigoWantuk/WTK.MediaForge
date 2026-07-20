@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using System.Runtime.ExceptionServices;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Runtime.Scheduling;
@@ -311,11 +312,11 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                 return;
 
             _queue.Writer.TryComplete();
-            await _stop.CancelAsync().ConfigureAwait(false);
 
             using var timeoutCts = new CancellationTokenSource(timeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
+            Exception? shutdownFailure = null;
             try
             {
                 await _worker.WaitAsync(linked.Token).ConfigureAwait(false);
@@ -327,19 +328,51 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                 timeoutCts.IsCancellationRequested &&
                 !cancellationToken.IsCancellationRequested)
             {
-                _status = RenderedOutputEncodingRuntimeStatus.Failed;
-                throw new TimeoutException($"Rendered output encoding runtime for output {OutputId} did not stop within {timeout}.", ex);
+                shutdownFailure = new TimeoutException(
+                    $"Rendered output encoding runtime for output {OutputId} did not stop within {timeout}.",
+                    ex);
             }
-            catch
+            catch (Exception ex)
             {
-                _status = RenderedOutputEncodingRuntimeStatus.Failed;
-                throw;
+                shutdownFailure = ex;
             }
-            finally
+
+            if (shutdownFailure is null)
+            {
+                _stop.Dispose();
+                return;
+            }
+
+            _status = RenderedOutputEncodingRuntimeStatus.Failed;
+            var cleanupErrors = new List<Exception>();
+            await _stop.CancelAsync().ConfigureAwait(false);
+            if (!_worker.IsCompleted)
+            {
+                try
+                {
+                    await _worker.WaitAsync(timeout, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception cleanupException)
+                {
+                    cleanupErrors.Add(cleanupException);
+                }
+            }
+
+            if (_worker.IsCompleted)
             {
                 await DisposeQueuedWorkItemsAsync().ConfigureAwait(false);
                 _stop.Dispose();
             }
+
+            if (cleanupErrors.Count > 0)
+            {
+                cleanupErrors.Insert(0, shutdownFailure);
+                throw new AggregateException(
+                    $"Rendered output encoding runtime for output {OutputId} failed to stop safely.",
+                    cleanupErrors);
+            }
+
+            ExceptionDispatchInfo.Capture(shutdownFailure).Throw();
         }
 
         public ValueTask DisposeAsync() =>
@@ -407,7 +440,8 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                             $"Rendered output {OutputId} could not be exported or scheduled for hardware encoding.",
                             nameof(RenderedOutputEncodingPipeline),
                             ex,
-                            frameNumber: item.Context.FrameId);
+                            frameNumber: item.Context.FrameId,
+                            outputId: OutputId.Value);
 
                         if (!_backpressurePolicy.AllowFrameDrop)
                         {
@@ -448,7 +482,8 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                 _backpressurePolicy.AllowFrameDrop
                     ? $"Rendered output {OutputId} dropped an encoding frame because the export queue is full."
                     : $"Rendered output {OutputId} failed because the encoding export queue is full.",
-                nameof(RenderedOutputEncodingPipeline));
+                nameof(RenderedOutputEncodingPipeline),
+                outputId: OutputId.Value);
         }
 
         private bool IsFatalFailure => Volatile.Read(ref _fatalFailure) != 0;
@@ -466,7 +501,8 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                     MediaForgeDiagnosticSeverity.Error,
                     "engine.encoding_pipeline_scheduler_failed",
                     $"Rendered output {OutputId} stopped accepting frames because the hardware encode scheduler failed.",
-                    nameof(RenderedOutputEncodingPipeline));
+                    nameof(RenderedOutputEncodingPipeline),
+                    outputId: OutputId.Value);
             }
 
             return true;
@@ -512,7 +548,8 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                     "engine.encoding_pipeline_rejected_frame_dispose_failed",
                     $"Rendered output {OutputId} failed to release a rejected encoding frame lease.",
                     nameof(RenderedOutputEncodingPipeline),
-                    ex);
+                    ex,
+                    outputId: OutputId.Value);
             }
         }
 
@@ -537,7 +574,8 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
                     $"Rendered output {OutputId} failed to release a queued encoding frame lease during shutdown.",
                     nameof(RenderedOutputEncodingPipeline),
                     ex,
-                    frameNumber: item.Context.FrameId);
+                    frameNumber: item.Context.FrameId,
+                    outputId: OutputId.Value);
             }
         }
     }

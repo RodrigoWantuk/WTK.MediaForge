@@ -10,8 +10,8 @@ public sealed record StudioVisualQaViewport(string Name, double Width, double He
     public static IReadOnlyList<StudioVisualQaViewport> ProductTargets { get; } =
     [
         new("1366x768", 1366, 768),
-        new("1600x900", 1600, 900),
-        new("1920x1080", 1920, 1080)
+        new("1920x1080", 1920, 1080),
+        new("2560x1440", 2560, 1440)
     ];
 }
 

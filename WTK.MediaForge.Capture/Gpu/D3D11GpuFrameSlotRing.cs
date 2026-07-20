@@ -7,7 +7,7 @@ using WTK.MediaForge.Graphics.D3D11;
 
 namespace WTK.MediaForge.Capture.Gpu;
 
-internal sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
+internal sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IRetiredGpuResourceDiagnostics, IDisposable
 {
     private readonly D3D11GpuFrameSlot[] _slots;
     private readonly ID3D11GpuFrameSlotDisposer _slotDisposer;
@@ -77,6 +77,16 @@ internal sealed class D3D11GpuFrameSlotRing : IRetiredGpuResource, IDisposable
     public bool IsFullyDisposed => Volatile.Read(ref _disposed) != 0;
 
     public bool IsRetired => _slots.Length > 0 && _slots[0].IsRetired;
+
+    public string DiagnosticName => nameof(D3D11GpuFrameSlotRing);
+
+    public string DescribeState()
+    {
+        var slots = Enumerable.Range(0, Ring.SlotCount)
+            .Select(index =>
+                $"slot[{index}]=state:{Ring.GetSlotState(index)},refs:{Ring.GetRefCount(index)},generation:{Ring.GetSlotGeneration(index)}");
+        return $"retired={IsRetired},ringDisposed={Ring.IsFullyDisposed},handlesDisposed={Volatile.Read(ref _handlesDisposed) != 0},fullyDisposed={FullyDisposed.Status}; {string.Join(", ", slots)}";
+    }
 
     public D3D11GpuFrameSlot GetSlot(int slotIndex) => _slots[slotIndex];
 

@@ -16,19 +16,20 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
         if (ndiRuntime.CanUseStandardSdk)
             apis.Add("NDI-SDK");
 
-        var (vendor, deviceName) = TryGetPrimaryAdapterInfo();
+        var (vendor, deviceName, adapterId) = TryGetPrimaryAdapterInfo();
         var report = new HardwareMediaCapabilityReport
         {
             Platform = RuntimeInformation.OSDescription,
             GpuVendor = vendor,
             DeviceName = deviceName,
+            AdapterId = adapterId,
             DetectedApis = apis,
             HardwareDecodeCodecs = [],
             HardwareEncodeCodecs = [],
             AcceptsGpuSurfaceInput = false,
             RequiresCpuStaging = false,
             ExportProofStatus = GpuExportProofStatus.Pending,
-            ExportProofReason = "Run the v12 proof runners to validate hardware encode/decode on this machine; baseline probing does not promote product media without executed proof evidence.",
+            ExportProofReason = "Run the v13 proof runners to validate hardware encode/decode on this machine; baseline probing does not promote product media without executed proof evidence.",
             BackendCapabilities = CreateBackendCapabilities(vendor, ndiRuntime),
             Proofs = CreateProofs(vendor, ndiRuntime)
         };
@@ -49,7 +50,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             DecodeCodecs = ["H264"],
             SupportStatus = MediaForgeSupportStatus.Unavailable,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
-            UnavailableReason = "Run the v12 hardware decode proof to validate real D3D11VA IMFDXGIBuffer output for this machine."
+            UnavailableReason = "Run the v13 hardware decode proof to validate real D3D11VA IMFDXGIBuffer output for this machine."
         },
         new HardwareMediaBackendCapability
         {
@@ -60,7 +61,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             EncodeCodecs = ["H264"],
             SupportStatus = MediaForgeSupportStatus.Unavailable,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
-            UnavailableReason = "Run the v12 hardware encode proof to validate real Media Foundation hardware MFT packets for this machine."
+            UnavailableReason = "Run the v13 hardware encode proof to validate real Media Foundation hardware MFT packets for this machine."
         },
         new HardwareMediaBackendCapability
         {
@@ -193,6 +194,15 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
         },
         new HardwareMediaProof
         {
+            Id = MediaForgeCapabilityCatalog.WindowCaptureInputProductProof,
+            DisplayName = "Window capture input product proof",
+            Status = HardwareMediaProofStatus.Unavailable,
+            Backend = "WindowsGraphicsCapture-D3D11+Vulkan",
+            Vendor = vendor,
+            Reason = "Window capture remains unavailable until a real HWND is captured into a D3D11 GPU lease and rendered through Vulkan."
+        },
+        new HardwareMediaProof
+        {
             Id = MediaForgeCapabilityCatalog.RtmpNetworkOutputProof,
             DisplayName = "RTMP network output proof",
             Status = HardwareMediaProofStatus.Unavailable,
@@ -224,10 +234,10 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
         }
     ];
 
-    private static (string Vendor, string DeviceName) TryGetPrimaryAdapterInfo()
+    private static (string Vendor, string DeviceName, string AdapterId) TryGetPrimaryAdapterInfo()
     {
         if (!OperatingSystem.IsWindows())
-            return ("Unknown", "Unknown");
+            return ("Unknown", "Unknown", "unavailable");
 
         try
         {
@@ -236,12 +246,16 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             using (adapter)
             {
                 var description = adapter.Description1;
-                return (MapVendor(description.VendorId), description.Description);
+                var luid = description.Luid;
+                return (
+                    MapVendor(description.VendorId),
+                    description.Description,
+                    $"{luid.HighPart:X8}:{luid.LowPart:X8}");
             }
         }
         catch
         {
-            return ("Unknown", "Unknown");
+            return ("Unknown", "Unknown", "unavailable");
         }
     }
 

@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using WTK.MediaForge.Composition.Media.Mux;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
@@ -154,6 +155,41 @@ internal static class WindowsHardwareDecodeProofPipeline
         }
     }
 
+    public static async ValueTask SubmitWindowCaptureProviderFrameToRendererAsync(
+        nint windowHandle,
+        CancellationToken cancellationToken)
+    {
+        if (windowHandle == 0)
+            throw new ArgumentException("A valid proof window handle is required.", nameof(windowHandle));
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var sourceId = SourceId.New();
+        var provider = new WindowsWindowCaptureSourceProviderFactory()
+            .CreateProvider(CreateWindowCaptureSourceDefinition(sourceId, windowHandle));
+        try
+        {
+            await provider.StartAsync(cancellationToken)
+                .WaitAsync(ProofTimeout, cancellationToken)
+                .ConfigureAwait(false);
+            var frameLease = await WaitForProviderFrameAsync(provider, cancellationToken).ConfigureAwait(false);
+            await SubmitSourceFrameLeaseToRendererAsync(frameLease, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                await provider.StopAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (provider is IAsyncDisposable asyncDisposable)
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                else if (provider is IDisposable disposable)
+                    disposable.Dispose();
+            }
+        }
+    }
+
     private static async ValueTask SubmitSourceFrameLeaseToRendererAsync(
         GpuFrameLease sourceLease,
         CancellationToken cancellationToken)
@@ -169,6 +205,7 @@ internal static class WindowsHardwareDecodeProofPipeline
         IRenderFrameSubmission? submission = null;
         RenderFrameSnapshot? snapshot = null;
         var leaseTransferredToSnapshot = false;
+        Exception? operationFailure = null;
         try
         {
             if (!MediaForgeVulkanRenderer.TryCreate(
@@ -203,27 +240,57 @@ internal static class WindowsHardwareDecodeProofPipeline
             snapshot.Dispose();
             snapshot = null;
         }
-        finally
+        catch (Exception ex)
         {
-            if (!leaseTransferredToSnapshot)
-                sourceLease.Dispose();
+            operationFailure = ex;
+        }
 
-            if (submission is not null)
+        List<Exception>? cleanupErrors = null;
+        if (!leaseTransferredToSnapshot)
+            TryCleanup(sourceLease.Dispose, ref cleanupErrors);
+
+        if (submission is not null)
+        {
+            try
             {
-                try
-                {
-                    await submission.WaitForCompletionAsync(ProofTimeout, CancellationToken.None).ConfigureAwait(false);
-                    submission.DisposeCompleted();
-                }
-                catch
-                {
-                    // The original proof failure is more actionable than best-effort cleanup failure here.
-                }
+                await submission.WaitForCompletionAsync(ProofTimeout, CancellationToken.None).ConfigureAwait(false);
+                submission.DisposeCompleted();
+            }
+            catch (Exception ex)
+            {
+                (cleanupErrors ??= []).Add(ex);
+            }
+        }
+
+        TryCleanup(() => snapshot?.Dispose(), ref cleanupErrors);
+        TryCleanup(() => renderer?.Dispose(), ref cleanupErrors);
+        TryCleanup(guard.Clear, ref cleanupErrors);
+
+        if (operationFailure is not null)
+        {
+            if (cleanupErrors is not null)
+            {
+                throw new AggregateException(
+                    "Source-frame-to-render proof failed and GPU cleanup also failed.",
+                    [operationFailure, .. cleanupErrors]);
             }
 
-            snapshot?.Dispose();
-            renderer?.Dispose();
-            guard.Clear();
+            ExceptionDispatchInfo.Capture(operationFailure).Throw();
+        }
+
+        if (cleanupErrors is not null)
+            throw new AggregateException("Source-frame-to-render proof GPU cleanup failed.", cleanupErrors);
+    }
+
+    private static void TryCleanup(Action action, ref List<Exception>? errors)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= []).Add(ex);
         }
     }
 
@@ -282,6 +349,21 @@ internal static class WindowsHardwareDecodeProofPipeline
                 PreferredWidth = 1280,
                 PreferredHeight = 720,
                 PreferredFrameRate = 30
+            })
+        };
+
+    private static MediaForgeSourceDefinition CreateWindowCaptureSourceDefinition(
+        SourceId sourceId,
+        nint windowHandle) =>
+        new()
+        {
+            Id = sourceId,
+            Name = "Window capture product proof",
+            TypeId = MediaSourceTypes.WindowCapture,
+            Settings = MediaSourceSettingsSerializer.ToJson(new WindowCaptureSourceSettings
+            {
+                WindowHandle = windowHandle,
+                CaptureCursor = false
             })
         };
 

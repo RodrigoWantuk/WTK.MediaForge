@@ -30,7 +30,8 @@ public static class MediaForgeDiagnostics
         Guid? sourceId = null,
         string? sourceName = null,
         long? frameNumber = null,
-        int? slotIndex = null)
+        int? slotIndex = null,
+        Guid? outputId = null)
     {
         Report(
             sink,
@@ -43,6 +44,7 @@ public static class MediaForgeDiagnostics
                 frameNumber,
                 slotIndex,
                 component,
-                exception));
+                exception,
+                outputId));
     }
 }

@@ -20,6 +20,7 @@ public static class MediaForgeCapabilityCatalog
     public const string Mp4OutputProductProof = "proof.media_io.mp4_output.product";
     public const string Mp4InputProductProof = "proof.media_io.mp4_input.product";
     public const string WebcamInputProductProof = "proof.media_io.webcam_input.product";
+    public const string WindowCaptureInputProductProof = "proof.media_io.window_capture.product";
     public const string RtmpNetworkOutputProof = "proof.media_io.rtmp_output.network";
     public const string NdiSourceDiscovery = "source.ndi.discovery";
     public const string NdiInputProductProof = "proof.media_io.ndi_input.product";
@@ -162,6 +163,12 @@ public static class MediaForgeCapabilityCatalog
             MediaForgeProductReadinessStatus.ProductValidated),
 
         ProofEntry(
+            WindowCaptureInputProductProof,
+            "Window capture input product proof",
+            GetProof(proofs, WindowCaptureInputProductProof),
+            MediaForgeProductReadinessStatus.ProductValidated),
+
+        ProofEntry(
             RtmpNetworkOutputProof,
             "RTMP network output proof",
             GetProof(proofs, RtmpNetworkOutputProof),
@@ -183,8 +190,8 @@ public static class MediaForgeCapabilityCatalog
         Entry(CapabilityCategories.Performance, EnginePerformanceBaseline, "Engine performance baseline",
             MediaForgeSupportStatus.Deferred,
             MediaForgeLicenseStatus.Approved,
-            MediaForgeProductReadinessStatus.Skeleton,
-            "Synthetic performance validation exists; product performance requires sustained render, encode, decode, MP4, and RTMP workloads.",
+            MediaForgeProductReadinessStatus.Contract,
+            "Short real composition and Vulkan workloads pass, but product promotion requires the documented 30-minute qualification and eight-hour release-candidate workloads.",
             MediaTransportKind.GpuSurface)
     ];
     }
@@ -259,6 +266,9 @@ public static class MediaForgeCapabilityCatalog
         map.TryAdd(
             WebcamInputProductProof,
             PendingProof(WebcamInputProductProof, "Webcam input product proof"));
+        map.TryAdd(
+            WindowCaptureInputProductProof,
+            PendingProof(WindowCaptureInputProductProof, "Window capture input product proof"));
         map.TryAdd(
             RtmpNetworkOutputProof,
             PendingProof(RtmpNetworkOutputProof, "RTMP network output proof"));

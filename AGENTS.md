@@ -34,7 +34,7 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
 
 ## Studio UI Exception
 
-A limited Avalonia Studio UI/mock track is allowed when it follows `docs/UI_STUDIO_DESIGN.md`, `docs/UI_REACT_TO_AVALONIA_MAPPING.md`, `docs/UI_IMPLEMENTATION_PLAN.md`, and `docs/UI_ACCEPTANCE_CHECKLIST.md`.
+A limited Avalonia Studio track is allowed when it follows `docs/UI_STUDIO_DESIGN.md`, `docs/UI_IMPLEMENTATION_PLAN.md`, and `docs/UI_ACCEPTANCE_CHECKLIST.md`.
 
 This exception is UI-only. It permits dark-theme shell layout, mock/design data, Project Explorer, preview mock, Inspector, Bottom Workbench, diagnostics/performance/output-monitor mock panels, status bar, and fake command state.
 

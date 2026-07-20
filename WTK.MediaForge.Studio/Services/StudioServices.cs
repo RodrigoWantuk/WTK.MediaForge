@@ -33,11 +33,11 @@ public interface IStudioProjectService
 {
     StudioProjectDocument Current { get; }
 
-    Task NewAsync(CancellationToken cancellationToken);
+    Task<StudioDocument> NewAsync(CancellationToken cancellationToken);
 
-    Task OpenAsync(string path, CancellationToken cancellationToken);
+    Task<StudioDocument> OpenAsync(string path, CancellationToken cancellationToken);
 
-    Task SaveAsync(string? path, CancellationToken cancellationToken);
+    Task SaveAsync(StudioDocument document, string? path, CancellationToken cancellationToken);
 }
 
 public interface IStudioClock
@@ -249,7 +249,8 @@ public sealed class StudioServiceBundle
         IStudioDiagnosticsService diagnosticsService,
         IStudioSelectionService selectionService,
         IInspectorPageFactory inspectorPageFactory,
-        IStudioUiTimer uiTimer)
+        IStudioUiTimer uiTimer,
+        StudioDocument initialDocument)
     {
         ProjectService = projectService;
         EngineService = engineService;
@@ -264,6 +265,7 @@ public sealed class StudioServiceBundle
         SelectionService = selectionService;
         InspectorPageFactory = inspectorPageFactory;
         UiTimer = uiTimer;
+        InitialDocument = initialDocument ?? throw new ArgumentNullException(nameof(initialDocument));
     }
 
     public IStudioProjectService ProjectService { get; }
@@ -291,4 +293,6 @@ public sealed class StudioServiceBundle
     public IInspectorPageFactory InspectorPageFactory { get; }
 
     public IStudioUiTimer UiTimer { get; }
+
+    public StudioDocument InitialDocument { get; }
 }

@@ -92,6 +92,7 @@ Before considering a change complete, verify:
 - [ ] Scene dirty/version fingerprints include typed effect parameters, not only effect type/order/enabled state.
 - [ ] Apply in a nested canvas computes direct/transitive canvas consumers and affected output routes before transition execution.
 - [ ] RenderGraph/cache keys include canvas version binding; no cache key relies only on canvas id and size.
+- [ ] Physical RenderGraph validation rejects duplicate keys, missing/forward dependencies, unknown canvases/outputs, and missing output passes before Vulkan command recording.
 - [ ] Routes use `CanvasId -> RenderOutput -> RenderOutputSink(s)` and never direct canvas-to-encoder/NDI/preview shortcuts.
 - [ ] NDI Standard SDK runtime detection/source discovery is not treated as video product support; NDI source/output video paths remain blocked unless GPU-safe product proofs pass.
 - [ ] Same scene routed to multiple sinks/outputs does not require duplicate canvas rendering when size/config/version match.
@@ -129,7 +130,7 @@ Before considering a change complete, verify:
 - [ ] Desktop duplication reconnect replaces GPU slot rings created on the old D3D11 device before publishing frames from the new session.
 - [ ] Failed reconnect marks the provider failed and emits diagnostics instead of leaving the source apparently running.
 - [ ] Desktop/window capture reconnect stops and disposes superseded or failed native sessions instead of leaking them.
-- [ ] Window capture is not advertised as available until a real GPU provider exists.
+- [ ] Window capture is not advertised as available until the real HWND -> WGC -> engine-owned D3D11 slot -> Vulkan proof passes.
 - [ ] Webcam is not advertised as available until the immediate GPU-upload provider is product validated.
 
 ## D3D11 Ring
@@ -149,20 +150,22 @@ Before considering a change complete, verify:
 - [ ] Continuous video decode/encode paths use validated hardware acceleration or report unavailable; no software fallback or CPU staging is introduced.
 - [ ] OS-specific media adapters stay in OS-specific projects and capability reports expose runtime-detected backend/vendor status.
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
-- [ ] v12 render-to-encode, hardware encode, MP4 recording, MP4 input/output, webcam input, RTMP network output, and NDI input/output proofs pass before those media I/O paths are marked Supported.
+- [ ] v13 render-to-encode, hardware encode, MP4 recording, MP4 input/output, webcam input, window capture input, RTMP network output, and NDI input/output proofs pass before those media I/O paths are promoted.
 - [ ] `scripts/generate-media-proof-report.ps1` writes `test-reports/media-proof-report.json` and `test-reports/media-proof-report.md` with explicit reasons for every non-passed proof or feature.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
 - [ ] Product MP4 recording and public RTMP streaming reject packets without trusted `BackendOutputValidated` evidence; public callers cannot forge that evidence through packet initializers.
 - [ ] BGRA/RGBA -> NV12 encoder format conversion uses a GPU backend path or records explicit unavailable diagnostics; no CPU staging fallback.
+- [ ] Hardware encoder `DisposeAsync` cannot silently replace an omitted `DrainAsync`; accepted input without a completed drain fails finalization while owned D3D11 resources are still released.
 - [ ] Capability report is consumable via `GetCapabilityReportAsync` with status and reason per feature.
 - [ ] `Supported` and `Experimental` capability entries are the only user-available states; every unavailable entry includes a non-empty reason.
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
-- [ ] Phase 2 readiness (`verify-phase2-readiness.ps1`) passes after commits 15-20.
-- [ ] Engine readiness v12 (`verify-engine-readiness-v12.ps1`) is the current official gate for hardware-first media work; encoded outputs must use `EncodedVideoProfile`, Media Foundation encoder device ownership must be tested, and the media proof report must be regenerated.
-- [ ] Older v9/v10/v11 readiness scripts are historical/layered evidence only; do not promote new media paths from them when v12 disagrees.
+- [ ] Engine readiness v13 (`verify-engine-readiness-v13.ps1`) is the only official hardware-first gate; encoded outputs use `EncodedVideoProfile`, adapter LUID identity and Media Foundation ownership are tested, and the proof report is regenerated.
+- [ ] Scripts v4-v12 under `docs/history/readiness-scripts` are not executed as current gates.
 - [ ] Release hardware media readiness uses the current readiness script with `-RequireHardwareMedia`; missing required proofs must fail with an actionable report, not silent success.
-- [ ] `docs/PHASE2_ACCEPTANCE.md` reflects current gate evidence.
+- [ ] Preview remains Experimental until hosted resize and repeated timeout-recovery evidence passes.
+- [ ] Performance evidence executes real engine/GPU work; no `Task.Delay` scenario is accepted.
+- [ ] Readiness v13 runs the short sustained engine route; release sign-off also runs `-RunLocalQualification` and `-ReleaseCandidateQualification` on each required adapter family.
 
 ## FFmpeg / external codec review checklist
 

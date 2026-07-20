@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Core.Gpu.Resources;
+using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Encode;
@@ -48,13 +49,16 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
     private readonly Queue<ScheduledRenderedFrame> _pendingFrames = new();
     private readonly object _queueGate = new();
     private readonly SemaphoreSlim _queueSignal = new(0, 1);
-    private readonly CancellationTokenSource _stop = new();
+    private readonly CancellationTokenSource _abort = new();
     private readonly Task _encodeLoop;
     private readonly TimeSpan _encodeTimeout;
     private readonly int _queueCapacity;
     private readonly EncodeSchedulerBackpressurePolicy _backpressurePolicy;
+    private readonly RenderOutputId _outputId;
     private int _queueSignalSet;
     private int _disposed;
+    private int _stopRequested;
+    private int _acceptingFrames = 1;
     private int _fatalFailure;
     private long _framesSubmitted;
     private long _framesDropped;
@@ -71,7 +75,8 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
         IMediaForgeDiagnosticsSink? diagnostics = null,
         int queueCapacity = 2,
         EncodeSchedulerBackpressurePolicy backpressurePolicy = EncodeSchedulerBackpressurePolicy.KeepLatest,
-        TimeSpan? encodeTimeout = null)
+        TimeSpan? encodeTimeout = null,
+        RenderOutputId outputId = default)
     {
         if (queueCapacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(queueCapacity), "Encode queue capacity must be positive.");
@@ -83,6 +88,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
         _diagnostics = diagnostics;
         _queueCapacity = queueCapacity;
         _backpressurePolicy = backpressurePolicy;
+        _outputId = outputId;
         _encodeTimeout = encodeTimeout ?? TimeSpan.FromSeconds(2);
         _encodeLoop = Task.Run(ProcessEncodeQueueAsync);
         _status = EncodedOutputRuntimeStatus.Running;
@@ -122,7 +128,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                 nameof(frame));
         }
 
-        if (Volatile.Read(ref _disposed) != 0)
+        if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _acceptingFrames) == 0)
         {
             frame.Dispose();
             return;
@@ -204,7 +210,9 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        await _stop.CancelAsync().ConfigureAwait(false);
+        Volatile.Write(ref _acceptingFrames, 0);
+        Volatile.Write(ref _stopRequested, 1);
+        SignalQueue();
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -215,13 +223,24 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
         }
         catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
         {
+            await _abort.CancelAsync().ConfigureAwait(false);
+            SignalQueue();
             throw new TimeoutException("Encode scheduler target did not stop within the expected timeout.", ex);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await _abort.CancelAsync().ConfigureAwait(false);
+            SignalQueue();
+            throw;
         }
         finally
         {
-            ClearPendingFrames();
-            _queueSignal.Dispose();
-            _stop.Dispose();
+            if (_encodeLoop.IsCompleted)
+            {
+                ClearPendingFrames();
+                _queueSignal.Dispose();
+                _abort.Dispose();
+            }
         }
     }
 
@@ -229,7 +248,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
 
     private async Task ProcessEncodeQueueAsync()
     {
-        while (!_stop.IsCancellationRequested)
+        while (!_abort.IsCancellationRequested)
         {
             if (_status == EncodedOutputRuntimeStatus.Failed)
             {
@@ -239,12 +258,15 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
 
             if (!TryDequeue(out var scheduledFrame))
             {
+                if (Volatile.Read(ref _stopRequested) != 0)
+                    break;
+
                 try
                 {
-                    await _queueSignal.WaitAsync(_stop.Token).ConfigureAwait(false);
+                    await _queueSignal.WaitAsync(_abort.Token).ConfigureAwait(false);
                     Interlocked.Exchange(ref _queueSignalSet, 0);
                 }
-                catch (OperationCanceledException) when (_stop.IsCancellationRequested)
+                catch (OperationCanceledException) when (_abort.IsCancellationRequested)
                 {
                     break;
                 }
@@ -258,7 +280,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             try
             {
                 using var timeoutCts = new CancellationTokenSource(_encodeTimeout);
-                using var linked = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, timeoutCts.Token);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(_abort.Token, timeoutCts.Token);
                 var started = Stopwatch.GetTimestamp();
 
                 var encodeContext = new HardwareEncodeFrameContext
@@ -291,7 +313,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     ReportPacketProduced(frameContext.FrameId, Stopwatch.GetElapsedTime(started));
                 }
             }
-            catch (OperationCanceledException) when (_stop.IsCancellationRequested)
+            catch (OperationCanceledException) when (_abort.IsCancellationRequested)
             {
                 break;
             }
@@ -304,7 +326,8 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     "Encode scheduler frame timed out before the encoder completed.",
                     nameof(EncodeSchedulerTarget),
                     ex,
-                    frameNumber: frameContext.FrameId);
+                    frameNumber: frameContext.FrameId,
+                    outputId: ToDiagnosticOutputId());
                 SetFailed("Hardware encode timed out.");
                 break;
             }
@@ -317,7 +340,8 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     "Encode scheduler could not use the configured encoder or GPU exporter.",
                     nameof(EncodeSchedulerTarget),
                     ex,
-                    frameNumber: frameContext.FrameId);
+                    frameNumber: frameContext.FrameId,
+                    outputId: ToDiagnosticOutputId());
                 SetFailed(ex.Message);
                 break;
             }
@@ -330,9 +354,38 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     "Encode scheduler target failed to produce an encoded packet.",
                     nameof(EncodeSchedulerTarget),
                     ex,
-                    frameNumber: frameContext.FrameId);
+                    frameNumber: frameContext.FrameId,
+                    outputId: ToDiagnosticOutputId());
                 SetFailed(ex.Message);
                 break;
+            }
+        }
+
+        if (!_abort.IsCancellationRequested && _status != EncodedOutputRuntimeStatus.Failed)
+        {
+            try
+            {
+                var drainedPackets = await _encoder
+                    .DrainAsync(_auditSink, _abort.Token)
+                    .ConfigureAwait(false);
+                foreach (var packet in drainedPackets)
+                {
+                    _onPacketProduced(packet);
+                    ReportPacketProduced(0, TimeSpan.Zero);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                SetFailed($"Hardware encoder finalization failed: {ex.Message}");
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "engine.encode_scheduler_drain_failed",
+                    "Hardware encoder failed while draining delayed packets.",
+                    nameof(EncodeSchedulerTarget),
+                    ex,
+                    outputId: ToDiagnosticOutputId());
+                throw;
             }
         }
     }
@@ -389,7 +442,8 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             MediaForgeDiagnosticSeverity.Warning,
             "engine.encode_scheduler_frame_dropped_backpressure",
             $"Encode scheduler dropped {dropped} frame(s) because the encode queue is full.",
-            nameof(EncodeSchedulerTarget));
+            nameof(EncodeSchedulerTarget),
+            outputId: ToDiagnosticOutputId());
     }
 
     private void ReportPacketProduced(long frameId, TimeSpan latency)
@@ -408,7 +462,8 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             "engine.encode_scheduler_packet_produced",
             "Encode scheduler produced an encoded packet.",
             nameof(EncodeSchedulerTarget),
-            frameNumber: frameId);
+            frameNumber: frameId,
+            outputId: ToDiagnosticOutputId());
     }
 
     private void SetFailed(string reason)
@@ -422,4 +477,6 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
             SignalQueue();
         }
     }
+
+    private Guid? ToDiagnosticOutputId() => _outputId.IsEmpty ? null : _outputId.Value;
 }

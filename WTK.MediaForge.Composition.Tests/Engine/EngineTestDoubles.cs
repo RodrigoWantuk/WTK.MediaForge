@@ -74,6 +74,59 @@ internal sealed class ThrowingDisposeRenderBackendFactory : IRenderBackendFactor
     }
 }
 
+internal sealed class RecoveringRenderBackendFactory : IRenderBackendFactory
+{
+    private readonly List<IRenderBackend> _createdBackends = [];
+
+    public IReadOnlyList<IRenderBackend> CreatedBackends => _createdBackends;
+
+    public int CreateAttempts => _createdBackends.Count;
+
+    public NullRenderBackend? ReplacementBackend { get; private set; }
+
+    public bool TryCreate(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        out IRenderBackend? backend)
+    {
+        if (_createdBackends.Count == 0)
+        {
+            backend = new SubmitFailingRenderBackend(threadGuard);
+        }
+        else
+        {
+            ReplacementBackend = new NullRenderBackend(threadGuard);
+            backend = ReplacementBackend;
+        }
+
+        _createdBackends.Add(backend);
+        return true;
+    }
+}
+
+internal sealed class SubmitFailingRenderBackend(RenderThreadGuard threadGuard) : IRenderBackend
+{
+    public bool Disposed { get; private set; }
+
+    public void BindOutput(RenderOutputBindingSnapshot binding) => threadGuard.AssertOnRenderThread();
+
+    public void UnbindOutput(RenderOutputId outputId) => threadGuard.AssertOnRenderThread();
+
+    public void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize) =>
+        threadGuard.AssertOnRenderThread();
+
+    public IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot)
+    {
+        threadGuard.AssertOnRenderThread();
+        throw new InvalidOperationException("Configured render submission failure.");
+    }
+
+    public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    public void Dispose() => Disposed = true;
+}
+
 internal sealed class UnbindTrackingRenderBackendFactory : IRenderBackendFactory
 {
     public UnbindTrackingRenderBackend? Backend { get; private set; }

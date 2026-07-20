@@ -6,3 +6,10 @@ public interface IRetiredGpuResource
 
     Task FullyDisposed { get; }
 }
+
+public interface IRetiredGpuResourceDiagnostics
+{
+    string DiagnosticName { get; }
+
+    string DescribeState();
+}

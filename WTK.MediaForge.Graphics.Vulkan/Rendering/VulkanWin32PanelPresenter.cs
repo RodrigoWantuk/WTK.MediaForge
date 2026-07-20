@@ -15,7 +15,7 @@ internal static class VulkanWin32PanelPresenterRegistry
 
     static VulkanWin32PanelPresenterRegistry()
     {
-        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(RemovePresentersForPanel);
+        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(RemovePresentersForPanelAsync);
     }
 
     internal static int RegisteredPresenterCountForTests => Presenters.Count;
@@ -64,47 +64,133 @@ internal static class VulkanWin32PanelPresenterRegistry
         presenter.Present(source, cancellationToken);
     }
 
-    public static void RemovePresentersForPanel(nint panelHandle)
+    public static async ValueTask RemovePresentersForPanelAsync(
+        nint panelHandle,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
         if (panelHandle == 0)
             return;
-
-        PreviewPanelClientSizeTracker.RemovePanel(panelHandle);
 
         foreach (var key in Presenters.Keys)
         {
             if (key.PanelHandle != panelHandle)
                 continue;
 
-            if (Presenters.TryRemove(key, out var presenter))
-                presenter.Dispose();
+            if (!Presenters.TryGetValue(key, out var presenter))
+                continue;
+
+            await presenter.DisposeAsync(timeout, cancellationToken).ConfigureAwait(false);
+            Presenters.TryRemove(key, out _);
         }
     }
 
-    public static void RemovePresenter(VulkanHeadlessDevice device, nint panelHandle)
+    public static async ValueTask RemovePresenterAsync(
+        VulkanHeadlessDevice device,
+        nint panelHandle,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
         if (panelHandle == 0)
             return;
 
-        if (Presenters.TryRemove(new PresenterKey(device.Device.Handle, panelHandle), out var presenter))
-            presenter.Dispose();
+        var key = new PresenterKey(device.Device.Handle, panelHandle);
+        if (!Presenters.TryGetValue(key, out var presenter))
+            return;
+
+        await presenter.DisposeAsync(timeout, cancellationToken).ConfigureAwait(false);
+        Presenters.TryRemove(key, out _);
     }
 
     private readonly record struct PresenterKey(nint DeviceHandle, nint PanelHandle);
 }
 
-internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
+internal enum VulkanPanelPresenterState
+{
+    Active,
+    Stopping,
+    AwaitingGpu,
+    Disposed,
+    Failed
+}
+
+internal interface IVulkanPresenterFenceWaiter
+{
+    void Wait(Vk vk, Device device, Fence fence, TimeSpan timeout, CancellationToken cancellationToken);
+}
+
+internal sealed class VulkanPresenterFenceWaiter : IVulkanPresenterFenceWaiter
+{
+    public static VulkanPresenterFenceWaiter Instance { get; } = new();
+
+    private VulkanPresenterFenceWaiter()
+    {
+    }
+
+    public void Wait(Vk vk, Device device, Fence fence, TimeSpan timeout, CancellationToken cancellationToken) =>
+        VulkanWin32PanelPresenter.WaitForFence(vk, device, fence, cancellationToken, timeout);
+}
+
+internal static class VulkanPanelPresenterAsyncLifecycle
+{
+    public static async ValueTask DisposeAsync(
+        VulkanWin32PanelPresenter presenter,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        await presenter.DisposeGateForLifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (presenter.StateForTests == VulkanPanelPresenterState.Disposed)
+                return;
+
+            presenter.SetStateForLifecycle(VulkanPanelPresenterState.Stopping);
+
+            try
+            {
+                await Task.Run(
+                        () => presenter.DisposeGpuResourcesForLifecycle(timeout, cancellationToken),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                presenter.SetStateForLifecycle(VulkanPanelPresenterState.Disposed);
+            }
+            catch (TimeoutException)
+            {
+                presenter.SetStateForLifecycle(VulkanPanelPresenterState.AwaitingGpu);
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                presenter.SetStateForLifecycle(VulkanPanelPresenterState.AwaitingGpu);
+                throw;
+            }
+            catch
+            {
+                presenter.SetStateForLifecycle(VulkanPanelPresenterState.Failed);
+                throw;
+            }
+        }
+        finally
+        {
+            presenter.DisposeGateForLifecycle.Release();
+        }
+    }
+}
+
+internal sealed unsafe class VulkanWin32PanelPresenter : IAsyncDisposable
 {
     private const int MaxPresentAttempts = 8;
     private const ulong WaitSliceNanoseconds = 50_000_000;
     private static readonly TimeSpan DisposeFenceTimeout = TimeSpan.FromSeconds(5);
 
     private readonly object _presentLock = new();
+    private readonly SemaphoreSlim _disposeGate = new(1, 1);
     private readonly VulkanHeadlessDevice _device;
     private readonly nint _panelHandle;
     private readonly KhrSurface _khrSurface;
     private readonly KhrWin32Surface _khrWin32Surface;
     private readonly KhrSwapchain _khrSwapchain;
+    private readonly IVulkanPresenterFenceWaiter _disposeFenceWaiter;
     private SurfaceKHR _surface;
     private SwapchainKHR _swapchain;
     private Format _swapchainFormat;
@@ -117,19 +203,41 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
     private Fence _presentFence;
     private CommandBuffer _pendingCommandBuffer;
     private bool _hasPendingCommandBuffer;
-    private int _disposed;
+    private int _state = (int)VulkanPanelPresenterState.Active;
 
     internal int PendingCommandBufferCountForTests => _hasPendingCommandBuffer ? 1 : 0;
 
     internal Extent2D SwapchainExtentForTests => _swapchainExtent;
 
+    internal VulkanPanelPresenterState StateForTests =>
+        (VulkanPanelPresenterState)Volatile.Read(ref _state);
+
+    internal SemaphoreSlim DisposeGateForLifecycle => _disposeGate;
+
+    internal bool ResourcesDestroyedForTests =>
+        _surface.Handle == 0 &&
+        _swapchain.Handle == 0 &&
+        _presentCommandPool.Handle == 0 &&
+        _presentFence.Handle == 0 &&
+        _imageAvailable.Handle == 0 &&
+        _renderFinished.Handle == 0;
+
     public VulkanWin32PanelPresenter(VulkanHeadlessDevice device, nint panelHandle)
+        : this(device, panelHandle, VulkanPresenterFenceWaiter.Instance)
+    {
+    }
+
+    internal VulkanWin32PanelPresenter(
+        VulkanHeadlessDevice device,
+        nint panelHandle,
+        IVulkanPresenterFenceWaiter disposeFenceWaiter)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _panelHandle = panelHandle;
         _khrSurface = device.KhrSurface ?? throw new InvalidOperationException("KHR_surface is unavailable.");
         _khrWin32Surface = device.KhrWin32Surface ?? throw new InvalidOperationException("KHR_win32_surface is unavailable.");
         _khrSwapchain = device.KhrSwapchain ?? throw new InvalidOperationException("KHR_swapchain is unavailable.");
+        _disposeFenceWaiter = disposeFenceWaiter ?? throw new ArgumentNullException(nameof(disposeFenceWaiter));
 
         CreateSurface();
         CreatePresentCommandPool();
@@ -139,7 +247,7 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
 
     public void Present(VulkanOffscreenRenderTarget source, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ThrowIfNotActive();
         cancellationToken.ThrowIfCancellationRequested();
 
         for (var attempt = 0; attempt < MaxPresentAttempts; attempt++)
@@ -169,42 +277,68 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+    public ValueTask DisposeAsync() => DisposeAsync(DisposeFenceTimeout, CancellationToken.None);
 
+    internal ValueTask DisposeAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Presenter dispose timeout must be positive.");
+
+        return VulkanPanelPresenterAsyncLifecycle.DisposeAsync(this, timeout, cancellationToken);
+    }
+
+    internal void SetStateForLifecycle(VulkanPanelPresenterState state) =>
+        Volatile.Write(ref _state, (int)state);
+
+    internal void DisposeGpuResourcesForLifecycle(TimeSpan timeout, CancellationToken cancellationToken)
+    {
         var vk = _device.Vk;
         var device = _device.Device;
 
         lock (_presentLock)
         {
-            try
-            {
-                WaitForFence(vk, device, _presentFence, CancellationToken.None, DisposeFenceTimeout);
-            }
-            catch (TimeoutException)
-            {
-            }
+            if (_presentFence.Handle != 0)
+                _disposeFenceWaiter.Wait(vk, device, _presentFence, timeout, cancellationToken);
 
             ReleasePendingCommandBuffer();
             DestroySwapchain();
 
             if (_presentFence.Handle != 0)
+            {
                 vk.DestroyFence(device, _presentFence, null);
+                _presentFence = default;
+            }
 
             if (_renderFinished.Handle != 0)
+            {
                 vk.DestroySemaphore(device, _renderFinished, null);
+                _renderFinished = default;
+            }
 
             if (_imageAvailable.Handle != 0)
+            {
                 vk.DestroySemaphore(device, _imageAvailable, null);
+                _imageAvailable = default;
+            }
 
             if (_presentCommandPool.Handle != 0)
+            {
                 vk.DestroyCommandPool(device, _presentCommandPool, null);
+                _presentCommandPool = default;
+            }
 
             if (_surface.Handle != 0)
+            {
                 _khrSurface.DestroySurface(_device.Instance, _surface, null);
+                _surface = default;
+            }
         }
+    }
+
+    private void ThrowIfNotActive()
+    {
+        if (StateForTests != VulkanPanelPresenterState.Active)
+            throw new ObjectDisposedException(nameof(VulkanWin32PanelPresenter));
     }
 
     private Result SubmitAndPresent(CommandBuffer commandBuffer, uint imageIndex, CancellationToken cancellationToken)
@@ -419,7 +553,7 @@ internal sealed unsafe class VulkanWin32PanelPresenter : IDisposable
         }
     }
 
-    private static void WaitForFence(
+    internal static void WaitForFence(
         Vk vk,
         Device device,
         Fence fence,

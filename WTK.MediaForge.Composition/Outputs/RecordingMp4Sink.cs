@@ -11,8 +11,6 @@ namespace WTK.MediaForge.Composition.Outputs;
 public sealed class RecordingMp4PacketSink : IEncodedPacketSink
 {
     private readonly string _outputPath;
-    private readonly IMediaTransportAuditSink? _auditSink;
-    private readonly bool _allowPrototypeMuxer;
     private IMp4Muxer? _muxer;
     private EncodedPacketSinkContext? _context;
     private bool _started;
@@ -20,19 +18,10 @@ public sealed class RecordingMp4PacketSink : IEncodedPacketSink
     private bool _disposed;
 
     public RecordingMp4PacketSink(string outputPath, IMediaTransportAuditSink? auditSink = null)
-        : this(outputPath, auditSink, allowPrototypeMuxer: false)
-    {
-    }
-
-    internal RecordingMp4PacketSink(
-        string outputPath,
-        IMediaTransportAuditSink? auditSink,
-        bool allowPrototypeMuxer)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
         _outputPath = outputPath;
-        _auditSink = auditSink;
-        _allowPrototypeMuxer = allowPrototypeMuxer;
+        _ = auditSink;
     }
 
     public ValueTask StartAsync(EncodedPacketSinkContext context, CancellationToken cancellationToken)
@@ -54,9 +43,7 @@ public sealed class RecordingMp4PacketSink : IEncodedPacketSink
             throw new InvalidOperationException("Recording MP4 packet sink cannot be restarted after Stop; create a new sink instance.");
 
         _context = context;
-        _muxer = _allowPrototypeMuxer
-            ? new PrototypeEncodedPacketMp4Muxer(_outputPath, _auditSink)
-            : new EncodedPacketMp4Muxer(_outputPath, context.Size.Width, context.Size.Height);
+        _muxer = new EncodedPacketMp4Muxer(_outputPath, context.Size.Width, context.Size.Height);
         _started = true;
         return ValueTask.CompletedTask;
     }
@@ -113,15 +100,7 @@ public sealed class RecordingMp4Sink : IEncodedPacketSink
     private readonly RecordingMp4PacketSink _inner;
 
     public RecordingMp4Sink(string outputPath, IMediaTransportAuditSink? auditSink = null)
-        : this(outputPath, auditSink, allowPrototypeMuxer: false)
-    {
-    }
-
-    internal RecordingMp4Sink(
-        string outputPath,
-        IMediaTransportAuditSink? auditSink,
-        bool allowPrototypeMuxer) =>
-        _inner = new RecordingMp4PacketSink(outputPath, auditSink, allowPrototypeMuxer);
+        => _inner = new RecordingMp4PacketSink(outputPath, auditSink);
 
     public ValueTask StartAsync(EncodedPacketSinkContext context, CancellationToken cancellationToken) =>
         _inner.StartAsync(context, cancellationToken);

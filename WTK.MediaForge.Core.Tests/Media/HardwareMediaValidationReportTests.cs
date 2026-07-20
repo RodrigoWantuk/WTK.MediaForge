@@ -196,6 +196,7 @@ public sealed class HardwareMediaValidationReportTests
         PassedProof(MediaForgeCapabilityCatalog.DecodeToRenderProof),
         PassedProof(MediaForgeCapabilityCatalog.Mp4InputProductProof),
         PassedProof(MediaForgeCapabilityCatalog.WebcamInputProductProof),
+        PassedProof(MediaForgeCapabilityCatalog.WindowCaptureInputProductProof),
         PassedProof(MediaForgeCapabilityCatalog.NdiInputProductProof),
         PassedProof(MediaForgeCapabilityCatalog.NdiOutputProductProof)
     ];

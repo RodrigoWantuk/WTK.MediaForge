@@ -2,18 +2,27 @@ namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
 internal static class PreviewPanelPresenterLifecycle
 {
-    private static Action<nint>? _removePresentersForPanel;
+    private static Func<nint, TimeSpan, CancellationToken, ValueTask>? _removePresentersForPanelAsync;
 
-    internal static void RegisterRemovePresentersForPanel(Action<nint> removePresentersForPanel) =>
-        _removePresentersForPanel = removePresentersForPanel ??
-                                    throw new ArgumentNullException(nameof(removePresentersForPanel));
+    internal static void RegisterRemovePresentersForPanel(
+        Func<nint, TimeSpan, CancellationToken, ValueTask> removePresentersForPanelAsync) =>
+        _removePresentersForPanelAsync = removePresentersForPanelAsync ??
+                                         throw new ArgumentNullException(nameof(removePresentersForPanelAsync));
 
-    internal static void RemovePresentersForPanel(nint panelHandle)
+    internal static async ValueTask RemovePresentersForPanelAsync(
+        nint panelHandle,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
         if (panelHandle == 0)
             return;
 
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Presenter removal timeout must be positive.");
+
+        if (_removePresentersForPanelAsync is { } remove)
+            await remove(panelHandle, timeout, cancellationToken).ConfigureAwait(false);
+
         PreviewPanelClientSizeTracker.RemovePanel(panelHandle);
-        _removePresentersForPanel?.Invoke(panelHandle);
     }
 }

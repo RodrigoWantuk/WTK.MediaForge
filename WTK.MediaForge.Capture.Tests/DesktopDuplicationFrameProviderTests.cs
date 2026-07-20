@@ -28,7 +28,7 @@ public class DesktopDuplicationFrameProviderTests
             return;
 
         var sourceId = SourceId.New();
-        using var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
+        var provider = new DesktopDuplicationFrameProvider(sourceId, captureSource);
         await provider.StartAsync(CancellationToken.None);
 
         await WaitUntilAsync(
@@ -58,10 +58,9 @@ public class DesktopDuplicationFrameProviderTests
         WaitUntil(() => renderThread.PendingTracker.PendingCount == 0, TimeSpan.FromSeconds(5));
         Assert.True(provider.ActiveSlotRetainCount >= 1);
         renderThread.Dispose();
-        runtime.Dispose();
+        await runtime.DisposeAsync();
         Assert.Equal(0, provider.ActiveSlotRetainCount);
-
-        await provider.StopAsync(CancellationToken.None);
+        Assert.Equal(ProviderDisposeState.Disposed, provider.DisposeState);
     }
 
     [Fact]
@@ -646,6 +645,50 @@ public class DesktopDuplicationFrameProviderTests
         await provider.DisposeAsync();
     }
 
+    [Fact]
+    public async Task One_hundred_start_capture_stop_cycles_return_all_slots_and_retired_resources()
+    {
+        if (!TestGpuCaptureSupport.TryCreateDefaultDevice(out var device))
+            return;
+
+        using (device)
+        {
+            var sessions = Enumerable.Range(0, 100)
+                .Select(_ => (IDesktopDuplicationSession)new FakeDesktopDuplicationSession(
+                    device,
+                    SessionBehavior.ProduceFrames,
+                    ownsDevice: false))
+                .ToArray();
+            var provider = new DesktopDuplicationFrameProvider(
+                SourceId.New(),
+                CreateMinimalCaptureSource(),
+                sessionFactory: new ScriptedDesktopDuplicationSessionFactory(sessions));
+
+            for (var cycle = 0; cycle < sessions.Length; cycle++)
+            {
+                await provider.StartAsync(CancellationToken.None);
+                await WaitUntilAsync(
+                    () =>
+                    {
+                        if (!provider.TryAcquireLatestFrame(out var lease))
+                            return false;
+                        lease.Dispose();
+                        return true;
+                    },
+                    TimeSpan.FromSeconds(5));
+
+                await provider.StopAsync(CancellationToken.None);
+
+                Assert.Equal(0, provider.ActiveSlotRetainCount);
+                Assert.Equal(0, provider.RetiredResourceManager.PendingCount);
+            }
+
+            await provider.DisposeAsync();
+            Assert.Equal(ProviderDisposeState.Disposed, provider.DisposeState);
+            Assert.All(sessions.Cast<FakeDesktopDuplicationSession>(), session => Assert.True(session.IsDisposed));
+        }
+    }
+
     private static CaptureSourceInfo CreateMinimalCaptureSource() =>
         new()
         {
@@ -830,17 +873,20 @@ public class DesktopDuplicationFrameProviderTests
         private readonly SessionBehavior _behavior;
         private readonly ManualResetEventSlim? _allowAcquire;
         private readonly Exception? _startFailure;
+        private readonly bool _ownsDevice;
         private bool _disposed;
         private bool _started;
 
         public FakeDesktopDuplicationSession(
             D3D11GpuDevice device,
             SessionBehavior behavior,
-            ManualResetEventSlim? allowAcquire = null)
+            ManualResetEventSlim? allowAcquire = null,
+            bool ownsDevice = true)
         {
             _device = device;
             _behavior = behavior;
             _allowAcquire = allowAcquire;
+            _ownsDevice = ownsDevice;
         }
 
         public FakeDesktopDuplicationSession(Exception startFailure) =>
@@ -927,7 +973,8 @@ public class DesktopDuplicationFrameProviderTests
 
             _disposed = true;
             Stop();
-            _device?.Dispose();
+            if (_ownsDevice)
+                _device?.Dispose();
         }
     }
 }

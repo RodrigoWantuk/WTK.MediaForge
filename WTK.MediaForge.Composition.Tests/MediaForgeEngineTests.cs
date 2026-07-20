@@ -7,6 +7,7 @@ using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Runtime.Recovery;
 using WTK.MediaForge.Composition.Runtime.Sources;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Sources;
@@ -23,6 +24,63 @@ namespace WTK.MediaForge.Composition.Tests;
 
 public class MediaForgeEngineTests
 {
+    [Fact]
+    public async Task Runtime_health_snapshot_tracks_engine_and_recovery_state()
+    {
+        await using var engine = CreateEngine();
+        Assert.Equal(MediaForgeRuntimeHealthStatus.Stopped, engine.GetRuntimeHealthSnapshot().Status);
+
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+        Assert.Equal(MediaForgeRuntimeHealthStatus.Healthy, engine.GetRuntimeHealthSnapshot().Status);
+
+        var observed = new TaskCompletionSource<MediaForgeRecoverySnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.RecoveryStateChanged += (_, args) => observed.TrySetResult(args.Recovery);
+        engine.FaultRecoveryCoordinatorForTests!.NotifySourceProviderFailed("Webcam removed.");
+
+        var recovery = await observed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var health = engine.GetRuntimeHealthSnapshot();
+        Assert.Equal(MediaForgeRecoveryArea.Source, recovery.Area);
+        Assert.Equal(MediaForgeRuntimeHealthStatus.Recovering, health.Status);
+        Assert.Single(health.Recoveries);
+        Assert.True(health.Recoveries[0].IsolatesSource);
+    }
+
+    [Fact]
+    public async Task Render_submit_failure_recreates_backend_and_restores_running_engine()
+    {
+        var backendFactory = new RecoveringRenderBackendFactory();
+        await using var engine = CreateEngine(backendFactory: backendFactory);
+        engine.RenderFramesPerSecond = 30;
+        var recovered = new TaskCompletionSource<MediaForgeRecoverySnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.RecoveryStateChanged += (_, args) =>
+        {
+            if (args.Recovery is
+                {
+                    Area: MediaForgeRecoveryArea.GraphicsDevice,
+                    Status: MediaForgeRecoveryStatus.Recovered
+                })
+            {
+                recovered.TrySetResult(args.Recovery);
+            }
+        };
+
+        await engine.LoadProjectAsync(CreateValidProject());
+        await engine.StartAsync();
+
+        var recovery = await recovered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitUntilAsync(
+            () => (backendFactory.ReplacementBackend?.RenderCount ?? 0) > 0,
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal("graphics-device", recovery.ResourceId);
+        Assert.Equal(MediaForgeEngineState.Running, engine.State);
+        Assert.Equal(2, backendFactory.CreateAttempts);
+        Assert.True(Assert.IsType<SubmitFailingRenderBackend>(backendFactory.CreatedBackends[0]).Disposed);
+        Assert.Same(backendFactory.ReplacementBackend, engine.BackendForTests);
+    }
+
     [Fact]
     public async Task Engine_state_transitions_idle_loaded_running_loaded()
     {

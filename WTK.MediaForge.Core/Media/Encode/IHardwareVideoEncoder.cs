@@ -42,4 +42,8 @@ public interface IHardwareVideoEncoder : IAsyncDisposable
         HardwareEncodeFrameContext context,
         IGpuFrameExporter frameExporter,
         IMediaTransportAuditSink auditSink);
+
+    ValueTask<IReadOnlyList<EncodedVideoPacket>> DrainAsync(
+        IMediaTransportAuditSink auditSink,
+        CancellationToken cancellationToken);
 }

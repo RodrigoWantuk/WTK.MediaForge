@@ -169,8 +169,7 @@ public class PreviewPanelSinkTests
     public async Task PreviewPanelSink_dispose_removes_presenter_for_panel()
     {
         var removedHandle = 0L;
-        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
-            Interlocked.Exchange(ref removedHandle, handle));
+        RegisterPresenterRemovalRecorder(handle => Interlocked.Exchange(ref removedHandle, handle));
 
         var sink = new PreviewPanelSink(panelHandle: 42);
         await sink.DisposeAsync();
@@ -182,8 +181,7 @@ public class PreviewPanelSinkTests
     public async Task PreviewPanelSink_stop_removes_presenter_for_panel()
     {
         var removedHandle = 0L;
-        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
-            Interlocked.Exchange(ref removedHandle, handle));
+        RegisterPresenterRemovalRecorder(handle => Interlocked.Exchange(ref removedHandle, handle));
 
         var sink = new PreviewPanelSink(panelHandle: 77);
         await sink.StopAsync(CancellationToken.None);
@@ -195,8 +193,7 @@ public class PreviewPanelSinkTests
     public async Task PreviewPanelSink_stop_waits_for_inflight_present_before_removing_presenter()
     {
         var removedHandle = 0L;
-        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
-            Interlocked.Exchange(ref removedHandle, handle));
+        RegisterPresenterRemovalRecorder(handle => Interlocked.Exchange(ref removedHandle, handle));
 
         var outputId = RenderOutputId.New();
         var surface = new BlockingPreviewSurface(outputId, new FrameSize(640, 360));
@@ -231,8 +228,7 @@ public class PreviewPanelSinkTests
     public async Task PreviewPanelSink_stop_cancellation_does_not_remove_presenter_while_present_is_inflight()
     {
         var removedHandle = 0L;
-        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
-            Interlocked.Exchange(ref removedHandle, handle));
+        RegisterPresenterRemovalRecorder(handle => Interlocked.Exchange(ref removedHandle, handle));
 
         var outputId = RenderOutputId.New();
         var surface = new BlockingPreviewSurface(outputId, new FrameSize(640, 360));
@@ -267,8 +263,7 @@ public class PreviewPanelSinkTests
     public async Task PreviewPanelSink_dispose_timeout_preserves_presenter_until_retry_can_complete()
     {
         var removedHandle = 0L;
-        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel(handle =>
-            Interlocked.Exchange(ref removedHandle, handle));
+        RegisterPresenterRemovalRecorder(handle => Interlocked.Exchange(ref removedHandle, handle));
 
         var outputId = RenderOutputId.New();
         var surface = new BlockingPreviewSurface(outputId, new FrameSize(640, 360));
@@ -308,6 +303,13 @@ public class PreviewPanelSinkTests
 #else
         500;
 #endif
+
+    private static void RegisterPresenterRemovalRecorder(Action<nint> onRemoved) =>
+        PreviewPanelPresenterLifecycle.RegisterRemovePresentersForPanel((handle, _, _) =>
+        {
+            onRemoved(handle);
+            return ValueTask.CompletedTask;
+        });
 
     [Fact]
     [Trait("Category", "Stress")]

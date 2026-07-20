@@ -51,6 +51,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private TimeSpan _sinkStopTimeout = TimeSpan.FromSeconds(5);
     private long _bindingVersion;
     private int _disposed;
+    private readonly Dictionary<string, Task> _activeRecoveries = new(StringComparer.Ordinal);
+    private readonly object _recoveryGate = new();
+    private CancellationTokenSource? _recoveryCancellation;
 
     internal TimeSpan RenderThreadJoinTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
@@ -121,6 +124,36 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     public event EventHandler<MediaForgeEngineStateChangedEventArgs>? StateChanged;
 
     public event EventHandler<MediaForgeFrameDroppedEventArgs>? FrameDropped;
+
+    public event EventHandler<MediaForgeRecoveryEventArgs>? RecoveryStateChanged;
+
+    public MediaForgeRuntimeHealthSnapshot GetRuntimeHealthSnapshot()
+    {
+        var outputs = GetEncodedOutputRuntimeSnapshots();
+        var internalRecoveries = _faultRecoveryCoordinator?.States.Values.ToArray() ?? [];
+        var recoveries = internalRecoveries.Select(ToPublicRecoverySnapshot).ToArray();
+        var status = State switch
+        {
+            MediaForgeEngineState.Failed => MediaForgeRuntimeHealthStatus.Failed,
+            MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded or MediaForgeEngineState.Disposed =>
+                MediaForgeRuntimeHealthStatus.Stopped,
+            _ when internalRecoveries.Any(static state => state.Status == FaultRecoveryStatus.Recovering) =>
+                MediaForgeRuntimeHealthStatus.Recovering,
+            _ when internalRecoveries.Any(static state => state.Status == FaultRecoveryStatus.Exhausted) ||
+                   outputs.Any(static output => output.Status == EncodedOutputRuntimeStatus.Failed) =>
+                MediaForgeRuntimeHealthStatus.Degraded,
+            _ => MediaForgeRuntimeHealthStatus.Healthy
+        };
+
+        return new MediaForgeRuntimeHealthSnapshot
+        {
+            CapturedAt = DateTimeOffset.UtcNow,
+            Status = status,
+            EngineState = State,
+            EncodedOutputs = outputs,
+            Recoveries = recoveries
+        };
+    }
 
     public IReadOnlyList<EncodedOutputRuntimeSnapshot> GetEncodedOutputRuntimeSnapshots() =>
         _mediaPipelineRuntime?.GetEncodedOutputRuntimeSnapshots()
@@ -222,6 +255,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 var deadline = CreateDeadline(StartTimeout);
                 MediaForgeProjectValidator.Validate(_currentProject).ThrowIfInvalid();
 
+                _recoveryCancellation = new CancellationTokenSource();
+                _faultRecoveryCoordinator = new FaultRecoveryCoordinator(_diagnostics);
+                _faultRecoveryCoordinator.RecoveryStateChanged += OnRecoveryStateChanged;
+
                 _sourceRuntimeManager = new SourceRuntimeManager(_diagnostics);
                 _runtime = new CompositionRuntime(_sourceRuntimeManager);
                 _mediaPipelineRuntime = new MediaPipelineRuntime(_diagnostics);
@@ -259,7 +296,6 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 }
 
                 RefreshPublishedRuntimeAfterProjectMutation(requestFrame: false);
-                _faultRecoveryCoordinator = new FaultRecoveryCoordinator(_diagnostics);
                 _renderThread.Start();
 
                 await EnsureSurfaceBindingsForAttachedSinksAsync(_currentProject, cancellationToken)
@@ -1029,6 +1065,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (!_encodedOutputRouteFactory.CanCreate(output.TypeId))
                 continue;
 
+            var surfaceOutputId = _encodedOutputRouteFactory.ResolveSurfaceOutputId(project, output);
+            if (surfaceOutputId != output.Id)
+            {
+                await _encodedOutputRouteFactory
+                    .RegisterAsync(project, output, _mediaPipelineRuntime, cancellationToken)
+                    .ConfigureAwait(false);
+                continue;
+            }
+
             var createdBinding = await EnsureAutomaticSurfaceBindingAsync(output, cancellationToken).ConfigureAwait(false);
             if (createdBinding && _outputSinks.TryGetValue(output.Id, out var entry))
             {
@@ -1265,6 +1310,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             }
         }
 
+        await StopActiveRecoveriesAsync(cleanupErrors).ConfigureAwait(false);
+
         var sourceRuntimeManager = _sourceRuntimeManager;
         if (sourceRuntimeManager is not null)
         {
@@ -1413,10 +1460,30 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             _outputSinks.Clear();
         }
 
-        _sourceRuntimeManager?.Clear();
+        if (_sourceRuntimeManager is not null)
+        {
+            try
+            {
+                await _sourceRuntimeManager.ClearAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                cleanupErrors.Add(ex);
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "engine.source_runtime_dispose_failed",
+                    "Failed to dispose source runtimes during engine cleanup.",
+                    nameof(MediaForgeEngine),
+                    ex);
+            }
+        }
+
         _sourceRuntimeManager = null;
         _runtime = null;
         _sceneRuntime = null;
+        if (_faultRecoveryCoordinator is not null)
+            _faultRecoveryCoordinator.RecoveryStateChanged -= OnRecoveryStateChanged;
         _faultRecoveryCoordinator = null;
         _projectState = null;
         _outputRouteTransitions.Clear();
@@ -1636,7 +1703,545 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 nameof(FrameDropped),
                 () => FrameDropped?.Invoke(this, new MediaForgeFrameDroppedEventArgs(diagnostic)));
         }
+
+        if (diagnostic.Code == "source.frame_acquire_failed" && diagnostic.SourceId is Guid sourceId)
+        {
+            ScheduleSourceRecovery(SourceId.From(sourceId), diagnostic.Message);
+        }
+        else if (diagnostic.Code == "render.submit_failed")
+        {
+            ScheduleGraphicsDeviceRecovery(diagnostic.Exception?.Message ?? diagnostic.Message);
+        }
+        else if (diagnostic.Code.StartsWith("engine.encode_scheduler_", StringComparison.Ordinal) &&
+                 diagnostic.Severity >= MediaForgeDiagnosticSeverity.Error)
+        {
+            if (diagnostic.OutputId is Guid outputId)
+            {
+                ScheduleEncodedOutputRecovery(
+                    RenderOutputId.From(outputId),
+                    diagnostic.Exception?.Message ?? diagnostic.Message);
+            }
+            else
+            {
+                _faultRecoveryCoordinator?.NotifyEncoderUnavailable(
+                    diagnostic.Exception?.Message ?? diagnostic.Message);
+            }
+        }
+        else if (diagnostic.Code.StartsWith("engine.encoding_pipeline_", StringComparison.Ordinal) &&
+                 diagnostic.Severity >= MediaForgeDiagnosticSeverity.Error &&
+                 diagnostic.OutputId is Guid pipelineOutputId)
+        {
+            ScheduleEncodedOutputRecovery(
+                RenderOutputId.From(pipelineOutputId),
+                diagnostic.Exception?.Message ?? diagnostic.Message);
+        }
+        else if (diagnostic.Code == "engine.encoded_router_consumer_failed" &&
+                 diagnostic.Message.Contains("Rtmp", StringComparison.OrdinalIgnoreCase))
+        {
+            _faultRecoveryCoordinator?.NotifyRtmpDisconnected(diagnostic.Exception?.Message ?? diagnostic.Message);
+        }
     }
+
+    private void ScheduleSourceRecovery(SourceId sourceId, string detail)
+    {
+        var coordinator = _faultRecoveryCoordinator;
+        var cancellation = _recoveryCancellation;
+        if (coordinator is null || cancellation is null || cancellation.IsCancellationRequested)
+            return;
+
+        var key = $"source:{sourceId}";
+        lock (_recoveryGate)
+        {
+            if (_activeRecoveries.ContainsKey(key))
+                return;
+
+            var task = RunSourceRecoveryAsync(coordinator, sourceId, key, detail, cancellation.Token);
+            _activeRecoveries.Add(key, task);
+            _ = task.ContinueWith(
+                completed =>
+                {
+                    lock (_recoveryGate)
+                        _activeRecoveries.Remove(key);
+
+                    if (completed.IsFaulted)
+                    {
+                        MediaForgeDiagnostics.Report(
+                            _externalDiagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "engine.source_recovery_failed",
+                            $"Automatic recovery failed for source {sourceId}.",
+                            nameof(MediaForgeEngine),
+                            completed.Exception?.GetBaseException());
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+    }
+
+    private void ScheduleGraphicsDeviceRecovery(string detail)
+    {
+        var coordinator = _faultRecoveryCoordinator;
+        var cancellation = _recoveryCancellation;
+        if (coordinator is null || cancellation is null || cancellation.IsCancellationRequested)
+            return;
+
+        const string key = "graphics-device";
+        lock (_recoveryGate)
+        {
+            if (_activeRecoveries.ContainsKey(key))
+                return;
+
+            var task = RunGraphicsDeviceRecoveryAsync(coordinator, key, detail, cancellation.Token);
+            _activeRecoveries.Add(key, task);
+            _ = task.ContinueWith(
+                completed =>
+                {
+                    lock (_recoveryGate)
+                        _activeRecoveries.Remove(key);
+
+                    if (completed.IsFaulted)
+                    {
+                        MediaForgeDiagnostics.Report(
+                            _externalDiagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "engine.graphics_device_recovery_failed",
+                            "Automatic graphics device recovery failed.",
+                            nameof(MediaForgeEngine),
+                            completed.Exception?.GetBaseException());
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+    }
+
+    private void ScheduleEncodedOutputRecovery(RenderOutputId outputId, string detail)
+    {
+        var coordinator = _faultRecoveryCoordinator;
+        var cancellation = _recoveryCancellation;
+        if (coordinator is null || cancellation is null || cancellation.IsCancellationRequested)
+            return;
+
+        var key = $"encoded-output:{outputId}";
+        lock (_recoveryGate)
+        {
+            if (_activeRecoveries.ContainsKey(key))
+                return;
+
+            var task = RunEncodedOutputRecoveryAsync(
+                coordinator,
+                outputId,
+                key,
+                detail,
+                cancellation.Token);
+            _activeRecoveries.Add(key, task);
+            _ = task.ContinueWith(
+                completed =>
+                {
+                    lock (_recoveryGate)
+                        _activeRecoveries.Remove(key);
+
+                    if (completed.IsFaulted)
+                    {
+                        MediaForgeDiagnostics.Report(
+                            _externalDiagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "engine.encoded_output_recovery_failed",
+                            $"Automatic recovery failed for encoded output {outputId}.",
+                            nameof(MediaForgeEngine),
+                            completed.Exception?.GetBaseException(),
+                            outputId: outputId.Value);
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+    }
+
+    private async Task RunSourceRecoveryAsync(
+        FaultRecoveryCoordinator coordinator,
+        SourceId sourceId,
+        string resourceKey,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await coordinator.HandleFaultAsync(
+                    FaultRecoveryScenario.SourceProviderFailed,
+                    resourceKey,
+                    detail,
+                    async ct =>
+                    {
+                        var manager = _sourceRuntimeManager;
+                        if (manager is null || !manager.TryGetRuntime(sourceId, out var runtime))
+                            return false;
+
+                        await runtime.StopAsync(ct).ConfigureAwait(false);
+                        await runtime.StartAsync(ct).ConfigureAwait(false);
+                        return runtime.State == WTK.MediaForge.Core.Sources.MediaSourceState.Running;
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task RunGraphicsDeviceRecoveryAsync(
+        FaultRecoveryCoordinator coordinator,
+        string resourceKey,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var state = await coordinator.HandleFaultAsync(
+                    FaultRecoveryScenario.VulkanDeviceLost,
+                    resourceKey,
+                    detail,
+                    TryRecreateRenderBackendAsync,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (state.Status != FaultRecoveryStatus.Exhausted)
+                return;
+
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                if (State == MediaForgeEngineState.Running)
+                    SetState(MediaForgeEngineState.Failed);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task RunEncodedOutputRecoveryAsync(
+        FaultRecoveryCoordinator coordinator,
+        RenderOutputId outputId,
+        string resourceKey,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await coordinator.HandleFaultAsync(
+                    FaultRecoveryScenario.EncoderUnavailable,
+                    resourceKey,
+                    detail,
+                    ct => TryRecreateEncodedOutputRouteAsync(outputId, ct),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task<bool> TryRecreateEncodedOutputRouteAsync(
+        RenderOutputId outputId,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (State != MediaForgeEngineState.Running ||
+                _currentProject is null ||
+                _mediaPipelineRuntime is null ||
+                _encodedOutputRouteFactory is null)
+            {
+                return false;
+            }
+
+            var output = _currentProject.Outputs.FirstOrDefault(candidate => candidate.Id == outputId);
+            if (output is null || !_encodedOutputRouteFactory.CanCreate(output.TypeId))
+                return false;
+
+            var surfaceOutputId = _encodedOutputRouteFactory.ResolveSurfaceOutputId(_currentProject, output);
+            var groupedOutputs = _currentProject.Outputs
+                .Where(candidate => _encodedOutputRouteFactory.CanCreate(candidate.TypeId))
+                .Where(candidate =>
+                    _encodedOutputRouteFactory.ResolveSurfaceOutputId(_currentProject, candidate) == surfaceOutputId)
+                .ToArray();
+
+            if (groupedOutputs.Any(static candidate => candidate.TypeId == RenderOutputTypes.RecordingMp4))
+            {
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "engine.encoded_output_recovery_requires_recording_segment",
+                    "Automatic encoder restart was not attempted because the route contains an MP4 recording; replacing the encoder in-place would overwrite or corrupt the active file.",
+                    nameof(MediaForgeEngine),
+                    outputId: outputId.Value);
+                return false;
+            }
+
+            await _encodedOutputRouteFactory
+                .RecreateAsync(
+                    _currentProject,
+                    output,
+                    _mediaPipelineRuntime,
+                    StopTimeout,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            _renderPump?.RequestFrame();
+            return _mediaPipelineRuntime.IsEncodedOutputRegistered(outputId);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<bool> TryRecreateRenderBackendAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (State != MediaForgeEngineState.Running || _currentProject is null)
+                return false;
+
+            var oldPump = _renderPump;
+            _renderPump = null;
+            if (oldPump is not null)
+                await oldPump.StopAsync(StopTimeout, cancellationToken).ConfigureAwait(false);
+
+            var oldThread = _renderThread;
+            if (oldThread is not null)
+            {
+                try
+                {
+                    oldThread.Dispose();
+                }
+                catch (Exception ex) when (!oldThread.IsRunning)
+                {
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Warning,
+                        "engine.graphics_device_old_thread_cleanup_failed",
+                        "The failed render thread stopped with cleanup errors before device recreation.",
+                        nameof(MediaForgeEngine),
+                        ex);
+                }
+
+                if (oldThread.IsRunning)
+                    throw new TimeoutException("Render thread remained alive during graphics device recovery.");
+            }
+
+            _renderThread = null;
+            _renderThreadGuard = null;
+
+            var oldBackend = _backend;
+            if (oldBackend is not null)
+            {
+                oldBackend.Dispose();
+                _backend = null;
+            }
+
+            var newGuard = new RenderThreadGuard();
+            if (!_backendFactory.TryCreate(newGuard, _diagnostics, out var newBackend) || newBackend is null)
+                return false;
+
+            MediaForgeRenderThread? newThread = null;
+            try
+            {
+                newThread = new MediaForgeRenderThread(
+                    newBackend,
+                    newGuard,
+                    diagnostics: _diagnostics,
+                    sinkDispatcher: _sinkDispatcher,
+                    outputFrameConsumers: _mediaPipelineRuntime is null
+                        ? Array.Empty<IRenderedOutputFrameConsumer>()
+                        : [_mediaPipelineRuntime],
+                    joinTimeout: RenderThreadJoinTimeout,
+                    submissionShutdownTimeout: RenderThreadSubmissionShutdownTimeout);
+
+                _renderThreadGuard = newGuard;
+                _backend = newBackend;
+                _renderThread = newThread;
+                newThread.Start();
+
+                foreach (var (outputId, entry) in _outputSinks)
+                {
+                    var output = _currentProject.Outputs.First(candidate => candidate.Id == outputId);
+                    await EnqueueBindOutputAsync(output, entry.Sink, entry.Target, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                _renderPump = new MediaForgeRenderPump(
+                    RenderFramesPerSecond,
+                    CanPublishRenderFrame,
+                    PublishScheduledRenderFrame,
+                    GetScheduledTargetOutputs,
+                    _diagnostics);
+                _renderPump.RequestFrame();
+                return true;
+            }
+            catch (Exception recoveryException)
+            {
+                var cleanupErrors = new List<Exception>();
+                var candidateThreadStopped = true;
+
+                if (newThread is not null)
+                {
+                    try
+                    {
+                        newThread.Dispose();
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        cleanupErrors.Add(cleanupException);
+                        MediaForgeDiagnostics.Report(
+                            _diagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "engine.graphics_device_candidate_thread_cleanup_failed",
+                            "Failed to cleanup replacement render thread after recovery attempt.",
+                            nameof(MediaForgeEngine),
+                            cleanupException);
+                    }
+
+                    candidateThreadStopped = !newThread.IsRunning;
+                }
+
+                if (!candidateThreadStopped)
+                {
+                    _renderThreadGuard = newGuard;
+                    _backend = newBackend;
+                    _renderThread = newThread;
+
+                    var ownershipFailure = new InvalidOperationException(
+                        "Replacement render backend remains owned by a live render thread and cannot be destroyed safely.");
+                    cleanupErrors.Add(ownershipFailure);
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Fatal,
+                        "engine.graphics_device_candidate_backend_retained",
+                        ownershipFailure.Message,
+                        nameof(MediaForgeEngine),
+                        ownershipFailure);
+                }
+                else
+                {
+                    _renderThread = null;
+                    _renderThreadGuard = null;
+                    _backend = null;
+
+                    try
+                    {
+                        newBackend.Dispose();
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        cleanupErrors.Add(cleanupException);
+                        _backend = newBackend;
+                        MediaForgeDiagnostics.Report(
+                            _diagnostics,
+                            MediaForgeDiagnosticSeverity.Error,
+                            "engine.graphics_device_candidate_backend_cleanup_failed",
+                            "Failed to cleanup replacement render backend after recovery attempt.",
+                            nameof(MediaForgeEngine),
+                            cleanupException);
+                    }
+                }
+
+                if (cleanupErrors.Count == 0)
+                    throw;
+
+                throw new AggregateException(
+                    "Graphics device recovery failed and candidate resource cleanup was incomplete.",
+                    [recoveryException, .. cleanupErrors]);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task StopActiveRecoveriesAsync(List<Exception> cleanupErrors)
+    {
+        var cancellation = _recoveryCancellation;
+        _recoveryCancellation = null;
+        if (cancellation is null)
+            return;
+
+        await cancellation.CancelAsync().ConfigureAwait(false);
+        Task[] recoveries;
+        lock (_recoveryGate)
+            recoveries = _activeRecoveries.Values.ToArray();
+
+        try
+        {
+            await Task.WhenAll(recoveries).WaitAsync(StopTimeout, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (TimeoutException ex)
+        {
+            cleanupErrors.Add(ex);
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "engine.fault_recovery_shutdown_timeout",
+                "Automatic recovery operations did not stop within the engine shutdown timeout.",
+                nameof(MediaForgeEngine),
+                ex);
+        }
+        finally
+        {
+            cancellation.Dispose();
+        }
+    }
+
+    private void OnRecoveryStateChanged(object? sender, FaultRecoveryState state) =>
+        SafeRaiseEvent(
+            nameof(RecoveryStateChanged),
+            () => RecoveryStateChanged?.Invoke(
+                this,
+                new MediaForgeRecoveryEventArgs(ToPublicRecoverySnapshot(state))));
+
+    private static MediaForgeRecoverySnapshot ToPublicRecoverySnapshot(FaultRecoveryState state) =>
+        new()
+        {
+            ResourceId = state.ResourceKey,
+            Area = state.Scenario switch
+            {
+                FaultRecoveryScenario.VulkanDeviceLost or FaultRecoveryScenario.GpuSwitch =>
+                    MediaForgeRecoveryArea.GraphicsDevice,
+                FaultRecoveryScenario.DecoderUnavailable => MediaForgeRecoveryArea.Decoder,
+                FaultRecoveryScenario.EncoderUnavailable => MediaForgeRecoveryArea.Encoder,
+                FaultRecoveryScenario.Mp4FinalizeFailed => MediaForgeRecoveryArea.Recording,
+                FaultRecoveryScenario.RtmpDisconnected => MediaForgeRecoveryArea.Streaming,
+                FaultRecoveryScenario.RenderExportFailed => MediaForgeRecoveryArea.Output,
+                _ => MediaForgeRecoveryArea.Source
+            },
+            Status = state.Status switch
+            {
+                FaultRecoveryStatus.Recovered => MediaForgeRecoveryStatus.Recovered,
+                FaultRecoveryStatus.Exhausted => MediaForgeRecoveryStatus.Exhausted,
+                FaultRecoveryStatus.Canceled => MediaForgeRecoveryStatus.Canceled,
+                _ => MediaForgeRecoveryStatus.Recovering
+            },
+            Message = state.Detail,
+            AttemptCount = state.AttemptCount,
+            LastAttemptUtc = state.LastAttemptUtc,
+            PausesRecording = state.RequiresRecordingPause,
+            PausesStreaming = state.RequiresStreamingPause,
+            IsolatesSource = state.RequiresSourceIsolation
+        };
 
     private void RaiseStateChanged(MediaForgeEngineState oldState, MediaForgeEngineState newState) =>
         SafeRaiseEvent(

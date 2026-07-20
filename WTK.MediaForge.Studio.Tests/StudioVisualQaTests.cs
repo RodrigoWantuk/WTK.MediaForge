@@ -18,7 +18,7 @@ public sealed class StudioVisualQaTests
 
         Assert.True(report.Passed, report.ToMarkdown());
         Assert.Equal(
-            ["1366x768", "1600x900", "1920x1080"],
+            ["1366x768", "1920x1080", "2560x1440"],
             report.Viewports.Select(result => result.Viewport.Name).ToArray());
     }
 
@@ -32,8 +32,8 @@ public sealed class StudioVisualQaTests
 
         Assert.Contains("# Studio UI Visual QA Report", markdown, StringComparison.Ordinal);
         Assert.Contains("1366x768", markdown, StringComparison.Ordinal);
-        Assert.Contains("1600x900", markdown, StringComparison.Ordinal);
         Assert.Contains("1920x1080", markdown, StringComparison.Ordinal);
+        Assert.Contains("2560x1440", markdown, StringComparison.Ordinal);
         Assert.Contains("Canvas fit", markdown, StringComparison.Ordinal);
         Assert.Contains("Status: Passed", markdown, StringComparison.Ordinal);
     }

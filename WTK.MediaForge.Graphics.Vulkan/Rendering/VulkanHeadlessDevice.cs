@@ -3,6 +3,7 @@ using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using System.Runtime.InteropServices;
+using WTK.MediaForge.Core.Capture;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
@@ -21,6 +22,9 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
     private KhrSurface? _khrSurface;
     private KhrWin32Surface? _khrWin32Surface;
     private KhrSwapchain? _khrSwapchain;
+    private readonly string _deviceName;
+    private readonly GpuAdapterLuid _deviceLuid;
+    private readonly bool _deviceLuidValid;
 
     private VulkanHeadlessDevice(
         Vk vk,
@@ -32,7 +36,10 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         CommandPool commandPool,
         KhrSurface? khrSurface,
         KhrWin32Surface? khrWin32Surface,
-        KhrSwapchain? khrSwapchain)
+        KhrSwapchain? khrSwapchain,
+        string deviceName,
+        GpuAdapterLuid deviceLuid,
+        bool deviceLuidValid)
     {
         _vk = vk;
         _instance = instance;
@@ -44,6 +51,9 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         _khrSurface = khrSurface;
         _khrWin32Surface = khrWin32Surface;
         _khrSwapchain = khrSwapchain;
+        _deviceName = deviceName;
+        _deviceLuid = deviceLuid;
+        _deviceLuidValid = deviceLuidValid;
     }
 
     public Instance Instance => _instance;
@@ -74,6 +84,12 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
 
     public object CommandQueueGate => _commandQueueGate;
 
+    public string DeviceName => _deviceName;
+
+    public GpuAdapterLuid DeviceLuid => _deviceLuid;
+
+    public bool DeviceLuidValid => _deviceLuidValid;
+
     public static VulkanHeadlessDevice Create()
     {
         var vk = Vk.GetApi();
@@ -82,6 +98,7 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         CreateLogicalDevice(vk, physicalDevice, graphicsQueueFamilyIndex, out var device, out var graphicsQueue);
         CreateCommandPool(vk, device, graphicsQueueFamilyIndex, out var commandPool);
         LoadPresentationExtensions(vk, instance, device, out var khrSurface, out var khrWin32Surface, out var khrSwapchain);
+        GetPhysicalDeviceIdentity(vk, physicalDevice, out var deviceName, out var deviceLuid, out var deviceLuidValid);
 
         return new VulkanHeadlessDevice(
             vk,
@@ -93,7 +110,49 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
             commandPool,
             khrSurface,
             khrWin32Surface,
-            khrSwapchain);
+            khrSwapchain,
+            deviceName,
+            deviceLuid,
+            deviceLuidValid);
+    }
+
+    private static void GetPhysicalDeviceIdentity(
+        Vk vk,
+        PhysicalDevice physicalDevice,
+        out string deviceName,
+        out GpuAdapterLuid deviceLuid,
+        out bool deviceLuidValid)
+    {
+        var idProperties = new PhysicalDeviceIDProperties
+        {
+            SType = StructureType.PhysicalDeviceIDProperties
+        };
+        var properties = new PhysicalDeviceProperties2
+        {
+            SType = StructureType.PhysicalDeviceProperties2,
+            PNext = &idProperties
+        };
+
+        vk.GetPhysicalDeviceProperties2(physicalDevice, &properties);
+        deviceName = Marshal.PtrToStringAnsi((nint)properties.Properties.DeviceName) ?? "Unknown Vulkan GPU";
+        deviceLuidValid = idProperties.DeviceLuidvalid;
+        if (!deviceLuidValid)
+        {
+            deviceLuid = GpuAdapterLuid.Empty;
+            return;
+        }
+
+        var lowPart =
+            (uint)idProperties.DeviceLuid[0] |
+            ((uint)idProperties.DeviceLuid[1] << 8) |
+            ((uint)idProperties.DeviceLuid[2] << 16) |
+            ((uint)idProperties.DeviceLuid[3] << 24);
+        var highPart =
+            idProperties.DeviceLuid[4] |
+            (idProperties.DeviceLuid[5] << 8) |
+            (idProperties.DeviceLuid[6] << 16) |
+            (idProperties.DeviceLuid[7] << 24);
+        deviceLuid = new GpuAdapterLuid { LowPart = lowPart, HighPart = highPart };
     }
 
     public uint FindMemoryType(uint typeFilter, MemoryPropertyFlags properties)

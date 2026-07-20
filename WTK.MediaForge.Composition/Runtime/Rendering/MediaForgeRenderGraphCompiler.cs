@@ -68,7 +68,7 @@ internal static class MediaForgeRenderGraphCompiler
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.OutputPass,
-                $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.CanvasId, output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
+                $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.CanvasId, output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}:letterbox:{output.LetterboxColor.R:R},{output.LetterboxColor.G:R},{output.LetterboxColor.B:R},{output.LetterboxColor.A:R}:color-space:{output.ColorSpace}",
                 output.Name,
                 [dependency],
                 outputId: output.Id,
@@ -129,7 +129,7 @@ internal static class MediaForgeRenderGraphCompiler
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.CanvasRender,
-                $"canvas:{canvas.Id}:version:{versionKey}:size:{canvas.Size.Width}x{canvas.Size.Height}",
+                $"canvas:{canvas.Id}:version:{versionKey}:size:{canvas.Size.Width}x{canvas.Size.Height}:content:{HashCanvas(canvas)}",
                 canvas.Name,
                 dependencies,
                 canvasId: canvas.Id);
@@ -210,7 +210,7 @@ internal static class MediaForgeRenderGraphCompiler
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.OutputPass,
-                $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}",
+                $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}:letterbox:{output.LetterboxColor.R:R},{output.LetterboxColor.G:R},{output.LetterboxColor.B:R},{output.LetterboxColor.A:R}:color-space:{output.ColorSpace}",
                 output.Name,
                 [dependency],
                 outputId: output.Id,
@@ -235,7 +235,7 @@ internal static class MediaForgeRenderGraphCompiler
                     case RenderSourceLayerDrawObjectSnapshot sourceLayer:
                         var sourceKey = AddNode(
                             MediaForgeRenderGraphNodeKind.SourceFrame,
-                            $"source:{sourceLayer.SourceId}",
+                            $"source:{sourceLayer.SourceId}:frame:{ResolveSourceFrameNumber(sourceLayer.SourceId)}",
                             sourceLayer.Name,
                             sourceId: sourceLayer.SourceId);
 
@@ -243,7 +243,7 @@ internal static class MediaForgeRenderGraphCompiler
                         dependencies.Add(enabledEffects.Count > 0
                             ? AddNode(
                                 MediaForgeRenderGraphNodeKind.SourceEffectChain,
-                                CreateSourceEffectKey(canvas, sourceLayer, enabledEffects),
+                                $"{CreateSourceEffectKey(canvas, sourceLayer, enabledEffects)}:input:{sourceKey}",
                                 sourceLayer.Name,
                                 [sourceKey],
                                 canvasId: HasPlacementDependentEffects(enabledEffects) ? canvas.Id : null,
@@ -272,7 +272,7 @@ internal static class MediaForgeRenderGraphCompiler
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.CanvasRender,
-                $"canvas:{canvas.Id}:version:{ResolveCanvasVersionKey(canvas)}:size:{canvas.Size.Width}x{canvas.Size.Height}",
+                $"canvas:{canvas.Id}:version:{ResolveCanvasVersionKey(canvas)}:size:{canvas.Size.Width}x{canvas.Size.Height}:content:{HashCanvas(canvas)}",
                 canvas.Name,
                 dependencies,
                 canvasId: canvas.Id);
@@ -282,6 +282,13 @@ internal static class MediaForgeRenderGraphCompiler
             canvas.VersionId is { } version
                 ? $"render:{version.Value}"
                 : $"render-snapshot:{canvas.Id}";
+
+        private long ResolveSourceFrameNumber(Core.Identifiers.SourceId sourceId) =>
+            snapshot.FrameLeases
+                .Where(lease => lease.Frame.SourceId == sourceId)
+                .Select(static lease => lease.Frame.FrameNumber)
+                .DefaultIfEmpty(-1)
+                .Max();
 
         private static string ResolveCanvasVersionKey(SceneVersionBinding binding)
         {
@@ -387,6 +394,30 @@ internal static class MediaForgeRenderGraphCompiler
     private static string HashPrimitive(RenderDrawObjectSnapshot drawObject)
     {
         var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), CreateFingerprintJsonOptions());
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static string HashCanvas(CanvasStateSnapshot canvas)
+    {
+        var json = JsonSerializer.Serialize(
+            new
+            {
+                Background = new { canvas.BackgroundColor.R, canvas.BackgroundColor.G, canvas.BackgroundColor.B, canvas.BackgroundColor.A },
+                Objects = canvas.Objects.Select(CreateDrawObjectFingerprint).ToArray()
+            },
+            CreateFingerprintJsonOptions());
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static string HashCanvas(RenderCanvasSnapshot canvas)
+    {
+        var json = JsonSerializer.Serialize(
+            new
+            {
+                Background = new { canvas.BackgroundColor.R, canvas.BackgroundColor.G, canvas.BackgroundColor.B, canvas.BackgroundColor.A },
+                Objects = canvas.Objects.Select(CreateDrawObjectFingerprint).ToArray()
+            },
+            CreateFingerprintJsonOptions());
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
     }
 

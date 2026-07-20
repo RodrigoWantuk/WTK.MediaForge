@@ -11,6 +11,7 @@ public enum MediaTransportAuditEventKind
     GpuFormatConversionUnavailable,
     HardwareEncoderInputLeaseCreated,
     HardwareEncoderAcceptedSurface,
+    HardwareEncoderDrainCompleted,
     HardwareDecodeStarted,
     HardwareDecodeUnavailable,
     HardwareDecodeSucceeded,

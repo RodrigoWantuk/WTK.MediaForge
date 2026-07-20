@@ -152,7 +152,7 @@ public static class HardwareMediaValidationReportBuilder
             "feature.capture.window",
             "Window capture product path",
             "source.wtk.source.window.capture",
-            [],
+            [MediaForgeCapabilityCatalog.WindowCaptureInputProductProof],
             RequiredForHardwareRelease: false),
         new(
             "feature.input.ndi",
@@ -178,6 +178,7 @@ public static class HardwareMediaValidationReportBuilder
         (MediaForgeCapabilityCatalog.Mp4OutputProductProof, "MP4 output product proof"),
         (MediaForgeCapabilityCatalog.Mp4InputProductProof, "MP4 input product proof"),
         (MediaForgeCapabilityCatalog.WebcamInputProductProof, "Webcam input product proof"),
+        (MediaForgeCapabilityCatalog.WindowCaptureInputProductProof, "Window capture input product proof"),
         (MediaForgeCapabilityCatalog.RtmpNetworkOutputProof, "RTMP network output proof"),
         (MediaForgeCapabilityCatalog.NdiInputProductProof, "NDI input product proof"),
         (MediaForgeCapabilityCatalog.NdiOutputProductProof, "NDI output product proof")

@@ -333,7 +333,19 @@ internal sealed class WindowsWebcamVideoFrameProvider : IVideoFrameProvider, IAs
             Volatile.Write(ref _state, (int)MediaSourceState.Stopping);
 
         _captureCancellation?.Cancel();
-        _session?.RequestStop();
+        var stopRequestFailure = _session?.RequestStop();
+        if (stopRequestFailure is not null)
+        {
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Warning,
+                "source.webcam_stop_request_failed",
+                $"Webcam source '{Name}' reported a failure while requesting capture shutdown; physical thread completion is still required.",
+                nameof(WindowsWebcamVideoFrameProvider),
+                stopRequestFailure,
+                Id.Value,
+                Name);
+        }
 
         if (_captureThread is { IsAlive: true } &&
             !_captureThread.Join(StopTimeout))

@@ -28,12 +28,14 @@ internal static class VulkanOffscreenCompositor
         VulkanCompositionShaderPipelines pipelines,
         CommandBuffer commandBuffer,
         RenderFrameSnapshot snapshot,
+        PhysicalRenderGraphPlan physicalPlan,
         IReadOnlyDictionary<RenderOutputId, VulkanOffscreenTargetHandle> offscreenTargets,
         IReadOnlyList<VulkanExternalTextureLease> textureLeases,
         VulkanSubmissionResourceScope submissionResources)
     {
         ArgumentNullException.ThrowIfNull(pipelines);
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(physicalPlan);
         ArgumentNullException.ThrowIfNull(offscreenTargets);
         ArgumentNullException.ThrowIfNull(textureLeases);
 
@@ -41,7 +43,6 @@ internal static class VulkanOffscreenCompositor
             lease => VulkanExternalTextureKey.From(lease.Import.SourceHandle),
             lease => lease.Import);
         var renderedSurfaces = new List<IRenderedOutputSurfaceLease>();
-        var physicalPlan = ResolvePhysicalPlan(snapshot);
         var outputsById = snapshot.Outputs.ToDictionary(static output => output.Id);
         var canvasesById = snapshot.Canvases.ToDictionary(static canvas => canvas.Id);
         var operationsByKey = physicalPlan.Operations.ToDictionary(
@@ -389,9 +390,6 @@ internal static class VulkanOffscreenCompositor
 
         return null;
     }
-
-    private static PhysicalRenderGraphPlan ResolvePhysicalPlan(RenderFrameSnapshot snapshot) =>
-        snapshot.RenderGraphExecution?.PhysicalPlan ?? MediaForgeRenderGraphCompiler.Compile(snapshot).PhysicalPlan;
 
     private static PhysicalRenderGraphOperation? ResolveOutputDependency(
         PhysicalRenderGraphOperation outputOperation,

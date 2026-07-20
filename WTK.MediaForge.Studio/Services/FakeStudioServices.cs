@@ -12,22 +12,28 @@ public sealed class FakeStudioProjectService : IStudioProjectService
 {
     public StudioProjectDocument Current { get; } = new("Produção ao vivo");
 
-    public Task NewAsync(CancellationToken cancellationToken)
+    public Task<StudioDocument> NewAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Current.Rename("Projeto sem título", null, true);
-        return Task.CompletedTask;
+        var document = StudioMockDocumentFactory.Create();
+        document.DisplayName = Current.DisplayName;
+        document.HasUnsavedChanges = true;
+        return Task.FromResult(document);
     }
 
-    public Task OpenAsync(string path, CancellationToken cancellationToken)
+    public Task<StudioDocument> OpenAsync(string path, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Current.Rename("Projeto carregado", path, false);
-        return Task.CompletedTask;
+        var document = StudioMockDocumentFactory.Create();
+        document.DisplayName = Current.DisplayName;
+        return Task.FromResult(document);
     }
 
-    public Task SaveAsync(string? path, CancellationToken cancellationToken)
+    public Task SaveAsync(StudioDocument document, string? path, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(document);
         cancellationToken.ThrowIfCancellationRequested();
         Current.Rename(Current.DisplayName, path ?? Current.Path ?? "mock-project.mforge.json", false);
         return Task.CompletedTask;
@@ -465,6 +471,7 @@ public static class StudioServiceFactory
             new StudioDiagnosticsService(diagnostics),
             new StudioSelectionService(),
             new StudioInspectorPageFactory(),
-            uiTimer ?? new AvaloniaStudioUiTimer());
+            uiTimer ?? new AvaloniaStudioUiTimer(),
+            StudioMockDocumentFactory.Create());
     }
 }

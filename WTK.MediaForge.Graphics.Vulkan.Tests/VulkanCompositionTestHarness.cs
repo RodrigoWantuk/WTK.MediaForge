@@ -676,14 +676,20 @@ internal static class VulkanCompositionTestHarness
         {
             using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
             if (factory.EnumAdapters1(0, out IDXGIAdapter1? adapter).Failure || adapter is null)
+            {
+                ThrowWhenHardwareIsRequired("No D3D11 adapter was available for the Vulkan composition test.");
                 return false;
+            }
 
             device = D3D11GpuDevice.CreateForAdapter(adapter);
             handle = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, width: 64, height: 64);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            ThrowWhenHardwareIsRequired(
+                "D3D11 shared-texture setup failed for the Vulkan composition test.",
+                ex);
             return false;
         }
     }
@@ -735,16 +741,35 @@ internal static class VulkanCompositionTestHarness
                 out var backend) ||
                 backend is null)
             {
+                ThrowWhenHardwareIsRequired("The Vulkan renderer could not be created on the active adapter.");
                 return false;
             }
 
             context = new TestRendererContext(guard, backend);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            ThrowWhenHardwareIsRequired(
+                "The Vulkan renderer failed during hardware test setup.",
+                ex);
             return false;
         }
+    }
+
+    private static void ThrowWhenHardwareIsRequired(string reason, Exception? innerException = null)
+    {
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Required GPU test was not executed: {reason}",
+            innerException);
     }
 
     internal sealed class TestRendererContext : IDisposable

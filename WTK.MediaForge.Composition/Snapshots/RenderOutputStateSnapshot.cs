@@ -28,6 +28,8 @@ internal sealed class RenderOutputStateSnapshot
 
     public ColorRgba LetterboxColor { get; init; } = ColorRgba.Black;
 
+    public RenderColorSpace ColorSpace { get; init; } = RenderColorSpace.Srgb;
+
     public SceneVersionBinding SceneVersionBinding { get; init; } =
         SceneVersionBinding.Published;
 

@@ -53,6 +53,7 @@ internal static class ProjectStateSnapshotFactory
             OutputSize = output.OutputSize,
             CanvasLayoutMode = output.CanvasLayoutMode,
             LetterboxColor = output.LetterboxColor,
+            ColorSpace = output.ColorSpace,
             SceneVersionBinding = output.SceneVersionBinding,
             RouteTransitionKind = output.RouteTransition.Kind
         };

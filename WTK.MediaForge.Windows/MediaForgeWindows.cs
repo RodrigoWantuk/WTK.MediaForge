@@ -1,6 +1,7 @@
 using WTK.MediaForge.Composition.Engine;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Sources;
+using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Graphics.Vulkan;
@@ -15,11 +16,15 @@ public static class MediaForgeWindows
 {
     private static readonly IHardwareMediaCapabilityProbe DefaultCapabilityProbe =
         new WindowsHardwareMediaCapabilityProbe();
+    private static readonly WindowsMediaCapabilitySnapshotProvider DefaultCapabilitySnapshotProvider =
+        new(CreateDefaultHardwareProofReportAsync);
 
     public static MediaForgeEngine CreateEngine(MediaForgeEngineOptions? options = null)
     {
         options ??= new MediaForgeEngineOptions();
         ValidateOptions(options);
+        var adapterAffinity = new GpuAdapterAffinityState();
+        adapterAffinity.GenerationChanged += _ => DefaultCapabilitySnapshotProvider.Invalidate();
 
         return new MediaForgeEngine(
             new CompositeMediaSourceProviderFactory(
@@ -27,12 +32,16 @@ public static class MediaForgeWindows
             new WindowsImageSourceProviderFactory(options.Diagnostics),
             new WindowsWebcamSourceProviderFactory(options.Diagnostics),
             new WindowsNdiSourceProviderFactory(options.Diagnostics),
-            new WindowsUnavailableLiveSourceProviderFactory(options.Diagnostics),
+            new WindowsWindowCaptureSourceProviderFactory(
+                options.Diagnostics,
+                adapterAffinity),
             new WindowsVideoFileSourceProviderFactory(options.Diagnostics)),
             new WindowsRenderOutputSinkFactory(),
-            new MediaForgeVulkanRenderBackendFactory(new WindowsSystemDrawingFontAtlasRasterizer()),
+            new MediaForgeVulkanRenderBackendFactory(
+                new WindowsSystemDrawingFontAtlasRasterizer(),
+                adapterAffinity),
             options.Diagnostics,
-            new WindowsEncodedOutputRouteFactory(options.Diagnostics))
+            new WindowsEncodedOutputRouteFactory(options.Diagnostics, adapterAffinity: adapterAffinity))
         {
             StartTimeout = options.StartTimeout,
             CommandTimeout = options.CommandTimeout,
@@ -65,6 +74,7 @@ public static class MediaForgeWindows
         registry.Register(new WindowsDecodeToRenderProofRunner());
         registry.Register(new WindowsMp4InputProductProofRunner());
         registry.Register(new WindowsWebcamInputProductProofRunner());
+        registry.Register(new WindowsWindowCaptureInputProductProofRunner());
         registry.Register(new WindowsNdiInputProductProofRunner());
         registry.Register(new WindowsNdiOutputProductProofRunner());
         return registry;
@@ -72,7 +82,28 @@ public static class MediaForgeWindows
 
     public static ValueTask<MediaForgeCapabilityReport> GetCapabilityReportWithHardwareProofsAsync(
         CancellationToken cancellationToken = default) =>
-        GetCapabilityReportWithHardwareProofsAsync(DefaultCapabilityProbe, CreateHardwareMediaProofRegistry(), cancellationToken);
+        GetCachedCapabilityReportWithHardwareProofsAsync(cancellationToken);
+
+    public static ValueTask<MediaForgeCapabilitySnapshot> GetCapabilitySnapshotAsync(
+        CancellationToken cancellationToken = default) =>
+        DefaultCapabilitySnapshotProvider.GetAsync(cancellationToken);
+
+    public static void InvalidateCapabilitySnapshot() =>
+        DefaultCapabilitySnapshotProvider.Invalidate();
+
+    private static async ValueTask<MediaForgeCapabilityReport> GetCachedCapabilityReportWithHardwareProofsAsync(
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await DefaultCapabilitySnapshotProvider.GetAsync(cancellationToken).ConfigureAwait(false);
+        return snapshot.Report;
+    }
+
+    private static ValueTask<MediaForgeCapabilityReport> CreateDefaultHardwareProofReportAsync(
+        CancellationToken cancellationToken) =>
+        GetCapabilityReportWithHardwareProofsAsync(
+            DefaultCapabilityProbe,
+            CreateHardwareMediaProofRegistry(),
+            cancellationToken);
 
     public static async ValueTask<MediaForgeCapabilityReport> GetCapabilityReportAsync(
         IHardwareMediaCapabilityProbe probe,
@@ -109,20 +140,28 @@ public static class MediaForgeWindows
 
         foreach (var entry in MediaSourceTypeRegistry.CreateCapabilityEntries())
         {
+            if (entry.Id.Equals($"source.{MediaSourceTypes.VideoFile.Value}", StringComparison.OrdinalIgnoreCase) &&
+                HasPassedProofs(
+                    hardware,
+                    MediaForgeCapabilityCatalog.HardwareDecodeProof,
+                    MediaForgeCapabilityCatalog.DecodeToRenderProof,
+                    MediaForgeCapabilityCatalog.Mp4InputProductProof))
+            {
+                yield return PromoteRuntimeCapability(entry, MediaForgeSupportStatus.Experimental);
+                continue;
+            }
+
             if (entry.Id.Equals($"source.{MediaSourceTypes.Webcam.Value}", StringComparison.OrdinalIgnoreCase) &&
                 HasPassedProof(hardware, MediaForgeCapabilityCatalog.WebcamInputProductProof))
             {
-                yield return new CapabilityEntry
-                {
-                    Id = entry.Id,
-                    Category = entry.Category,
-                    DisplayName = entry.DisplayName,
-                    SupportStatus = MediaForgeSupportStatus.Experimental,
-                    LicenseStatus = entry.LicenseStatus,
-                    ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated,
-                    UnavailableReason = null,
-                    TransportKind = entry.TransportKind
-                };
+                yield return PromoteRuntimeCapability(entry, MediaForgeSupportStatus.Experimental);
+                continue;
+            }
+
+            if (entry.Id.Equals($"source.{MediaSourceTypes.WindowCapture.Value}", StringComparison.OrdinalIgnoreCase) &&
+                HasPassedProof(hardware, MediaForgeCapabilityCatalog.WindowCaptureInputProductProof))
+            {
+                yield return PromoteRuntimeCapability(entry, MediaForgeSupportStatus.Experimental);
                 continue;
             }
 
@@ -137,6 +176,29 @@ public static class MediaForgeWindows
 
         foreach (var entry in RenderOutputTypeRegistry.CreateCapabilityEntries())
         {
+            if (entry.Id.Equals($"output.{RenderOutputTypes.RecordingMp4.Value}", StringComparison.OrdinalIgnoreCase) &&
+                HasPassedProofs(
+                    hardware,
+                    MediaForgeCapabilityCatalog.RenderToEncodeProof,
+                    MediaForgeCapabilityCatalog.HardwareEncodeProof,
+                    MediaForgeCapabilityCatalog.Mp4RecordingProof,
+                    MediaForgeCapabilityCatalog.Mp4OutputProductProof))
+            {
+                yield return PromoteRuntimeCapability(entry, MediaForgeSupportStatus.Supported);
+                continue;
+            }
+
+            if (entry.Id.Equals($"output.{RenderOutputTypes.StreamingRtmp.Value}", StringComparison.OrdinalIgnoreCase) &&
+                HasPassedProofs(
+                    hardware,
+                    MediaForgeCapabilityCatalog.RenderToEncodeProof,
+                    MediaForgeCapabilityCatalog.HardwareEncodeProof,
+                    MediaForgeCapabilityCatalog.RtmpNetworkOutputProof))
+            {
+                yield return PromoteRuntimeCapability(entry, MediaForgeSupportStatus.Experimental);
+                continue;
+            }
+
             if (entry.Id.Equals($"output.{RenderOutputTypes.Ndi.Value}", StringComparison.OrdinalIgnoreCase))
             {
                 yield return CreateNdiOutputCapabilityEntry(entry, hardware, ndiRuntime);
@@ -245,6 +307,26 @@ public static class MediaForgeWindows
         hardware.Proofs.Any(proof =>
             proof.Id.Equals(proofId, StringComparison.OrdinalIgnoreCase) &&
             proof.Status == HardwareMediaProofStatus.Passed);
+
+    private static bool HasPassedProofs(
+        HardwareMediaCapabilityReport hardware,
+        params string[] proofIds) =>
+        proofIds.All(proofId => HasPassedProof(hardware, proofId));
+
+    private static CapabilityEntry PromoteRuntimeCapability(
+        CapabilityEntry entry,
+        MediaForgeSupportStatus status) =>
+        new()
+        {
+            Id = entry.Id,
+            Category = entry.Category,
+            DisplayName = entry.DisplayName,
+            SupportStatus = status,
+            LicenseStatus = entry.LicenseStatus,
+            ProductReadinessStatus = MediaForgeProductReadinessStatus.ProductValidated,
+            UnavailableReason = null,
+            TransportKind = entry.TransportKind
+        };
 
     private static void ValidateOptions(MediaForgeEngineOptions options)
     {

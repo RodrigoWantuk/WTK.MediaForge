@@ -204,7 +204,7 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal/legacy target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. Product recording and streaming sinks consume `EncodedVideoPacket` after hardware encode only. Encoded packets must identify codec, bitstream format (`AnnexB` or `Avcc` for H.264), presentation time, optional duration, optional codec configuration data, and `EncodedVideoPacketEvidence`. `EvidenceKind` is observable but not publicly settable; backend-output-validated evidence is created only by trusted implementation assemblies after a real hardware backend produces a packet. Product MP4 recording and public RTMP streaming accept only H.264 packets with `BackendOutputValidated` evidence and reject prototype, contract-only, and unknown bitstream packets. Test-only prototype packet transports must require explicit opt-in. Sinks must reject unknown bitstream format instead of guessing. `PreviewPanelSink` is the validated Win32/Vulkan GPU preview sink for completed rendered output surfaces; it must stay on the GPU path and must not introduce CPU readback.
+`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. Product recording and streaming sinks consume `EncodedVideoPacket` after hardware encode only. Encoded packets identify codec, bitstream format, presentation time, duration, codec configuration, and trusted evidence. MP4 and RTMP reject non-validated or unknown bitstreams. `PreviewPanelSink` is an experimental Win32/Vulkan GPU sink: it preserves in-flight presenter resources after timeout and must not introduce CPU readback, but remains unpromoted until hosted reliability evidence passes.
 
 FFmpeg is not used in the first hardware MP4/RTMP product path. Future FFmpeg integration requires LGPL-only build, no GPL components, no libx264/libx265, no rawvideo pipe, and license review.
 
@@ -221,18 +221,22 @@ Capability and license status are queryable without starting the engine:
   `HardwareMediaValidationReportBuilder`, and
   `HardwareMediaValidationReportMarkdownWriter` provide the versioned
   operational report used by readiness scripts and release validation. The
-  current schema version is `1`.
+  current schema version is `1`. Window Capture has its own
+  `proof.media_io.window_capture.product` chain and is not inferred from nominal
+  Windows API availability.
 - `CapabilityProofAggregator` resolves composite product capabilities such as
   MP4 recording, RTMP streaming, and MP4 video input from required hardware
-  media proof results. The Windows capability report also promotes webcam input
-  when its product proof passes. Features must not be promoted manually or from
+  media proof results. The Windows capability report also promotes webcam and
+  window capture input when their product proofs pass. Features must not be promoted manually or from
   prototype evidence.
 - `MediaForgeCapabilityCatalog.NdiSourceDiscovery` reports whether the Windows
   Standard NDI SDK runtime can perform source discovery. This capability is
   metadata/discovery only and must not be used as proof that NDI video
   input/output is available.
 - `HardwareMediaBackendCapability` reports runtime-detected OS/vendor backend facts for hardware decode/encode. A backend that requires CPU staging for continuous video, or is only `Prototype`/`Skeleton`, must not be reported as `Supported` or `Experimental`.
-- `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v12 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` is the session runner registry used to execute proof runners and merge observed proof results into capability reports. Non-passed proofs must include a user-visible reason. Passed proofs must identify the validated backend and include evidence at the required level: `BackendCallSucceeded` for render-to-encode input acceptance, `BackendOutputValidated` for encoded packets, MP4 recording/output, hardware decode, decode-to-render output, MP4 input, webcam input, RTMP network output, and NDI input/output.
+- `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v13 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, window capture input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` executes proof runners once per cached adapter/device generation. Non-passed proofs require a user-visible reason; passed packet/media proofs require trusted backend evidence.
+- `MediaForgeHardwareAdapterInfo` and `MediaForgeCapabilitySnapshot` expose immutable adapter identity, driver/device generation, capture time, and the capability report. Hosts call asynchronous platform probes; they must not block a UI thread.
+- `MediaForgeRuntimeHealthSnapshot` and recovery events expose high-level engine/output/source health without leaking Vulkan or D3D11 details.
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.
 - Capability entries that are not user-available (`Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, `Blocked`, `Prohibited`, or equivalent non-product states) must include a non-empty `UnavailableReason` suitable for UI and diagnostics.
 - `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.
@@ -246,14 +250,14 @@ Studio and host apps must use capability status to disable or label features tha
 
 Operational validation scripts use
 `./scripts/generate-media-proof-report.ps1` and
-`./scripts/verify-engine-readiness-v12.ps1` to write
+`./scripts/verify-engine-readiness-v13.ps1` to write
 `test-reports/media-proof-report.json` and
 `test-reports/media-proof-report.md`. In normal development, unavailable
 hardware paths are allowed only when the report contains explicit blockers. In
 release mode, `-RequireHardwareMedia` fails unless required hardware media
 features have passed proof chains.
 
-Product preview panel sinks are GPU-surface product sinks for the validated Win32/Vulkan scope. MP4 recording, RTMP streaming, MP4 input, and webcam input must still be enabled through capability reports, because their routes require hardware proof chains on the current machine. NDI is runtime-detected on Windows when the NDI runtime is installed or packaged as a native asset, and Standard SDK source discovery is exposed through `FindNdiSourcesAsync`. Detection/discovery alone does not make NDI video available: input/output remain blocked until GPU-safe product proofs pass. SRT, virtual camera, and audio outputs remain unavailable/planned until their owning roadmap tracks and capability reports say otherwise.
+Preview panel sinks are experimental GPU-surface sinks for Win32/Vulkan. Fence timeout preserves presenter resources for retry; product promotion still requires hosted resize/attach/detach and sustained presentation evidence. MP4 recording, RTMP streaming, MP4 input, webcam input, and window capture are enabled only through the current adapter capability snapshot. Window Capture accepts an HWND and publishes only engine-owned D3D11 GPU leases; the WinRT frame-pool surface never escapes its frame lifetime. NDI runtime detection/discovery does not make NDI video available. SRT, virtual camera, and audio remain unavailable/planned.
 
 Sink compliance metadata follows the same rule: sinks that are debug-only,
 prototype-only, planned, unsupported, blocked, or otherwise not product-ready

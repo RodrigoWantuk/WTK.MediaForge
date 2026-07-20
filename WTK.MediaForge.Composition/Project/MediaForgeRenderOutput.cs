@@ -28,6 +28,8 @@ public sealed class MediaForgeRenderOutput
 
     public ColorRgba LetterboxColor { get; set; } = ColorRgba.Black;
 
+    public RenderColorSpace ColorSpace { get; set; } = RenderColorSpace.Srgb;
+
     public SceneVersionBinding SceneVersionBinding { get; set; } =
         SceneVersionBinding.Published;
 

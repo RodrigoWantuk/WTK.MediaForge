@@ -10,6 +10,8 @@ public sealed class HardwareMediaCapabilityReport
 
     public string? DriverVersion { get; init; }
 
+    public string? AdapterId { get; init; }
+
     public IReadOnlyList<string> DetectedApis { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> HardwareDecodeCodecs { get; init; } = Array.Empty<string>();

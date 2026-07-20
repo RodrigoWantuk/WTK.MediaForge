@@ -148,8 +148,9 @@ public sealed class WindowsWebcamSourceProviderFactoryTests
             return true;
         }
 
-        public void RequestStop()
+        public Exception? RequestStop()
         {
+            return null;
         }
 
         public void Dispose()
@@ -195,8 +196,9 @@ public sealed class WindowsWebcamSourceProviderFactoryTests
             CancellationToken cancellationToken) =>
             throw new InvalidOperationException("fake webcam start failure");
 
-        public void RequestStop()
+        public Exception? RequestStop()
         {
+            return null;
         }
 
         public void Dispose()

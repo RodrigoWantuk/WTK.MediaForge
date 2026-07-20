@@ -39,7 +39,7 @@ public sealed class ProductReadinessStatusTests
     }
 
     [Fact]
-    public void Synthetic_performance_baseline_is_skeleton_and_not_user_available()
+    public void Short_real_performance_gate_remains_deferred_until_sustained_qualification()
     {
         var report = MediaForgeCapabilityReportBuilder.Build(new HardwareMediaCapabilityReport
         {
@@ -50,9 +50,10 @@ public sealed class ProductReadinessStatusTests
             report.TryGetEntry(MediaForgeCapabilityCatalog.EnginePerformanceBaseline));
 
         Assert.Equal(MediaForgeSupportStatus.Deferred, entry.SupportStatus);
-        Assert.Equal(MediaForgeProductReadinessStatus.Skeleton, entry.ProductReadinessStatus);
+        Assert.Equal(MediaForgeProductReadinessStatus.Contract, entry.ProductReadinessStatus);
         Assert.False(report.IsFeatureAvailable(entry.Id));
-        Assert.Contains("Synthetic", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("30-minute", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("eight-hour", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

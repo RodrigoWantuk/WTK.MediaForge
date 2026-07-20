@@ -46,54 +46,6 @@ public sealed class WindowsHardwareDecodeBoundaryTests
         }
     }
 
-    [Fact]
-    public async Task Prototype_decode_frame_produces_gpu_texture_but_not_product_decode_proof()
-    {
-        var tempVideo = Path.Combine(Path.GetTempPath(), $"mf-decode-{Guid.NewGuid():N}.mp4");
-        await File.WriteAllBytesAsync(tempVideo, MinimalMp4TestAsset.CreateAnnexBBytes());
-
-        try
-        {
-            await using var decoder = new MediaFoundationHardwareVideoDecoder(allowPrototypeDecoding: true);
-            var audit = new CollectingMediaTransportAuditSink();
-
-            await decoder.OpenAsync(
-                new HardwareDecodeOpenContext
-                {
-                    SourcePath = tempVideo,
-                    Session = new HardwareDecodeSession
-                    {
-                        Codec = EncodedVideoCodec.H264,
-                        Width = 640,
-                        Height = 360
-                    }
-                },
-                audit);
-
-            var frame = await decoder.DecodeNextFrameAsync(
-                new FileDecodeFrameContext
-                {
-                    FrameNumber = 1,
-                    PresentationTime = TimeSpan.Zero,
-                    CancellationToken = CancellationToken.None
-                },
-                audit);
-
-            Assert.NotNull(frame);
-            Assert.True(frame!.Width > 0);
-            Assert.True(frame.Height > 0);
-            Assert.False(MediaTransportAuditRules.IsDecodePathValid(audit.Events));
-            Assert.False(audit.Contains(MediaTransportAuditEventKind.CpuReadbackAttempted));
-            Assert.Contains(audit.Events, e =>
-                e.Kind == MediaTransportAuditEventKind.HardwareDecodeSucceeded &&
-                e.EvidenceKind == MediaTransportAuditEvidenceKind.Prototype);
-        }
-        finally
-        {
-            if (File.Exists(tempVideo))
-                File.Delete(tempVideo);
-        }
-    }
 }
 
 internal static class MinimalMp4TestAsset

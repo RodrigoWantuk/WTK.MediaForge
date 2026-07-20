@@ -27,8 +27,8 @@ public static class RenderOutputSinkComplianceRegistry
             Kind = RenderOutputSinkKind.Preview,
             Transport = MediaTransportKind.GpuSurface,
             IsProductSink = true,
-            SupportStatus = MediaForgeSupportStatus.Supported,
-            UnavailableReason = null
+            SupportStatus = MediaForgeSupportStatus.Experimental,
+            UnavailableReason = "Experimental until hosted resize and repeated fence-timeout recovery complete the preview reliability gate."
         },
         new()
         {

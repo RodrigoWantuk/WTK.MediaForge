@@ -173,6 +173,7 @@ internal static class WindowsRenderedOutputH264ProofPipeline
 
         MediaForgeVulkanRenderer? renderer = null;
         IRenderFrameSubmission? submission = null;
+        Exception? operationFailure = null;
         try
         {
             if (!MediaForgeVulkanRenderer.TryCreate(
@@ -210,6 +211,7 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     new WindowsRenderedOutputEncoderInputConverter(ownedDevice.Device)));
 
             var packets = new List<EncodedVideoPacket>();
+            var renderedFrameCount = 0;
             for (var frameIndex = 0; frameIndex < maxRenderedFrames; frameIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -220,6 +222,7 @@ internal static class WindowsRenderedOutputH264ProofPipeline
 
                 submission = renderer.Submit(snapshot);
                 await submission.WaitForCompletionAsync(perSubmissionTimeout, cancellationToken).ConfigureAwait(false);
+                renderedFrameCount++;
 
                 var outputFrames = submission.AcquireOutputFrames();
                 try
@@ -254,14 +257,7 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                         ValidatePacket(packet);
                         packets.Add(packet);
                         if (stopAfterMinimumPackets && packets.Count >= minimumPacketCount)
-                        {
-                            return new WindowsRenderedOutputH264ProofResult(
-                                packets[0],
-                                packets.ToArray(),
-                                audit.Events.ToArray(),
-                                settings,
-                                frameIndex + 1);
-                        }
+                            break;
                     }
                 }
                 finally
@@ -270,6 +266,16 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     submission.DisposeCompleted();
                     submission = null;
                 }
+
+                if (stopAfterMinimumPackets && packets.Count >= minimumPacketCount)
+                    break;
+            }
+
+            var drainedPackets = await encoder.DrainAsync(audit, cancellationToken).ConfigureAwait(false);
+            foreach (var packet in drainedPackets)
+            {
+                ValidatePacket(packet);
+                packets.Add(packet);
             }
 
             if (packets.Count >= minimumPacketCount)
@@ -279,14 +285,20 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     packets.ToArray(),
                     audit.Events.ToArray(),
                     settings,
-                    maxRenderedFrames);
+                    renderedFrameCount);
             }
 
             throw new NotSupportedException(
-                $"Media Foundation hardware encoder accepted rendered output but emitted {packets.Count} packet(s) after {maxRenderedFrames} rendered frame(s); required {minimumPacketCount}.");
+                $"Media Foundation hardware encoder accepted rendered output but emitted {packets.Count} packet(s) after {renderedFrameCount} rendered frame(s); required {minimumPacketCount}.");
+        }
+        catch (Exception ex)
+        {
+            operationFailure = ex;
+            throw;
         }
         finally
         {
+            var cleanupErrors = new List<Exception>();
             if (submission is not null)
             {
                 try
@@ -294,14 +306,35 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     await submission.WaitForCompletionAsync(ProofTimeout, CancellationToken.None).ConfigureAwait(false);
                     submission.DisposeCompleted();
                 }
-                catch
+                catch (Exception cleanupException)
                 {
-                    // The original proof failure is more actionable than best-effort cleanup failure here.
+                    cleanupErrors.Add(cleanupException);
                 }
             }
 
-            renderer?.Dispose();
+            if (renderer is not null)
+            {
+                try
+                {
+                    renderer.Dispose();
+                }
+                catch (Exception cleanupException)
+                {
+                    cleanupErrors.Add(cleanupException);
+                }
+            }
+
             guard.Clear();
+
+            if (cleanupErrors.Count > 0)
+            {
+                if (operationFailure is not null)
+                    cleanupErrors.Insert(0, operationFailure);
+
+                throw new AggregateException(
+                    "Rendered-output H.264 proof cleanup did not complete safely.",
+                    cleanupErrors);
+            }
         }
     }
 

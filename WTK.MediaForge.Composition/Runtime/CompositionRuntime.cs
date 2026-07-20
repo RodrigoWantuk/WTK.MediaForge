@@ -5,7 +5,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime;
 
-internal sealed class CompositionRuntime : IDisposable
+internal sealed class CompositionRuntime : IDisposable, IAsyncDisposable
 {
     private readonly SourceRuntimeManager _sourceRuntimeManager;
 
@@ -24,8 +24,8 @@ internal sealed class CompositionRuntime : IDisposable
         _sourceRuntimeManager.RegisterProvider(provider);
     }
 
-    public void UnregisterFrameProvider(SourceId sourceId) =>
-        _sourceRuntimeManager.UnregisterProvider(sourceId);
+    public ValueTask UnregisterFrameProviderAsync(SourceId sourceId) =>
+        _sourceRuntimeManager.UnregisterProviderAsync(sourceId);
 
     public bool TryGetFrameProvider(SourceId sourceId, out IVideoFrameProvider provider) =>
         _sourceRuntimeManager.TryGetProvider(sourceId, out provider!);
@@ -34,4 +34,6 @@ internal sealed class CompositionRuntime : IDisposable
         _sourceRuntimeManager.TryAcquireFrame(sourceId, renderTimestamp);
 
     public void Dispose() => _sourceRuntimeManager.Dispose();
+
+    public ValueTask DisposeAsync() => _sourceRuntimeManager.DisposeAsync();
 }

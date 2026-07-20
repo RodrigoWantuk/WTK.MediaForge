@@ -2,6 +2,7 @@ using Vortice.Direct3D11;
 using Vortice.DXGI;
 using System.Reflection;
 using WTK.MediaForge.Core.Gpu;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Core.Gpu.Resources;
 using WTK.MediaForge.Core.Media;
@@ -133,7 +134,36 @@ public sealed class HardwareEncodeFoundationTests
     }
 
     [Fact]
-    public async Task Public_encoder_rejects_prototype_canned_packet_path()
+    public async Task Encoder_dispose_rejects_accepted_input_without_drain_and_still_releases_owned_device()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var encoder = new MediaFoundationHardwareVideoEncoder(320, 180);
+        var ownedDeviceField = typeof(MediaFoundationHardwareVideoEncoder).GetField(
+            "_ownedDevice",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        var ownedDevice = Assert.IsType<OwnedD3D11EncoderDevice>(ownedDeviceField?.GetValue(encoder));
+        var session = new MediaFoundationHardwareH264EncoderSession(
+            ownedDevice.Device,
+            new HardwareVideoEncoderSettings { Width = 320, Height = 180 });
+        SetPrivateField(session, "_initialized", true);
+        SetPrivateField(session, "_acceptedInput", true);
+
+        var sessionField = typeof(MediaFoundationHardwareVideoEncoder).GetField(
+            "_hardwareSession",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        sessionField!.SetValue(encoder, session);
+
+        var exception = await Assert.ThrowsAsync<AggregateException>(async () =>
+            await encoder.DisposeAsync());
+
+        Assert.Contains("before DrainAsync completed", exception.ToString(), StringComparison.Ordinal);
+        Assert.Throws<ObjectDisposedException>(() => ownedDevice.Device);
+    }
+
+    [Fact]
+    public async Task Public_encoder_never_substitutes_canned_packets_when_requested_mft_input_is_unavailable()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -166,7 +196,7 @@ public sealed class HardwareEncodeFoundationTests
                 },
                 new CollectingMediaTransportAuditSink()));
 
-        Assert.Contains("Real Media Foundation H.264 hardware encoder output is unavailable", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Media Foundation H.264 hardware encoder output is unavailable", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -209,14 +239,14 @@ public sealed class HardwareEncodeFoundationTests
                 exporter,
                 audit));
 
-        Assert.Contains("prototype canned-packet bridge is not a product encoder backend", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("hardware MFT", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.False(exporter.CanExportCalled);
         Assert.False(exporter.ExportCalled);
         Assert.Empty(audit.Events);
     }
 
     [Fact]
-    public async Task Encoder_accepts_gpu_texture_lease_from_export_path()
+    public async Task Encoder_export_path_produces_packet_or_reports_requested_mft_format_unavailable()
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -231,8 +261,7 @@ public sealed class HardwareEncodeFoundationTests
             gpuDevice.Device,
             width: 640,
             height: 360,
-            pixelFormat: "B8G8R8A8_UNORM",
-            allowPrototypeEncoding: true);
+            pixelFormat: "B8G8R8A8_UNORM");
 
         using var pool = new GpuResourcePool(new FakeGpuTextureFactory());
         using var textureLease = pool.AcquireTexture(new GpuTextureDescriptor
@@ -263,10 +292,10 @@ public sealed class HardwareEncodeFoundationTests
                 Assert.True(H264NalUtilities.ContainsValidStartCode(packet.Data.Span));
             }
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
         {
-            // Hardware encoder may be unavailable on CI; export path must still be exercised.
-            Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuSurfaceExportSucceeded));
+            Assert.Contains("hardware", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(audit.Contains(MediaTransportAuditEventKind.EncodedPacketProduced));
         }
     }
 
@@ -288,7 +317,6 @@ public sealed class HardwareEncodeFoundationTests
             width: 320,
             height: 180,
             pixelFormat: "NV12",
-            allowPrototypeEncoding: true,
             formatConverter: converter);
 
         using var pool = new GpuResourcePool(new D3D11SharedTextureTestFactory(gpuDevice.Device));
@@ -314,12 +342,14 @@ public sealed class HardwareEncodeFoundationTests
         }
         catch (InvalidOperationException)
         {
-            // Prototype encoder availability varies by test host. The converter decision must already be visible.
+            // Hardware encoder availability varies by test host. The converter decision must already be visible.
         }
         catch (NotSupportedException)
         {
             // Some adapters expose the device but not the required VideoProcessor conversion.
         }
+
+        _ = await encoder.DrainAsync(audit, CancellationToken.None);
 
         Assert.True(exporter.CanExportCalled);
         Assert.False(exporter.ExportCalled);
@@ -339,7 +369,7 @@ public sealed class HardwareEncodeFoundationTests
     }
 
     [Fact]
-    public async Task Scheduler_coordinates_render_and_encode_without_sink_render_call()
+    public async Task Scheduler_reports_real_encoder_unavailability_without_blocking_or_emitting_fake_packets()
     {
         var audit = new CollectingMediaTransportAuditSink();
         var packets = new List<EncodedVideoPacket>();
@@ -355,8 +385,7 @@ public sealed class HardwareEncodeFoundationTests
             gpuDevice.Device,
             width: 320,
             height: 180,
-            pixelFormat: "B8G8R8A8_UNORM",
-            allowPrototypeEncoding: true);
+            pixelFormat: "B8G8R8A8_UNORM");
 
         var exporter = new VulkanToD3D11EncoderSurfaceExporter(gpuDevice.Device);
         using var pool = new GpuResourcePool(new FakeGpuTextureFactory());
@@ -385,11 +414,12 @@ public sealed class HardwareEncodeFoundationTests
         });
 
         await WaitForConditionAsync(
-            () => audit.Contains(MediaTransportAuditEventKind.GpuSurfaceExportSucceeded),
+            () => encodeTarget.Status == EncodedOutputRuntimeStatus.Failed,
             TimeSpan.FromSeconds(2));
         await encodeTarget.DisposeAsync();
 
-        Assert.True(audit.Contains(MediaTransportAuditEventKind.GpuSurfaceExportSucceeded));
+        Assert.Empty(packets);
+        Assert.Contains("hardware", encodeTarget.StatusReason, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task WaitForConditionAsync(Func<bool> condition, TimeSpan timeout)
@@ -404,6 +434,13 @@ public sealed class HardwareEncodeFoundationTests
         }
 
         throw new TimeoutException("Condition was not met before timeout.");
+    }
+
+    private static void SetPrivateField<T>(T instance, string fieldName, object value)
+    {
+        var field = typeof(T).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field.SetValue(instance, value);
     }
 
     private sealed class FakeGpuTextureFactory : IGpuTextureFactory

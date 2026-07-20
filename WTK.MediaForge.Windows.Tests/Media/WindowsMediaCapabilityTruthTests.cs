@@ -3,8 +3,10 @@ using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Composition;
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
+using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Windows.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Windows.Media.Decode;
@@ -26,7 +28,7 @@ public sealed class WindowsMediaCapabilityTruthTests
         Assert.False(report.AcceptsGpuSurfaceInput);
         Assert.False(report.RequiresCpuStaging);
         Assert.Equal(GpuExportProofStatus.Pending, report.ExportProofStatus);
-        Assert.Contains("v12 proof runners", report.ExportProofReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("v13 proof runners", report.ExportProofReason, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(report.BackendCapabilities, backend =>
             backend.Id == "windows.mf.d3d11va.decode.h264" &&
             backend.SupportStatus == MediaForgeSupportStatus.Unavailable &&
@@ -44,7 +46,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Windows_capability_probe_reports_v12_media_proofs_with_explicit_reasons()
+    public async Task Windows_capability_probe_reports_v13_media_proofs_with_explicit_reasons()
     {
         var report = await new WindowsHardwareMediaCapabilityProbe()
             .ProbeAsync(CancellationToken.None);
@@ -82,6 +84,10 @@ public sealed class WindowsMediaCapabilityTruthTests
             proof.Status == HardwareMediaProofStatus.Unavailable &&
             !string.IsNullOrWhiteSpace(proof.Reason));
         Assert.Contains(report.Proofs, proof =>
+            proof.Id == MediaForgeCapabilityCatalog.WindowCaptureInputProductProof &&
+            proof.Status == HardwareMediaProofStatus.Unavailable &&
+            !string.IsNullOrWhiteSpace(proof.Reason));
+        Assert.Contains(report.Proofs, proof =>
             proof.Id == MediaForgeCapabilityCatalog.RtmpNetworkOutputProof &&
             proof.Status == HardwareMediaProofStatus.Unavailable &&
             !string.IsNullOrWhiteSpace(proof.Reason));
@@ -96,7 +102,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Required_hardware_media_release_gate_fails_until_all_v12_proofs_pass()
+    public async Task Required_hardware_media_release_gate_fails_until_all_v13_proofs_pass()
     {
         if (!string.Equals(
             Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"),
@@ -119,7 +125,7 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         Assert.True(
             validation.ReleaseGatePassed && missing.Length == 0,
-            "Hardware media release gate requires all required v12 proofs to pass: " + string.Join("; ", missing));
+            "Hardware media release gate requires all required v13 proofs to pass: " + string.Join("; ", missing));
     }
 
     [Fact]
@@ -192,6 +198,8 @@ public sealed class WindowsMediaCapabilityTruthTests
         Assert.Contains(registry.Runners, runner =>
             runner.Id == MediaForgeCapabilityCatalog.WebcamInputProductProof);
         Assert.Contains(registry.Runners, runner =>
+            runner.Id == MediaForgeCapabilityCatalog.WindowCaptureInputProductProof);
+        Assert.Contains(registry.Runners, runner =>
             runner.Id == MediaForgeCapabilityCatalog.NdiInputProductProof);
         Assert.Contains(registry.Runners, runner =>
             runner.Id == MediaForgeCapabilityCatalog.NdiOutputProductProof);
@@ -209,6 +217,31 @@ public sealed class WindowsMediaCapabilityTruthTests
             $"Unexpected support status: {encodeProof.SupportStatus}");
         Assert.NotEqual(MediaForgeProductReadinessStatus.Prototype, encodeProof.ProductReadinessStatus);
         Assert.NotEqual(MediaForgeProductReadinessStatus.Skeleton, encodeProof.ProductReadinessStatus);
+
+        if (HasPassedProofs(
+                report.Hardware,
+                MediaForgeCapabilityCatalog.RenderToEncodeProof,
+                MediaForgeCapabilityCatalog.HardwareEncodeProof,
+                MediaForgeCapabilityCatalog.Mp4RecordingProof,
+                MediaForgeCapabilityCatalog.Mp4OutputProductProof))
+        {
+            var mp4 = Assert.IsType<CapabilityEntry>(
+                report.TryGetEntry($"output.{RenderOutputTypes.RecordingMp4.Value}"));
+            Assert.Equal(MediaForgeSupportStatus.Supported, mp4.SupportStatus);
+            Assert.Equal(MediaForgeProductReadinessStatus.ProductValidated, mp4.ProductReadinessStatus);
+        }
+
+        if (HasPassedProofs(
+                report.Hardware,
+                MediaForgeCapabilityCatalog.HardwareDecodeProof,
+                MediaForgeCapabilityCatalog.DecodeToRenderProof,
+                MediaForgeCapabilityCatalog.Mp4InputProductProof))
+        {
+            var videoFile = Assert.IsType<CapabilityEntry>(
+                report.TryGetEntry($"source.{MediaSourceTypes.VideoFile.Value}"));
+            Assert.Equal(MediaForgeSupportStatus.Experimental, videoFile.SupportStatus);
+            Assert.Equal(MediaForgeProductReadinessStatus.ProductValidated, videoFile.ProductReadinessStatus);
+        }
     }
 
     [Fact]
@@ -227,7 +260,8 @@ public sealed class WindowsMediaCapabilityTruthTests
             new WindowsHardwareDecodeProofRunner(),
             new WindowsDecodeToRenderProofRunner(),
             new WindowsMp4InputProductProofRunner(),
-            new WindowsWebcamInputProductProofRunner()
+            new WindowsWebcamInputProductProofRunner(),
+            new WindowsWindowCaptureInputProductProofRunner()
         ];
 
         foreach (var runner in runners)
@@ -259,6 +293,13 @@ public sealed class WindowsMediaCapabilityTruthTests
         }
     }
 
+    private static bool HasPassedProofs(
+        HardwareMediaCapabilityReport hardware,
+        params string[] proofIds) =>
+        proofIds.All(id => hardware.Proofs.Any(proof =>
+            proof.Id.Equals(id, StringComparison.OrdinalIgnoreCase) &&
+            proof.Status == HardwareMediaProofStatus.Passed));
+
     [Fact]
     public async Task Windows_encoded_output_route_factory_refuses_unvalidated_recording_route()
     {
@@ -288,5 +329,66 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         Assert.Equal(MediaForgeCapabilityCatalog.RecordingMp4H264, exception.FeatureCode);
         Assert.Equal(0, runtime.EncodedOutputCount);
+    }
+
+    [Fact]
+    public void Compatible_mp4_and_rtmp_outputs_share_the_same_surface_route()
+    {
+        var canvasId = CanvasId.New();
+        var recording = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(),
+            Name = "Recording",
+            TypeId = RenderOutputTypes.RecordingMp4,
+            CanvasId = canvasId,
+            OutputSize = new FrameSize(1920, 1080),
+            Settings = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4("test.mp4"))
+        };
+        var streaming = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(),
+            Name = "Streaming",
+            TypeId = RenderOutputTypes.StreamingRtmp,
+            CanvasId = canvasId,
+            OutputSize = recording.OutputSize,
+            Settings = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.Rtmp("rtmp://localhost/live", "key"))
+        };
+        var project = new MediaForgeProject { Outputs = [recording, streaming] };
+        var factory = new WindowsEncodedOutputRouteFactory();
+
+        Assert.Equal(recording.Id, factory.ResolveSurfaceOutputId(project, recording));
+        Assert.Equal(recording.Id, factory.ResolveSurfaceOutputId(project, streaming));
+    }
+
+    [Fact]
+    public void Different_encoded_profiles_do_not_share_a_surface_route()
+    {
+        var canvasId = CanvasId.New();
+        var recording = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(),
+            Name = "Recording",
+            TypeId = RenderOutputTypes.RecordingMp4,
+            CanvasId = canvasId,
+            OutputSize = new FrameSize(1920, 1080),
+            Settings = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4("test.mp4"))
+        };
+        var streaming = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(),
+            Name = "Streaming",
+            TypeId = RenderOutputTypes.StreamingRtmp,
+            CanvasId = canvasId,
+            OutputSize = recording.OutputSize,
+            Settings = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.Rtmp(
+                "rtmp://localhost/live",
+                "key",
+                new EncodedVideoProfile { BitrateBitsPerSecond = 4_000_000 }))
+        };
+        var project = new MediaForgeProject { Outputs = [recording, streaming] };
+        var factory = new WindowsEncodedOutputRouteFactory();
+
+        Assert.Equal(recording.Id, factory.ResolveSurfaceOutputId(project, recording));
+        Assert.Equal(streaming.Id, factory.ResolveSurfaceOutputId(project, streaming));
     }
 }

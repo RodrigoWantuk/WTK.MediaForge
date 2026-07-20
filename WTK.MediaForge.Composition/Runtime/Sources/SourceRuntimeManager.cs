@@ -6,7 +6,7 @@ using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Composition.Runtime.Sources;
 
-internal sealed class SourceRuntimeManager : IDisposable
+internal sealed class SourceRuntimeManager : IDisposable, IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly Dictionary<SourceId, MediaSourceRuntime> _runtimes = [];
@@ -35,24 +35,25 @@ internal sealed class SourceRuntimeManager : IDisposable
         if (provider.Id.IsEmpty)
             throw new ArgumentException("Provider SourceId cannot be empty.", nameof(provider));
 
-        var runtime = new MediaSourceRuntime(
-            provider,
-            typeId,
-            ResolveCapabilities(typeId),
-            ResolveBufferOptions(typeId, bufferOptions),
-            _diagnostics);
-
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            if (_runtimes.TryGetValue(provider.Id, out var previous))
-                previous.Dispose();
+            if (_runtimes.ContainsKey(provider.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Source provider '{provider.Id}' is already registered. Ownership was not transferred.");
+            }
 
+            var runtime = new MediaSourceRuntime(
+                provider,
+                typeId,
+                ResolveCapabilities(typeId),
+                ResolveBufferOptions(typeId, bufferOptions),
+                _diagnostics);
             _runtimes[provider.Id] = runtime;
+            return runtime;
         }
-
-        return runtime;
     }
 
     public MediaSourceRuntime RegisterProvider(
@@ -64,7 +65,7 @@ internal sealed class SourceRuntimeManager : IDisposable
         return RegisterProvider(provider, sourceDefinition.TypeId, bufferOptions);
     }
 
-    public void UnregisterProvider(SourceId sourceId)
+    public async ValueTask UnregisterProviderAsync(SourceId sourceId)
     {
         MediaSourceRuntime? runtime = null;
 
@@ -74,7 +75,8 @@ internal sealed class SourceRuntimeManager : IDisposable
                 runtime = removed;
         }
 
-        runtime?.Dispose();
+        if (runtime is not null)
+            await runtime.DisposeAsync().ConfigureAwait(false);
     }
 
     public bool TryGetRuntime(SourceId sourceId, out MediaSourceRuntime runtime)
@@ -224,6 +226,40 @@ internal sealed class SourceRuntimeManager : IDisposable
             runtime.Dispose();
     }
 
+    public async ValueTask ClearAsync()
+    {
+        List<MediaSourceRuntime> runtimes;
+
+        lock (_gate)
+        {
+            runtimes = _runtimes.Values.ToList();
+            _runtimes.Clear();
+        }
+
+        List<Exception>? errors = null;
+        foreach (var runtime in runtimes.AsEnumerable().Reverse())
+        {
+            try
+            {
+                await runtime.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "source.dispose_failed",
+                    $"Source '{runtime.Name}' failed to dispose.",
+                    nameof(SourceRuntimeManager),
+                    ex);
+            }
+        }
+
+        if (errors is not null)
+            throw new AggregateException("Failed to dispose one or more source runtimes.", errors);
+    }
+
     public void Dispose()
     {
         lock (_gate)
@@ -235,6 +271,19 @@ internal sealed class SourceRuntimeManager : IDisposable
         }
 
         Clear();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+        }
+
+        await ClearAsync().ConfigureAwait(false);
     }
 
     private List<MediaSourceRuntime> SnapshotRuntimes()

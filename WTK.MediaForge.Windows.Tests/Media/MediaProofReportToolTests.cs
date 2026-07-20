@@ -110,6 +110,83 @@ public sealed class MediaProofReportToolTests
         }
     }
 
+    [Fact]
+    public async Task Sustained_tool_generates_versioned_reports_from_qualification_result()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var exitCode = await SustainedQualificationCommand.RunAsync(
+                [
+                    "--sustained-qualification",
+                    "--duration-minutes", "1",
+                    "--sample-seconds", "1",
+                    "--out", directory
+                ],
+                (request, _) => ValueTask.FromResult(CreateSustainedReport(request)),
+                TextWriter.Null,
+                TextWriter.Null);
+
+            Assert.Equal(0, exitCode);
+            var jsonPath = Path.Combine(directory, "sustained-media-qualification.json");
+            Assert.True(File.Exists(jsonPath));
+            Assert.True(File.Exists(Path.Combine(directory, "sustained-media-qualification.md")));
+            using var json = JsonDocument.Parse(File.ReadAllText(jsonPath));
+            Assert.Equal(
+                SustainedQualificationReport.CurrentSchemaVersion,
+                json.RootElement.GetProperty("SchemaVersion").GetInt32());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Sustained_tool_blocks_when_memory_growth_exceeds_threshold()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var error = new StringWriter();
+            var exitCode = await SustainedQualificationCommand.RunAsync(
+                [
+                    "--sustained-qualification",
+                    "--duration-minutes", "1",
+                    "--sample-seconds", "1",
+                    "--max-memory-growth-mb", "1",
+                    "--out", directory
+                ],
+                (request, _) => ValueTask.FromResult(
+                    CreateSustainedReport(request) with
+                    {
+                        PeakPrivateMemoryBytes = 4 * 1024 * 1024,
+                        PrivateMemoryGrowthBytes = 4 * 1024 * 1024
+                    }),
+                TextWriter.Null,
+                error);
+
+            Assert.Equal(2, exitCode);
+            Assert.Contains("memory growth", error.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Sustained_release_candidate_uses_eight_hour_duration()
+    {
+        var options = SustainedQualificationOptions.Parse(
+            ["--sustained-qualification", "--release-candidate"]);
+
+        Assert.Equal(TimeSpan.FromHours(8), options.Duration);
+        Assert.Equal(1920, options.Width);
+        Assert.Equal(1080, options.Height);
+        Assert.Equal(60, options.FramesPerSecond);
+    }
+
     private static string CreateTempDirectory()
     {
         var directory = Path.Combine(
@@ -181,4 +258,33 @@ public sealed class MediaProofReportToolTests
             Status = HardwareMediaProofStatus.Unavailable,
             Reason = "Unavailable in tool test."
         };
+
+    private static SustainedQualificationReport CreateSustainedReport(
+        SustainedQualificationRequest request)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new SustainedQualificationReport
+        {
+            Status = "Passed",
+            StartedAt = now,
+            CompletedAt = now + request.Duration,
+            RequestedDurationSeconds = request.Duration.TotalSeconds,
+            ActualDurationSeconds = request.Duration.TotalSeconds,
+            Width = request.Width,
+            Height = request.Height,
+            FramesPerSecond = request.FramesPerSecond,
+            BaselinePrivateMemoryBytes = 0,
+            PeakPrivateMemoryBytes = 0,
+            PrivateMemoryGrowthBytes = 0,
+            PostStopPrivateMemoryBytes = 0,
+            PostStopPrivateMemoryDeltaBytes = 0,
+            BaselineHandleCount = 100,
+            PeakHandleCount = 100,
+            HandleGrowth = 0,
+            PostStopHandleCount = 100,
+            PostStopHandleDelta = 0,
+            Mp4FileBytes = 1024,
+            RtmpVideoPacketCount = 60
+        };
+    }
 }

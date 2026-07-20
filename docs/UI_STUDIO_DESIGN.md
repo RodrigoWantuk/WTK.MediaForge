@@ -1,6 +1,6 @@
 # WTK MediaForge Studio UI Design
 
-This document defines the current Studio v0.2 product direction. Studio is a
+This document defines the current Studio v13 product direction. Studio is a
 visual production editor for end users, not a debug console for the MediaForge
 engine.
 
@@ -55,7 +55,9 @@ library, route scenes through the production/output cards.
 
 ## Canvas Editor
 
-`StudioCanvasEditor` is the v0.2 mock editor. It is not a real GPU preview.
+`StudioCanvasEditor` owns the Avalonia editing overlay. Until the preview gate
+passes it uses a mock visual beneath that overlay; later the same overlay sits
+above the native GPU surface.
 
 Required behavior:
 

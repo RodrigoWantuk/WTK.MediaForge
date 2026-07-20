@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime;
+using WTK.MediaForge.Composition.Runtime.Encode;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Core.Frames;
@@ -112,6 +113,108 @@ public sealed class MediaPipelineRuntimeTests
         Assert.Equal(1, encoder.DisposeCount);
     }
 
+    [Fact]
+    public async Task Compatible_logical_outputs_share_one_surface_and_encoder()
+    {
+        var surfaceOutputId = RenderOutputId.New();
+        var aliasOutputId = RenderOutputId.New();
+        var encoder = new PreExportedInputRecordingEncoder();
+        var recording = new RecordingEncodedPacketSink();
+        var streaming = new RecordingEncodedPacketSink();
+        await using var runtime = new MediaPipelineRuntime();
+
+        await runtime.RegisterEncodedOutputGroupAsync(
+            surfaceOutputId,
+            new RenderedOutputEncodeFrameAdapter(new ImmediateRenderedOutputExporter()),
+            encoder,
+            new ThrowingGpuFrameExporter(),
+            CreateSinkContext(),
+            [
+                new EncodedOutputSinkRegistration(
+                    surfaceOutputId,
+                    recording,
+                    EncodedOutputBackpressurePolicy.Recording()),
+                new EncodedOutputSinkRegistration(
+                    aliasOutputId,
+                    streaming,
+                    EncodedOutputBackpressurePolicy.Streaming())
+            ],
+            new CollectingMediaTransportAuditSink(),
+            cancellationToken: CancellationToken.None);
+
+        var surface = new TrackingRenderedOutputSurfaceLease(surfaceOutputId);
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces([surface]);
+        runtime.PublishCompletedFrames(batch);
+
+        await WaitForConditionAsync(
+            () => recording.Packets.Count == 1 && streaming.Packets.Count == 1,
+            TimeSpan.FromSeconds(2));
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+
+        Assert.Equal(1, encoder.EncodeAsyncCalls);
+        Assert.Same(recording.Packets[0], streaming.Packets[0]);
+        Assert.Equal(2, runtime.EncodedOutputCount);
+        var snapshots = runtime.GetEncodedOutputRuntimeSnapshots();
+        Assert.Equal(2, snapshots.Count);
+        Assert.All(snapshots, snapshot => Assert.Equal(1, snapshot.PacketsWritten));
+
+        await runtime.UnregisterEncodedOutputAsync(aliasOutputId, TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.Equal(0, runtime.EncodedOutputCount);
+        Assert.Equal(1, encoder.DisposeCount);
+    }
+
+    [Fact]
+    public async Task Failed_encoded_sink_does_not_stop_compatible_output()
+    {
+        var failedOutputId = RenderOutputId.New();
+        var healthyOutputId = RenderOutputId.New();
+        var encoder = new PreExportedInputRecordingEncoder();
+        var failed = new FailingWriteEncodedPacketSink();
+        var healthy = new RecordingEncodedPacketSink();
+        var runtime = new MediaPipelineRuntime();
+
+        await runtime.RegisterEncodedOutputGroupAsync(
+            failedOutputId,
+            new RenderedOutputEncodeFrameAdapter(new ImmediateRenderedOutputExporter()),
+            encoder,
+            new ThrowingGpuFrameExporter(),
+            CreateSinkContext(),
+            [
+                new EncodedOutputSinkRegistration(
+                    failedOutputId,
+                    failed,
+                    EncodedOutputBackpressurePolicy.Streaming()),
+                new EncodedOutputSinkRegistration(
+                    healthyOutputId,
+                    healthy,
+                    EncodedOutputBackpressurePolicy.Streaming())
+            ],
+            new CollectingMediaTransportAuditSink(),
+            cancellationToken: CancellationToken.None);
+
+        for (var frameId = 1; frameId <= 2; frameId++)
+        {
+            var batch = RenderedOutputFrameBatch.FromRenderedSurfaces(
+                [new TrackingRenderedOutputSurfaceLease(failedOutputId)],
+                new RenderFrameContext(frameId, TimeSpan.FromMilliseconds(frameId * 33), TimeSpan.FromMilliseconds(33), 30, CancellationToken.None));
+            runtime.PublishCompletedFrames(batch);
+            await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        }
+
+        await WaitForConditionAsync(
+            () => healthy.Packets.Count == 2 &&
+                  runtime.GetEncodedOutputRuntimeSnapshots().Any(snapshot =>
+                      snapshot.OutputId == failedOutputId && snapshot.Status == EncodedOutputRuntimeStatus.Failed),
+            TimeSpan.FromSeconds(2));
+
+        Assert.Equal(2, encoder.EncodeAsyncCalls);
+        Assert.Equal(EncodedOutputRuntimeStatus.Running,
+            runtime.GetEncodedOutputRuntimeSnapshots().Single(snapshot => snapshot.OutputId == healthyOutputId).Status);
+
+        var cleanup = await Assert.ThrowsAsync<AggregateException>(async () => await runtime.DisposeAsync());
+        Assert.Contains("Synthetic sink failure", cleanup.ToString(), StringComparison.Ordinal);
+    }
+
     private static EncodedPacketSinkContext CreateSinkContext() =>
         new()
         {
@@ -208,6 +311,19 @@ public sealed class MediaPipelineRuntimeTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class FailingWriteEncodedPacketSink : IEncodedPacketSink
+    {
+        public ValueTask StartAsync(EncodedPacketSinkContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask WritePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken) =>
+            ValueTask.FromException(new InvalidOperationException("Synthetic sink failure."));
+
+        public ValueTask StopAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class ImmediateRenderedOutputExporter : IRenderedOutputEncoderSurfaceExporter
     {
         public bool CanExport(
@@ -292,6 +408,11 @@ public sealed class MediaPipelineRuntimeTests
             IGpuFrameExporter frameExporter,
             IMediaTransportAuditSink auditSink) =>
             throw new InvalidOperationException("Runtime should pass a pre-exported encoder input lease.");
+
+        public ValueTask<IReadOnlyList<EncodedVideoPacket>> DrainAsync(
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<EncodedVideoPacket>>([]);
 
         public ValueTask DisposeAsync()
         {

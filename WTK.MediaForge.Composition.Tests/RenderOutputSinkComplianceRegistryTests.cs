@@ -48,6 +48,11 @@ public class RenderOutputSinkComplianceRegistryTests
     public void PreviewPanelSink_is_compliant_product_sink()
     {
         Assert.True(RenderOutputSinkComplianceRegistry.IsCompliantProductSink(typeof(PreviewPanelSink)));
+        var entry = Assert.Single(
+            RenderOutputSinkComplianceRegistry.All,
+            candidate => candidate.SinkTypeName == nameof(PreviewPanelSink));
+        Assert.Equal(MediaForgeSupportStatus.Experimental, entry.SupportStatus);
+        Assert.Contains("fence-timeout", entry.UnavailableReason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

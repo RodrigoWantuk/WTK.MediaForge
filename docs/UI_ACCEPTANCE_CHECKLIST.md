@@ -1,18 +1,21 @@
 # Studio UI Acceptance Checklist
 
-Use this checklist for the Studio v0.2 Avalonia mock editor.
+Use this checklist for the Studio v13 Avalonia editor.
 
 ## Scope Control
 
-- [ ] Avalonia UI only.
+- [ ] Avalonia UI with explicit Design/Test and Runtime composition.
 - [ ] No React, WebView, Electron, Tailwind runtime, or browser dependency.
-- [ ] No real source adapter.
-- [ ] No real recording/streaming/NDI/virtual-camera sink.
+- [ ] Studio accesses sources/outputs only through engine contracts and capability snapshots.
+- [ ] Unavailable runtime features are disabled with a reason, never simulated.
 - [ ] No real audio pipeline.
 - [ ] No real GPU preview integration.
 - [ ] No legacy preview/capture path.
 
 ## Product Flow
+
+- [ ] New creates an empty canonical project; Open/Save round-trip validated `MediaForgeProject` JSON atomically.
+- [ ] Capability probing is asynchronous and does not block the UI thread.
 
 - [ ] The left panel shows `Cenas` only.
 - [ ] Selecting a scene changes the current canvas and layer list.
@@ -71,6 +74,8 @@ Use this checklist for the Studio v0.2 Avalonia mock editor.
 - [ ] Primary interactive controls have stable automation ids and accessible
   names.
 - [ ] `MainWindow` loads under Avalonia Headless with the shell ViewModel.
+- [ ] Headless screenshots at 1366x768, 1920x1080, and 2560x1440 have the
+  expected dimensions and contain nonblank structured shell content.
 
 ## Validation
 

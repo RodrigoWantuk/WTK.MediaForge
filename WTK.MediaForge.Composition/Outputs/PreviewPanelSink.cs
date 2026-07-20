@@ -14,6 +14,7 @@ public sealed class PreviewPanelSink : IRenderOutputSink
     private readonly nint _panelHandle;
     private readonly Func<RenderOutputFrameLease, CancellationToken, ValueTask>? _onFramePresented;
     private readonly SemaphoreSlim _presentationGate = new(1, 1);
+    private readonly SemaphoreSlim _presenterRemovalGate = new(1, 1);
     private readonly TimeSpan _disposePresentationTimeout;
     private int _started;
     private int _disposeRequested;
@@ -165,7 +166,7 @@ public sealed class PreviewPanelSink : IRenderOutputSink
 
         Interlocked.Exchange(ref _started, 0);
         await WaitForPresentationIdleAsync(cancellationToken).ConfigureAwait(false);
-        RemovePresenterOnce();
+        await RemovePresenterOnceAsync(_disposePresentationTimeout, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
@@ -188,7 +189,7 @@ public sealed class PreviewPanelSink : IRenderOutputSink
                 ex);
         }
 
-        RemovePresenterOnce();
+        await RemovePresenterOnceAsync(_disposePresentationTimeout, CancellationToken.None).ConfigureAwait(false);
         Interlocked.Exchange(ref _disposed, 1);
     }
 
@@ -204,10 +205,26 @@ public sealed class PreviewPanelSink : IRenderOutputSink
         _presentationGate.Release();
     }
 
-    private void RemovePresenterOnce()
+    private async ValueTask RemovePresenterOnceAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref _presenterRemoved, 1) == 0)
-            PreviewPanelPresenterLifecycle.RemovePresentersForPanel(_panelHandle);
+        if (Volatile.Read(ref _presenterRemoved) != 0)
+            return;
+
+        await _presenterRemovalGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (Volatile.Read(ref _presenterRemoved) != 0)
+                return;
+
+            await PreviewPanelPresenterLifecycle
+                .RemovePresentersForPanelAsync(_panelHandle, timeout, cancellationToken)
+                .ConfigureAwait(false);
+            Volatile.Write(ref _presenterRemoved, 1);
+        }
+        finally
+        {
+            _presenterRemovalGate.Release();
+        }
     }
 
     private static async ValueTask DisposeFrameLeaseAsync(
