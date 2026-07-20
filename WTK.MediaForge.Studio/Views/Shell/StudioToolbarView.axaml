@@ -4,6 +4,7 @@
              xmlns:loc="using:WTK.MediaForge.Studio.Localization"
              xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
              xmlns:models="using:WTK.MediaForge.Studio.Models"
+             xmlns:a11y="using:Avalonia.Automation"
              x:Class="WTK.MediaForge.Studio.Views.Shell.StudioToolbarView"
              x:DataType="vm:StudioShellViewModel">
   <Border Background="{StaticResource MfSurface2Brush}"
@@ -11,19 +12,32 @@
           BorderThickness="0,0,0,1">
     <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,0">
       <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-        <Button Command="{Binding NewProjectCommand}">
+        <Button Command="{Binding NewProjectCommand}"
+                TabIndex="0"
+                a11y:AutomationProperties.AutomationId="toolbar.new-project"
+                a11y:AutomationProperties.Name="{loc:Loc Common_New}"
+                a11y:AutomationProperties.HelpText="Cria um projeto visual vazio.">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Add}" IconSize="14" />
             <TextBlock Text="{loc:Loc Common_New}" />
           </StackPanel>
         </Button>
-        <Button Command="{Binding OpenProjectCommand}">
+        <Button Command="{Binding OpenProjectCommand}"
+                TabIndex="1"
+                a11y:AutomationProperties.AutomationId="toolbar.open-project"
+                a11y:AutomationProperties.Name="{loc:Loc Common_Open}"
+                a11y:AutomationProperties.HelpText="Abre um projeto salvo.">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Open}" IconSize="14" />
             <TextBlock Text="{loc:Loc Common_Open}" />
           </StackPanel>
         </Button>
-        <Button Command="{Binding SaveProjectCommand}" Classes="primary">
+        <Button Command="{Binding SaveProjectCommand}"
+                Classes="primary"
+                TabIndex="2"
+                a11y:AutomationProperties.AutomationId="toolbar.save-project"
+                a11y:AutomationProperties.Name="{loc:Loc Common_Save}"
+                a11y:AutomationProperties.HelpText="Salva o projeto atual.">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Save}" IconSize="14" />
             <TextBlock Text="{loc:Loc Common_Save}" />
@@ -32,13 +46,21 @@
         <Button Classes="flat"
                 Command="{Binding UndoCommand}"
                 Padding="7"
-                ToolTip.Tip="{loc:Loc Common_Undo}">
+                ToolTip.Tip="{loc:Loc Common_Undo}"
+                TabIndex="3"
+                a11y:AutomationProperties.AutomationId="toolbar.undo"
+                a11y:AutomationProperties.Name="{loc:Loc Common_Undo}"
+                a11y:AutomationProperties.HelpText="Desfaz a última edição da cena em rascunho.">
           <components:StudioIcon Kind="{x:Static models:StudioIconKind.Undo}" IconSize="14" />
         </Button>
         <Button Classes="flat"
                 Command="{Binding RedoCommand}"
                 Padding="7"
-                ToolTip.Tip="{loc:Loc Common_Redo}">
+                ToolTip.Tip="{loc:Loc Common_Redo}"
+                TabIndex="4"
+                a11y:AutomationProperties.AutomationId="toolbar.redo"
+                a11y:AutomationProperties.Name="{loc:Loc Common_Redo}"
+                a11y:AutomationProperties.HelpText="Refaz a última edição desfeita.">
           <components:StudioIcon Kind="{x:Static models:StudioIconKind.Redo}" IconSize="14" />
         </Button>
       </StackPanel>
@@ -48,7 +70,11 @@
                 Classes="production"
                 Classes.live="{Binding Toolbar.IsStreamingLive}"
                 Classes.busy="{Binding Toolbar.IsStreamBusy}"
-                Classes.warning="{Binding Toolbar.IsStreamNotConfigured}">
+                Classes.warning="{Binding Toolbar.IsStreamNotConfigured}"
+                TabIndex="5"
+                a11y:AutomationProperties.AutomationId="toolbar.stream"
+                a11y:AutomationProperties.Name="{Binding Toolbar.StreamButtonText}"
+                a11y:AutomationProperties.HelpText="Inicia ou interrompe a transmissão configurada.">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Stream}" IconSize="14" />
             <TextBlock Text="{Binding Toolbar.StreamButtonText}" />
@@ -58,13 +84,24 @@
                 Classes="production"
                 Classes.recording="{Binding Toolbar.IsRecordingLive}"
                 Classes.busy="{Binding Toolbar.IsRecordingBusy}"
-                Classes.warning="{Binding Toolbar.IsRecordingNotConfigured}">
+                Classes.warning="{Binding Toolbar.IsRecordingNotConfigured}"
+                TabIndex="6"
+                a11y:AutomationProperties.AutomationId="toolbar.record"
+                a11y:AutomationProperties.Name="{Binding Toolbar.RecordingButtonText}"
+                a11y:AutomationProperties.HelpText="Inicia ou interrompe a gravação configurada.">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <components:StudioIcon Kind="{x:Static models:StudioIconKind.Record}" IconSize="14" />
             <TextBlock Text="{Binding Toolbar.RecordingButtonText}" />
           </StackPanel>
         </Button>
-        <Button Classes="flat" Command="{Binding SettingsCommand}" Padding="7" ToolTip.Tip="{loc:Loc Term_Settings}">
+        <Button Classes="flat"
+                Command="{Binding SettingsCommand}"
+                Padding="7"
+                ToolTip.Tip="{loc:Loc Term_Settings}"
+                TabIndex="7"
+                a11y:AutomationProperties.AutomationId="toolbar.settings"
+                a11y:AutomationProperties.Name="{loc:Loc Term_Settings}"
+                a11y:AutomationProperties.HelpText="Abre preferências, layout e recursos avançados.">
           <components:StudioIcon Kind="{x:Static models:StudioIconKind.Settings}" IconSize="15" />
         </Button>
       </StackPanel>

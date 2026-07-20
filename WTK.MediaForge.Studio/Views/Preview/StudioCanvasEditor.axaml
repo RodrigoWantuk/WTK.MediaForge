@@ -5,9 +5,14 @@
              xmlns:models="using:WTK.MediaForge.Studio.Models"
              xmlns:controls="using:WTK.MediaForge.Studio.Views.Controls"
              xmlns:preview="using:WTK.MediaForge.Studio.Views.Preview"
+             xmlns:a11y="using:Avalonia.Automation"
              x:Class="WTK.MediaForge.Studio.Views.Preview.StudioCanvasEditor"
              x:DataType="vm:PreviewCanvasViewModel"
              Focusable="True"
+             TabIndex="40"
+             a11y:AutomationProperties.AutomationId="preview.canvas-editor"
+             a11y:AutomationProperties.Name="Editor visual da cena"
+             a11y:AutomationProperties.HelpText="Use mouse para selecionar, mover e redimensionar camadas. Use setas para ajuste fino da camada selecionada."
              SizeChanged="OnEditorSizeChanged"
              PointerPressed="OnEditorPointerPressed"
              PointerMoved="OnEditorPointerMoved"
@@ -58,7 +63,10 @@
                     Width="{Binding Width}"
                     Height="{Binding Height}"
                     Opacity="{Binding LayerOpacity}"
-                    Panel.ZIndex="{Binding Order}">
+                    Panel.ZIndex="{Binding Order}"
+                    a11y:AutomationProperties.AutomationId="{Binding Id}"
+                    a11y:AutomationProperties.Name="{Binding Name}"
+                    a11y:AutomationProperties.HelpText="{Binding Source}">
               <Border.RenderTransform>
                 <RotateTransform Angle="{Binding RotationDegrees}" />
               </Border.RenderTransform>

@@ -2,11 +2,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
              xmlns:panels="using:WTK.MediaForge.Studio.Views.Panels"
+             xmlns:a11y="using:Avalonia.Automation"
              x:Class="WTK.MediaForge.Studio.Views.Shell.BottomWorkbenchView"
              x:DataType="vm:BottomWorkbenchViewModel">
   <Border Background="{StaticResource MfSurface1Brush}"
           BorderBrush="{StaticResource MfBorderBrush}"
-          BorderThickness="0,1,0,0">
+          BorderThickness="0,1,0,0"
+          a11y:AutomationProperties.AutomationId="bottom-workbench"
+          a11y:AutomationProperties.Name="Camadas e saídas da cena">
     <Grid RowDefinitions="38,*">
       <Border Grid.Row="0"
               BorderBrush="{StaticResource MfBorderBrush}"
@@ -22,7 +25,9 @@
               <DataTemplate x:DataType="vm:BottomTabViewModel">
                 <Button Classes="flat"
                         Command="{Binding SelectCommand}"
-                        CommandParameter="{Binding}">
+                        CommandParameter="{Binding}"
+                        a11y:AutomationProperties.AutomationId="{Binding Kind}"
+                        a11y:AutomationProperties.Name="{Binding Title}">
                   <Border Classes="tab-pill" Classes.selected="{Binding IsSelected}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                       <TextBlock Text="{Binding Title}" Classes="secondary" />

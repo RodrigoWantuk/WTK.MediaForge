@@ -68,6 +68,9 @@ Use this checklist for the Studio v0.2 Avalonia mock editor.
   `Transmissão`, `Gravação`, `Diagnósticos`, `Prévia`, `Área segura`.
 - [ ] Normal text is at least 13 px; metadata is at least 12 px.
 - [ ] The preview editor remains the dominant center surface.
+- [ ] Primary interactive controls have stable automation ids and accessible
+  names.
+- [ ] `MainWindow` loads under Avalonia Headless with the shell ViewModel.
 
 ## Validation
 

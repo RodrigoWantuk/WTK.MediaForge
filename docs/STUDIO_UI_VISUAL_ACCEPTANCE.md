@@ -30,6 +30,10 @@ Use this checklist before considering a Studio UI reset change complete.
   main tabs.
 - Status bar is compact and does not expose engine/backend/native handles,
   leases, fences, command buffers, keyed mutexes, or backend-owned surfaces.
+- Primary interactive controls expose stable automation ids, accessible names,
+  and help text where the action is not obvious.
+- `MainWindow` can be loaded by the Avalonia Headless smoke test without
+  resource, binding, or XAML failures.
 - 1366x768 remains usable.
 - 1920x1080 feels comfortable.
 - Dark theme uses semantic tokens instead of scattered hard-coded colors.

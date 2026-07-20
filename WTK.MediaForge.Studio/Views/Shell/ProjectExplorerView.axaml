@@ -3,9 +3,12 @@
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
              xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
              xmlns:models="using:WTK.MediaForge.Studio.Models"
+             xmlns:a11y="using:Avalonia.Automation"
              x:Class="WTK.MediaForge.Studio.Views.Shell.ProjectExplorerView"
              x:DataType="vm:ProjectExplorerViewModel">
-  <Border Classes="panel">
+  <Border Classes="panel"
+          a11y:AutomationProperties.AutomationId="project-explorer"
+          a11y:AutomationProperties.Name="Navegação do projeto">
     <Grid RowDefinitions="Auto,Auto,*">
       <Border Grid.Row="0"
               BorderBrush="{StaticResource MfBorderBrush}"
@@ -19,17 +22,34 @@
             RowSpacing="8"
             Margin="10,8">
         <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
-          <Button Classes="flat" Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:StudioExplorerTabKind.Scenes}">
+          <Button Classes="flat"
+                  Command="{Binding SelectTabCommand}"
+                  CommandParameter="{x:Static models:StudioExplorerTabKind.Scenes}"
+                  TabIndex="10"
+                  a11y:AutomationProperties.AutomationId="project-explorer.tab.scenes"
+                  a11y:AutomationProperties.Name="Cenas">
             <Border Classes="tab-pill" Classes.selected="{Binding IsScenesTabSelected}">
               <TextBlock Text="Cenas" Classes="secondary" />
             </Border>
           </Button>
-          <Button Grid.Column="1" Classes="flat" Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:StudioExplorerTabKind.Sources}">
+          <Button Grid.Column="1"
+                  Classes="flat"
+                  Command="{Binding SelectTabCommand}"
+                  CommandParameter="{x:Static models:StudioExplorerTabKind.Sources}"
+                  TabIndex="11"
+                  a11y:AutomationProperties.AutomationId="project-explorer.tab.sources"
+                  a11y:AutomationProperties.Name="Entradas">
             <Border Classes="tab-pill" Classes.selected="{Binding IsSourcesTabSelected}">
               <TextBlock Text="Entradas" Classes="secondary" />
             </Border>
           </Button>
-          <Button Grid.Column="2" Classes="flat" Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:StudioExplorerTabKind.Outputs}">
+          <Button Grid.Column="2"
+                  Classes="flat"
+                  Command="{Binding SelectTabCommand}"
+                  CommandParameter="{x:Static models:StudioExplorerTabKind.Outputs}"
+                  TabIndex="12"
+                  a11y:AutomationProperties.AutomationId="project-explorer.tab.outputs"
+                  a11y:AutomationProperties.Name="Saídas">
             <Border Classes="tab-pill" Classes.selected="{Binding IsOutputsTabSelected}">
               <TextBlock Text="Saídas" Classes="secondary" />
             </Border>
@@ -37,13 +57,19 @@
         </Grid>
         <TextBox Grid.Row="1"
                  Text="{Binding SearchText, Mode=TwoWay}"
-                 PlaceholderText="{Binding SearchPlaceholder}" />
+                 PlaceholderText="{Binding SearchPlaceholder}"
+                 TabIndex="13"
+                 a11y:AutomationProperties.AutomationId="project-explorer.search"
+                 a11y:AutomationProperties.Name="{Binding SearchPlaceholder}" />
         <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
           <TextBlock Text="{Binding TabTitle}" Classes="panel-title" VerticalAlignment="Center" />
           <Button Grid.Column="1"
                   Classes="primary"
                   ToolTip.Tip="{Binding AddButtonTip}"
-                  Command="{Binding CurrentAddCommand}">
+                  Command="{Binding CurrentAddCommand}"
+                  TabIndex="14"
+                  a11y:AutomationProperties.AutomationId="project-explorer.add-current"
+                  a11y:AutomationProperties.Name="{Binding AddButtonTip}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <components:StudioIcon Kind="{x:Static models:StudioIconKind.Add}" IconSize="13" />
               <TextBlock Text="{Binding AddButtonText}" />
@@ -62,7 +88,10 @@
                         IsVisible="{Binding IsVisible}"
                         Padding="0"
                         Margin="0,0,0,8"
-                        HorizontalAlignment="Stretch">
+                        HorizontalAlignment="Stretch"
+                        a11y:AutomationProperties.AutomationId="{Binding Id}"
+                        a11y:AutomationProperties.Name="{Binding Name}"
+                        a11y:AutomationProperties.HelpText="{Binding Detail}">
                   <Border Classes="scene-card"
                           Classes.selected="{Binding IsSelected}"
                           Classes.active="{Binding IsActive}"
@@ -100,7 +129,10 @@
                         IsVisible="{Binding IsVisible}"
                         Padding="0"
                         Margin="0,0,0,8"
-                        HorizontalAlignment="Stretch">
+                        HorizontalAlignment="Stretch"
+                        a11y:AutomationProperties.AutomationId="{Binding Id}"
+                        a11y:AutomationProperties.Name="{Binding Name}"
+                        a11y:AutomationProperties.HelpText="{Binding Metadata}">
                   <Border Classes="scene-card"
                           Classes.selected="{Binding IsSelected}"
                           HorizontalAlignment="Stretch">
@@ -154,8 +186,17 @@
                     <TextBlock Grid.Row="1" Text="{Binding SceneName}" Classes="secondary" />
                     <TextBlock Grid.Row="2" Text="{Binding TransitionText}" Classes="muted" />
                     <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6">
-                      <Button Content="{Binding RouteButtonText}" Classes="primary" Command="{Binding SendSceneCommand}" />
-                      <Button Content="Configurar" Command="{Binding ConfigureCommand}" />
+                      <Button Content="{Binding RouteButtonText}"
+                              Classes="primary"
+                              Command="{Binding SendSceneCommand}"
+                              a11y:AutomationProperties.AutomationId="{Binding Id}"
+                              a11y:AutomationProperties.Name="{Binding RouteButtonText}"
+                              a11y:AutomationProperties.HelpText="{Binding SceneName}" />
+                      <Button Content="Configurar"
+                              Command="{Binding ConfigureCommand}"
+                              a11y:AutomationProperties.AutomationId="{Binding Id}"
+                              a11y:AutomationProperties.Name="{Binding Name}"
+                              a11y:AutomationProperties.HelpText="{Binding CodecText}" />
                     </StackPanel>
                   </Grid>
                 </Border>

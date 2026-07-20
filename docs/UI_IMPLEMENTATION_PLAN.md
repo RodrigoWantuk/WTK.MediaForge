@@ -53,6 +53,10 @@ audio.
 - The main UI uses pt-BR terminology and avoids engine/debug language.
 - `StudioVisualQaService` and `scripts/verify-studio-ui-visual-qa.ps1` validate
   the Studio shell contract at 1366x768, 1600x900, and 1920x1080.
+- `StudioAppSmokeTests` load `MainWindow` under Avalonia Headless, exercising
+  XAML, resources, bindings, and the root shell ViewModel.
+- Primary toolbar, project navigation, production outputs, bottom workbench,
+  and canvas editor expose stable automation ids and accessible names.
 
 ## Required Files/Concepts
 
@@ -83,7 +87,8 @@ Key implementation areas:
 ## Next UI Work
 
 1. Keep the automated Studio visual QA gate green whenever layout, shell,
-   preview editor, properties, or workbench views change.
+   preview editor, properties, workbench, accessibility, or shell-loading
+   behavior changes.
 2. After runtime gates: introduce the real preview frame provider below the
    Avalonia overlay.
 

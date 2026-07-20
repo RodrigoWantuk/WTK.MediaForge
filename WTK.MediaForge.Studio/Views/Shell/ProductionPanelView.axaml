@@ -2,13 +2,20 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTK.MediaForge.Studio.ViewModels"
              xmlns:components="using:WTK.MediaForge.Studio.Views.Components"
+             xmlns:a11y="using:Avalonia.Automation"
              x:Class="WTK.MediaForge.Studio.Views.Shell.ProductionPanelView"
              x:DataType="vm:ProductionPanelViewModel">
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
+  <ScrollViewer VerticalScrollBarVisibility="Auto"
+                a11y:AutomationProperties.AutomationId="production.outputs"
+                a11y:AutomationProperties.Name="Saídas de produção">
     <ItemsControl ItemsSource="{Binding Outputs}" Margin="8">
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:ProductionOutputCardViewModel">
-          <Border Classes="output-card" Margin="0,0,0,8">
+          <Border Classes="output-card"
+                  Margin="0,0,0,8"
+                  a11y:AutomationProperties.AutomationId="{Binding Id}"
+                  a11y:AutomationProperties.Name="{Binding Name}"
+                  a11y:AutomationProperties.ItemStatus="{Binding StatusText}">
             <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
               <Grid ColumnDefinitions="34,*,Auto" ColumnSpacing="8">
                 <Border Classes="icon-box" Width="32" Height="32">
@@ -38,9 +45,15 @@
               <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6">
                 <Button Content="{Binding RouteButtonText}"
                         Classes="primary"
-                        Command="{Binding SendSceneCommand}" />
+                        Command="{Binding SendSceneCommand}"
+                        a11y:AutomationProperties.AutomationId="{Binding Id}"
+                        a11y:AutomationProperties.Name="{Binding RouteButtonText}"
+                        a11y:AutomationProperties.HelpText="{Binding TransitionText}" />
                 <Button Content="Configurar"
-                        Command="{Binding SelectCommand}" />
+                        Command="{Binding SelectCommand}"
+                        a11y:AutomationProperties.AutomationId="{Binding Id}"
+                        a11y:AutomationProperties.Name="{Binding Name}"
+                        a11y:AutomationProperties.HelpText="{Binding SceneName}" />
               </StackPanel>
             </Grid>
           </Border>
