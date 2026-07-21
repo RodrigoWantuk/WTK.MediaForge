@@ -3,6 +3,11 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using WTK.MediaForge.Remote.Signaling;
 using Xunit;
 
@@ -239,6 +244,197 @@ public sealed class RemoteSceneSignalingTests
         subscriberSocket.EnqueueClose();
         await Task.WhenAll(publisherTask, subscriberTask);
     }
+
+    [Fact]
+    public async Task Signaling_relay_queues_for_a_peer_that_disconnects_and_reconnects()
+    {
+        var relay = new RemoteSceneSignalingRelay(CreateOptions());
+        var sessionId = Guid.NewGuid();
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var publisherSocket = new ScriptedWebSocket();
+        var publisherTask = relay.RunAsync(
+            new RemoteSceneSessionAccess(sessionId, "Program", RemoteScenePeerRole.Publisher, expiresAt),
+            publisherSocket,
+            timeout.Token);
+        publisherSocket.EnqueueText(JsonSerializer.Serialize(
+            Message(RemoteSceneSignalingMessageKind.Offer, 1),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var firstSubscriber = new ScriptedWebSocket();
+        var firstTask = relay.RunAsync(
+            new RemoteSceneSessionAccess(sessionId, "Program", RemoteScenePeerRole.Subscriber, expiresAt),
+            firstSubscriber,
+            timeout.Token);
+        _ = await firstSubscriber.ReadSentTextAsync(timeout.Token);
+        firstSubscriber.EnqueueClose();
+        await firstTask;
+
+        publisherSocket.EnqueueText(JsonSerializer.Serialize(
+            Message(RemoteSceneSignalingMessageKind.IceCandidate, 2),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var secondSubscriber = new ScriptedWebSocket();
+        var secondTask = relay.RunAsync(
+            new RemoteSceneSessionAccess(sessionId, "Program", RemoteScenePeerRole.Subscriber, expiresAt),
+            secondSubscriber,
+            timeout.Token);
+
+        var relayed = await secondSubscriber.ReadSentTextAsync(timeout.Token);
+        Assert.Contains("iceCandidate", relayed, StringComparison.OrdinalIgnoreCase);
+        publisherSocket.EnqueueClose();
+        secondSubscriber.EnqueueClose();
+        await Task.WhenAll(publisherTask, secondTask);
+    }
+
+    [Fact]
+    public void Protocol_rejects_out_of_order_wrong_role_and_regressive_sequences()
+    {
+        var protocol = new RemoteSceneSignalingProtocol();
+        Assert.Throws<InvalidDataException>(() => protocol.Accept(
+            RemoteScenePeerRole.Subscriber,
+            Message(RemoteSceneSignalingMessageKind.Answer, 1)));
+
+        Assert.True(protocol.Accept(RemoteScenePeerRole.Publisher, Message(RemoteSceneSignalingMessageKind.Offer, 1)));
+        Assert.False(protocol.Accept(RemoteScenePeerRole.Publisher, Message(RemoteSceneSignalingMessageKind.Offer, 1)));
+        Assert.Throws<InvalidDataException>(() => protocol.Accept(
+            RemoteScenePeerRole.Publisher,
+            Message(RemoteSceneSignalingMessageKind.IceCandidate, 0)));
+        Assert.Throws<InvalidDataException>(() => protocol.Accept(
+            RemoteScenePeerRole.Publisher,
+            Message(RemoteSceneSignalingMessageKind.Answer, 2)));
+        Assert.True(protocol.Accept(RemoteScenePeerRole.Subscriber, Message(RemoteSceneSignalingMessageKind.Answer, 2)));
+        Assert.True(protocol.Accept(RemoteScenePeerRole.Publisher, Message(RemoteSceneSignalingMessageKind.Renegotiate, 3)));
+        Assert.True(protocol.Accept(RemoteScenePeerRole.Publisher, Message(RemoteSceneSignalingMessageKind.Offer, 4)));
+    }
+
+    [Fact]
+    public async Task Signaling_relay_closes_with_policy_reason_when_pending_byte_queue_overflows()
+    {
+        var options = CreateOptions();
+        options.MaximumSignalingMessageBytes = 1024;
+        options.MaximumQueuedBytesPerPeer = 1024;
+        options.MaximumQueuedBytesPerSession = 1024;
+        var relay = new RemoteSceneSignalingRelay(options);
+        var socket = new ScriptedWebSocket();
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        socket.EnqueueText(JsonSerializer.Serialize(new RemoteSceneSignalingMessage
+        {
+            Kind = RemoteSceneSignalingMessageKind.Offer,
+            Payload = new string('a', 600),
+            Sequence = 1
+        }, jsonOptions));
+        socket.EnqueueText(JsonSerializer.Serialize(new RemoteSceneSignalingMessage
+        {
+            Kind = RemoteSceneSignalingMessageKind.IceCandidate,
+            Payload = new string('b', 600),
+            Sequence = 2
+        }, jsonOptions));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => relay.RunAsync(
+            new RemoteSceneSessionAccess(
+                Guid.NewGuid(), "Program", RemoteScenePeerRole.Publisher, DateTimeOffset.UtcNow.AddMinutes(5)),
+            socket,
+            CancellationToken.None));
+
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, socket.CloseStatus);
+        Assert.Equal("Signaling policy violation.", socket.CloseStatusDescription);
+    }
+
+    [Fact]
+    public async Task Revoked_session_token_is_rejected()
+    {
+        var databasePath = CreateDatabasePath();
+        try
+        {
+            await using var store = new SqliteRemoteSceneSessionStore(databasePath);
+            var service = CreateService(store, new ManualTimeProvider(DateTimeOffset.UtcNow));
+            var invitation = await service.CreateAsync(
+                new CreateRemoteSceneInvitationRequest { StreamName = "Program" },
+                CancellationToken.None);
+
+            await service.RevokeAsync(invitation.SessionId, CancellationToken.None);
+
+            Assert.Null(await service.AuthorizeAsync(
+                invitation.SessionId,
+                invitation.OwnerAccessToken,
+                CancellationToken.None));
+        }
+        finally
+        {
+            DeleteDatabase(databasePath);
+        }
+    }
+
+    [Fact]
+    public void Quotas_limit_global_tenant_websocket_and_invitation_attack_rates()
+    {
+        var options = CreateOptions();
+        options.MaximumActiveSessions = 2;
+        options.MaximumActiveSessionsPerTenant = 1;
+        options.MaximumPendingInvitations = 2;
+        options.MaximumWebSocketsPerUser = 1;
+        options.MaximumInvitationCreationsPerMinutePerUser = 1;
+        var quotas = new RemoteSceneSignalingQuotaTracker(options);
+        var now = DateTimeOffset.UtcNow;
+        quotas.RegisterInvitation(Guid.NewGuid(), "tenant-a", "user-a", now, now.AddMinutes(5));
+
+        Assert.Throws<RemoteSceneQuotaExceededException>(() =>
+            quotas.RegisterInvitation(Guid.NewGuid(), "tenant-a", "user-b", now, now.AddMinutes(5)));
+        quotas.RegisterInvitation(Guid.NewGuid(), "tenant-b", "user-a", now, now.AddMinutes(5));
+        Assert.Throws<RemoteSceneQuotaExceededException>(() =>
+            quotas.RegisterInvitation(Guid.NewGuid(), "tenant-c", "user-c", now, now.AddMinutes(5)));
+
+        var rateOptions = CreateOptions();
+        rateOptions.MaximumInvitationCreationsPerMinutePerUser = 1;
+        var rateQuotas = new RemoteSceneSignalingQuotaTracker(rateOptions);
+        rateQuotas.RegisterInvitation(Guid.NewGuid(), "tenant-rate", "user-rate", now, now.AddMinutes(5));
+        Assert.Throws<RemoteSceneQuotaExceededException>(() =>
+            rateQuotas.RegisterInvitation(Guid.NewGuid(), "tenant-rate", "user-rate", now, now.AddMinutes(5)));
+
+        var access = new RemoteSceneSessionAccess(
+            Guid.NewGuid(), "Program", RemoteScenePeerRole.Publisher, now.AddMinutes(5), "tenant-a", "user-a");
+        using var first = quotas.AcquireWebSocket(access, now);
+        Assert.Throws<RemoteSceneQuotaExceededException>(() => quotas.AcquireWebSocket(access, now));
+    }
+
+    [Fact]
+    public async Task Trusted_proxy_applies_external_https_and_distinct_effective_client_ips()
+    {
+        var options = CreateOptions();
+        options.TrustedProxies = ["proxy.example.test"];
+        Assert.Throws<InvalidOperationException>(options.Validate);
+
+        var forwarded = new ForwardedHeadersOptions
+        {
+            ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+            ForwardLimit = 1,
+            RequireHeaderSymmetry = true
+        };
+        forwarded.KnownNetworks.Clear();
+        forwarded.KnownProxies.Clear();
+        forwarded.KnownProxies.Add(System.Net.IPAddress.Parse("10.0.0.5"));
+        var middleware = new ForwardedHeadersMiddleware(
+            _ => Task.CompletedTask,
+            NullLoggerFactory.Instance,
+            Options.Create(forwarded));
+        var first = new DefaultHttpContext();
+        first.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.5");
+        first.Request.Headers["X-Forwarded-For"] = "198.51.100.10";
+        first.Request.Headers["X-Forwarded-Proto"] = "https";
+        var second = new DefaultHttpContext();
+        second.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.5");
+        second.Request.Headers["X-Forwarded-For"] = "198.51.100.11";
+        second.Request.Headers["X-Forwarded-Proto"] = "https";
+
+        await middleware.Invoke(first);
+        await middleware.Invoke(second);
+
+        Assert.True(first.Request.IsHttps);
+        Assert.True(second.Request.IsHttps);
+        Assert.NotEqual(first.Connection.RemoteIpAddress, second.Connection.RemoteIpAddress);
+    }
+
+    private static RemoteSceneSignalingMessage Message(RemoteSceneSignalingMessageKind kind, long sequence) =>
+        new() { Kind = kind, Payload = $"payload-{kind}", Sequence = sequence };
 
     private static RemoteSceneInvitationService CreateService(
         IRemoteSceneSessionStore store,

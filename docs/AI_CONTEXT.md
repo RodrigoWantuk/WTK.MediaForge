@@ -171,6 +171,10 @@ capability reports; it is never converted into a hosted-runner product pass.
   hashes of invitation/access secrets, relays bounded SDP/ICE messages, and can
   issue temporary coturn REST/HMAC credentials. It never transports media and
   does not promote `remote-scene.publish` or `remote-scene.subscribe`.
+- Signaling trusts forwarded client/protocol headers only from configured proxy
+  IPs and enforces role/order/sequence/renegotiation state, revocable session
+  tokens, bounded count/byte/rate quotas, policy close reasons, and
+  payload-free structured telemetry.
 - Remote Scene's canonical source/output settings persist only provider,
   signaling endpoint, stream/session policy, codec/video/resolution, and
   reconnection policy. Runtime credentials never enter project JSON. Encoded

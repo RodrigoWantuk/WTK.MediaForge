@@ -26,6 +26,10 @@ public sealed record CreateRemoteSceneInvitationRequest
     public RemoteScenePeerRole OwnerRole { get; init; } = RemoteScenePeerRole.Publisher;
 
     public TimeSpan? TimeToLive { get; init; }
+
+    public string TenantId { get; init; } = "default";
+
+    public string UserId { get; init; } = "operator";
 }
 
 public sealed record CreateRemoteSceneInvitationResponse(
@@ -59,13 +63,17 @@ public sealed record RemoteSceneSessionAccess(
     Guid SessionId,
     string StreamName,
     RemoteScenePeerRole Role,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    string TenantId = "default",
+    string UserId = "anonymous");
 
 public sealed record RemoteSceneInvitationRedemption(
     Guid SessionId,
     string StreamName,
     RemoteScenePeerRole Role,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    string TenantId = "default",
+    string UserId = "anonymous");
 
 public sealed record RemoteSceneStoredSession(
     Guid SessionId,
@@ -74,7 +82,9 @@ public sealed record RemoteSceneStoredSession(
     byte[] InvitationCodeHash,
     byte[] OwnerTokenHash,
     DateTimeOffset CreatedAt,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    string TenantId = "default",
+    string UserId = "operator");
 
 public interface IRemoteSceneSessionStore
 {
@@ -93,6 +103,8 @@ public interface IRemoteSceneSessionStore
         CancellationToken cancellationToken);
 
     Task<int> DeleteExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken);
+
+    Task RevokeAsync(Guid sessionId, CancellationToken cancellationToken);
 }
 
 public interface ITurnCredentialIssuer

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 
 namespace WTK.MediaForge.Remote.Signaling;
 
@@ -20,6 +21,8 @@ public static class RemoteSceneSignalingHost
             static services => services.GetRequiredService<SqliteRemoteSceneSessionStore>());
         builder.Services.AddSingleton<ITurnCredentialIssuer>(_ => CreateTurnIssuer(options));
         builder.Services.AddSingleton<RemoteSceneInvitationService>();
+        builder.Services.AddSingleton<RemoteSceneSignalingQuotaTracker>();
+        builder.Services.AddSingleton<RemoteSceneSignalingTelemetry>();
         builder.Services.AddSingleton<RemoteSceneSignalingRelay>();
         builder.Services.AddHostedService<ExpiredSessionCleanupService>();
         builder.Services.AddRateLimiter(rateLimiter =>
@@ -28,9 +31,9 @@ public static class RemoteSceneSignalingHost
             rateLimiter.AddPolicy("invitation", context =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     GetClientPartition(context),
-                    static _ => new FixedWindowRateLimiterOptions
+                    _ => new FixedWindowRateLimiterOptions
                     {
-                        PermitLimit = 10,
+                        PermitLimit = options.MaximumInvitationCreationsPerMinutePerUser,
                         QueueLimit = 0,
                         Window = TimeSpan.FromMinutes(1),
                         AutoReplenishment = true
@@ -44,15 +47,30 @@ public static class RemoteSceneSignalingHost
                         QueueLimit = 0
                     }));
         });
+        builder.Services.Configure<ForwardedHeadersOptions>(forwarded =>
+        {
+            forwarded.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            forwarded.ForwardLimit = 1;
+            forwarded.RequireHeaderSymmetry = true;
+            forwarded.KnownNetworks.Clear();
+            forwarded.KnownProxies.Clear();
+            foreach (var proxy in options.TrustedProxies)
+                forwarded.KnownProxies.Add(IPAddress.Parse(proxy));
+        });
 
         var app = builder.Build();
+        app.UseForwardedHeaders();
         app.UseRateLimiter();
         app.UseWebSockets(new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(20)
         });
 
-        app.MapGet("/health", static () => Results.Ok(new { status = "healthy", mediaTransport = false }));
+        app.MapGet("/health", (HttpContext context) =>
+            !options.ProtectHealthEndpoint ||
+            (TryReadBearerToken(context.Request, out var token) && RemoteSceneSecret.FixedTimeEquals(options.HealthBearerToken, token))
+                ? Results.Ok(new { status = "healthy", mediaTransport = false })
+                : Results.Unauthorized());
         app.MapPost("/v1/invitations", CreateInvitationAsync)
             .RequireRateLimiting("invitation");
         app.MapPost("/v1/invitations/redeem", RedeemInvitationAsync)
@@ -85,6 +103,10 @@ public static class RemoteSceneSignalingHost
         catch (ArgumentException ex)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [ex.Message] });
+        }
+        catch (RemoteSceneQuotaExceededException ex)
+        {
+            return Results.Problem(ex.Message, statusCode: StatusCodes.Status429TooManyRequests);
         }
     }
 

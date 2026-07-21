@@ -39,9 +39,10 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
         command.CommandText = """
             INSERT INTO remote_scene_sessions (
                 session_id, stream_name, owner_role, invitation_hash, owner_token_hash,
-                participant_token_hash, created_unix_ms, expires_unix_ms, redeemed_unix_ms)
+                participant_token_hash, created_unix_ms, expires_unix_ms, redeemed_unix_ms,
+                tenant_id, user_id, revoked_unix_ms)
             VALUES ($session_id, $stream_name, $owner_role, $invitation_hash, $owner_token_hash,
-                NULL, $created, $expires, NULL);
+                NULL, $created, $expires, NULL, $tenant_id, $user_id, NULL);
             """;
         command.Parameters.AddWithValue("$session_id", session.SessionId.ToString("N"));
         command.Parameters.AddWithValue("$stream_name", session.StreamName);
@@ -50,6 +51,8 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
         command.Parameters.Add("$owner_token_hash", SqliteType.Blob).Value = session.OwnerTokenHash;
         command.Parameters.AddWithValue("$created", session.CreatedAt.ToUnixTimeMilliseconds());
         command.Parameters.AddWithValue("$expires", session.ExpiresAt.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$tenant_id", session.TenantId);
+        command.Parameters.AddWithValue("$user_id", session.UserId);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -71,10 +74,11 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
         await using var select = connection.CreateCommand();
         select.Transaction = transaction;
         select.CommandText = """
-            SELECT session_id, stream_name, owner_role, expires_unix_ms
+            SELECT session_id, stream_name, owner_role, expires_unix_ms, tenant_id, user_id
             FROM remote_scene_sessions
             WHERE invitation_hash = $hash
               AND redeemed_unix_ms IS NULL
+              AND revoked_unix_ms IS NULL
               AND expires_unix_ms > $now;
             """;
         select.Parameters.Add("$hash", SqliteType.Blob).Value = invitationCodeHash;
@@ -84,6 +88,8 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
         string streamName;
         RemoteScenePeerRole ownerRole;
         DateTimeOffset expiresAt;
+        string tenantId;
+        string userId;
         await using (var reader = await select.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -96,6 +102,8 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
             streamName = reader.GetString(1);
             ownerRole = (RemoteScenePeerRole)reader.GetInt32(2);
             expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3));
+            tenantId = reader.GetString(4);
+            userId = reader.GetString(5);
         }
 
         await using var update = connection.CreateCommand();
@@ -106,6 +114,7 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
                 redeemed_unix_ms = $redeemed
             WHERE session_id = $session_id
               AND redeemed_unix_ms IS NULL
+              AND revoked_unix_ms IS NULL
               AND expires_unix_ms > $redeemed;
             """;
         update.Parameters.Add("$participant_hash", SqliteType.Blob).Value = participantTokenHash;
@@ -121,7 +130,7 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
         var participantRole = ownerRole == RemoteScenePeerRole.Publisher
             ? RemoteScenePeerRole.Subscriber
             : RemoteScenePeerRole.Publisher;
-        return new RemoteSceneInvitationRedemption(sessionId, streamName, participantRole, expiresAt);
+        return new RemoteSceneInvitationRedemption(sessionId, streamName, participantRole, expiresAt, tenantId, userId);
     }
 
     public async Task<RemoteSceneSessionAccess?> AuthorizeAsync(
@@ -137,9 +146,9 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT stream_name, owner_role, owner_token_hash, participant_token_hash, expires_unix_ms
+            SELECT stream_name, owner_role, owner_token_hash, participant_token_hash, expires_unix_ms, tenant_id, user_id
             FROM remote_scene_sessions
-            WHERE session_id = $session_id AND expires_unix_ms > $now;
+            WHERE session_id = $session_id AND expires_unix_ms > $now AND revoked_unix_ms IS NULL;
             """;
         command.Parameters.AddWithValue("$session_id", sessionId.ToString("N"));
         command.Parameters.AddWithValue("$now", now.ToUnixTimeMilliseconds());
@@ -153,9 +162,11 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
         var ownerHash = (byte[])reader[2];
         var participantHash = reader.IsDBNull(3) ? null : (byte[])reader[3];
         var expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4));
+        var tenantId = reader.GetString(5);
+        var userId = reader.GetString(6);
 
         if (System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(ownerHash, accessTokenHash))
-            return new RemoteSceneSessionAccess(sessionId, streamName, ownerRole, expiresAt);
+            return new RemoteSceneSessionAccess(sessionId, streamName, ownerRole, expiresAt, tenantId, userId);
 
         if (participantHash is not null &&
             System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(participantHash, accessTokenHash))
@@ -163,7 +174,7 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
             var participantRole = ownerRole == RemoteScenePeerRole.Publisher
                 ? RemoteScenePeerRole.Subscriber
                 : RemoteScenePeerRole.Publisher;
-            return new RemoteSceneSessionAccess(sessionId, streamName, participantRole, expiresAt);
+            return new RemoteSceneSessionAccess(sessionId, streamName, participantRole, expiresAt, tenantId, userId);
         }
 
         return null;
@@ -178,6 +189,18 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
         command.CommandText = "DELETE FROM remote_scene_sessions WHERE expires_unix_ms <= $now;";
         command.Parameters.AddWithValue("$now", now.ToUnixTimeMilliseconds());
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RevokeAsync(Guid sessionId, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE remote_scene_sessions SET revoked_unix_ms = $now WHERE session_id = $session_id;";
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$session_id", sessionId.ToString("N"));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask DisposeAsync()
@@ -217,6 +240,9 @@ public sealed class SqliteRemoteSceneSessionStore : IRemoteSceneSessionStore, IA
                     created_unix_ms INTEGER NOT NULL,
                     expires_unix_ms INTEGER NOT NULL,
                     redeemed_unix_ms INTEGER NULL
+                    ,tenant_id TEXT NOT NULL DEFAULT 'default'
+                    ,user_id TEXT NOT NULL DEFAULT 'operator'
+                    ,revoked_unix_ms INTEGER NULL
                 );
                 CREATE INDEX IF NOT EXISTS ix_remote_scene_sessions_expiry
                     ON remote_scene_sessions (expires_unix_ms);

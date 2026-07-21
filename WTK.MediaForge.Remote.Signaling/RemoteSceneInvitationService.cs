@@ -6,18 +6,21 @@ public sealed class RemoteSceneInvitationService
     private readonly ITurnCredentialIssuer _turnCredentialIssuer;
     private readonly RemoteSceneSignalingOptions _options;
     private readonly TimeProvider _timeProvider;
+    private readonly RemoteSceneSignalingQuotaTracker _quotas;
 
     public RemoteSceneInvitationService(
         IRemoteSceneSessionStore store,
         ITurnCredentialIssuer turnCredentialIssuer,
         RemoteSceneSignalingOptions options,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        RemoteSceneSignalingQuotaTracker? quotas = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _turnCredentialIssuer = turnCredentialIssuer ?? throw new ArgumentNullException(nameof(turnCredentialIssuer));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _options.Validate();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _quotas = quotas ?? new RemoteSceneSignalingQuotaTracker(options);
     }
 
     public async Task<CreateRemoteSceneInvitationResponse> CreateAsync(
@@ -34,18 +37,30 @@ public sealed class RemoteSceneInvitationService
 
         var now = _timeProvider.GetUtcNow();
         var expiresAt = now.Add(ttl);
+        var sessionId = Guid.NewGuid();
+        _quotas.RegisterInvitation(sessionId, request.TenantId, request.UserId, now, expiresAt);
         var invitationCode = RemoteSceneSecret.Create(16);
         var ownerToken = RemoteSceneSecret.Create(32);
         var session = new RemoteSceneStoredSession(
-            Guid.NewGuid(),
+            sessionId,
             streamName,
             request.OwnerRole,
             RemoteSceneSecret.Hash(invitationCode),
             RemoteSceneSecret.Hash(ownerToken),
             now,
-            expiresAt);
+            expiresAt,
+            request.TenantId.Trim(),
+            request.UserId.Trim());
 
-        await _store.CreateAsync(session, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _store.CreateAsync(session, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            _quotas.RemoveSession(sessionId);
+            throw;
+        }
         var iceServers = await _turnCredentialIssuer
             .IssueAsync(session.SessionId.ToString("N"), ttl, cancellationToken)
             .ConfigureAwait(false);
@@ -74,6 +89,8 @@ public sealed class RemoteSceneInvitationService
         if (redemption is null)
             return null;
 
+        _quotas.MarkRedeemed(redemption.SessionId);
+
         var lifetime = redemption.ExpiresAt - now;
         var iceServers = await _turnCredentialIssuer
             .IssueAsync(redemption.SessionId.ToString("N"), lifetime, cancellationToken)
@@ -96,6 +113,12 @@ public sealed class RemoteSceneInvitationService
             RemoteSceneSecret.Hash(accessToken),
             _timeProvider.GetUtcNow(),
             cancellationToken);
+
+    public async Task RevokeAsync(Guid sessionId, CancellationToken cancellationToken)
+    {
+        await _store.RevokeAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        _quotas.RemoveSession(sessionId);
+    }
 
     private static string ValidateStreamName(string streamName)
     {

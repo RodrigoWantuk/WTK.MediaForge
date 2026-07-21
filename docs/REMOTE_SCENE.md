@@ -53,6 +53,19 @@ The signaling service is implemented with the following product boundaries:
 - TURN credentials use the time-limited REST/HMAC scheme supported by coturn;
 - invitation creation, redemption, and WebSocket attachment are rate limited;
 - HTTPS is mandatory except when an operator explicitly enables localhost-only development transport.
+- operator/admin authorization is confined to invitation administration;
+  one-time invite codes, client identity, per-session access tokens, and
+  temporary TURN credentials are separate credential classes and are never
+  logged;
+- `X-Forwarded-For` and `X-Forwarded-Proto` are honored only from explicitly
+  configured trusted proxy IPs, so externally terminated HTTPS and effective
+  client-IP rate limits remain correct;
+- the relay enforces publisher Offer, subscriber Answer, explicit
+  renegotiation, role-correct messages, monotonic/idempotent sequences, bounded
+  message rate, count and byte queues, and policy close reasons;
+- process-wide, per-tenant, per-user, pending-invitation, WebSocket, creation
+  rate, and TTL quotas are enforced. Structured logs and metrics contain only
+  session correlation, role, kind, and rejection category—not tokens or SDP.
 
 The service refuses to start with the empty token in `appsettings.json`. Supply secrets through protected deployment configuration, for example:
 
@@ -60,6 +73,7 @@ The service refuses to start with the empty token in `appsettings.json`. Supply 
 $env:RemoteSceneSignaling__AdminBearerToken = '<at-least-32-random-characters>'
 $env:RemoteSceneSignaling__TurnUrls__0 = 'turns://turn.example.com:5349'
 $env:RemoteSceneSignaling__TurnSharedSecret = '<coturn-shared-secret>'
+$env:RemoteSceneSignaling__TrustedProxies__0 = '10.0.0.5'
 dotnet run --project WTK.MediaForge.Remote.Signaling
 ```
 
