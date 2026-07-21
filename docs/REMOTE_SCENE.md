@@ -118,3 +118,17 @@ testing only and CMake refuses that mode unless explicitly requested. It must
 never be packaged as a supported remote-media feature. Only an adapter built
 from the pin, with built-in software video codecs disabled, may report backend
 availability, and it still requires Direct/TURN proof promotion.
+
+## Physical Qualification Gate
+
+`RemoteSceneQualificationGate` defines the evidence schema for Direct and TURN runs.
+Each reviewed run records both adapters, the selected hardware encoder/decoder and ICE
+candidate, TURN server (relay runs), RTT, loss, jitter, bitrate, frame/keyframe/reconnect
+counters, RAM, VRAM, handles, queues, leases, deterministic shutdown, and baseline return.
+The gate also requires 30-minute sustained runs and coverage of CGNAT, loss, bitrate and
+keyframe changes, reconnect/abrupt shutdown, simultaneous MP4/RTMP, nested scenes, and
+Apply/Live editing. Synthetic reports are not product proof and the evaluator does not
+promote capabilities automatically.
+
+No Direct or TURN physical report was produced in this repository. Both proof capabilities
+therefore remain `Unavailable`.
