@@ -553,6 +553,7 @@ public sealed class SceneRuntimeTests
                     Id = canvasId,
                     Name = canvasName,
                     Size = new FrameSize(1920, 1080),
+                    BackgroundColor = CreateVisualRevisionColor(canvasName),
                     Objects = []
                 }
             ],
@@ -569,4 +570,20 @@ public sealed class SceneRuntimeTests
                 }
             ]
         };
+
+    private static ColorRgba CreateVisualRevisionColor(string value)
+    {
+        uint hash = 2166136261;
+        foreach (var character in value)
+        {
+            hash ^= character;
+            hash *= 16777619;
+        }
+
+        return ColorRgba.From(
+            (hash & 0xFF) / 255f,
+            ((hash >> 8) & 0xFF) / 255f,
+            ((hash >> 16) & 0xFF) / 255f,
+            1f);
+    }
 }

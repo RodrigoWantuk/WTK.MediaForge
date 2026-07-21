@@ -34,6 +34,10 @@ Implemented foundations:
   and TCP RTMP publishing.
 - Published/draft scene versions, nested version binding, Apply propagation,
   old/new transition snapshots, and physical output/canvas/effect operations.
+- Canonical canvas/draw-object visual fingerprints now drive scene versioning,
+  dirty classification, and RenderGraph cache keys. Layer ordering and all
+  supported visual properties invalidate consistently while metadata-only
+  renames preserve the compiled graph.
 - Logical `CanvasId` values remain stable across Published, Draft, and Explicit
   bindings. Deterministic resolved canvas keys identify physical content and
   nested-version graphs, allowing equivalent outputs to share work without

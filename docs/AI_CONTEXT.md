@@ -30,6 +30,10 @@ MediaForgeProject
 - Sources produce leased frames; they do not render.
 - Layers are scene instances of reusable sources.
 - Nested canvas references carry version binding and reject cycles/depth overflow.
+- Scene versioning, dirty classification, and RenderGraph cache identity share
+  `CanvasVisualStateFingerprint` and `DrawObjectVisualStateFingerprint`.
+  Layer order and every supported visual field participate; display names and
+  other non-visual metadata do not invalidate rendered content.
 - Live edits publish transactionally. Apply edits remain draft until commit.
 - Sinks consume completed output; they never request a render.
 

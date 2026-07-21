@@ -17,6 +17,7 @@ internal sealed class SceneRuntime
     private readonly Dictionary<SourceId, int> _resourceRefCounts = [];
     private readonly HashSet<DrawObjectId> _hiddenLayers = [];
     private readonly Dictionary<DrawObjectId, DrawObjectStateSnapshot> _previousDrawObjects = [];
+    private readonly Dictionary<CanvasId, CanvasStateSnapshot> _previousCanvases = [];
     private readonly PublishedSceneStateStore _publishedStore = new();
     private readonly DraftSceneStateStore _draftStore = new();
 
@@ -46,11 +47,20 @@ internal sealed class SceneRuntime
         _resourceRefCounts.Clear();
 
         var layerDirtyKinds = new Dictionary<DrawObjectId, SceneDirtyKind>();
-        var structureChanged = false;
+        var structureChanged = _projectState is null;
         var currentDrawObjects = new Dictionary<DrawObjectId, DrawObjectStateSnapshot>();
 
         foreach (var canvas in projectState.Canvases)
         {
+            if (!_previousCanvases.TryGetValue(canvas.Id, out var previousCanvas) ||
+                previousCanvas.Size != canvas.Size ||
+                !previousCanvas.BackgroundColor.Equals(canvas.BackgroundColor) ||
+                !previousCanvas.Objects.Select(static item => item.Id)
+                    .SequenceEqual(canvas.Objects.Select(static item => item.Id)))
+            {
+                structureChanged = true;
+            }
+
             foreach (var drawObject in canvas.Objects)
             {
                 currentDrawObjects[drawObject.Id] = drawObject;
@@ -80,6 +90,12 @@ internal sealed class SceneRuntime
             }
         }
 
+        if (_previousDrawObjects.Keys.Any(id => !currentDrawObjects.ContainsKey(id)) ||
+            _previousCanvases.Keys.Any(id => projectState.Canvases.All(canvas => canvas.Id != id)))
+        {
+            structureChanged = true;
+        }
+
         _hiddenLayers.RemoveWhere(layerId => !currentDrawObjects.ContainsKey(layerId));
 
         _publishedStore.Sync(projectState);
@@ -100,6 +116,10 @@ internal sealed class SceneRuntime
         _previousDrawObjects.Clear();
         foreach (var pair in currentDrawObjects)
             _previousDrawObjects[pair.Key] = pair.Value;
+
+        _previousCanvases.Clear();
+        foreach (var canvas in projectState.Canvases)
+            _previousCanvases[canvas.Id] = canvas;
 
         NotifyDirtyRegionChanged(_dirtyRegion);
     }
@@ -353,34 +373,10 @@ internal sealed class SceneRuntime
             return SceneDirtyKind.Structure;
         }
 
-        if (previous.GetType() != drawObject.GetType())
-        {
+        var dirtyKind = SceneVisualDiffClassifier.Classify(previous, drawObject);
+        if (dirtyKind == SceneDirtyKind.Structure)
             structureChanged = true;
-            return SceneDirtyKind.Structure;
-        }
-
-        if (previous is SourceLayerDrawObjectSnapshot previousSource &&
-            drawObject is SourceLayerDrawObjectSnapshot currentSource &&
-            previousSource.SourceId != currentSource.SourceId)
-        {
-            structureChanged = true;
-            return SceneDirtyKind.Structure;
-        }
-
-        if (!EffectsEqual(previous.Effects, drawObject.Effects))
-            return SceneDirtyKind.Effects;
-
-        if (!TransformEqual(previous.Transform, drawObject.Transform) ||
-            previous.Opacity != drawObject.Opacity ||
-            !CropEqual(previous.Crop, drawObject.Crop))
-        {
-            return SceneDirtyKind.Transform;
-        }
-
-        if (previous.Enabled != drawObject.Enabled)
-            return SceneDirtyKind.Full;
-
-        return SceneDirtyKind.None;
+        return dirtyKind;
     }
 
     internal static ProjectStateSnapshot CreateVisibleProjectState(
@@ -448,34 +444,6 @@ internal sealed class SceneRuntime
             CanvasVersionSnapshots = snapshotsByVersion
         };
     }
-
-    private static bool TransformEqual(Transform2D left, Transform2D right) =>
-        left.Position.X == right.Position.X &&
-        left.Position.Y == right.Position.Y &&
-        left.Size.Width == right.Size.Width &&
-        left.Size.Height == right.Size.Height &&
-        left.Pivot.X == right.Pivot.X &&
-        left.Pivot.Y == right.Pivot.Y &&
-        left.RotationDegrees == right.RotationDegrees;
-
-    private static bool CropEqual(NormalizedRect? left, NormalizedRect? right)
-    {
-        if (left is null && right is null)
-            return true;
-
-        if (left is null || right is null)
-            return false;
-
-        return left.Value.Left == right.Value.Left &&
-               left.Value.Top == right.Value.Top &&
-               left.Value.Right == right.Value.Right &&
-               left.Value.Bottom == right.Value.Bottom;
-    }
-
-    private static bool EffectsEqual(
-        ImmutableArray<EffectStateSnapshot> left,
-        ImmutableArray<EffectStateSnapshot> right) =>
-        EffectStateFingerprint.SequenceEquals(left, right);
 
     private void NotifyDirtyRegionChanged(SceneDirtyRegion region)
     {

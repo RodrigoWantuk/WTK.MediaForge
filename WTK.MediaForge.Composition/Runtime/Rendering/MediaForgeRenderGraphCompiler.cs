@@ -1,13 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Scenes.Editing;
-using WTK.MediaForge.Composition.Serialization;
 using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
@@ -417,200 +414,35 @@ internal static class MediaForgeRenderGraphCompiler
             .Select(CreateEffectFingerprint)
             .ToArray();
 
-        var json = JsonSerializer.Serialize(fingerprints, CreateFingerprintJsonOptions());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+        var canonical = string.Join('\u001F', fingerprints);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
     private static string HashPrimitive(DrawObjectStateSnapshot drawObject)
-    {
-        var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), CreateFingerprintJsonOptions());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
-    }
+        => DrawObjectVisualStateFingerprint.Create(drawObject);
 
     private static string HashPrimitive(RenderDrawObjectSnapshot drawObject)
-    {
-        var json = JsonSerializer.Serialize(CreatePrimitiveFingerprint(drawObject), CreateFingerprintJsonOptions());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
-    }
+        => DrawObjectVisualStateFingerprint.Create(drawObject);
 
     private static string HashCanvas(CanvasStateSnapshot canvas)
-    {
-        var json = JsonSerializer.Serialize(
-            new
-            {
-                Background = new { canvas.BackgroundColor.R, canvas.BackgroundColor.G, canvas.BackgroundColor.B, canvas.BackgroundColor.A },
-                Objects = canvas.Objects.Select(CreateDrawObjectFingerprint).ToArray()
-            },
-            CreateFingerprintJsonOptions());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
-    }
+        => CanvasVisualStateFingerprint.Create(canvas);
 
     private static string HashCanvas(RenderCanvasSnapshot canvas)
-    {
-        var json = JsonSerializer.Serialize(
-            new
-            {
-                Background = new { canvas.BackgroundColor.R, canvas.BackgroundColor.G, canvas.BackgroundColor.B, canvas.BackgroundColor.A },
-                Objects = canvas.Objects.Select(CreateDrawObjectFingerprint).ToArray()
-            },
-            CreateFingerprintJsonOptions());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
-    }
+        => CanvasVisualStateFingerprint.Create(canvas);
 
     private static string HashSourceEffectPlacement(
         CanvasStateSnapshot canvas,
         SourceLayerDrawObjectSnapshot sourceLayer)
     {
-        var json = JsonSerializer.Serialize(
-            new
-            {
-                CanvasWidth = canvas.Size.Width,
-                CanvasHeight = canvas.Size.Height,
-                sourceLayer.SourceId,
-                sourceLayer.LayoutMode,
-                LetterboxR = sourceLayer.LetterboxColor.R,
-                LetterboxG = sourceLayer.LetterboxColor.G,
-                LetterboxB = sourceLayer.LetterboxColor.B,
-                LetterboxA = sourceLayer.LetterboxColor.A,
-                sourceLayer.ContentRotationOverride,
-                Common = CreateDrawObjectFingerprint(sourceLayer)
-            },
-            CreateFingerprintJsonOptions());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+        return $"{canvas.Size.Width}x{canvas.Size.Height}:{DrawObjectVisualStateFingerprint.Create(sourceLayer)}";
     }
 
     private static string HashSourceEffectPlacement(
         RenderCanvasSnapshot canvas,
         RenderSourceLayerDrawObjectSnapshot sourceLayer)
     {
-        var json = JsonSerializer.Serialize(
-            new
-            {
-                CanvasWidth = canvas.Size.Width,
-                CanvasHeight = canvas.Size.Height,
-                sourceLayer.SourceId,
-                sourceLayer.LayoutMode,
-                LetterboxR = sourceLayer.LetterboxColor.R,
-                LetterboxG = sourceLayer.LetterboxColor.G,
-                LetterboxB = sourceLayer.LetterboxColor.B,
-                LetterboxA = sourceLayer.LetterboxColor.A,
-                sourceLayer.ContentRotationOverride,
-                Common = CreateDrawObjectFingerprint(sourceLayer)
-            },
-            CreateFingerprintJsonOptions());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+        return $"{canvas.Size.Width}x{canvas.Size.Height}:{DrawObjectVisualStateFingerprint.Create(sourceLayer)}";
     }
-
-    private static JsonSerializerOptions CreateFingerprintJsonOptions()
-    {
-        var options = MediaForgeProjectJsonOptions.Create();
-        options.NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals;
-        return options;
-    }
-
-    private static object CreatePrimitiveFingerprint(DrawObjectStateSnapshot drawObject) =>
-        drawObject switch
-        {
-            TextDrawObjectSnapshot text => new
-            {
-                Type = "primitive.text",
-                text.Text,
-                text.FontFamily,
-                text.FontSize,
-                TextR = text.TextColor.R,
-                TextG = text.TextColor.G,
-                TextB = text.TextColor.B,
-                TextA = text.TextColor.A,
-                Common = CreateDrawObjectFingerprint(text)
-            },
-            SolidDrawObjectSnapshot solid => new
-            {
-                Type = "primitive.solid",
-                FillR = solid.FillColor.R,
-                FillG = solid.FillColor.G,
-                FillB = solid.FillColor.B,
-                FillA = solid.FillColor.A,
-                Common = CreateDrawObjectFingerprint(solid)
-            },
-            _ => new
-            {
-                Type = drawObject.GetType().FullName,
-                Common = CreateDrawObjectFingerprint(drawObject)
-            }
-        };
-
-    private static object CreatePrimitiveFingerprint(RenderDrawObjectSnapshot drawObject) =>
-        drawObject switch
-        {
-            RenderTextDrawObjectSnapshot text => new
-            {
-                Type = "primitive.text",
-                text.Text,
-                text.FontFamily,
-                text.FontSize,
-                TextR = text.TextColor.R,
-                TextG = text.TextColor.G,
-                TextB = text.TextColor.B,
-                TextA = text.TextColor.A,
-                Common = CreateDrawObjectFingerprint(text)
-            },
-            RenderSolidDrawObjectSnapshot solid => new
-            {
-                Type = "primitive.solid",
-                FillR = solid.FillColor.R,
-                FillG = solid.FillColor.G,
-                FillB = solid.FillColor.B,
-                FillA = solid.FillColor.A,
-                Common = CreateDrawObjectFingerprint(solid)
-            },
-            _ => new
-            {
-                Type = drawObject.GetType().FullName,
-                Common = CreateDrawObjectFingerprint(drawObject)
-            }
-        };
-
-    private static object CreateDrawObjectFingerprint(DrawObjectStateSnapshot drawObject) => new
-    {
-        drawObject.Enabled,
-        X = drawObject.Transform.Position.X,
-        Y = drawObject.Transform.Position.Y,
-        Width = drawObject.Transform.Size.Width,
-        Height = drawObject.Transform.Size.Height,
-        PivotX = drawObject.Transform.Pivot.X,
-        PivotY = drawObject.Transform.Pivot.Y,
-        drawObject.Transform.RotationDegrees,
-        drawObject.Opacity,
-        drawObject.BlendMode,
-        CropLeft = drawObject.Crop?.Left,
-        CropTop = drawObject.Crop?.Top,
-        CropRight = drawObject.Crop?.Right,
-        CropBottom = drawObject.Crop?.Bottom,
-        Effects = GetEnabledEffects(drawObject)
-            .Select(CreateEffectFingerprint)
-            .ToArray()
-    };
-
-    private static object CreateDrawObjectFingerprint(RenderDrawObjectSnapshot drawObject) => new
-    {
-        drawObject.Enabled,
-        X = drawObject.Transform.Position.X,
-        Y = drawObject.Transform.Position.Y,
-        Width = drawObject.Transform.Size.Width,
-        Height = drawObject.Transform.Size.Height,
-        PivotX = drawObject.Transform.Pivot.X,
-        PivotY = drawObject.Transform.Pivot.Y,
-        drawObject.Transform.RotationDegrees,
-        drawObject.Opacity,
-        drawObject.BlendMode,
-        CropLeft = drawObject.EffectiveCrop.Left,
-        CropTop = drawObject.EffectiveCrop.Top,
-        CropRight = drawObject.EffectiveCrop.Right,
-        CropBottom = drawObject.EffectiveCrop.Bottom,
-        Effects = GetEnabledEffects(drawObject)
-            .Select(CreateEffectFingerprint)
-            .ToArray()
-    };
 
     private static string CreateEffectFingerprint(EffectStateSnapshot effect) =>
         EffectStateFingerprint.CreateSemanticConfiguration(effect);
