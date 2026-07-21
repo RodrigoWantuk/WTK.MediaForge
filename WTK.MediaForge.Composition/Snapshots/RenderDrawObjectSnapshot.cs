@@ -65,5 +65,7 @@ internal sealed class RenderCanvasDrawObjectSnapshot : RenderDrawObjectSnapshot
 
     public SceneVersionId? NestedCanvasVersionId { get; init; }
 
+    public ResolvedCanvasKey? NestedResolvedCanvasKey { get; init; }
+
     public RenderCanvasSnapshot? NestedCanvas { get; init; }
 }

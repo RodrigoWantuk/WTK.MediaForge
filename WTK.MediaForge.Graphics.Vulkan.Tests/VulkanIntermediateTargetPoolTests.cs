@@ -12,6 +12,52 @@ namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 public class VulkanIntermediateTargetPoolTests
 {
     [Fact]
+    public async Task Concurrent_submissions_do_not_reuse_an_in_flight_intermediate_target()
+    {
+        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+            return;
+
+        using (context)
+        {
+            context!.Guard.BindToCurrentThread();
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+                context.Backend.BindOutput(
+                    VulkanCompositionTestHarness.CreateOffscreenBinding(outputId, size.Width, size.Height));
+
+                using var snapshot = VulkanCompositionTestHarness.CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size);
+
+                var first = context.Backend.Submit(snapshot);
+                var entriesWithFirstInFlight = context.Backend.IntermediateTargetPoolLiveCountForTests;
+                var second = context.Backend.Submit(snapshot);
+                try
+                {
+                    Assert.True(
+                        context.Backend.IntermediateTargetPoolLiveCountForTests > entriesWithFirstInFlight,
+                        "A second in-flight submission must borrow a distinct physical intermediate target.");
+                }
+                finally
+                {
+                    await VulkanCompositionTestHarness.ReleaseSubmissionAsync(first);
+                    await VulkanCompositionTestHarness.ReleaseSubmissionAsync(second);
+                }
+            }
+            finally
+            {
+                context.Guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Nested_canvas_reuses_intermediate_target_between_frames()
     {
         if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))

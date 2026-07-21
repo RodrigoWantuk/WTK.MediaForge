@@ -38,10 +38,14 @@ public sealed class SceneRuntimeTests
         try
         {
             var output = Assert.Single(snapshot.Outputs);
-            Assert.NotEqual(canvasId, output.CanvasId);
-            var resolvedCanvas = Assert.Single(snapshot.Canvases.Where(canvas => canvas.Id == output.CanvasId));
+            Assert.Equal(canvasId, output.CanvasId);
+            var resolvedCanvas = Assert.Single(
+                snapshot.Canvases.Where(canvas => canvas.PhysicalKey == output.ResolvedCanvasKey));
             Assert.Equal("Published v1", resolvedCanvas.Name);
             Assert.Equal(firstVersion, resolvedCanvas.VersionId);
+            var publishedCanvas = Assert.Single(
+                snapshot.Canvases.Where(canvas => canvas.Id == canvasId && canvas.Name == "Published v2"));
+            Assert.NotEqual(publishedCanvas.PhysicalKey, resolvedCanvas.PhysicalKey);
         }
         finally
         {
@@ -85,18 +89,119 @@ public sealed class SceneRuntimeTests
             compositionRuntime,
             RenderFrameSnapshotFactory.CreateDefaultContext());
         var snapshot = Assert.IsType<RenderFrameSnapshot>(result.TakeSnapshot());
+        ResolvedCanvasKey firstResolvedKey;
         try
         {
             var output = Assert.Single(snapshot.Outputs);
-            var resolvedCanvas = Assert.Single(snapshot.Canvases.Where(canvas => canvas.Id == output.CanvasId));
+            Assert.Equal(canvasId, output.CanvasId);
+            var resolvedCanvas = Assert.Single(
+                snapshot.Canvases.Where(canvas => canvas.PhysicalKey == output.ResolvedCanvasKey));
             Assert.Equal("Draft", resolvedCanvas.Name);
             Assert.Equal(draftVersion, resolvedCanvas.VersionId);
             Assert.Contains(snapshot.Canvases, canvas => canvas.Id == canvasId && canvas.Name == "Published");
+            Assert.NotEqual(
+                snapshot.Canvases.Single(canvas => canvas.Name == "Published").PhysicalKey,
+                resolvedCanvas.PhysicalKey);
+            firstResolvedKey = resolvedCanvas.PhysicalKey;
         }
         finally
         {
             snapshot.Dispose();
         }
+
+        using var secondResult = runtime.BuildRenderSnapshot(
+            compositionRuntime,
+            RenderFrameSnapshotFactory.CreateDefaultContext());
+        using var secondSnapshot = Assert.IsType<RenderFrameSnapshot>(secondResult.TakeSnapshot());
+        Assert.Equal(firstResolvedKey, Assert.Single(secondSnapshot.Outputs).ResolvedCanvasKey);
+    }
+
+    [Fact]
+    public void Equivalent_explicit_bindings_share_one_resolved_canvas_identity()
+    {
+        var canvasId = CanvasId.New();
+        var firstOutputId = RenderOutputId.New();
+        var secondOutputId = RenderOutputId.New();
+        var runtime = new SceneRuntime();
+        runtime.SyncFrom(CreateVersionedProjectState(
+            canvasId,
+            firstOutputId,
+            "Published v1",
+            SceneVersionBinding.Published));
+        var sharedVersion = runtime.GetPublishedVersion(canvasId);
+
+        var updated = CreateVersionedProjectState(
+            canvasId,
+            firstOutputId,
+            "Published v2",
+            SceneVersionBinding.ExplicitVersion(sharedVersion));
+        var firstOutput = updated.Outputs[0];
+        updated = updated with
+        {
+            Outputs =
+            [
+                firstOutput,
+                new RenderOutputStateSnapshot
+                {
+                    Id = secondOutputId,
+                    Name = "Second output",
+                    CanvasId = canvasId,
+                    OutputSize = firstOutput.OutputSize,
+                    SceneVersionBinding = SceneVersionBinding.ExplicitVersion(sharedVersion),
+                    RouteTransitionKind = OutputRouteTransitionKind.Cut
+                }
+            ]
+        };
+        runtime.SyncFrom(updated);
+
+        using var compositionRuntime = new CompositionRuntime();
+        using var result = runtime.BuildRenderSnapshot(
+            compositionRuntime,
+            RenderFrameSnapshotFactory.CreateDefaultContext());
+        using var snapshot = Assert.IsType<RenderFrameSnapshot>(result.TakeSnapshot());
+
+        Assert.Equal(2, snapshot.Outputs.Length);
+        Assert.Single(snapshot.Outputs.Select(static output => output.ResolvedCanvasKey).Distinct());
+        Assert.Single(snapshot.Canvases.Where(canvas => canvas.VersionId == sharedVersion));
+    }
+
+    [Fact]
+    public void Project_resynchronization_releases_stale_draft_version_pin()
+    {
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var sessionId = SceneEditSessionId.New();
+        var runtime = new SceneRuntime();
+        var published = CreateVersionedProjectState(
+            canvasId,
+            outputId,
+            "Published",
+            SceneVersionBinding.Published);
+        runtime.SyncFrom(published);
+        var publishedVersion = runtime.GetPublishedVersion(canvasId);
+        var draftVersion = SceneVersionId.New();
+
+        runtime.UpsertDraft(
+            new SceneDraftState
+            {
+                SessionId = sessionId,
+                CanvasId = canvasId,
+                BasePublishedVersionId = publishedVersion,
+                DraftVersionId = draftVersion,
+                HasChanges = true
+            },
+            CreateVersionedProjectState(
+                canvasId,
+                outputId,
+                "Draft",
+                SceneVersionBinding.DraftForSession(sessionId)));
+
+        Assert.Equal(2, runtime.VersionRetentionSnapshot.PinnedVersionCount);
+
+        runtime.SyncFrom(published);
+
+        Assert.Equal(1, runtime.VersionRetentionSnapshot.PinnedVersionCount);
+        Assert.False(runtime.TryGetDraft(sessionId, out _));
     }
 
     [Fact]
@@ -108,7 +213,7 @@ public sealed class SceneRuntimeTests
         runtime.SyncFrom(CreateVersionedProjectState(canvasId, outputId, "v0", SceneVersionBinding.Published));
         var pinnedVersion = runtime.GetPublishedVersion(canvasId);
 
-        for (var revision = 1; revision <= SceneVersionIndex.MaximumRetainedVersionsPerCanvas + 8; revision++)
+        for (var revision = 1; revision <= SceneVersionStore.MaximumRetainedVersionsPerCanvas + 8; revision++)
         {
             runtime.SyncFrom(CreateVersionedProjectState(
                 canvasId,
@@ -118,9 +223,32 @@ public sealed class SceneRuntimeTests
         }
 
         var snapshot = runtime.CreateSnapshot().ProjectState;
-        Assert.True(snapshot.CanvasVersionSnapshots.Count <= SceneVersionIndex.MaximumRetainedVersionsPerCanvas + 1);
+        Assert.True(snapshot.CanvasVersionSnapshots.Count <= SceneVersionStore.MaximumRetainedVersionsPerCanvas + 1);
         Assert.Contains(pinnedVersion, snapshot.CanvasVersionSnapshots.Keys);
         Assert.Contains(runtime.GetPublishedVersion(canvasId), snapshot.CanvasVersionSnapshots.Keys);
+    }
+
+    [Fact]
+    public void Ten_thousand_scene_versions_remain_bounded_and_report_retention_health()
+    {
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var runtime = new SceneRuntime();
+
+        for (var revision = 0; revision < 10_000; revision++)
+        {
+            runtime.SyncFrom(CreateVersionedProjectState(
+                canvasId,
+                outputId,
+                $"revision-{revision}",
+                SceneVersionBinding.Published));
+        }
+
+        var retention = runtime.VersionRetentionSnapshot;
+        Assert.Equal(SceneVersionStore.MaximumRetainedVersionsPerCanvas, retention.RetainedVersionCount);
+        Assert.Equal(1, retention.PinnedVersionCount);
+        Assert.True(retention.DiscardedVersionCount >= 10_000 - SceneVersionStore.MaximumRetainedVersionsPerCanvas);
+        Assert.True(retention.HighWaterMark <= SceneVersionStore.MaximumRetainedVersionsPerCanvas + 1);
     }
 
     [Fact]

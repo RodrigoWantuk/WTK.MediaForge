@@ -53,7 +53,8 @@ public sealed class PhysicalRenderGraphPlanValidationTests
             {
                 Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
                 Key = "canvas:only",
-                CanvasId = canvas.Id
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey
             }
         ]);
 

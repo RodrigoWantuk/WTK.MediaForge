@@ -607,19 +607,26 @@ public class MediaForgeEngineTests
             () => backendFactory.Backend!.LastRenderGraphExecution is { ExecutedNodeKeys.Count: > 0 },
             TimeSpan.FromSeconds(5));
 
-        var execution = backendFactory.Backend!.LastRenderGraphExecution;
-        Assert.NotNull(execution);
+        try
+        {
+            var execution = backendFactory.Backend!.LastRenderGraphExecution;
+            Assert.NotNull(execution);
 
-        Assert.Contains($"source:{sourceId}", execution!.ExecutedNodeKeys);
-        var outputKey = Assert.Single(
-            execution.ExecutedNodeKeys,
-            key => key.StartsWith("output:", StringComparison.Ordinal));
+            Assert.Contains(
+                execution!.ExecutedNodeKeys,
+                key => key.StartsWith($"source:{sourceId}:", StringComparison.Ordinal));
+            var outputKey = Assert.Single(
+                execution.ExecutedNodeKeys,
+                key => key.StartsWith("output:", StringComparison.Ordinal));
 
-        var outputResult = execution.NodeResults[outputKey];
-        Assert.False(outputResult.WasSkipped);
-        Assert.Equal(sourceId, outputResult.SourceFrame?.SourceId);
-
-        backendFactory.Backend.CompleteAllPending();
+            var outputResult = execution.NodeResults[outputKey];
+            Assert.False(outputResult.WasSkipped);
+            Assert.Equal(sourceId, outputResult.SourceFrame?.SourceId);
+        }
+        finally
+        {
+            backendFactory.Backend!.CompleteAllPending();
+        }
     }
 
     [Fact]

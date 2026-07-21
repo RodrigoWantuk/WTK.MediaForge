@@ -69,4 +69,6 @@ public sealed record MediaForgeRuntimeHealthSnapshot
 
     public IReadOnlyList<MediaForgeRecoverySnapshot> Recoveries { get; init; } =
         Array.Empty<MediaForgeRecoverySnapshot>();
+
+    public SceneVersionRetentionSnapshot SceneVersions { get; init; } = new();
 }

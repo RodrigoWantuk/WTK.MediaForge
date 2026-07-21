@@ -18,6 +18,11 @@ internal sealed class RenderCanvasSnapshot
 
     public SceneVersionId? VersionId { get; init; }
 
+    public ResolvedCanvasKey ResolvedKey { get; init; }
+
+    public ResolvedCanvasKey PhysicalKey =>
+        ResolvedKey.IsEmpty ? ResolvedCanvasKey.Unversioned(Id) : ResolvedKey;
+
     public ImmutableArray<RenderDrawObjectSnapshot> Objects { get; init; } =
         ImmutableArray<RenderDrawObjectSnapshot>.Empty;
 }

@@ -89,6 +89,9 @@ Before considering a change complete, verify:
 - [ ] Discarding an Apply draft leaves the published project unchanged and removes draft runtime state.
 - [ ] Canvas-as-source uses `SceneVersionBinding`; normal outputs use published binding, draft previews use draft binding, and transitions may use explicit versions.
 - [ ] Explicit scene version binding resolves an immutable `SceneVersionId -> CanvasStateSnapshot`, not the current canvas with an old version id.
+- [ ] Published, Draft, and Explicit bindings retain the logical `CanvasId` and use a deterministic resolved physical key; no render-frame path mints replacement canvas ids.
+- [ ] Equivalent resolved versions share physical work, while different version, draft-session, nested-graph, transition, format, or size identities cannot alias.
+- [ ] Scene version retention is bounded and pinned ownership prevents removal of published, draft, and explicit versions; transitions and in-flight snapshots must either own immutable state directly or hold an explicit pin, and health counters return to baseline after release.
 - [ ] Scene dirty/version fingerprints include typed effect parameters, not only effect type/order/enabled state.
 - [ ] Apply in a nested canvas computes direct/transitive canvas consumers and affected output routes before transition execution.
 - [ ] RenderGraph/cache keys include canvas version binding; no cache key relies only on canvas id and size.

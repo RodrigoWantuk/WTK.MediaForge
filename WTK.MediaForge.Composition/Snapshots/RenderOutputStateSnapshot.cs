@@ -33,10 +33,19 @@ internal sealed class RenderOutputStateSnapshot
     public SceneVersionBinding SceneVersionBinding { get; init; } =
         SceneVersionBinding.Published;
 
+    public ResolvedCanvasKey ResolvedCanvasKey { get; init; }
+
+    public ResolvedCanvasKey EffectiveResolvedCanvasKey =>
+        ResolvedCanvasKey.IsEmpty
+            ? global::WTK.MediaForge.Composition.Snapshots.ResolvedCanvasKey.Unversioned(CanvasId)
+            : ResolvedCanvasKey;
+
     public OutputRouteTransitionKind RouteTransitionKind { get; init; } =
         OutputRouteTransitionKind.Cut;
 
     public CanvasId? PreviousCanvasId { get; init; }
+
+    public ResolvedCanvasKey? PreviousResolvedCanvasKey { get; init; }
 
     public float RouteTransitionProgress { get; init; } = 1f;
 }

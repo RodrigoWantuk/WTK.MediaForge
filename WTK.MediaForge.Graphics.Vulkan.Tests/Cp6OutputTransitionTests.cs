@@ -129,6 +129,7 @@ public sealed class Cp6OutputTransitionTests
 
                 const string canvasKey = "canvas:current";
                 const string outputKey = "output:program";
+                var currentCanvasKey = snapshot.Canvases.Single(canvas => canvas.Id == currentCanvasId).PhysicalKey;
                 snapshot.RenderGraphExecution = new RenderGraphExecutionResult(
                     executedNodeKeys: [canvasKey, outputKey],
                     skippedNodeKeys: [],
@@ -141,6 +142,7 @@ public sealed class Cp6OutputTransitionTests
                             Key = canvasKey,
                             Name = "Current canvas",
                             CanvasId = currentCanvasId,
+                            ResolvedCanvasKey = currentCanvasKey,
                             Consumers = [outputKey]
                         },
                         new PhysicalRenderGraphOperation
@@ -150,7 +152,8 @@ public sealed class Cp6OutputTransitionTests
                             Name = "Program output",
                             Dependencies = [canvasKey],
                             OutputId = outputId,
-                            CanvasId = currentCanvasId
+                            CanvasId = currentCanvasId,
+                            ResolvedCanvasKey = currentCanvasKey
                         }
                     ]));
 

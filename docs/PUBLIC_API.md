@@ -236,7 +236,11 @@ Capability and license status are queryable without starting the engine:
 - `HardwareMediaBackendCapability` reports runtime-detected OS/vendor backend facts for hardware decode/encode. A backend that requires CPU staging for continuous video, or is only `Prototype`/`Skeleton`, must not be reported as `Supported` or `Experimental`.
 - `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v14 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, window capture input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` executes proof runners once per cached adapter/device generation. Non-passed proofs require a user-visible reason; passed packet/media proofs require trusted backend evidence.
 - `MediaForgeHardwareAdapterInfo` and `MediaForgeCapabilitySnapshot` expose immutable adapter identity, driver/device generation, capture time, and the capability report. Hosts call asynchronous platform probes; they must not block a UI thread.
-- `MediaForgeRuntimeHealthSnapshot` and recovery events expose high-level engine/output/source health without leaking Vulkan or D3D11 details.
+- `MediaForgeRuntimeHealthSnapshot` and recovery events expose high-level
+  engine/output/source health without leaking Vulkan or D3D11 details.
+  `SceneVersions` reports bounded scene-history retention, active pins,
+  discarded versions, and the observed high-water mark. These are aggregate
+  ownership counters; internal resolved keys and draft contents are not public.
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.
 - Capability entries that are not user-available (`Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, `Blocked`, `Prohibited`, or equivalent non-product states) must include a non-empty `UnavailableReason` suitable for UI and diagnostics.
 - `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.

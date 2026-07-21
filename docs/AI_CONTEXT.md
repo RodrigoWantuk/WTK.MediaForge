@@ -64,6 +64,13 @@ drop/reconnect policy.
 - Provider ownership transfers once to `SourceRuntimeManager`; unregister and
   engine shutdown await asynchronous physical cleanup.
 - Native handles are never logical texture identity.
+- `CanvasId` is logical authoring identity. Physical render/cache identity is a
+  deterministic resolved key containing the effective scene version, draft
+  session where applicable, and nested graph fingerprint. Never mint a new
+  logical canvas id to materialize a version binding.
+- Intermediate Vulkan targets are never borrowed by two in-flight submissions.
+  Cache invalidation retires an active target and physical disposal waits for
+  the post-fence submission lease to return.
 - GPU, keyed-mutex, sink, provider, and shutdown waits always have timeouts.
 - Finalization errors are observable and cannot be reported as success.
 
@@ -119,6 +126,6 @@ an explicit reason instead of contaminating Core with fallback logic.
 ## Documentation Authority
 
 Product truth is defined by `docs/ROADMAP_CURRENT.md`, this file,
-`ARCHITECTURE.md`, `docs/PUBLIC_API.md`, `docs/GPU_MEDIA_SUPPORT_MATRIX.md`, and
+`docs/PRODUCT_MODEL.md`, `docs/PUBLIC_API.md`, `docs/GPU_MEDIA_SUPPORT_MATRIX.md`, and
 `docs/REVIEW_CHECKLIST.md`. License and transport policy documents remain
 mandatory supplemental policy. Files under `docs/history` are non-normative.

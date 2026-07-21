@@ -34,18 +34,38 @@ internal sealed class DraftSceneStateStore
     public SceneDraftState Upsert(
         SceneEditSessionId sessionId,
         ProjectStateSnapshot projectState,
-        SceneDraftState state)
+        SceneDraftState state,
+        IDisposable versionPin)
     {
         ArgumentNullException.ThrowIfNull(projectState);
         ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(versionPin);
 
-        _drafts[sessionId] = new DraftEntry(projectState, state);
+        if (_drafts.Remove(sessionId, out var previous))
+            previous.VersionPin.Dispose();
+
+        _drafts[sessionId] = new DraftEntry(projectState, state, versionPin);
         return state;
     }
 
-    public bool Remove(SceneEditSessionId sessionId) => _drafts.Remove(sessionId);
+    public bool Remove(SceneEditSessionId sessionId)
+    {
+        if (!_drafts.Remove(sessionId, out var entry))
+            return false;
 
-    public void Clear() => _drafts.Clear();
+        entry.VersionPin.Dispose();
+        return true;
+    }
 
-    private sealed record DraftEntry(ProjectStateSnapshot ProjectState, SceneDraftState State);
+    public void Clear()
+    {
+        foreach (var entry in _drafts.Values)
+            entry.VersionPin.Dispose();
+        _drafts.Clear();
+    }
+
+    private sealed record DraftEntry(
+        ProjectStateSnapshot ProjectState,
+        SceneDraftState State,
+        IDisposable VersionPin);
 }

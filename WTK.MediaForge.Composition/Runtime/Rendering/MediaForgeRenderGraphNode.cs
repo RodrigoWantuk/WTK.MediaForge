@@ -1,4 +1,5 @@
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Composition.Snapshots;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
@@ -16,7 +17,11 @@ internal sealed class MediaForgeRenderGraphNode
 
     public CanvasId? CanvasId { get; init; }
 
+    public ResolvedCanvasKey? ResolvedCanvasKey { get; init; }
+
     public CanvasId? PreviousCanvasId { get; init; }
+
+    public ResolvedCanvasKey? PreviousResolvedCanvasKey { get; init; }
 
     public SourceId? SourceId { get; init; }
 

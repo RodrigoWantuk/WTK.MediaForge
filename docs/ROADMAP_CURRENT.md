@@ -34,6 +34,12 @@ Implemented foundations:
   and TCP RTMP publishing.
 - Published/draft scene versions, nested version binding, Apply propagation,
   old/new transition snapshots, and physical output/canvas/effect operations.
+- Logical `CanvasId` values remain stable across Published, Draft, and Explicit
+  bindings. Deterministic resolved canvas keys identify physical content and
+  nested-version graphs, allowing equivalent outputs to share work without
+  aliasing different pixels. Scene history retains the latest 32 versions per
+  canvas plus pinned published, draft, and explicit bindings; retention
+  counters are exposed in runtime health.
 - Compatible MP4/RTMP routes share one rendered output, NV12 conversion, and
   hardware encoder; sinks retain independent bounded queues and status.
 - Capability snapshots are cached by adapter/device generation. Vulkan and
@@ -92,6 +98,10 @@ Unavailable/planned:
    overlays independent from the native presentation surface.
 9. Freeze Core adapter contracts, then implement Linux and macOS backends in
    their own projects.
+
+Scene identity and the first bounded retention store are complete. Remaining
+retention work in v14 is to connect transition and submission ownership to
+explicit pin handles and qualify baseline return under sustained Apply traffic.
 
 ## Readiness v14
 

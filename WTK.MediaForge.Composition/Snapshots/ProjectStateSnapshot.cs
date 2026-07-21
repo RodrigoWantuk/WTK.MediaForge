@@ -19,4 +19,7 @@ internal sealed record ProjectStateSnapshot
 
     public IReadOnlyDictionary<SceneVersionId, CanvasStateSnapshot> CanvasVersionSnapshots { get; init; } =
         new Dictionary<SceneVersionId, CanvasStateSnapshot>();
+
+    public IReadOnlyDictionary<RenderOutputId, ResolvedOutputCanvasStateSnapshot> ResolvedOutputCanvases { get; init; } =
+        new Dictionary<RenderOutputId, ResolvedOutputCanvasStateSnapshot>();
 }

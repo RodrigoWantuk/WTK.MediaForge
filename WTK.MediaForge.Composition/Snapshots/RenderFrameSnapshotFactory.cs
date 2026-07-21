@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Sources;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Gpu;
@@ -45,35 +46,40 @@ internal static class RenderFrameSnapshotFactory
 
         try
         {
-            var canvasLookup = projectState.Canvases.ToDictionary(c => c.Id);
+            var publishedContext = CanvasResolutionContext.From(projectState);
+            var canvasesByKey = new Dictionary<ResolvedCanvasKey, RenderCanvasSnapshot>();
 
-            var canvases = projectState.Canvases
-                .Select(canvas => BuildCanvas(
+            foreach (var canvas in projectState.Canvases)
+            {
+                var renderCanvas = BuildCanvas(
                     canvas,
-                    projectState,
-                    canvasLookup,
+                    publishedContext,
+                    SceneVersionBinding.Published,
                     runtime,
                     context,
                     leasesBySource,
                     diagnostics,
-                    nestingDepth: 0))
-                .ToList();
+                    nestingDepth: 0);
+                canvasesByKey.TryAdd(renderCanvas.ResolvedKey, renderCanvas);
+            }
 
             var outputs = projectState.Outputs
                 .Select(output => BuildOutputState(
                     output,
+                    projectState,
+                    publishedContext,
                     outputRouteTransitions,
                     runtime,
                     context,
                     leasesBySource,
                     diagnostics,
-                    canvases))
+                    canvasesByKey))
                 .ToImmutableArray();
 
             var snapshot = new RenderFrameSnapshot
             {
                 ProjectStateVersion = projectState.Version,
-                Canvases = canvases.ToImmutableArray(),
+                Canvases = canvasesByKey.Values.ToImmutableArray(),
                 Outputs = outputs,
                 FrameLeases = leasesBySource.Values.ToImmutableArray(),
                 Context = context,
@@ -91,20 +97,33 @@ internal static class RenderFrameSnapshotFactory
 
     private static RenderOutputStateSnapshot BuildOutputState(
         RenderOutputStateSnapshot output,
+        ProjectStateSnapshot projectState,
+        CanvasResolutionContext publishedContext,
         OutputRouteTransitionRuntime? outputRouteTransitions,
         CompositionRuntime runtime,
         RenderFrameContext context,
         Dictionary<SourceId, GpuFrameLease> leasesBySource,
         List<SnapshotDiagnostic> diagnostics,
-        List<RenderCanvasSnapshot> canvases)
+        Dictionary<ResolvedCanvasKey, RenderCanvasSnapshot> canvasesByKey)
     {
+        var currentCanvas = BuildOutputCanvas(
+            output,
+            projectState,
+            publishedContext,
+            runtime,
+            context,
+            leasesBySource,
+            diagnostics);
+        canvasesByKey.TryAdd(currentCanvas.ResolvedKey, currentCanvas);
+        var resolvedOutput = CloneOutputWithResolvedCanvas(output, currentCanvas.ResolvedKey);
+
         if (outputRouteTransitions is null ||
             !outputRouteTransitions.TryGetTransition(output.Id, out var transition) ||
             transition.Transition.Kind != OutputRouteTransitionKind.Fade ||
             transition.PreviousProjectState is null ||
             transition.Progress >= 1f)
         {
-            return output;
+            return resolvedOutput;
         }
 
         var previousProjectState = transition.PreviousProjectState;
@@ -116,43 +135,93 @@ internal static class RenderFrameSnapshotFactory
                 SnapshotDiagnosticKind.NestedCanvasMissing,
                 $"Previous route canvas {transition.PreviousVersionGraph.RootCanvasId} is no longer available for output transition.",
                 canvasId: transition.PreviousVersionGraph.RootCanvasId);
-            return output;
+            return resolvedOutput;
         }
 
         var previousCanvas = BuildCanvas(
             previousCanvasState,
-            previousProjectState,
-            previousCanvasLookup,
+            CanvasResolutionContext.From(previousProjectState),
+            SceneVersionBinding.Published,
             runtime,
             context,
             leasesBySource,
             diagnostics,
             nestingDepth: 0);
-        var previousCanvasId = CanvasId.New();
-        canvases.Add(CloneCanvasWithId(previousCanvas, previousCanvasId));
+        canvasesByKey.TryAdd(previousCanvas.ResolvedKey, previousCanvas);
 
         return CloneOutputWithTransition(
-            output,
+            resolvedOutput,
             transition.Transition.Kind,
-            previousCanvasId,
+            previousCanvas.Id,
+            previousCanvas.ResolvedKey,
             transition.Progress);
     }
 
-    private static RenderCanvasSnapshot CloneCanvasWithId(RenderCanvasSnapshot canvas, CanvasId canvasId) =>
+    private static RenderCanvasSnapshot BuildOutputCanvas(
+        RenderOutputStateSnapshot output,
+        ProjectStateSnapshot projectState,
+        CanvasResolutionContext publishedContext,
+        CompositionRuntime runtime,
+        RenderFrameContext context,
+        Dictionary<SourceId, GpuFrameLease> leasesBySource,
+        List<SnapshotDiagnostic> diagnostics)
+    {
+        if (projectState.ResolvedOutputCanvases.TryGetValue(output.Id, out var resolved))
+        {
+            return BuildCanvas(
+                resolved.RootCanvas,
+                CanvasResolutionContext.From(resolved),
+                resolved.Binding,
+                runtime,
+                context,
+                leasesBySource,
+                diagnostics,
+                nestingDepth: 0,
+                resolved.RootVersionId);
+        }
+
+        if (!publishedContext.CanvasLookup.TryGetValue(output.CanvasId, out var canvas))
+            throw new InvalidOperationException($"Output '{output.Name}' references missing canvas '{output.CanvasId}'.");
+
+        return BuildCanvas(
+            canvas,
+            publishedContext,
+            SceneVersionBinding.Published,
+            runtime,
+            context,
+            leasesBySource,
+            diagnostics,
+            nestingDepth: 0);
+    }
+
+    private static RenderOutputStateSnapshot CloneOutputWithResolvedCanvas(
+        RenderOutputStateSnapshot output,
+        ResolvedCanvasKey resolvedCanvasKey) =>
         new()
         {
-            Id = canvasId,
-            Name = canvas.Name,
-            Size = canvas.Size,
-            BackgroundColor = canvas.BackgroundColor,
-            VersionId = canvas.VersionId,
-            Objects = canvas.Objects
+            Id = output.Id,
+            Name = output.Name,
+            TypeId = output.TypeId,
+            SchemaVersion = output.SchemaVersion,
+            Settings = output.Settings,
+            CanvasId = output.CanvasId,
+            OutputSize = output.OutputSize,
+            CanvasLayoutMode = output.CanvasLayoutMode,
+            LetterboxColor = output.LetterboxColor,
+            ColorSpace = output.ColorSpace,
+            SceneVersionBinding = output.SceneVersionBinding,
+            ResolvedCanvasKey = resolvedCanvasKey,
+            RouteTransitionKind = output.RouteTransitionKind,
+            PreviousCanvasId = output.PreviousCanvasId,
+            PreviousResolvedCanvasKey = output.PreviousResolvedCanvasKey,
+            RouteTransitionProgress = output.RouteTransitionProgress
         };
 
     private static RenderOutputStateSnapshot CloneOutputWithTransition(
         RenderOutputStateSnapshot output,
         OutputRouteTransitionKind transitionKind,
         CanvasId previousCanvasId,
+        ResolvedCanvasKey previousResolvedCanvasKey,
         float progress) =>
         new()
         {
@@ -167,8 +236,10 @@ internal static class RenderFrameSnapshotFactory
             LetterboxColor = output.LetterboxColor,
             ColorSpace = output.ColorSpace,
             SceneVersionBinding = output.SceneVersionBinding,
+            ResolvedCanvasKey = output.ResolvedCanvasKey,
             RouteTransitionKind = transitionKind,
             PreviousCanvasId = previousCanvasId,
+            PreviousResolvedCanvasKey = previousResolvedCanvasKey,
             RouteTransitionProgress = Math.Clamp(progress, 0f, 1f)
         };
 
@@ -197,19 +268,19 @@ internal static class RenderFrameSnapshotFactory
 
     private static RenderCanvasSnapshot BuildCanvas(
         CanvasStateSnapshot canvas,
-        ProjectStateSnapshot projectState,
-        IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
+        CanvasResolutionContext resolutionContext,
+        SceneVersionBinding binding,
         CompositionRuntime runtime,
         RenderFrameContext context,
         Dictionary<SourceId, GpuFrameLease> leasesBySource,
         List<SnapshotDiagnostic> diagnostics,
-        int nestingDepth)
+        int nestingDepth,
+        SceneVersionId? versionOverride = null)
     {
         var objects = canvas.Objects
             .Select(drawObject => BuildDrawObject(
                 drawObject,
-                projectState,
-                canvasLookup,
+                resolutionContext,
                 runtime,
                 context,
                 leasesBySource,
@@ -217,23 +288,31 @@ internal static class RenderFrameSnapshotFactory
                 nestingDepth))
             .ToImmutableArray();
 
+        var versionId = versionOverride ?? ResolveCanvasVersion(resolutionContext, canvas.Id, binding);
+        var resolvedKey = ResolvedCanvasKey.Create(
+            canvas.Id,
+            versionId,
+            binding,
+            objects
+                .OfType<RenderCanvasDrawObjectSnapshot>()
+                .Where(static nested => nested.NestedResolvedCanvasKey is not null)
+                .Select(static nested => nested.NestedResolvedCanvasKey!.Value));
+
         return new RenderCanvasSnapshot
         {
             Id = canvas.Id,
             Name = canvas.Name,
             Size = canvas.Size,
             BackgroundColor = canvas.BackgroundColor,
-            VersionId = projectState.CanvasVersionIds.TryGetValue(canvas.Id, out var version)
-                ? version
-                : null,
+            VersionId = versionId,
+            ResolvedKey = resolvedKey,
             Objects = objects
         };
     }
 
     private static RenderDrawObjectSnapshot BuildDrawObject(
         DrawObjectStateSnapshot drawObject,
-        ProjectStateSnapshot projectState,
-        IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
+        CanvasResolutionContext resolutionContext,
         CompositionRuntime runtime,
         RenderFrameContext context,
         Dictionary<SourceId, GpuFrameLease> leasesBySource,
@@ -299,21 +378,20 @@ internal static class RenderFrameSnapshotFactory
                 ? BuildNestedCanvasDrawObject(
                     nested,
                     effectiveCrop,
-                    projectState,
-                    canvasLookup,
+                    resolutionContext,
                     runtime,
                     context,
                     leasesBySource,
                     diagnostics,
                     nestingDepth)
-                : CreateDisabledCanvasDrawObjectSnapshot(nested, projectState, effectiveCrop),
+                : CreateDisabledCanvasDrawObjectSnapshot(nested, resolutionContext, effectiveCrop),
             _ => throw new NotSupportedException($"Unsupported draw object snapshot type: {drawObject.GetType().Name}.")
         };
     }
 
     private static RenderCanvasDrawObjectSnapshot CreateDisabledCanvasDrawObjectSnapshot(
         CanvasDrawObjectSnapshot nested,
-        ProjectStateSnapshot projectState,
+        CanvasResolutionContext resolutionContext,
         NormalizedRect effectiveCrop) =>
         new()
         {
@@ -327,15 +405,15 @@ internal static class RenderFrameSnapshotFactory
             Effects = nested.Effects,
             NestedCanvasId = nested.NestedCanvasId,
             VersionBinding = nested.VersionBinding,
-            NestedCanvasVersionId = ResolveNestedVersion(projectState, nested),
+            NestedCanvasVersionId = ResolveNestedVersion(resolutionContext, nested),
+            NestedResolvedCanvasKey = null,
             NestedCanvas = null
         };
 
     private static RenderCanvasDrawObjectSnapshot BuildNestedCanvasDrawObject(
         CanvasDrawObjectSnapshot nested,
         NormalizedRect effectiveCrop,
-        ProjectStateSnapshot projectState,
-        IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
+        CanvasResolutionContext resolutionContext,
         CompositionRuntime runtime,
         RenderFrameContext context,
         Dictionary<SourceId, GpuFrameLease> leasesBySource,
@@ -353,7 +431,7 @@ internal static class RenderFrameSnapshotFactory
                 drawObjectId: nested.Id,
                 canvasId: nested.NestedCanvasId);
         }
-        else if (!TryResolveNestedCanvasState(projectState, canvasLookup, nested, out var nestedCanvasState))
+        else if (!TryResolveNestedCanvasState(resolutionContext, nested, out var nestedCanvasState))
         {
             AddDiagnostic(
                 diagnostics,
@@ -366,8 +444,8 @@ internal static class RenderFrameSnapshotFactory
         {
             nestedCanvas = BuildCanvas(
                 nestedCanvasState,
-                projectState,
-                canvasLookup,
+                resolutionContext,
+                nested.VersionBinding,
                 runtime,
                 context,
                 leasesBySource,
@@ -387,30 +465,30 @@ internal static class RenderFrameSnapshotFactory
             Effects = nested.Effects,
             NestedCanvasId = nested.NestedCanvasId,
             VersionBinding = nested.VersionBinding,
-            NestedCanvasVersionId = ResolveNestedVersion(projectState, nested),
+            NestedCanvasVersionId = ResolveNestedVersion(resolutionContext, nested),
+            NestedResolvedCanvasKey = nestedCanvas?.ResolvedKey,
             NestedCanvas = nestedCanvas
         };
     }
 
     private static Scenes.Editing.SceneVersionId? ResolveNestedVersion(
-        ProjectStateSnapshot projectState,
+        CanvasResolutionContext resolutionContext,
         CanvasDrawObjectSnapshot nested) =>
         nested.VersionBinding.Kind == Scenes.Editing.SceneVersionBindingKind.ExplicitVersion
             ? nested.VersionBinding.ExplicitVersionId
-            : projectState.CanvasVersionIds.TryGetValue(nested.NestedCanvasId, out var version)
+            : resolutionContext.CanvasVersionIds.TryGetValue(nested.NestedCanvasId, out var version)
                 ? version
                 : null;
 
     private static bool TryResolveNestedCanvasState(
-        ProjectStateSnapshot projectState,
-        IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> canvasLookup,
+        CanvasResolutionContext resolutionContext,
         CanvasDrawObjectSnapshot nested,
         out CanvasStateSnapshot nestedCanvasState)
     {
         if (nested.VersionBinding.Kind == Scenes.Editing.SceneVersionBindingKind.ExplicitVersion)
         {
             if (nested.VersionBinding.ExplicitVersionId is { } explicitVersion &&
-                projectState.CanvasVersionSnapshots.TryGetValue(explicitVersion, out var versionedCanvas) &&
+                resolutionContext.CanvasVersionSnapshots.TryGetValue(explicitVersion, out var versionedCanvas) &&
                 versionedCanvas.Id == nested.NestedCanvasId)
             {
                 nestedCanvasState = versionedCanvas;
@@ -421,13 +499,23 @@ internal static class RenderFrameSnapshotFactory
             return false;
         }
 
-        return canvasLookup.TryGetValue(nested.NestedCanvasId, out nestedCanvasState!);
+        return resolutionContext.CanvasLookup.TryGetValue(nested.NestedCanvasId, out nestedCanvasState!);
     }
 
     private static string CreateNestedCanvasMissingMessage(CanvasDrawObjectSnapshot nested) =>
         nested.VersionBinding.Kind == Scenes.Editing.SceneVersionBindingKind.ExplicitVersion
             ? $"Nested canvas {nested.NestedCanvasId} explicit version {nested.VersionBinding.ExplicitVersionId} not found for draw object '{nested.Name}'."
             : $"Nested canvas {nested.NestedCanvasId} not found for draw object '{nested.Name}'.";
+
+    private static SceneVersionId? ResolveCanvasVersion(
+        CanvasResolutionContext resolutionContext,
+        CanvasId canvasId,
+        SceneVersionBinding binding) =>
+        binding.Kind == SceneVersionBindingKind.ExplicitVersion
+            ? binding.ExplicitVersionId
+            : resolutionContext.CanvasVersionIds.TryGetValue(canvasId, out var version)
+                ? version
+                : null;
 
     private static GpuFrameReference? TryAcquireSourceFrame(
         SourceId sourceId,
@@ -498,5 +586,23 @@ internal static class RenderFrameSnapshotFactory
             CanvasId = canvasId,
             DrawObjectId = drawObjectId
         });
+    }
+
+    private sealed record CanvasResolutionContext(
+        IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> CanvasLookup,
+        IReadOnlyDictionary<CanvasId, SceneVersionId> CanvasVersionIds,
+        IReadOnlyDictionary<SceneVersionId, CanvasStateSnapshot> CanvasVersionSnapshots)
+    {
+        public static CanvasResolutionContext From(ProjectStateSnapshot projectState) =>
+            new(
+                projectState.Canvases.ToDictionary(static canvas => canvas.Id),
+                projectState.CanvasVersionIds,
+                projectState.CanvasVersionSnapshots);
+
+        public static CanvasResolutionContext From(ResolvedOutputCanvasStateSnapshot resolved) =>
+            new(
+                resolved.Canvases.ToDictionary(static canvas => canvas.Id),
+                resolved.CanvasVersionIds,
+                resolved.CanvasVersionSnapshots);
     }
 }

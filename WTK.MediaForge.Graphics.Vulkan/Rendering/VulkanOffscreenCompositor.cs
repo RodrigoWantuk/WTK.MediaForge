@@ -44,7 +44,7 @@ internal static class VulkanOffscreenCompositor
             lease => lease.Import);
         var renderedSurfaces = new List<IRenderedOutputSurfaceLease>();
         var outputsById = snapshot.Outputs.ToDictionary(static output => output.Id);
-        var canvasesById = snapshot.Canvases.ToDictionary(static canvas => canvas.Id);
+        var canvasesByKey = snapshot.Canvases.ToDictionary(static canvas => canvas.PhysicalKey);
         var operationsByKey = physicalPlan.Operations.ToDictionary(
             static operation => operation.Key,
             StringComparer.Ordinal);
@@ -67,8 +67,8 @@ internal static class VulkanOffscreenCompositor
                 continue;
 
             var dependency = ResolveOutputDependency(operation, operationsByKey);
-            var canvasId = dependency?.CanvasId ?? operation.CanvasId ?? output.CanvasId;
-            if (!canvasesById.TryGetValue(canvasId, out var canvas))
+            var canvasKey = dependency?.ResolvedCanvasKey ?? operation.ResolvedCanvasKey ?? output.EffectiveResolvedCanvasKey;
+            if (canvasKey.IsEmpty || !canvasesByKey.ContainsKey(canvasKey))
                 continue;
 
             submissionResources.RetainOffscreenTarget(targetHandle);
@@ -81,7 +81,7 @@ internal static class VulkanOffscreenCompositor
                         output,
                         dependency,
                         operationsByKey,
-                        canvasesById,
+                        canvasesByKey,
                         importsByHandle,
                         outputTarget,
                         submissionResources,
@@ -92,9 +92,9 @@ internal static class VulkanOffscreenCompositor
                         commandBuffer,
                         output,
                         dependency,
-                        canvasId,
+                        canvasKey,
                         operationsByKey,
-                        canvasesById,
+                        canvasesByKey,
                         importsByHandle,
                         outputTarget,
                         submissionResources,
@@ -119,9 +119,9 @@ internal static class VulkanOffscreenCompositor
         CommandBuffer commandBuffer,
         RenderOutputStateSnapshot output,
         PhysicalRenderGraphOperation? dependency,
-        CanvasId canvasId,
+        ResolvedCanvasKey canvasKey,
         IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey,
-        IReadOnlyDictionary<CanvasId, RenderCanvasSnapshot> canvasesById,
+        IReadOnlyDictionary<ResolvedCanvasKey, RenderCanvasSnapshot> canvasesByKey,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
         VulkanOffscreenRenderTarget outputTarget,
         VulkanSubmissionResourceScope submissionResources,
@@ -130,15 +130,15 @@ internal static class VulkanOffscreenCompositor
     {
         var canvasOperation = dependency?.Kind == PhysicalRenderGraphOperationKind.RenderCanvas
             ? dependency
-            : ResolveCanvasOperation(dependency, canvasId, operationsByKey);
+            : ResolveCanvasOperation(dependency, canvasKey, operationsByKey);
 
         if (!TryGetOrRenderCanvasTarget(
                 pipelines,
                 commandBuffer,
                 output,
                 canvasOperation,
-                canvasId,
-                canvasesById,
+                canvasKey,
+                canvasesByKey,
                 importsByHandle,
                 submissionResources,
                 operationsByKey,
@@ -166,21 +166,21 @@ internal static class VulkanOffscreenCompositor
         RenderOutputStateSnapshot output,
         PhysicalRenderGraphOperation transitionOperation,
         IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey,
-        IReadOnlyDictionary<CanvasId, RenderCanvasSnapshot> canvasesById,
+        IReadOnlyDictionary<ResolvedCanvasKey, RenderCanvasSnapshot> canvasesByKey,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
         VulkanOffscreenRenderTarget outputTarget,
         VulkanSubmissionResourceScope submissionResources,
         Dictionary<string, RenderedCanvasTarget> canvasCache,
         PhysicalCompositionStatsBuilder stats)
     {
-        var currentCanvasId = transitionOperation.CanvasId ?? output.CanvasId;
-        var previousCanvasId = transitionOperation.PreviousCanvasId ?? output.PreviousCanvasId;
-        if (previousCanvasId is not { } previousId)
+        var currentCanvasKey = transitionOperation.ResolvedCanvasKey ?? output.EffectiveResolvedCanvasKey;
+        var previousCanvasKey = transitionOperation.PreviousResolvedCanvasKey ?? output.PreviousResolvedCanvasKey;
+        if (currentCanvasKey.IsEmpty || previousCanvasKey is not { IsEmpty: false } previousKey)
             return false;
 
         var progress = Math.Clamp(output.RouteTransitionProgress, 0f, 1f);
-        var previousOperation = ResolveCanvasOperation(transitionOperation, previousId, operationsByKey);
-        var currentOperation = ResolveCanvasOperation(transitionOperation, currentCanvasId, operationsByKey);
+        var previousOperation = ResolveCanvasOperation(transitionOperation, previousKey, operationsByKey);
+        var currentOperation = ResolveCanvasOperation(transitionOperation, currentCanvasKey, operationsByKey);
 
         stats.RecordTransitionPass();
 
@@ -191,9 +191,9 @@ internal static class VulkanOffscreenCompositor
                 commandBuffer,
                 output,
                 previousOperation,
-                previousId,
+                previousKey,
                 operationsByKey,
-                canvasesById,
+                canvasesByKey,
                 importsByHandle,
                 outputTarget,
                 submissionResources,
@@ -208,9 +208,9 @@ internal static class VulkanOffscreenCompositor
                 commandBuffer,
                 output,
                 currentOperation,
-                currentCanvasId,
+                currentCanvasKey,
                 operationsByKey,
-                canvasesById,
+                canvasesByKey,
                 importsByHandle,
                 outputTarget,
                 submissionResources,
@@ -223,8 +223,8 @@ internal static class VulkanOffscreenCompositor
                 commandBuffer,
                 output,
                 previousOperation,
-                previousId,
-                canvasesById,
+                previousKey,
+                canvasesByKey,
                 importsByHandle,
                 submissionResources,
                 operationsByKey,
@@ -236,8 +236,8 @@ internal static class VulkanOffscreenCompositor
                 commandBuffer,
                 output,
                 currentOperation,
-                currentCanvasId,
-                canvasesById,
+                currentCanvasKey,
+                canvasesByKey,
                 importsByHandle,
                 submissionResources,
                 operationsByKey,
@@ -273,8 +273,8 @@ internal static class VulkanOffscreenCompositor
         CommandBuffer commandBuffer,
         RenderOutputStateSnapshot output,
         PhysicalRenderGraphOperation? canvasOperation,
-        CanvasId canvasId,
-        IReadOnlyDictionary<CanvasId, RenderCanvasSnapshot> canvasesById,
+        ResolvedCanvasKey canvasKey,
+        IReadOnlyDictionary<ResolvedCanvasKey, RenderCanvasSnapshot> canvasesByKey,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
         VulkanSubmissionResourceScope submissionResources,
         IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey,
@@ -283,7 +283,7 @@ internal static class VulkanOffscreenCompositor
         [NotNullWhen(true)] out RenderedCanvasTarget? renderedCanvas)
     {
         renderedCanvas = null;
-        if (!canvasesById.TryGetValue(canvasId, out var canvas))
+        if (!canvasesByKey.TryGetValue(canvasKey, out var canvas))
             return false;
 
         var cacheKey = canvasOperation?.Key ?? $"canvas:{canvas.Id}:snapshot:{canvas.Size.Width}x{canvas.Size.Height}";
@@ -336,9 +336,9 @@ internal static class VulkanOffscreenCompositor
                 : null)
             .Where(static dependency =>
                 dependency?.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
-                dependency.CanvasId is not null &&
+                dependency.ResolvedCanvasKey is not null &&
                 dependency.DrawObjectId is not null)
-            .Where(dependency => dependency!.CanvasId == canvas.Id)
+            .Where(dependency => dependency!.ResolvedCanvasKey == canvas.PhysicalKey)
             .Select(dependency => dependency!.DrawObjectId!.Value)
             .Distinct()
             .ToArray();
@@ -358,11 +358,11 @@ internal static class VulkanOffscreenCompositor
 
     private static PhysicalRenderGraphOperation? ResolveCanvasOperation(
         PhysicalRenderGraphOperation? operation,
-        CanvasId canvasId,
+        ResolvedCanvasKey canvasKey,
         IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey)
     {
         if (operation?.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
-            operation.CanvasId == canvasId)
+            operation.ResolvedCanvasKey == canvasKey)
         {
             return operation;
         }
@@ -376,13 +376,13 @@ internal static class VulkanOffscreenCompositor
                 continue;
 
             if (dependency.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
-                dependency.CanvasId == canvasId)
+                dependency.ResolvedCanvasKey == canvasKey)
             {
                 return dependency;
             }
 
             if (dependency.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition &&
-                ResolveCanvasOperation(dependency, canvasId, operationsByKey) is { } nestedCanvasOperation)
+                ResolveCanvasOperation(dependency, canvasKey, operationsByKey) is { } nestedCanvasOperation)
             {
                 return nestedCanvasOperation;
             }

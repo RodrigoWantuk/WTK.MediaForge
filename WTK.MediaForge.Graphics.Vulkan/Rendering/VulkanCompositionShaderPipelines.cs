@@ -123,7 +123,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         VulkanSubmissionResourceScope submissionResources,
         IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null)
     {
-        var canvasHandle = _intermediateTargetPool.Rent(canvas.Id, canvas.Size);
+        var canvasHandle = _intermediateTargetPool.Rent(canvas.PhysicalKey, canvas.Size);
         submissionResources.RetainOffscreenTarget(canvasHandle);
         var canvasTarget = (VulkanOffscreenRenderTarget)canvasHandle.Target;
         canvasHandle.Retire();
@@ -217,12 +217,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             return;
         }
 
-        var previousHandle = _intermediateTargetPool.Rent(previousCanvas.Id, previousCanvas.Size);
+        var previousHandle = _intermediateTargetPool.Rent(previousCanvas.PhysicalKey, previousCanvas.Size);
         submissionResources.RetainOffscreenTarget(previousHandle);
         var previousTarget = (VulkanOffscreenRenderTarget)previousHandle.Target;
         previousHandle.Retire();
 
-        var currentHandle = _intermediateTargetPool.Rent(currentCanvas.Id, currentCanvas.Size);
+        var currentHandle = _intermediateTargetPool.Rent(currentCanvas.PhysicalKey, currentCanvas.Size);
         submissionResources.RetainOffscreenTarget(currentHandle);
         var currentTarget = (VulkanOffscreenRenderTarget)currentHandle.Target;
         currentHandle.Retire();
@@ -465,9 +465,9 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             if (!importsByHandle.TryGetValue(VulkanExternalTextureKey.From(sharedHandle), out var import))
                 continue;
 
-            var sourceTarget = RentIntermediateTarget(canvas.Id, sourceLayer.Id, salt: 1, canvas.Size, submissionResources);
-            var horizontalTarget = RentIntermediateTarget(canvas.Id, sourceLayer.Id, salt: 2, canvas.Size, submissionResources);
-            var verticalTarget = RentIntermediateTarget(canvas.Id, sourceLayer.Id, salt: 3, canvas.Size, submissionResources);
+            var sourceTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 1, canvas.Size, submissionResources);
+            var horizontalTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 2, canvas.Size, submissionResources);
+            var verticalTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 3, canvas.Size, submissionResources);
 
             TransitionForShaderRead(commandBuffer, import);
 
@@ -504,13 +504,15 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     }
 
     private VulkanOffscreenRenderTarget RentIntermediateTarget(
-        CanvasId canvasId,
+        ResolvedCanvasKey canvasKey,
         DrawObjectId drawObjectId,
         byte salt,
         FrameSize size,
         VulkanSubmissionResourceScope submissionResources)
     {
-        var handle = _intermediateTargetPool.Rent(CreateIntermediateCanvasId(canvasId, drawObjectId, salt), size);
+        var handle = _intermediateTargetPool.Rent(
+            canvasKey.Derive($"effect:{drawObjectId.Value:N}:{salt}"),
+            size);
         submissionResources.RetainOffscreenTarget(handle);
         var target = (VulkanOffscreenRenderTarget)handle.Target;
         handle.Retire();
@@ -649,21 +651,6 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             NestedCanvas = null
         };
 
-    private static CanvasId CreateIntermediateCanvasId(CanvasId canvasId, DrawObjectId drawObjectId, byte salt)
-    {
-        Span<byte> bytes = stackalloc byte[16];
-        Span<byte> drawBytes = stackalloc byte[16];
-        canvasId.Value.TryWriteBytes(bytes);
-        drawObjectId.Value.TryWriteBytes(drawBytes);
-
-        for (var i = 0; i < bytes.Length; i++)
-            bytes[i] ^= drawBytes[i];
-
-        bytes[^1] ^= salt;
-        var value = new Guid(bytes);
-        return value == Guid.Empty ? CanvasId.New() : CanvasId.From(value);
-    }
-
     private Dictionary<RenderCanvasDrawObjectSnapshot, VulkanOffscreenRenderTarget> RenderNestedCanvasTargets(
         CommandBuffer commandBuffer,
         RenderCanvasSnapshot canvas,
@@ -693,7 +680,9 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                 continue;
             }
 
-            var nestedHandle = _intermediateTargetPool.Rent(nested.NestedCanvas.Id, nested.NestedCanvas.Size);
+            var nestedHandle = _intermediateTargetPool.Rent(
+                nested.NestedCanvas.PhysicalKey,
+                nested.NestedCanvas.Size);
             submissionResources.RetainOffscreenTarget(nestedHandle);
             var nestedTarget = (VulkanOffscreenRenderTarget)nestedHandle.Target;
             nestedHandle.Retire();

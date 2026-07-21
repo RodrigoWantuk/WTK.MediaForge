@@ -151,7 +151,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             Status = status,
             EngineState = State,
             EncodedOutputs = outputs,
-            Recoveries = recoveries
+            Recoveries = recoveries,
+            SceneVersions = _sceneRuntime?.VersionRetentionSnapshot ?? new SceneVersionRetentionSnapshot()
         };
     }
 
@@ -1028,9 +1029,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
         try
         {
-            var renderGraphPlan = snapshot.Outputs.Any(static output => output.PreviousCanvasId is not null)
-                ? MediaForgeRenderGraphCompiler.Compile(snapshot)
-                : sceneSnapshot.CachedRenderGraphPlan!;
+            var renderGraphPlan = MediaForgeRenderGraphCompiler.Compile(snapshot);
 
             snapshot.RenderGraphExecution = RenderGraphExecutor.Execute(
                 renderGraphPlan,

@@ -184,43 +184,48 @@ internal static class MediaForgeRenderGraphCompiler
     private sealed class RenderSnapshotBuilder(RenderFrameSnapshot snapshot)
     {
         private readonly Dictionary<string, MediaForgeRenderGraphNode> _nodes = new(StringComparer.Ordinal);
-        private readonly Dictionary<Core.Identifiers.CanvasId, RenderCanvasSnapshot> _canvasLookup =
-            snapshot.Canvases.ToDictionary(static canvas => canvas.Id);
+        private readonly Dictionary<ResolvedCanvasKey, RenderCanvasSnapshot> _canvasLookup =
+            snapshot.Canvases.ToDictionary(static canvas => canvas.PhysicalKey);
 
         public IReadOnlyList<MediaForgeRenderGraphNode> Nodes => _nodes.Values.ToList();
 
         public string AddOutput(RenderOutputStateSnapshot output)
         {
-            var canvasKey = AddCanvas(output.CanvasId);
+            var currentResolvedKey = ResolveOutputCanvasKey(output);
+            var canvasKey = AddCanvas(currentResolvedKey);
             var dependency = canvasKey;
 
             if (output.RouteTransitionKind != OutputRouteTransitionKind.Cut &&
                 output.PreviousCanvasId is { } previousCanvasId)
             {
-                var previousCanvasKey = AddCanvas(previousCanvasId);
+                var previousResolvedCanvasKey = ResolvePreviousCanvasKey(output, previousCanvasId);
+                var previousCanvasKey = AddCanvas(previousResolvedCanvasKey);
                 dependency = AddNode(
                     MediaForgeRenderGraphNodeKind.OutputTransition,
-                    $"transition:{output.Id}:previous:{previousCanvasId}:current:{output.CanvasId}:progress:{output.RouteTransitionProgress:0.####}",
+                    $"transition:{output.Id}:previous:{previousResolvedCanvasKey.StableValue}:current:{currentResolvedKey.StableValue}:progress:{output.RouteTransitionProgress:0.####}",
                     $"{output.Name} route transition",
                     [previousCanvasKey, canvasKey],
                     outputId: output.Id,
                     canvasId: output.CanvasId,
-                    previousCanvasId: previousCanvasId);
+                    resolvedCanvasKey: currentResolvedKey,
+                    previousCanvasId: previousCanvasId,
+                    previousResolvedCanvasKey: previousResolvedCanvasKey);
             }
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.OutputPass,
-                $"output:{output.Id}:canvas:{output.CanvasId}:binding:{ResolveCanvasVersionKey(output.SceneVersionBinding)}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}:letterbox:{output.LetterboxColor.R:R},{output.LetterboxColor.G:R},{output.LetterboxColor.B:R},{output.LetterboxColor.A:R}:color-space:{output.ColorSpace}",
+                $"output:{output.Id}:canvas:{currentResolvedKey.StableValue}:size:{output.OutputSize.Width}x{output.OutputSize.Height}:layout:{output.CanvasLayoutMode}:letterbox:{output.LetterboxColor.R:R},{output.LetterboxColor.G:R},{output.LetterboxColor.B:R},{output.LetterboxColor.A:R}:color-space:{output.ColorSpace}",
                 output.Name,
                 [dependency],
                 outputId: output.Id,
-                canvasId: output.CanvasId);
+                canvasId: output.CanvasId,
+                resolvedCanvasKey: currentResolvedKey);
         }
 
-        private string AddCanvas(Core.Identifiers.CanvasId canvasId)
+        private string AddCanvas(ResolvedCanvasKey resolvedCanvasKey)
         {
-            if (!_canvasLookup.TryGetValue(canvasId, out var canvas))
-                return $"missing-canvas:{canvasId}";
+            if (!_canvasLookup.TryGetValue(resolvedCanvasKey, out var canvas))
+                return $"missing-canvas:{resolvedCanvasKey.StableValue}";
 
             return AddCanvas(canvas);
         }
@@ -247,6 +252,7 @@ internal static class MediaForgeRenderGraphCompiler
                                 sourceLayer.Name,
                                 [sourceKey],
                                 canvasId: HasPlacementDependentEffects(enabledEffects) ? canvas.Id : null,
+                                resolvedCanvasKey: HasPlacementDependentEffects(enabledEffects) ? canvas.PhysicalKey : null,
                                 sourceId: sourceLayer.SourceId,
                                 drawObjectId: HasPlacementDependentEffects(enabledEffects) ? sourceLayer.Id : null)
                             : sourceKey);
@@ -256,8 +262,8 @@ internal static class MediaForgeRenderGraphCompiler
                         dependencies.Add(AddCanvas(nested.NestedCanvas));
                         break;
 
-                    case RenderCanvasDrawObjectSnapshot nested:
-                        dependencies.Add(AddCanvas(nested.NestedCanvasId));
+                    case RenderCanvasDrawObjectSnapshot nested when nested.NestedResolvedCanvasKey is { } nestedKey:
+                        dependencies.Add(AddCanvas(nestedKey));
                         break;
 
                     case RenderTextDrawObjectSnapshot:
@@ -272,16 +278,42 @@ internal static class MediaForgeRenderGraphCompiler
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.CanvasRender,
-                $"canvas:{canvas.Id}:version:{ResolveCanvasVersionKey(canvas)}:size:{canvas.Size.Width}x{canvas.Size.Height}:content:{HashCanvas(canvas)}",
+                $"canvas:{canvas.PhysicalKey.StableValue}:size:{canvas.Size.Width}x{canvas.Size.Height}:content:{HashCanvas(canvas)}",
                 canvas.Name,
                 dependencies,
-                canvasId: canvas.Id);
+                canvasId: canvas.Id,
+                resolvedCanvasKey: canvas.PhysicalKey);
         }
 
-        private static string ResolveCanvasVersionKey(RenderCanvasSnapshot canvas) =>
-            canvas.VersionId is { } version
-                ? $"render:{version.Value}"
-                : $"render-snapshot:{canvas.Id}";
+        private ResolvedCanvasKey ResolveOutputCanvasKey(RenderOutputStateSnapshot output)
+        {
+            if (!output.ResolvedCanvasKey.IsEmpty)
+                return output.ResolvedCanvasKey;
+
+            var candidates = snapshot.Canvases.Where(canvas => canvas.Id == output.CanvasId).ToArray();
+            return candidates.Length == 1
+                ? candidates[0].PhysicalKey
+                : throw new InvalidOperationException(
+                    $"Output '{output.Name}' does not identify one resolved canvas revision.");
+        }
+
+        private ResolvedCanvasKey ResolvePreviousCanvasKey(
+            RenderOutputStateSnapshot output,
+            Core.Identifiers.CanvasId previousCanvasId)
+        {
+            if (output.PreviousResolvedCanvasKey is { IsEmpty: false } resolved)
+                return resolved;
+
+            var candidates = snapshot.Canvases
+                .Where(canvas => canvas.Id == previousCanvasId)
+                .Select(static canvas => canvas.PhysicalKey)
+                .Distinct()
+                .ToArray();
+            return candidates.Length == 1
+                ? candidates[0]
+                : throw new InvalidOperationException(
+                    $"Output '{output.Name}' transition does not identify one previous resolved canvas revision.");
+        }
 
         private long ResolveSourceFrameNumber(Core.Identifiers.SourceId sourceId) =>
             snapshot.FrameLeases
@@ -309,7 +341,9 @@ internal static class MediaForgeRenderGraphCompiler
             IReadOnlyList<string>? dependencies = null,
             Core.Identifiers.RenderOutputId? outputId = null,
             Core.Identifiers.CanvasId? canvasId = null,
+            ResolvedCanvasKey? resolvedCanvasKey = null,
             Core.Identifiers.CanvasId? previousCanvasId = null,
+            ResolvedCanvasKey? previousResolvedCanvasKey = null,
             Core.Identifiers.SourceId? sourceId = null,
             Core.Identifiers.DrawObjectId? drawObjectId = null)
         {
@@ -326,7 +360,9 @@ internal static class MediaForgeRenderGraphCompiler
                     Dependencies = dependencies ?? [],
                     OutputId = outputId,
                     CanvasId = canvasId,
+                    ResolvedCanvasKey = resolvedCanvasKey,
                     PreviousCanvasId = previousCanvasId,
+                    PreviousResolvedCanvasKey = previousResolvedCanvasKey,
                     SourceId = sourceId,
                     DrawObjectId = drawObjectId
                 });
@@ -367,7 +403,7 @@ internal static class MediaForgeRenderGraphCompiler
         if (!HasPlacementDependentEffects(effects))
             return $"source-effect:{sourceLayer.SourceId}:{effectHash}";
 
-        return $"source-effect:{sourceLayer.SourceId}:canvas:{canvas.Id}:draw:{sourceLayer.Id}:size:{canvas.Size.Width}x{canvas.Size.Height}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
+        return $"source-effect:{sourceLayer.SourceId}:canvas:{canvas.PhysicalKey.StableValue}:draw:{sourceLayer.Id}:size:{canvas.Size.Width}x{canvas.Size.Height}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
     }
 
     private static bool HasPlacementDependentEffects(IReadOnlyList<EffectStateSnapshot> effects) =>
