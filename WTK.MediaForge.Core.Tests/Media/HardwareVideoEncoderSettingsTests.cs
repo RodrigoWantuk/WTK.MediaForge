@@ -24,10 +24,10 @@ public sealed class HardwareVideoEncoderSettingsTests
     }
 
     [Theory]
-    [InlineData("Baseline", "3.1")]
-    [InlineData("Main", "4.0")]
-    [InlineData("High", "4.2")]
-    public void Validate_accepts_supported_h264_profile_and_level(string profile, string level)
+    [InlineData(H264Profile.Baseline, H264Level.Level31)]
+    [InlineData(H264Profile.Main, H264Level.Level40)]
+    [InlineData(H264Profile.High, H264Level.Level42)]
+    public void Validate_accepts_supported_h264_profile_and_level(H264Profile profile, H264Level level)
     {
         var settings = new HardwareVideoEncoderSettings
         {
@@ -41,9 +41,9 @@ public sealed class HardwareVideoEncoderSettingsTests
     }
 
     [Theory]
-    [InlineData("High10", "4.2")]
-    [InlineData("High", "6.0")]
-    public void Validate_rejects_unsupported_h264_profile_or_level(string profile, string level)
+    [InlineData((H264Profile)110, H264Level.Level42)]
+    [InlineData(H264Profile.High, (H264Level)60)]
+    public void Validate_rejects_unsupported_h264_profile_or_level(H264Profile profile, H264Level level)
     {
         var settings = new HardwareVideoEncoderSettings
         {

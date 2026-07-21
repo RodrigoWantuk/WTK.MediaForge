@@ -23,6 +23,16 @@ internal readonly struct EncodedSurfaceResult
     public TimeSpan Duration { get; init; }
 }
 
+internal enum MediaFoundationH264EncoderSessionState
+{
+    Created,
+    Streaming,
+    Draining,
+    Drained,
+    Failed,
+    Disposed
+}
+
 /// <summary>
 /// Product Media Foundation H.264 hardware encoder boundary.
 /// </summary>
@@ -39,11 +49,10 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private MediaFoundationRuntimeLease? _mediaFoundationRuntimeLease;
     private string? _transformName;
     private ReadOnlyMemory<byte> _codecConfiguration;
-    private bool _disposed;
-    private bool _initialized;
-    private bool _drained;
-    private bool _drainAttempted;
+    private MediaFoundationH264EncoderSessionState _state = MediaFoundationH264EncoderSessionState.Created;
     private bool _acceptedInput;
+    private H264Profile? _negotiatedProfile;
+    private H264Level? _negotiatedLevel;
 
     public MediaFoundationHardwareH264EncoderSession(
         ID3D11Device device,
@@ -54,11 +63,19 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         _settings.Validate();
     }
 
+    internal MediaFoundationH264EncoderSessionState StateForTests => _state;
+
+    internal H264Profile? NegotiatedProfile => _negotiatedProfile;
+
+    internal H264Level? NegotiatedLevel => _negotiatedLevel;
+
     public void Initialize()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_initialized)
+        ObjectDisposedException.ThrowIf(_state == MediaFoundationH264EncoderSessionState.Disposed, this);
+        if (_state == MediaFoundationH264EncoderSessionState.Streaming)
             return;
+        if (_state != MediaFoundationH264EncoderSessionState.Created)
+            throw new InvalidOperationException($"Cannot initialize a Media Foundation encoder session in state '{_state}'.");
 
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Media Foundation hardware encoder requires Windows.");
@@ -69,12 +86,11 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             _deviceManager = MediaFactory.MFCreateDXGIDeviceManager();
             _deviceManager.ResetDevice(_device).CheckError();
             _transform = CreateConfiguredHardwareTransform();
-            _drained = false;
-            _drainAttempted = false;
-            _initialized = true;
+            _state = MediaFoundationH264EncoderSessionState.Streaming;
         }
         catch (Exception ex) when (ex is not ObjectDisposedException)
         {
+            _state = MediaFoundationH264EncoderSessionState.Failed;
             DisposeTransformResources();
             throw CreateUnavailableException(ex);
         }
@@ -88,11 +104,11 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     {
         ArgumentNullException.ThrowIfNull(retainedSurface);
         ArgumentNullException.ThrowIfNull(auditSink);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(_state == MediaFoundationH264EncoderSessionState.Disposed, this);
         Initialize();
 
-        if (_drained)
-            throw new InvalidOperationException("Cannot submit input after the hardware encoder has been drained.");
+        if (_state != MediaFoundationH264EncoderSessionState.Streaming)
+            throw new InvalidOperationException($"Cannot submit encoder input in state '{_state}'.");
 
         if (_transform is null)
             throw CreateUnavailableException();
@@ -142,6 +158,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             if (!acceptedSurface)
                 retainedSurface.Dispose();
 
+            _state = MediaFoundationH264EncoderSessionState.Failed;
             DisposeTransformResources();
             throw CreateUnavailableException(ex);
         }
@@ -306,8 +323,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         outputType.Set(MediaTypeAttributeKeys.Subtype, VideoFormatGuids.H264).CheckError();
         outputType.Set(MediaTypeAttributeKeys.AvgBitrate, checked((uint)_settings.BitrateBitsPerSecond)).CheckError();
         outputType.Set(MediaTypeAttributeKeys.MaxKeyframeSpacing, checked((uint)_settings.KeyFrameIntervalFrames)).CheckError();
-        outputType.Set(MediaTypeAttributeKeys.Mpeg2Profile, HardwareVideoEncoderSettings.GetH264ProfileValue(_settings.H264Profile)).CheckError();
-        outputType.Set(MediaTypeAttributeKeys.Mpeg2Level, HardwareVideoEncoderSettings.GetH264LevelValue(_settings.H264Level)).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.Mpeg2Profile, (uint)_settings.H264Profile).CheckError();
+        outputType.Set(MediaTypeAttributeKeys.Mpeg2Level, (uint)_settings.H264Level).CheckError();
         MediaFactory.MFSetAttributeSize(outputType, MediaTypeAttributeKeys.FrameSize, (uint)_settings.Width, (uint)_settings.Height).CheckError();
         MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.FrameRate, (uint)_settings.FramesPerSecond, 1).CheckError();
         MediaFactory.MFSetAttributeRatio(outputType, MediaTypeAttributeKeys.PixelAspectRatio, 1, 1).CheckError();
@@ -326,13 +343,16 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         using var negotiatedOutputType = transform.GetOutputCurrentType(0);
         var negotiatedProfile = negotiatedOutputType.GetUInt32(MediaTypeAttributeKeys.Mpeg2Profile);
         var negotiatedLevel = negotiatedOutputType.GetUInt32(MediaTypeAttributeKeys.Mpeg2Level);
-        if (negotiatedProfile != HardwareVideoEncoderSettings.GetH264ProfileValue(_settings.H264Profile) ||
-            negotiatedLevel != HardwareVideoEncoderSettings.GetH264LevelValue(_settings.H264Level))
+        if (negotiatedProfile != (uint)_settings.H264Profile ||
+            negotiatedLevel != (uint)_settings.H264Level)
         {
             throw new InvalidOperationException(
                 $"Media Foundation hardware MFT negotiated H.264 profile/level {negotiatedProfile}/{negotiatedLevel}, " +
                 $"but {_settings.H264Profile}/{_settings.H264Level} was required.");
         }
+
+        _negotiatedProfile = (H264Profile)negotiatedProfile;
+        _negotiatedLevel = (H264Level)negotiatedLevel;
 
         transform.ProcessMessage(TMessageType.MessageNotifyBeginStreaming, UIntPtr.Zero);
         transform.ProcessMessage(TMessageType.MessageNotifyStartOfStream, UIntPtr.Zero);
@@ -521,11 +541,12 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
+        if (_state == MediaFoundationH264EncoderSessionState.Disposed)
             return;
 
-        _disposed = true;
-        var abandonedAcceptedInput = _initialized && _acceptedInput && !_drained && !_drainAttempted;
+        var abandonedAcceptedInput =
+            _state == MediaFoundationH264EncoderSessionState.Streaming && _acceptedInput;
+        _state = MediaFoundationH264EncoderSessionState.Disposed;
         DisposeTransformResources();
 
         if (abandonedAcceptedInput)
@@ -544,8 +565,9 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         _deviceManager?.Dispose();
         _deviceManager = null;
         _codecConfiguration = ReadOnlyMemory<byte>.Empty;
+        _negotiatedProfile = null;
+        _negotiatedLevel = null;
         _pendingOutputPackets.Clear();
-        _initialized = false;
         _mediaFoundationRuntimeLease?.Dispose();
         _mediaFoundationRuntimeLease = null;
     }
@@ -594,59 +616,83 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     {
         ArgumentNullException.ThrowIfNull(auditSink);
 
-        if (_drained)
+        ObjectDisposedException.ThrowIf(_state == MediaFoundationH264EncoderSessionState.Disposed, this);
+        if (_state == MediaFoundationH264EncoderSessionState.Drained)
             return DrainPendingOutputPackets();
 
-        if (_transform is null)
+        if (_state == MediaFoundationH264EncoderSessionState.Created)
+        {
+            _state = MediaFoundationH264EncoderSessionState.Drained;
             return DrainPendingOutputPackets();
+        }
 
-        _drainAttempted = true;
+        if (_state != MediaFoundationH264EncoderSessionState.Streaming || _transform is null)
+            throw new InvalidOperationException($"Cannot drain a Media Foundation encoder session in state '{_state}'.");
+
+        _state = MediaFoundationH264EncoderSessionState.Draining;
 
         try
         {
-            _transform.ProcessMessage(TMessageType.MessageNotifyEndOfStream, UIntPtr.Zero);
+            SendEndOfStream();
+            SendDrainCommand();
+            DrainAvailableOutputPackets(Math.Max(lastFrameNumber, 1), auditSink);
+
+            if (_acceptedInput && _codecConfiguration.IsEmpty)
+            {
+                throw new InvalidOperationException(
+                    "Media Foundation encoder completed drain without H.264 SPS/PPS codec configuration.");
+            }
+
+            if (_pendingInputSurfaces.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Media Foundation encoder completed drain with {_pendingInputSurfaces.Count} retained input surface(s)." );
+            }
+
+            _transform.ProcessMessage(TMessageType.MessageCommandFlush, UIntPtr.Zero);
+            _state = MediaFoundationH264EncoderSessionState.Drained;
+            _acceptedInput = false;
+            auditSink.Record(new MediaTransportAuditEvent
+            {
+                Kind = MediaTransportAuditEventKind.HardwareEncoderDrainCompleted,
+                Source = nameof(MediaFoundationHardwareH264EncoderSession),
+                EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
+                Detail = "Media Foundation hardware encoder completed end-of-stream, drain, and flush."
+            });
+            return DrainPendingOutputPackets();
+        }
+        catch (Exception ex) when (ex is not ObjectDisposedException)
+        {
+            _state = MediaFoundationH264EncoderSessionState.Failed;
+            DisposeTransformResources();
+            throw new InvalidOperationException(
+                "Media Foundation encoder finalization failed; delayed packets and the current output route are invalid.",
+                ex);
+        }
+    }
+
+    private void SendEndOfStream()
+    {
+        try
+        {
+            _transform!.ProcessMessage(TMessageType.MessageNotifyEndOfStream, UIntPtr.Zero);
         }
         catch (Exception ex) when (ex is SharpGenException or InvalidOperationException)
         {
             throw new InvalidOperationException("Media Foundation encoder rejected end-of-stream notification.", ex);
         }
+    }
 
+    private void SendDrainCommand()
+    {
         try
         {
-            _transform.ProcessMessage(TMessageType.MessageCommandDrain, UIntPtr.Zero);
+            _transform!.ProcessMessage(TMessageType.MessageCommandDrain, UIntPtr.Zero);
         }
         catch (Exception ex) when (ex is SharpGenException or InvalidOperationException)
         {
             throw new InvalidOperationException("Media Foundation encoder rejected drain command.", ex);
         }
-
-        DrainAvailableOutputPackets(Math.Max(lastFrameNumber, 1), auditSink);
-
-        if (_pendingInputSurfaces.Count > 0)
-        {
-            throw new InvalidOperationException(
-                $"Media Foundation encoder completed drain with {_pendingInputSurfaces.Count} retained input surface(s)." );
-        }
-
-        try
-        {
-            _transform.ProcessMessage(TMessageType.MessageCommandFlush, UIntPtr.Zero);
-        }
-        catch (Exception ex) when (ex is SharpGenException or InvalidOperationException)
-        {
-            throw new InvalidOperationException("Media Foundation encoder rejected flush command after drain.", ex);
-        }
-
-        _drained = true;
-        _acceptedInput = false;
-        auditSink.Record(new MediaTransportAuditEvent
-        {
-            Kind = MediaTransportAuditEventKind.HardwareEncoderDrainCompleted,
-            Source = nameof(MediaFoundationHardwareH264EncoderSession),
-            EvidenceKind = MediaTransportAuditEvidenceKind.BackendCallSucceeded,
-            Detail = "Media Foundation hardware encoder completed end-of-stream, drain, and flush."
-        });
-        return DrainPendingOutputPackets();
     }
 
     private IReadOnlyList<EncodedSurfaceResult> DrainPendingOutputPackets()

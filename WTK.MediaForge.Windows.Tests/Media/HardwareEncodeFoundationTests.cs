@@ -147,7 +147,7 @@ public sealed class HardwareEncodeFoundationTests
         var session = new MediaFoundationHardwareH264EncoderSession(
             ownedDevice.Device,
             new HardwareVideoEncoderSettings { Width = 320, Height = 180 });
-        SetPrivateField(session, "_initialized", true);
+        SetPrivateField(session, "_state", MediaFoundationH264EncoderSessionState.Streaming);
         SetPrivateField(session, "_acceptedInput", true);
 
         var sessionField = typeof(MediaFoundationHardwareVideoEncoder).GetField(
@@ -160,6 +160,27 @@ public sealed class HardwareEncodeFoundationTests
 
         Assert.Contains("before DrainAsync completed", exception.ToString(), StringComparison.Ordinal);
         Assert.Throws<ObjectDisposedException>(() => ownedDevice.Device);
+    }
+
+    [Fact]
+    public void Encoder_session_without_input_drains_idempotently_and_cannot_restart()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+        factory.EnumAdapters1(0, out var adapter).CheckError();
+        using var gpuDevice = D3D11GpuDevice.CreateForAdapter(adapter);
+        using var session = new MediaFoundationHardwareH264EncoderSession(
+            gpuDevice.Device,
+            new HardwareVideoEncoderSettings { Width = 320, Height = 180 });
+        var audit = new CollectingMediaTransportAuditSink();
+
+        Assert.Equal(MediaFoundationH264EncoderSessionState.Created, session.StateForTests);
+        Assert.Empty(session.Drain(0, audit));
+        Assert.Equal(MediaFoundationH264EncoderSessionState.Drained, session.StateForTests);
+        Assert.Empty(session.Drain(0, audit));
+        Assert.Throws<InvalidOperationException>(session.Initialize);
     }
 
     [Fact]

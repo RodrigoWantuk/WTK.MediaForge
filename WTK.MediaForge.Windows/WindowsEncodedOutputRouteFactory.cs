@@ -110,6 +110,7 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
                 var registrations = new List<EncodedOutputSinkRegistration>(groupedOutputs.Count);
                 foreach (var groupedOutput in groupedOutputs)
                 {
+                    _ = SinkCompatibilityKey.Create(groupedOutput);
                     var sink = CreateSink(groupedOutput, audit);
                     sinks.Add(sink);
                     registrations.Add(new EncodedOutputSinkRegistration(
@@ -336,8 +337,10 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
                 throw new ArgumentOutOfRangeException(nameof(profile.KeyFrameIntervalFrames));
 
             ArgumentException.ThrowIfNullOrWhiteSpace(profile.PixelFormat);
-            _ = HardwareVideoEncoderSettings.GetH264ProfileValue(profile.H264Profile);
-            _ = HardwareVideoEncoderSettings.GetH264LevelValue(profile.H264Level);
+            if (!Enum.IsDefined(profile.H264Profile))
+                throw new ArgumentOutOfRangeException(nameof(profile.H264Profile));
+            if (!Enum.IsDefined(profile.H264Level))
+                throw new ArgumentOutOfRangeException(nameof(profile.H264Level));
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
         {

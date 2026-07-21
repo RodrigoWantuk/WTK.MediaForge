@@ -52,6 +52,11 @@ FPS, bitrate, GOP, and pixel format. They render/convert/encode once and fan out
 ref-counted packets. Recording never silently drops; RTMP uses explicit
 drop/reconnect policy.
 
+Compatibility is intentionally split: rendered-output identity describes
+pixels, encoder identity describes the complete codec configuration, and sink
+identity describes destination/consumer ownership. Do not collapse these keys
+or include secrets directly; destination identity uses a one-way fingerprint.
+
 ## Lifetime Contracts
 
 - Submission cleanup is `WaitForCompletionAsync(timeout, cancellationToken)`
@@ -73,6 +78,9 @@ drop/reconnect policy.
   the post-fence submission lease to return.
 - GPU, keyed-mutex, sink, provider, and shutdown waits always have timeouts.
 - Finalization errors are observable and cannot be reported as success.
+- A hardware encoder session transitions through Created, Streaming, Draining,
+  Drained, Failed, and Disposed. EOS, delayed-packet drain, codec configuration,
+  and flush form one transaction; any failure invalidates the route/file.
 
 ## Capability Truth
 

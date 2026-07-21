@@ -93,7 +93,17 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
         _ownedDevice = ownedDevice;
     }
 
-    public HardwareEncoderInfo Info => _info;
+    public HardwareEncoderInfo Info => new()
+    {
+        Name = _info.Name,
+        Codec = _info.Codec,
+        Backend = _info.Backend,
+        AcceptsGpuSurfaceInput = _info.AcceptsGpuSurfaceInput,
+        RequestedH264Profile = _settings.H264Profile,
+        RequestedH264Level = _settings.H264Level,
+        NegotiatedH264Profile = _hardwareSession?.NegotiatedProfile,
+        NegotiatedH264Level = _hardwareSession?.NegotiatedLevel
+    };
 
     public HardwareEncoderInputRequirement InputRequirement => _inputRequirement;
 
@@ -301,8 +311,8 @@ public sealed class MediaFoundationHardwareVideoEncoder : IHardwareVideoEncoder
             Width = width,
             Height = height,
             PixelFormat = pixelFormat,
-            H264Profile = "High",
-            H264Level = "4.2"
+            H264Profile = H264Profile.High,
+            H264Level = H264Level.Level42
         };
 
     private static OwnedD3D11EncoderDevice CreateOwnedDefaultDevice()

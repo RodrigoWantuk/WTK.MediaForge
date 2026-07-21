@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Validation;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Core.Media.Encode;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests;
@@ -73,8 +74,8 @@ public class RenderOutputTypeCatalogTests
             BitrateBitsPerSecond = 5_500_000,
             KeyFrameIntervalFrames = 60,
             PixelFormat = "NV12",
-            H264Profile = "Main",
-            H264Level = "4.1"
+            H264Profile = H264Profile.Main,
+            H264Level = H264Level.Level41
         };
 
         var recordingJson = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4("program.mp4", profile));
@@ -83,14 +84,47 @@ public class RenderOutputTypeCatalogTests
         Assert.Equal(30, recording.Video.FramesPerSecond);
         Assert.Equal(5_500_000, recording.Video.BitrateBitsPerSecond);
         Assert.Equal(60, recording.Video.KeyFrameIntervalFrames);
-        Assert.Equal("Main", recording.Video.H264Profile);
+        Assert.Equal(H264Profile.Main, recording.Video.H264Profile);
 
         var rtmpJson = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.Rtmp("rtmp://localhost/live", "program", profile));
         var rtmp = Assert.IsType<StreamingRtmpOutputSettings>(
             RenderOutputSettingsSerializer.Deserialize(RenderOutputTypes.StreamingRtmp, rtmpJson));
         Assert.Equal(30, rtmp.Video.FramesPerSecond);
         Assert.Equal(5_500_000, rtmp.Video.BitrateBitsPerSecond);
-        Assert.Equal("4.1", rtmp.Video.H264Level);
+        Assert.Equal(H264Level.Level41, rtmp.Video.H264Level);
+        Assert.Equal("Main", recordingJson["video"]!["h264Profile"]!.GetValue<string>());
+        Assert.Equal("4.1", recordingJson["video"]!["h264Level"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Settings_serializer_reads_legacy_h264_profile_and_level_strings()
+    {
+        var json = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4("program.mp4"));
+        json["video"]!["h264Profile"] = "high";
+        json["video"]!["h264Level"] = "4.2";
+
+        var restored = Assert.IsType<RecordingMp4OutputSettings>(
+            RenderOutputSettingsSerializer.Deserialize(RenderOutputTypes.RecordingMp4, json));
+
+        Assert.Equal(H264Profile.High, restored.Video.H264Profile);
+        Assert.Equal(H264Level.Level42, restored.Video.H264Level);
+    }
+
+    [Theory]
+    [InlineData("100", "4.2")]
+    [InlineData("High", "42")]
+    public void Settings_serializer_rejects_numeric_h264_strings(string profile, string level)
+    {
+        var json = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4("program.mp4"));
+        json["video"]!["h264Profile"] = profile;
+        json["video"]!["h264Level"] = level;
+
+        Assert.False(RenderOutputSettingsSerializer.TryDeserialize(
+            RenderOutputTypes.RecordingMp4,
+            json,
+            out _,
+            out var issue));
+        Assert.Equal("output.settings.invalid", issue!.Code);
     }
 
     [Fact]

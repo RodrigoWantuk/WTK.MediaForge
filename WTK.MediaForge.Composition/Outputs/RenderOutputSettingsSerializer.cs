@@ -95,6 +95,8 @@ public static class RenderOutputSettingsSerializer
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
+        options.Converters.Add(new H264ProfileJsonConverter());
+        options.Converters.Add(new H264LevelJsonConverter());
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
         return options;
     }

@@ -155,6 +155,8 @@ Current public output settings:
 
 - `EncodedFileOutputSettings`
 - `EncodedVideoProfile`
+- `H264Profile`
+- `H264Level`
 - `OffscreenOutputSettings`
 - `PreviewWindowOutputSettings`
 - `RecordingMp4OutputSettings`
@@ -245,7 +247,13 @@ Capability and license status are queryable without starting the engine:
 - Capability entries that are not user-available (`Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, `Blocked`, `Prohibited`, or equivalent non-product states) must include a non-empty `UnavailableReason` suitable for UI and diagnostics.
 - `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.
 - `IHardwareVideoEncoder`, `HardwareVideoEncoderSettings`, and `EncodeFrameContext` represent hardware-only encoder input. Settings validate codec, dimensions, FPS, bitrate, keyframe interval, and GPU input format before a platform encoder session starts.
-- `EncodedVideoProfile` is the public, serializable profile attached to MP4 and RTMP outputs. Platform route factories map it to `HardwareVideoEncoderSettings`; encoder FPS, bitrate, GOP, profile/level, and pixel format must not be hardcoded in the Windows route.
+- `EncodedVideoProfile` is the public, serializable profile attached to MP4 and
+  RTMP outputs. `H264Profile` and `H264Level` are validated enums; project JSON
+  retains canonical string values such as `"High"` and `"4.2"` for backward
+  compatibility. Platform route factories map the profile to
+  `HardwareVideoEncoderSettings`; encoder FPS, bitrate, GOP, profile/level, and
+  pixel format must not be hardcoded in the Windows route. `HardwareEncoderInfo`
+  exposes requested and negotiated H.264 values after backend initialization.
 - `IHardwareFileVideoDecoder` and `FileDecodeFrameContext` represent file decoders that own demux/decode internally; file-video runtimes must not pass empty packets into packet decoders.
 - Product file decode must return GPU-backed frames; system-memory decoded samples are unavailable, not a fallback.
 - `IStaticImageAssetDecoder`, `StaticCpuAsset`, and `StaticImageAssetFormats` define load-time static image decode contracts. Platform assemblies provide decoder implementations; Composition does not own `System.Drawing` or any platform image decoder. On Windows, `MediaForgeWindows.CreateEngine()` wires PNG/JPEG image sources through load-time decode, D3D11 shared texture upload, and GPU frame leases; provider wiring remains internal.

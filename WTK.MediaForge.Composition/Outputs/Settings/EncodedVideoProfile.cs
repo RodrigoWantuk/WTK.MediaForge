@@ -1,4 +1,5 @@
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Core.Media.Encode;
 
 namespace WTK.MediaForge.Composition.Outputs.Settings;
 
@@ -14,9 +15,9 @@ public sealed class EncodedVideoProfile
 
     public string PixelFormat { get; init; } = "NV12";
 
-    public string H264Profile { get; init; } = "High";
+    public H264Profile H264Profile { get; init; } = H264Profile.High;
 
-    public string H264Level { get; init; } = "4.2";
+    public H264Level H264Level { get; init; } = H264Level.Level42;
 
     public static EncodedVideoProfile DefaultH264 { get; } = new();
 }

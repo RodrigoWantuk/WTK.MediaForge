@@ -16,9 +16,9 @@ public sealed class HardwareVideoEncoderSettings
 
     public string PixelFormat { get; init; } = "NV12";
 
-    public string H264Profile { get; init; } = "High";
+    public H264Profile H264Profile { get; init; } = H264Profile.High;
 
-    public string H264Level { get; init; } = "4.2";
+    public H264Level H264Level { get; init; } = H264Level.Level42;
 
     public int MaxPendingInputSurfaces { get; init; } = 32;
 
@@ -50,33 +50,10 @@ public sealed class HardwareVideoEncoderSettings
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(PixelFormat);
-        _ = GetH264ProfileValue(H264Profile);
-        _ = GetH264LevelValue(H264Level);
+        if (!Enum.IsDefined(H264Profile))
+            throw new ArgumentOutOfRangeException(nameof(H264Profile), H264Profile, "Unsupported H.264 profile.");
+
+        if (!Enum.IsDefined(H264Level))
+            throw new ArgumentOutOfRangeException(nameof(H264Level), H264Level, "Unsupported H.264 level.");
     }
-
-    public static uint GetH264ProfileValue(string profile) =>
-        profile.Trim().ToUpperInvariant() switch
-        {
-            "BASELINE" => 66,
-            "MAIN" => 77,
-            "HIGH" => 100,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(profile), profile, "H.264 profile must be Baseline, Main, or High.")
-        };
-
-    public static uint GetH264LevelValue(string level) =>
-        level.Trim() switch
-        {
-            "3.0" => 30,
-            "3.1" => 31,
-            "3.2" => 32,
-            "4.0" => 40,
-            "4.1" => 41,
-            "4.2" => 42,
-            "5.0" => 50,
-            "5.1" => 51,
-            "5.2" => 52,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(level), level, "H.264 level must be one of 3.0-3.2, 4.0-4.2, or 5.0-5.2.")
-        };
 }

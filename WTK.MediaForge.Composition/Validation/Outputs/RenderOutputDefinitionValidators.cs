@@ -80,6 +80,20 @@ internal static class OutputSettingsValidation
                 "output.video_profile.pixel_format",
                 $"Output '{outputName}' requires an encoder pixel format.");
         }
+
+        if (!Enum.IsDefined(profile.H264Profile))
+        {
+            yield return ValidationIssue.Error(
+                "output.video_profile.h264_profile",
+                $"Output '{outputName}' specifies an unsupported H.264 profile.");
+        }
+
+        if (!Enum.IsDefined(profile.H264Level))
+        {
+            yield return ValidationIssue.Error(
+                "output.video_profile.h264_level",
+                $"Output '{outputName}' specifies an unsupported H.264 level.");
+        }
     }
 }
 

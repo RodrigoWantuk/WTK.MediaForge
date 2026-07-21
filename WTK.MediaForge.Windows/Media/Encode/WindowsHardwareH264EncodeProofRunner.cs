@@ -33,7 +33,11 @@ internal sealed class WindowsHardwareH264EncodeProofRunner : HardwareMediaProofR
                     nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated),
                     "D3D11SurfaceInput",
                     "GpuFormatConversion",
-                    "H264Packet"
+                    "H264Packet",
+                    $"RequestedProfile={result.EncoderInfo.RequestedH264Profile}",
+                    $"RequestedLevel={result.EncoderInfo.RequestedH264Level}",
+                    $"NegotiatedProfile={result.EncoderInfo.NegotiatedH264Profile}",
+                    $"NegotiatedLevel={result.EncoderInfo.NegotiatedH264Level}"
                 ],
                 baseline.GpuVendor,
                 $"Hardware encoder produced {result.Packets.Count} backend-validated H.264 packet(s) from sustained rendered GPU surfaces.");

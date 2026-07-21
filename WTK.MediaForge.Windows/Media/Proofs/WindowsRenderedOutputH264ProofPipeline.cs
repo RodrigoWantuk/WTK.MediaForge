@@ -24,6 +24,7 @@ internal sealed record WindowsRenderedOutputH264ProofResult(
     IReadOnlyList<EncodedVideoPacket> Packets,
     IReadOnlyList<MediaTransportAuditEvent> AuditEvents,
     HardwareVideoEncoderSettings EncoderSettings,
+    HardwareEncoderInfo EncoderInfo,
     int RenderedFrameCount);
 
 internal sealed record WindowsRenderedOutputH264SustainedProofOptions(
@@ -285,6 +286,7 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     packets.ToArray(),
                     audit.Events.ToArray(),
                     settings,
+                    encoder.Info,
                     renderedFrameCount);
             }
 

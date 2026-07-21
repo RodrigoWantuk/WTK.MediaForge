@@ -14,6 +14,14 @@ public sealed class HardwareEncoderInfo
     public required string Backend { get; init; }
 
     public bool AcceptsGpuSurfaceInput { get; init; } = true;
+
+    public H264Profile? RequestedH264Profile { get; init; }
+
+    public H264Level? RequestedH264Level { get; init; }
+
+    public H264Profile? NegotiatedH264Profile { get; init; }
+
+    public H264Level? NegotiatedH264Level { get; init; }
 }
 
 public sealed class EncodeFrameContext

@@ -53,7 +53,11 @@ internal sealed class WindowsRenderToH264EncodeProofRunner : HardwareMediaProofR
                     "D3D11EncoderSurface",
                     "GpuFormatConversion",
                     nameof(MediaTransportAuditEvidenceKind.BackendOutputValidated),
-                    "H264Packet"
+                    "H264Packet",
+                    $"RequestedProfile={result.EncoderInfo.RequestedH264Profile}",
+                    $"RequestedLevel={result.EncoderInfo.RequestedH264Level}",
+                    $"NegotiatedProfile={result.EncoderInfo.NegotiatedH264Profile}",
+                    $"NegotiatedLevel={result.EncoderInfo.NegotiatedH264Level}"
                 ],
                 baseline.GpuVendor,
                 $"Rendered {result.RenderedFrameCount} Vulkan frame(s) and produced {result.Packets.Count} backend-validated H.264 packet(s).");

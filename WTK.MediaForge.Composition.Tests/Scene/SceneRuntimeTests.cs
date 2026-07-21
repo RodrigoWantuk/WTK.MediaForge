@@ -270,7 +270,10 @@ public sealed class SceneRuntimeTests
 
         var snapshot = runtime.CreateSnapshot();
 
-        Assert.Equal(0, snapshot.CachedRenderGraphPlan!.Count(Runtime.Rendering.MediaForgeRenderGraphNodeKind.SourceFrame));
+        Assert.Equal(
+            0,
+            snapshot.CachedRenderGraphPlan!.Count(
+                global::WTK.MediaForge.Composition.Runtime.Rendering.MediaForgeRenderGraphNodeKind.SourceFrame));
     }
 
     [Fact]

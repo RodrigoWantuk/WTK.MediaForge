@@ -173,6 +173,8 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Core.Media.Encode.HardwareEncodeFrameContext",
                 "WTK.MediaForge.Core.Media.Encode.HardwareEncoderInfo",
                 "WTK.MediaForge.Core.Media.Encode.HardwareVideoEncoderSettings",
+                "WTK.MediaForge.Core.Media.Encode.H264Level",
+                "WTK.MediaForge.Core.Media.Encode.H264Profile",
                 "WTK.MediaForge.Core.Media.Encode.IHardwareVideoEncoder",
                 "WTK.MediaForge.Core.Media.EncodedVideoBitstreamFormat",
                 "WTK.MediaForge.Core.Media.EncodedVideoCodec",

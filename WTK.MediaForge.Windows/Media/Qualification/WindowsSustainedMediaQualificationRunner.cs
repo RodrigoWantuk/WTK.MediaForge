@@ -9,6 +9,7 @@ using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
+using WTK.MediaForge.Core.Media.Encode;
 using WTK.MediaForge.Diagnostics;
 using WTK.MediaForge.Windows.Media.Proofs;
 
@@ -274,8 +275,8 @@ internal static class WindowsSustainedMediaQualificationRunner
             BitrateBitsPerSecond = 8_000_000,
             KeyFrameIntervalFrames = options.FramesPerSecond * 2,
             PixelFormat = "NV12",
-            H264Profile = "High",
-            H264Level = "4.2"
+            H264Profile = H264Profile.High,
+            H264Level = H264Level.Level42
         };
         var recording = new MediaForgeRenderOutput
         {

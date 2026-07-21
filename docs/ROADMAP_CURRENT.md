@@ -42,6 +42,13 @@ Implemented foundations:
   counters are exposed in runtime health.
 - Compatible MP4/RTMP routes share one rendered output, NV12 conversion, and
   hardware encoder; sinks retain independent bounded queues and status.
+- H.264 profile and level are validated public enum contracts with legacy JSON
+  migration. The Media Foundation session has transactional lifecycle states,
+  rejects negotiated profile/level divergence, drains delayed packets before
+  flush, and publishes requested/negotiated values in hardware proof evidence.
+- Encoded grouping separates rendered-pixel, encoder, and sink compatibility:
+  a destination or backpressure policy cannot alter pixel/encoder identity,
+  while any profile difference prevents unsafe encoder sharing.
 - Capability snapshots are cached by adapter/device generation. Vulkan and
   D3D11 adapters are matched by Windows LUID; cross-GPU interop fails closed.
 - Automatic recovery policies expose public health snapshots, observe providers

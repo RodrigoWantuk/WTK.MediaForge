@@ -99,6 +99,8 @@ Before considering a change complete, verify:
 - [ ] Routes use `CanvasId -> RenderOutput -> RenderOutputSink(s)` and never direct canvas-to-encoder/NDI/preview shortcuts.
 - [ ] NDI Standard SDK runtime detection/source discovery is not treated as video product support; NDI source/output video paths remain blocked unless GPU-safe product proofs pass.
 - [ ] Same scene routed to multiple sinks/outputs does not require duplicate canvas rendering when size/config/version match.
+- [ ] Rendered-output, encoder, and sink compatibility are separate keys; profile/level/bitrate/GOP differences never share an encoder, and sink secrets are not embedded in logical keys.
+- [ ] H.264 session finalization reaches `Drained` only after EOS, delayed packets, codec configuration, and flush succeed; failure invalidates the route and recording.
 - [ ] Same source across scenes/layers is acquired once per frame where the runtime graph can share it.
 - [ ] Reusable source effect-chain nodes are keyed by semantic source/effect configuration, not by runtime object identity.
 - [ ] Different output sizes reuse the same canvas render where possible and split only output-fit/presentation passes.
