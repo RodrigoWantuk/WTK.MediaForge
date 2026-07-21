@@ -414,7 +414,10 @@ public sealed class StudioSceneEditorControl : Control
             }
             else
             {
-                using (context.PushTransform(Matrix.CreateRotation(layer.RotationDegrees * Math.PI / 180d, rect.Center)))
+                var pivot = vm.Transform.SceneToViewport(new Point(
+                    layer.X + layer.Width * layer.PivotX,
+                    layer.Y + layer.Height * layer.PivotY));
+                using (context.PushTransform(Matrix.CreateRotation(layer.RotationDegrees * Math.PI / 180d, pivot)))
                 {
                     DrawLayerContent(context, layer, rect, fill, border);
                 }

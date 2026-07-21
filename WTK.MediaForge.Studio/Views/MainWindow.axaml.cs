@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using WTK.MediaForge.Studio.Docking;
 using WTK.MediaForge.Studio.ViewModels;
 using WTK.MediaForge.Studio.Views.Settings;
 
@@ -13,19 +14,31 @@ namespace WTK.MediaForge.Studio.Views
         {
             InitializeComponent();
             DataContextChanged += OnDataContextChanged;
+            Opened += (_, _) => _shell?.RestoreFloatingDocks(GetMonitorWorkAreas());
         }
 
         protected override void OnClosed(EventArgs e)
         {
             if (_shell is not null)
             {
-                _shell.PersistLayout();
+                _shell.PersistLayout(GetMonitorWorkAreas());
                 _shell.SettingsRequested -= OnSettingsRequested;
             }
 
             _settingsWindow?.Close();
             base.OnClosed(e);
         }
+
+        private IReadOnlyList<StudioMonitorWorkArea> GetMonitorWorkAreas() => Screens.All
+            .Select((screen, index) => new StudioMonitorWorkArea(
+                screen.DisplayName ?? $"monitor-{index}",
+                new Avalonia.Rect(
+                    screen.WorkingArea.X,
+                    screen.WorkingArea.Y,
+                    screen.WorkingArea.Width,
+                    screen.WorkingArea.Height),
+                screen.IsPrimary))
+            .ToArray();
 
         private void OnDataContextChanged(object? sender, EventArgs e)
         {

@@ -418,6 +418,18 @@ public sealed class LayerItemViewModel : ViewModelBase
         set => _layer.Transform.RotationDegrees = value;
     }
 
+    public double PivotX
+    {
+        get => _layer.Transform.PivotX;
+        set => _layer.Transform.PivotX = Math.Clamp(value, 0, 1);
+    }
+
+    public double PivotY
+    {
+        get => _layer.Transform.PivotY;
+        set => _layer.Transform.PivotY = Math.Clamp(value, 0, 1);
+    }
+
     public double Opacity
     {
         get => _layer.Transform.Opacity;

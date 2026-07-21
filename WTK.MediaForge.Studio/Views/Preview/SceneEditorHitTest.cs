@@ -42,8 +42,12 @@ public static class SceneEditorHitTest
         if (Math.Abs(layer.RotationDegrees) < double.Epsilon)
             return corners;
 
+        var pivot = new Point(
+            rect.X + rect.Width * layer.PivotX,
+            rect.Y + rect.Height * layer.PivotY);
+
         return corners
-            .Select(point => RotateAround(point, rect.Center, layer.RotationDegrees))
+            .Select(point => RotateAround(point, pivot, layer.RotationDegrees))
             .ToArray();
     }
 
@@ -60,9 +64,10 @@ public static class SceneEditorHitTest
         if (rect.Width <= 0 || rect.Height <= 0)
             return false;
 
+        var pivot = new Point(rect.X + rect.Width * layer.PivotX, rect.Y + rect.Height * layer.PivotY);
         var localPoint = Math.Abs(layer.RotationDegrees) < double.Epsilon
             ? scenePoint
-            : RotateAround(scenePoint, rect.Center, -layer.RotationDegrees);
+            : RotateAround(scenePoint, pivot, -layer.RotationDegrees);
 
         return rect.Contains(localPoint);
     }

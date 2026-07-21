@@ -722,99 +722,19 @@ public sealed class PreviewCanvasViewModel : ViewModelBase
         }
 
         IsFitZoom = false;
-        const double minSize = 16;
-        var left = startBounds.Left;
-        var top = startBounds.Top;
-        var right = startBounds.Right;
-        var bottom = startBounds.Bottom;
-        var changesLeft = handle is ResizeHandleKind.Left or ResizeHandleKind.TopLeft or ResizeHandleKind.BottomLeft;
-        var changesRight = handle is ResizeHandleKind.Right or ResizeHandleKind.TopRight or ResizeHandleKind.BottomRight;
-        var changesTop = handle is ResizeHandleKind.Top or ResizeHandleKind.TopLeft or ResizeHandleKind.TopRight;
-        var changesBottom = handle is ResizeHandleKind.Bottom or ResizeHandleKind.BottomLeft or ResizeHandleKind.BottomRight;
-
-        if (modifiers.HasFlag(KeyModifiers.Alt))
-        {
-            if (changesLeft || changesRight)
-            {
-                left -= sceneDelta.X;
-                right += sceneDelta.X;
-            }
-
-            if (changesTop || changesBottom)
-            {
-                top -= sceneDelta.Y;
-                bottom += sceneDelta.Y;
-            }
-        }
-        else
-        {
-            if (changesLeft)
-            {
-                left += sceneDelta.X;
-            }
-            else if (changesRight)
-            {
-                right += sceneDelta.X;
-            }
-
-            if (changesTop)
-            {
-                top += sceneDelta.Y;
-            }
-            else if (changesBottom)
-            {
-                bottom += sceneDelta.Y;
-            }
-        }
-
-        var width = Math.Max(minSize, right - left);
-        var height = Math.Max(minSize, bottom - top);
-        if (modifiers.HasFlag(KeyModifiers.Shift))
-        {
-            var aspect = startBounds.Height > 0 ? startBounds.Width / startBounds.Height : 1;
-            if (Math.Abs(sceneDelta.X) >= Math.Abs(sceneDelta.Y))
-            {
-                height = width / aspect;
-            }
-            else
-            {
-                width = height * aspect;
-            }
-
-            if (changesLeft && !changesRight)
-            {
-                left = right - width;
-            }
-            else
-            {
-                right = left + width;
-            }
-
-            if (changesTop && !changesBottom)
-            {
-                top = bottom - height;
-            }
-            else
-            {
-                bottom = top + height;
-            }
-        }
-
-        var snap = Snap.GetResizeSnap(modifiers);
-        left = SceneEditorSnapSettings.Snap(left, snap);
-        top = SceneEditorSnapSettings.Snap(top, snap);
-        width = Math.Max(minSize, SceneEditorSnapSettings.Snap(right - left, snap));
-        height = Math.Max(minSize, SceneEditorSnapSettings.Snap(bottom - top, snap));
-
-        left = Math.Clamp(left, 0, Math.Max(0, CanvasWidth - minSize));
-        top = Math.Clamp(top, 0, Math.Max(0, CanvasHeight - minSize));
-        width = Math.Min(width, CanvasWidth - left);
-        height = Math.Min(height, CanvasHeight - top);
-
-        layer.X = Math.Round(left);
-        layer.Y = Math.Round(top);
-        layer.Width = Math.Round(width);
-        layer.Height = Math.Round(height);
+        var result = SceneEditorResizeGeometry.Resize(
+            startBounds,
+            handle,
+            sceneDelta,
+            layer.RotationDegrees,
+            new Point(layer.PivotX, layer.PivotY),
+            modifiers.HasFlag(KeyModifiers.Shift),
+            modifiers.HasFlag(KeyModifiers.Alt),
+            Snap.GetResizeSnap(modifiers));
+        layer.X = Math.Round(result.X);
+        layer.Y = Math.Round(result.Y);
+        layer.Width = Math.Min(CanvasWidth, Math.Round(result.Width));
+        layer.Height = Math.Min(CanvasHeight, Math.Round(result.Height));
         MarkSceneEdited();
     }
 

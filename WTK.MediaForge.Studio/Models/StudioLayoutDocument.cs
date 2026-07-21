@@ -28,26 +28,28 @@ public sealed class StudioLayoutState
     public double BottomHeight { get; set; } = 240;
 
     public Dictionary<string, StudioPanelLayoutState> Panels { get; set; } = StudioPanelLayoutState.CreateDefaults();
+
+    public List<StudioFloatingDockState> FloatingDocks { get; set; } = [];
+}
+
+public sealed class StudioFloatingDockState
+{
+    public string ToolId { get; set; } = string.Empty;
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; } = 420;
+    public double Height { get; set; } = 520;
+    public string MonitorId { get; set; } = string.Empty;
 }
 
 public sealed class StudioPanelLayoutState
 {
     public bool Visible { get; set; } = true;
 
-    public bool Floating { get; set; }
-
     public bool Collapsed { get; set; }
 
-    public double FloatingX { get; set; } = 120;
-
-    public double FloatingY { get; set; } = 120;
-
-    public double FloatingWidth { get; set; } = 420;
-
-    public double FloatingHeight { get; set; } = 520;
-
     [JsonIgnore]
-    public bool IsDockedVisible => Visible && !Floating;
+    public bool IsDockedVisible => Visible;
 
     public static Dictionary<string, StudioPanelLayoutState> CreateDefaults()
     {

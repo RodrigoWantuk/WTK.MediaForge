@@ -718,6 +718,43 @@ public sealed class PreviewHitTestTests
 
 public sealed class SnapMovementTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(45)]
+    [InlineData(90)]
+    public void Rotated_resize_converts_pointer_delta_to_layer_local_axes(double rotationDegrees)
+    {
+        var start = new Rect(100, 100, 300, 200);
+        var localDelta = new Vector(20, 10);
+        var globalDelta = Rotate(localDelta, rotationDegrees);
+
+        var result = SceneEditorResizeGeometry.Resize(
+            start, ResizeHandleKind.BottomRight, globalDelta, rotationDegrees,
+            new Point(0.5, 0.5), keepAspect: false, fromCenter: false, snap: 0);
+
+        Assert.Equal(320, result.Width, precision: 6);
+        Assert.Equal(210, result.Height, precision: 6);
+        var oldFixed = Transform(start, new Point(0, 0), rotationDegrees, new Point(0.5, 0.5));
+        var resized = new Rect(result.X, result.Y, result.Width, result.Height);
+        var newFixed = Transform(resized, new Point(0, 0), rotationDegrees, new Point(0.5, 0.5));
+        Assert.Equal(oldFixed.X, newFixed.X, precision: 6);
+        Assert.Equal(oldFixed.Y, newFixed.Y, precision: 6);
+    }
+
+    [Fact]
+    public void Resize_from_center_preserves_visual_center_with_custom_pivot()
+    {
+        var start = new Rect(100, 100, 300, 200);
+        var result = SceneEditorResizeGeometry.Resize(
+            start, ResizeHandleKind.Right, Rotate(new Vector(20, 0), 45), 45,
+            new Point(0.2, 0.8), keepAspect: false, fromCenter: true, snap: 0);
+        var resized = new Rect(result.X, result.Y, result.Width, result.Height);
+        var oldCenter = Transform(start, new Point(150, 100), 45, new Point(0.2, 0.8));
+        var newCenter = Transform(resized, new Point(result.Width / 2, result.Height / 2), 45, new Point(0.2, 0.8));
+        Assert.Equal(oldCenter.X, newCenter.X, precision: 6);
+        Assert.Equal(oldCenter.Y, newCenter.Y, precision: 6);
+    }
+
     [Fact]
     public void Drag_uses_snap_alt_disables_snap_ctrl_uses_precision_and_shift_locks_axis()
     {
@@ -766,5 +803,19 @@ public sealed class SnapMovementTests
 
         Assert.Equal(310, layer.Width);
         Assert.Equal(220, layer.Height);
+    }
+
+    private static Vector Rotate(Vector value, double degrees)
+    {
+        var radians = degrees * Math.PI / 180;
+        return new Vector(
+            value.X * Math.Cos(radians) - value.Y * Math.Sin(radians),
+            value.X * Math.Sin(radians) + value.Y * Math.Cos(radians));
+    }
+
+    private static Point Transform(Rect rect, Point local, double degrees, Point normalizedPivot)
+    {
+        var pivot = new Point(rect.Width * normalizedPivot.X, rect.Height * normalizedPivot.Y);
+        return new Point(rect.X, rect.Y) + Rotate(local - pivot, degrees) + (Vector)pivot;
     }
 }

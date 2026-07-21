@@ -85,6 +85,7 @@ public sealed class StudioLayoutService : IStudioLayoutService
         document.Layout.RightWidth = ClampPixels(document.Layout.RightWidth, 360);
         document.Layout.BottomHeight = ClampPixels(document.Layout.BottomHeight, 240);
         document.Layout.Panels ??= StudioPanelLayoutState.CreateDefaults();
+        document.Layout.FloatingDocks ??= [];
 
         foreach (var pair in StudioPanelLayoutState.CreateDefaults())
         {

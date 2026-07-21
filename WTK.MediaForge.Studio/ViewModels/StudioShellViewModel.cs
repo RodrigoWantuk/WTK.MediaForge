@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Core;
+using Dock.Model.Controls;
 using Dock.Model.Mvvm.Controls;
 using WTK.MediaForge.Studio.DesignData;
 using WTK.MediaForge.Studio.DocumentModel;
@@ -944,9 +945,9 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
     {
         DockLayout = DockFactory.CreateLayout();
         DockFactory.InitLayout(DockLayout);
+        _layoutDocument.Layout.FloatingDocks.Clear();
         foreach (var panel in DockPanels())
         {
-            panel.IsFloating = false;
             panel.IsCollapsed = false;
             panel.IsVisible = true;
         }
@@ -1937,11 +1938,23 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
         panel.IsVisible = state.Visible;
         panel.IsCollapsed = state.Collapsed;
-        panel.IsFloating = state.Floating;
     }
 
     public void PersistLayout()
     {
+        SaveLayoutDocument();
+    }
+
+    public void RestoreFloatingDocks(IReadOnlyList<StudioMonitorWorkArea> monitors)
+    {
+        if (DockLayout is IRootDock root)
+            StudioDockLayoutState.Restore(root, DockFactory, _layoutDocument.Layout.FloatingDocks, monitors);
+    }
+
+    public void PersistLayout(IReadOnlyList<StudioMonitorWorkArea> monitors)
+    {
+        if (DockLayout is IRootDock root)
+            _layoutDocument.Layout.FloatingDocks = StudioDockLayoutState.Capture(root, monitors).ToList();
         SaveLayoutDocument();
     }
 
@@ -1964,8 +1977,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         return new StudioPanelLayoutState
         {
             Visible = panel.IsVisible,
-            Collapsed = panel.IsCollapsed,
-            Floating = panel.IsFloating
+            Collapsed = panel.IsCollapsed
         };
     }
 
