@@ -100,6 +100,9 @@ $env:RemoteSceneSignaling__TrustedProxies__0 = '10.0.0.5'
 dotnet run --project WTK.MediaForge.Remote.Signaling
 ```
 
+Production proxy, secret rotation, quota, health, SQLite, and coturn guidance is
+documented in `docs/SIGNALING_DEPLOYMENT.md`.
+
 The implemented signaling service does not by itself make Remote Scene media available. The pinned native libwebrtc bridge, hardware packet decoder integration, direct/TURN media proofs, and sustained recovery qualification remain required.
 
 ## Native Distribution

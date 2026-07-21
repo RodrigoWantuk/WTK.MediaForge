@@ -41,6 +41,19 @@ jobs:
         run: |
           .\\scripts\\verify-media-transport-rules.ps1
           .\\scripts\\verify-license-policy.ps1
+      - name: Validate aggregate release gate entrypoint
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path .\\scripts\\verify-final-gate.ps1),
+            [ref]$tokens,
+            [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List
+            throw "verify-final-gate.ps1 contains syntax errors."
+          }
       - name: Publish validation artifacts
         if: always()
         uses: actions/upload-artifact@v4

@@ -36,7 +36,8 @@ WTK MediaForge is being built around a few core principles:
 The current technical direction is:
 
 * **.NET 8**
-* **Avalonia UI** for the cross-platform Studio application
+* **Avalonia UI** for the Studio application; cross-platform is the product goal,
+  while the current production media implementation and qualified Studio host are Windows
 * **WinForms** only as an initial Windows test harness / legacy POC host
 * **Silk.NET** for Vulkan bindings
 * **Vulkan** for GPU-based rendering and composition
@@ -58,6 +59,12 @@ dependent. Preview is temporarily experimental until hosted resize and
 fence-timeout recovery pass. NDI Standard SDK runtime detection and source discovery
 exist on Windows, and licensed runtime DLLs can be packed as native assets, but
 NDI video input/output remain blocked until GPU-safe product proofs pass.
+
+Remote Scene signaling and platform-neutral contracts are implemented, but
+Remote Scene media is not available. The checked-in native WebRTC target is an
+ABI contract test with an unavailable backend; Direct and TURN physical GPU
+proofs have not been produced. Signaling coordinates SDP/ICE, TURN relays
+encrypted packets, and neither component is the media compositor/transport proof.
 
 
 ## Studio UI Direction
@@ -82,6 +89,9 @@ See:
 * `docs/UI_STUDIO_DESIGN.md`
 * `docs/UI_IMPLEMENTATION_PLAN.md`
 * `docs/UI_ACCEPTANCE_CHECKLIST.md`
+* `docs/BUILD_AND_RELEASE.md`
+* `docs/SIGNALING_DEPLOYMENT.md`
+* `docs/KNOWN_LIMITATIONS.md`
 
 ## License
 

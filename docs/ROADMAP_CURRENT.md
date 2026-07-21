@@ -107,12 +107,16 @@ Experimental and not yet product-promoted:
   confirmed when outputs are active, publishes coalesced atomic mutations
   without Apply, reports rejection without replacing the last valid scene, and
   deterministically discards its runtime session when leaving the mode.
-- Remote Scene has platform-neutral contracts and a separately deployable
+- Remote Scene has platform-neutral contracts, bounded encoded-packet leases,
+  a GPU-only hardware decode pump contract, a physical qualification schema,
+  and a separately deployable
   HTTPS/WebSocket signaling service with one-time hashed invitations, role-scoped
   bearer access, bounded SDP/ICE relay, SQLite session storage, expiration, rate
   limiting, and coturn-compatible temporary credentials. Signaling carries no
-  media. The libwebrtc encoded-access-unit bridge and GPU media path are not yet
-  implemented or capability-promoted.
+  media. The C ABI and managed bindings are pinned and contract-tested, but the
+  checked-in native target deliberately reports its backend unavailable. A
+  functional pinned libwebrtc adapter and Direct/TURN physical GPU evidence are
+  not present, so publish/subscribe remain unavailable.
 
 Unavailable/planned:
 
@@ -146,9 +150,10 @@ Unavailable/planned:
    overlays independent from the native presentation surface.
 9. Freeze Core adapter contracts, then implement Linux and macOS backends in
    their own projects.
-10. Build the pinned libwebrtc C ABI and hardware packet ingress/egress only
+10. Build the functional pinned libwebrtc adapter behind the frozen C ABI only
     after shared encode/decode lifetimes are sustained; then qualify Remote
-    Scene direct and TURN routes without software codecs or raw CPU frames.
+    Scene direct and TURN routes without software codecs or raw CPU frames. ABI
+    contract-test success alone cannot promote the feature.
 
 Scene identity and bounded retention are complete. The store retains the latest
 32 versions per canvas in addition to older pinned versions. Drafts and output
@@ -201,6 +206,13 @@ Full local and release-candidate qualification are explicit modes:
   shutdown with work in flight.
 - AMD RX 580 is the first mandatory Windows baseline. NVIDIA and Intel paths
   must be capability-detected and may not rely on vendor-specific assumptions.
+- Remote Scene requires separate 30-minute Direct and TURN reports from two
+  machines, all scenarios defined by `RemoteSceneQualificationGate`, no raw CPU
+  video, deterministic shutdown/reconnect, and resource baseline return.
+
+The aggregate documented entrypoint is `scripts/verify-final-gate.ps1`. It
+keeps hardware and Remote Scene requirements explicit so a portable developer
+run cannot accidentally promote unavailable media.
 
 ## Deferred Scope
 

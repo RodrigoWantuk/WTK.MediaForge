@@ -2,8 +2,9 @@
 
 ## Mission
 
-WTK MediaForge is a GPU-first, cross-platform media composition engine. Windows
-is the first real backend; Core must remain independent of Vulkan, D3D11,
+WTK MediaForge is a GPU-first media composition engine with a cross-platform
+product goal. Windows is the only current production media backend; Core must
+remain independent of Vulkan, D3D11,
 Media Foundation, VAAPI, and VideoToolbox.
 
 ## Non-Negotiable Media Law

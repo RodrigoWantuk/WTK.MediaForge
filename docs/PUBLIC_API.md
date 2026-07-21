@@ -434,3 +434,13 @@ The following types must not be public:
 - `VulkanSmokeTest`
 - `VulkanExternalTextureRegistry`
 - `VulkanD3D11TextureImport`
+
+## 11. Remote Scene capability truth
+
+`IRemoteSceneTransport`, session/publisher/subscriber contracts,
+`EncodedVideoPacketLease`, bounded queue policies, and
+`RemoteSceneQualificationGate` are public contracts. Their presence does not
+mean the media feature is available. `remote.publish`, `remote.subscribe`,
+`proof.remote_scene.direct`, and `proof.remote_scene.turn` remain unavailable
+until reviewed physical reports pass. Runtime credentials are deliberately
+separate from canonical project settings and must never be serialized there.

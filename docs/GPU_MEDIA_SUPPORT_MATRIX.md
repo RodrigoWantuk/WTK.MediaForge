@@ -228,3 +228,18 @@ Any future FFmpeg library integration must satisfy all of the following:
 - capability report must clearly mark each FFmpeg-backed feature as Supported, Experimental, Planned, RequiresLegalReview, Prohibited, or Unsupported.
 
 Until the dedicated **FFmpeg Libraries Integration Review** phase is completed, all FFmpeg/libav features remain `Planned` or `Prohibited`.
+
+## Remote Scene Support Matrix
+
+| Component | Current status | Promotion requirement |
+|---|---|---|
+| Signaling invitation/auth/SDP/ICE coordination | Implemented | Production HTTPS/WSS deployment and operational monitoring |
+| coturn REST/HMAC credential issuance | Implemented integration contract | Operator-provided coturn deployment; relay reachability proof |
+| Native WebRTC ABI v2 | Contract-tested only | Functional adapter built from the pinned official revision |
+| Remote publish packet path | Unavailable | Hardware encode evidence plus functional WebRTC backend and Direct/TURN proof |
+| Remote subscribe packet path | Unavailable | Encoded packet extraction, hardware decoder GPU surfaces, and Direct/TURN proof |
+| Remote Scene audio | Unavailable | Separate approved audio roadmap |
+
+Signaling is coordination, TURN is an encrypted packet relay, and WebRTC is the
+media transport. None is evidence that Vulkan-to-hardware-encode or
+hardware-decode-to-Vulkan completed without raw CPU video.
