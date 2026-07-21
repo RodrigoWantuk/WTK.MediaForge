@@ -258,6 +258,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Engine.MediaForgeEngineStateChangedEventArgs",
                 "WTK.MediaForge.Composition.Engine.MediaForgeFrameDroppedEventArgs",
                 "WTK.MediaForge.Composition.Engine.MediaForgeRuntimeHealthSnapshot",
+                "WTK.MediaForge.Composition.Engine.MediaForgeGpuResourceHealthSnapshot",
                 "WTK.MediaForge.Composition.Engine.SceneVersionRetentionSnapshot",
                 "WTK.MediaForge.Composition.Engine.MediaForgeRuntimeHealthStatus",
                 "WTK.MediaForge.Composition.MediaForgeUnsupportedFeatureException",

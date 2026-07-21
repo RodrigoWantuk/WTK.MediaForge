@@ -132,6 +132,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         var outputs = GetEncodedOutputRuntimeSnapshots();
         var internalRecoveries = _faultRecoveryCoordinator?.States.Values.ToArray() ?? [];
         var recoveries = internalRecoveries.Select(ToPublicRecoverySnapshot).ToArray();
+        var backendResources = (_backend as IRenderBackendResourceDiagnostics)?.GetResourceSnapshot();
         var status = State switch
         {
             MediaForgeEngineState.Failed => MediaForgeRuntimeHealthStatus.Failed,
@@ -140,7 +141,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             _ when internalRecoveries.Any(static state => state.Status == FaultRecoveryStatus.Recovering) =>
                 MediaForgeRuntimeHealthStatus.Recovering,
             _ when internalRecoveries.Any(static state => state.Status == FaultRecoveryStatus.Exhausted) ||
-                   outputs.Any(static output => output.Status == EncodedOutputRuntimeStatus.Failed) =>
+                   outputs.Any(static output => output.Status == EncodedOutputRuntimeStatus.Failed) ||
+                   backendResources is { FailedRetiredResources: > 0 } =>
                 MediaForgeRuntimeHealthStatus.Degraded,
             _ => MediaForgeRuntimeHealthStatus.Healthy
         };
@@ -152,7 +154,27 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             EngineState = State,
             EncodedOutputs = outputs,
             Recoveries = recoveries,
-            SceneVersions = _sceneRuntime?.VersionRetentionSnapshot ?? new SceneVersionRetentionSnapshot()
+            SceneVersions = _sceneRuntime?.VersionRetentionSnapshot ?? new SceneVersionRetentionSnapshot(),
+            GpuResources = new MediaForgeGpuResourceHealthSnapshot
+            {
+                PendingSubmissions = _renderThread?.PendingTracker.PendingCount ?? 0,
+                ExternalTextureImports = backendResources?.ExternalTextureImports ?? 0,
+                BoundOutputTargets = backendResources?.BoundOutputTargets ?? 0,
+                CachedIntermediateTargets = backendResources?.CachedIntermediateTargets ?? 0,
+                ActiveIntermediateBorrows = backendResources?.ActiveIntermediateBorrows ?? 0,
+                RetiredIntermediateTargets = backendResources?.RetiredIntermediateTargets ?? 0,
+                ActivePooledTextures = backendResources?.ActivePooledTextures ?? 0,
+                AvailablePooledTextures = backendResources?.AvailablePooledTextures ?? 0,
+                PendingFenceTextures = backendResources?.PendingFenceTextures ?? 0,
+                PendingRetiredResources = backendResources?.PendingRetiredResources ?? 0,
+                FailedRetiredResources = backendResources?.FailedRetiredResources ?? 0,
+                LiveFramebuffers = backendResources?.LiveFramebuffers ?? 0,
+                LiveDescriptorSets = backendResources?.LiveDescriptorSets ?? 0,
+                FramebufferHighWaterMark = backendResources?.FramebufferHighWaterMark ?? 0,
+                DescriptorSetHighWaterMark = backendResources?.DescriptorSetHighWaterMark ?? 0,
+                PooledTextureHighWaterMark = backendResources?.PooledTextureHighWaterMark ?? 0,
+                IntermediateTargetHighWaterMark = backendResources?.IntermediateTargetHighWaterMark ?? 0
+            }
         };
     }
 

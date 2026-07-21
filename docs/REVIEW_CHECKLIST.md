@@ -42,6 +42,7 @@ Before considering a change complete, verify:
 - [ ] CP1 Fit produces transparent pixels outside fitted content, not clamped edge pixels.
 - [ ] CP1 output letterbox and opacity have pixel-readback coverage.
 - [ ] CP1 descriptor pool capacity is explicit and covered by many-layer submit tests.
+- [ ] Runtime health live GPU counters return to baseline after fence cleanup, and high-water counters remain bounded during sustained work.
 - [ ] CP1 canvas render pass clears with `canvas.BackgroundColor`.
 - [ ] CP1 layer scissors are clipped to framebuffer/canvas bounds and fully outside layers are skipped.
 - [ ] Text atlas uploads use explicit GPU wait timeout and release staging buffer/memory on partial failures.

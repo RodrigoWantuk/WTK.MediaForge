@@ -5,7 +5,7 @@ using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
-internal sealed class NullRenderBackend : IRenderBackend
+internal sealed class NullRenderBackend : IRenderBackend, IRenderBackendResourceDiagnostics
 {
     private readonly RenderThreadGuard _threadGuard;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
@@ -67,6 +67,9 @@ internal sealed class NullRenderBackend : IRenderBackend
 
     public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
+
+    public RenderBackendResourceSnapshot GetResourceSnapshot() =>
+        new() { BoundOutputTargets = _bindings.Count };
 
     public bool Disposed { get; private set; }
 

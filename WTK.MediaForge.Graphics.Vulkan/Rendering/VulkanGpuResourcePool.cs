@@ -21,6 +21,18 @@ internal sealed class VulkanGpuResourcePool : IDisposable
 
     internal int FactoryCreateCount => _factory.CreateCount;
 
+    internal int ActiveTextureCount => _pool.ActiveTextureCount;
+
+    internal int AvailableTextureCount => _pool.AvailableTextureCount;
+
+    internal int PendingFenceTextureCount => _pool.PendingFenceTextureCount;
+
+    internal int PendingRetiredResourceCount => _pool.RetiredResources.PendingCount;
+
+    internal int FailedRetiredResourceCount => _pool.RetiredResources.FailedCount;
+
+    internal int PhysicalHighWaterMark => _pool.PhysicalHighWaterMark;
+
     internal (GpuTextureLease Lease, VulkanOffscreenRenderTarget Target) AcquireOffscreenTarget(
         FrameSize size,
         GpuTextureUsage usage = GpuTextureUsage.OffscreenColor)

@@ -1,29 +1,9 @@
-using WTK.MediaForge.Composition.Snapshots;
-using WTK.MediaForge.Core.Frames;
-using WTK.MediaForge.Core.Identifiers;
+namespace WTK.MediaForge.Composition.Engine;
 
-namespace WTK.MediaForge.Composition.Runtime.Rendering;
-
-internal interface IRenderBackend : IDisposable
+public sealed record MediaForgeGpuResourceHealthSnapshot
 {
-    void BindOutput(RenderOutputBindingSnapshot binding);
+    public int PendingSubmissions { get; init; }
 
-    void UnbindOutput(RenderOutputId outputId);
-
-    void ResizeOutput(RenderOutputId outputId, FrameSize surfaceSize);
-
-    IRenderFrameSubmission Submit(RenderFrameSnapshot snapshot);
-
-    ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken);
-}
-
-internal interface IRenderBackendResourceDiagnostics
-{
-    RenderBackendResourceSnapshot GetResourceSnapshot();
-}
-
-internal sealed record RenderBackendResourceSnapshot
-{
     public int ExternalTextureImports { get; init; }
 
     public int BoundOutputTargets { get; init; }

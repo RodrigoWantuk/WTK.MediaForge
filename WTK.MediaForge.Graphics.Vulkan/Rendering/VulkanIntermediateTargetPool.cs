@@ -11,6 +11,10 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
     private readonly VulkanGpuResourcePool _gpuResourcePool;
     private readonly object _gate = new();
     private readonly Dictionary<PoolKey, List<Entry>> _entries = [];
+    private int _physicalEntryCount;
+    private int _activeBorrowCount;
+    private int _retiredEntryCount;
+    private int _highWaterMark;
     private int _disposed;
 
     internal int LiveEntryCountForTests
@@ -19,6 +23,18 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         {
             lock (_gate)
                 return _entries.Values.Sum(static entries => entries.Count);
+        }
+    }
+
+    internal VulkanIntermediateTargetPoolMetrics GetMetricsSnapshot()
+    {
+        lock (_gate)
+        {
+            return new VulkanIntermediateTargetPoolMetrics(
+                _physicalEntryCount,
+                _activeBorrowCount,
+                _retiredEntryCount,
+                _highWaterMark);
         }
     }
 
@@ -54,6 +70,7 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
             entry = entries.FirstOrDefault(static candidate => candidate.ActiveBorrows == 0)
                 ?? CreateEntry(entries, size);
             entry.ActiveBorrows++;
+            _activeBorrowCount++;
         }
 
         DisposeEntries(entriesToDispose);
@@ -70,7 +87,7 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         {
             foreach (var entry in _entries.Values.SelectMany(static entries => entries))
             {
-                entry.Retired = true;
+                RetireEntry(entry);
                 if (entry.ActiveBorrows == 0)
                     (disposeNow ??= []).Add(entry);
             }
@@ -94,6 +111,8 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         var acquired = _gpuResourcePool.AcquireOffscreenTarget(size, GpuTextureUsage.Intermediate);
         var entry = new Entry(acquired.Lease, acquired.Target);
         entries.Add(entry);
+        _physicalEntryCount++;
+        _highWaterMark = Math.Max(_highWaterMark, _physicalEntryCount);
         return entry;
     }
 
@@ -106,9 +125,12 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
                 throw new InvalidOperationException("Intermediate target borrow was released more times than retained.");
 
             entry.ActiveBorrows--;
+            _activeBorrowCount--;
             if (entry.ActiveBorrows == 0 && entry.Retired)
             {
                 RemoveEntry(key, entry);
+                _retiredEntryCount--;
+                _physicalEntryCount--;
                 leaseToDispose = entry.Lease;
             }
         }
@@ -125,7 +147,7 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         {
             foreach (var entry in pair.Value)
             {
-                entry.Retired = true;
+                RetireEntry(entry);
                 if (entry.ActiveBorrows == 0)
                     (disposeNow ??= []).Add(entry);
             }
@@ -134,6 +156,18 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         }
 
         return disposeNow;
+    }
+
+    private void RetireEntry(Entry entry)
+    {
+        if (entry.Retired)
+            return;
+
+        entry.Retired = true;
+        if (entry.ActiveBorrows == 0)
+            _physicalEntryCount--;
+        else
+            _retiredEntryCount++;
     }
 
     private void RemoveEntry(PoolKey key, Entry entry)
@@ -168,3 +202,9 @@ internal sealed class VulkanIntermediateTargetPool : IDisposable
         public bool Retired { get; set; }
     }
 }
+
+internal readonly record struct VulkanIntermediateTargetPoolMetrics(
+    int PhysicalTargetCount,
+    int ActiveBorrowCount,
+    int RetiredTargetCount,
+    int HighWaterMark);

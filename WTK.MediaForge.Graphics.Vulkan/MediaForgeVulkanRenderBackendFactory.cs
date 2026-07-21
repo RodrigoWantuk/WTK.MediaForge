@@ -59,7 +59,7 @@ internal sealed class MediaForgeVulkanRenderBackendFactory : IRenderBackendFacto
 
     private sealed class AdapterAffinityRenderBackend(
         IRenderBackend inner,
-        GpuAdapterAffinityState adapterAffinity) : IRenderBackend
+        GpuAdapterAffinityState adapterAffinity) : IRenderBackend, IRenderBackendResourceDiagnostics
     {
         private int _disposed;
 
@@ -74,6 +74,11 @@ internal sealed class MediaForgeVulkanRenderBackendFactory : IRenderBackendFacto
 
         public ValueTask WaitIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             inner.WaitIdleAsync(timeout, cancellationToken);
+
+        public RenderBackendResourceSnapshot GetResourceSnapshot() =>
+            inner is IRenderBackendResourceDiagnostics diagnostics
+                ? diagnostics.GetResourceSnapshot()
+                : new RenderBackendResourceSnapshot();
 
         public void Dispose()
         {

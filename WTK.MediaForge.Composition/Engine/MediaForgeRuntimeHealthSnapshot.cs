@@ -71,4 +71,6 @@ public sealed record MediaForgeRuntimeHealthSnapshot
         Array.Empty<MediaForgeRecoverySnapshot>();
 
     public SceneVersionRetentionSnapshot SceneVersions { get; init; } = new();
+
+    public MediaForgeGpuResourceHealthSnapshot GpuResources { get; init; } = new();
 }

@@ -8,6 +8,7 @@ internal sealed class GpuResourcePool : IDisposable
     private readonly Dictionary<GpuResourcePoolKey, Stack<GpuTexture>> _availableTextures = new();
     private readonly Dictionary<GpuResourceId, GpuTexture> _textures = new();
     private readonly List<GpuTexture> _pendingFenceTextures = [];
+    private int _physicalHighWaterMark;
     private int _disposed;
 
     public GpuResourcePool(IGpuTextureFactory textureFactory) =>
@@ -30,6 +31,24 @@ internal sealed class GpuResourcePool : IDisposable
         {
             lock (_gate)
                 return _availableTextures.Values.Sum(stack => stack.Count);
+        }
+    }
+
+    internal int PendingFenceTextureCount
+    {
+        get
+        {
+            lock (_gate)
+                return _pendingFenceTextures.Count;
+        }
+    }
+
+    internal int PhysicalHighWaterMark
+    {
+        get
+        {
+            lock (_gate)
+                return _physicalHighWaterMark;
         }
     }
 
@@ -73,7 +92,14 @@ internal sealed class GpuResourcePool : IDisposable
         var texture = new GpuTexture(descriptor, physical);
 
         lock (_gate)
+        {
             _textures[texture.Id] = texture;
+            _physicalHighWaterMark = Math.Max(
+                _physicalHighWaterMark,
+                _textures.Count +
+                _availableTextures.Values.Sum(static stack => stack.Count) +
+                _pendingFenceTextures.Count);
+        }
 
         return new GpuTextureLease(texture, this);
     }

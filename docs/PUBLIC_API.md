@@ -243,6 +243,10 @@ Capability and license status are queryable without starting the engine:
   `SceneVersions` reports bounded scene-history retention, active pins,
   discarded versions, and the observed high-water mark. These are aggregate
   ownership counters; internal resolved keys and draft contents are not public.
+  `GpuResources` reports aggregate submission, import, target, pool,
+  framebuffer, descriptor-set, retired-resource, and high-water counters. It
+  exposes no native handles and is intended for health monitoring and sustained
+  baseline-return validation.
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.
 - Capability entries that are not user-available (`Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, `Blocked`, `Prohibited`, or equivalent non-product states) must include a non-empty `UnavailableReason` suitable for UI and diagnostics.
 - `MediaTransportAuditEvent.EvidenceKind` and `MediaTransportAuditEvidenceKind` distinguish contract-only, prototype, backend-call, and backend-output-validated evidence.

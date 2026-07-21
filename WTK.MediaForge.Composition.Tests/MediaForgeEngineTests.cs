@@ -44,6 +44,10 @@ public class MediaForgeEngineTests
         Assert.Equal(MediaForgeRuntimeHealthStatus.Recovering, health.Status);
         Assert.Single(health.Recoveries);
         Assert.True(health.Recoveries[0].IsolatesSource);
+        var backendResources = Assert.IsAssignableFrom<IRenderBackendResourceDiagnostics>(engine.BackendForTests)
+            .GetResourceSnapshot();
+        Assert.Equal(backendResources.BoundOutputTargets, health.GpuResources.BoundOutputTargets);
+        Assert.Equal(engine.RenderThreadForTests!.PendingTracker.PendingCount, health.GpuResources.PendingSubmissions);
     }
 
     [Fact]

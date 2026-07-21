@@ -49,6 +49,10 @@ Implemented foundations:
 - Encoded grouping separates rendered-pixel, encoder, and sink compatibility:
   a destination or backpressure policy cannot alter pixel/encoder identity,
   while any profile difference prevents unsafe encoder sharing.
+- Runtime health exposes aggregate live, retired, pending-fence, and cached GPU
+  resources together with texture, intermediate-target, framebuffer, and
+  descriptor-set high-water marks. These counters make sustained qualification
+  able to detect unbounded growth and verify return to baseline after stop.
 - Capability snapshots are cached by adapter/device generation. Vulkan and
   D3D11 adapters are matched by Windows LUID; cross-GPU interop fails closed.
 - Automatic recovery policies expose public health snapshots, observe providers
@@ -97,8 +101,9 @@ Unavailable/planned:
    RTMP failure must not interrupt recording; source loss must not stop unrelated routes.
 5. Make the compiled physical RenderGraph the sole renderer input and move source,
    all effect intermediates, output fanout, and encoded dispatch behind it.
-6. Add bounded GPU pools for render/effect/export intermediates with post-fence
-   retirement diagnostics and baseline-return assertions.
+6. Extend the bounded GPU pools and live/high-water diagnostics already used by
+   Vulkan targets, framebuffers, descriptor sets, and textures to every export
+   intermediate, then enforce baseline-return assertions in sustained runs.
 7. Promote preview/desktop/window/webcam/video/MP4/RTMP only from sustained
    v14 evidence on the target adapter.
 8. Integrate Studio preview and output controls after promotion; keep Avalonia

@@ -13,7 +13,7 @@ using WTK.MediaForge.Graphics.Vulkan.Text;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 
-internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
+internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderBackendResourceDiagnostics
 {
     private const int MaxExternalTextureImportsPerSubmit = 128;
     private static readonly TimeSpan RegistryDisposeTimeout = TimeSpan.FromSeconds(5);
@@ -102,6 +102,31 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend
 
     internal void InvalidateIntermediateTargetCacheForTests() =>
         _compositionPipelines.InvalidateIntermediateTargets();
+
+    public RenderBackendResourceSnapshot GetResourceSnapshot()
+    {
+        var intermediates = _compositionPipelines.IntermediateTargetMetrics;
+        var submission = _compositionPipelines.SubmissionResourceMetrics;
+        return new RenderBackendResourceSnapshot
+        {
+            ExternalTextureImports = _textureRegistry.EntryCount,
+            BoundOutputTargets = OffscreenTargetCount,
+            CachedIntermediateTargets = intermediates.PhysicalTargetCount,
+            ActiveIntermediateBorrows = intermediates.ActiveBorrowCount,
+            RetiredIntermediateTargets = intermediates.RetiredTargetCount,
+            ActivePooledTextures = _gpuResourcePool.ActiveTextureCount,
+            AvailablePooledTextures = _gpuResourcePool.AvailableTextureCount,
+            PendingFenceTextures = _gpuResourcePool.PendingFenceTextureCount,
+            PendingRetiredResources = _gpuResourcePool.PendingRetiredResourceCount,
+            FailedRetiredResources = _gpuResourcePool.FailedRetiredResourceCount,
+            LiveFramebuffers = submission.LiveFramebuffers,
+            LiveDescriptorSets = submission.LiveDescriptorSets,
+            FramebufferHighWaterMark = submission.FramebufferHighWaterMark,
+            DescriptorSetHighWaterMark = submission.DescriptorSetHighWaterMark,
+            PooledTextureHighWaterMark = _gpuResourcePool.PhysicalHighWaterMark,
+            IntermediateTargetHighWaterMark = intermediates.HighWaterMark
+        };
+    }
 
     internal bool TryGetOffscreenTargetSize(RenderOutputId outputId, out FrameSize size)
     {

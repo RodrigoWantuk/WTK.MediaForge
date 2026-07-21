@@ -21,6 +21,8 @@ public sealed class GpuResourcePoolTests
         using (pool.AcquireTexture(descriptor))
         {
             Assert.Equal(1, factory.CreateCount);
+            Assert.Equal(1, pool.ActiveTextureCount);
+            Assert.Equal(1, pool.PhysicalHighWaterMark);
         }
 
         using (pool.AcquireTexture(descriptor))
@@ -29,6 +31,7 @@ public sealed class GpuResourcePoolTests
         }
 
         Assert.Equal(1, pool.AvailableTextureCount);
+        Assert.Equal(1, pool.PhysicalHighWaterMark);
     }
 
     [Fact]
@@ -56,6 +59,8 @@ public sealed class GpuResourcePoolTests
         {
             Assert.Equal(2, factory.CreateCount);
             Assert.NotSame(texture, secondLease.Texture);
+            Assert.Equal(1, pool.PendingFenceTextureCount);
+            Assert.Equal(2, pool.PhysicalHighWaterMark);
         }
 
         texture.RetirementFence!.Signal();

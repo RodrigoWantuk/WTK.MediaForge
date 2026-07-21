@@ -37,6 +37,10 @@ public class VulkanIntermediateTargetPoolTests
 
                 var first = context.Backend.Submit(snapshot);
                 var entriesWithFirstInFlight = context.Backend.IntermediateTargetPoolLiveCountForTests;
+                var firstMetrics = context.Backend.GetResourceSnapshot();
+                Assert.True(firstMetrics.ActiveIntermediateBorrows > 0);
+                Assert.True(firstMetrics.LiveFramebuffers > 0);
+                Assert.True(firstMetrics.LiveDescriptorSets > 0);
                 var second = context.Backend.Submit(snapshot);
                 try
                 {
@@ -49,6 +53,16 @@ public class VulkanIntermediateTargetPoolTests
                     await VulkanCompositionTestHarness.ReleaseSubmissionAsync(first);
                     await VulkanCompositionTestHarness.ReleaseSubmissionAsync(second);
                 }
+
+                var completedMetrics = context.Backend.GetResourceSnapshot();
+                Assert.Equal(0, completedMetrics.ActiveIntermediateBorrows);
+                Assert.Equal(0, completedMetrics.RetiredIntermediateTargets);
+                Assert.Equal(0, completedMetrics.LiveDescriptorSets);
+                Assert.True(completedMetrics.FramebufferHighWaterMark >= 2);
+                Assert.True(completedMetrics.DescriptorSetHighWaterMark >= 2);
+                Assert.True(completedMetrics.CachedIntermediateTargets >= 2);
+                Assert.True(completedMetrics.IntermediateTargetHighWaterMark >= 2);
+                Assert.True(completedMetrics.PooledTextureHighWaterMark >= 2);
             }
             finally
             {
@@ -175,6 +189,50 @@ public class VulkanIntermediateTargetPoolTests
             finally
             {
                 guard.Clear();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Invalidation_reports_in_flight_targets_as_retired_until_fence_cleanup()
+    {
+        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
+            return;
+
+        using (context)
+        {
+            context!.Guard.BindToCurrentThread();
+            try
+            {
+                var outputId = RenderOutputId.New();
+                var canvasId = CanvasId.New();
+                var size = new FrameSize(64, 64);
+                context.Backend.BindOutput(
+                    VulkanCompositionTestHarness.CreateOffscreenBinding(outputId, size.Width, size.Height));
+                using var snapshot = VulkanCompositionTestHarness.CreateCp1Snapshot(
+                    context.SharedHandle,
+                    canvasId,
+                    outputId,
+                    canvasSize: size,
+                    outputSize: size);
+
+                var submission = context.Backend.Submit(snapshot);
+                context.Backend.InvalidateIntermediateTargetCacheForTests();
+                var retired = context.Backend.GetResourceSnapshot();
+                Assert.True(retired.RetiredIntermediateTargets > 0);
+                Assert.True(retired.ActiveIntermediateBorrows > 0);
+                Assert.True(retired.CachedIntermediateTargets > 0);
+
+                await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
+
+                var released = context.Backend.GetResourceSnapshot();
+                Assert.Equal(0, released.RetiredIntermediateTargets);
+                Assert.Equal(0, released.ActiveIntermediateBorrows);
+                Assert.Equal(0, released.CachedIntermediateTargets);
+            }
+            finally
+            {
+                context.Guard.Clear();
             }
         }
     }

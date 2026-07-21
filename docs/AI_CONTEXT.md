@@ -78,6 +78,9 @@ or include secrets directly; destination identity uses a one-way fingerprint.
   the post-fence submission lease to return.
 - GPU, keyed-mutex, sink, provider, and shutdown waits always have timeouts.
 - Finalization errors are observable and cannot be reported as success.
+- Runtime health reports aggregate live, retired, pending-fence, cached, and
+  high-water GPU resource counts. Sustained tests must assert both bounded
+  high-water behavior and return to baseline after consumers and fences finish.
 - A hardware encoder session transitions through Created, Streaming, Draining,
   Drained, Failed, and Disposed. EOS, delayed-packet drain, codec configuration,
   and flush form one transaction; any failure invalidates the route/file.

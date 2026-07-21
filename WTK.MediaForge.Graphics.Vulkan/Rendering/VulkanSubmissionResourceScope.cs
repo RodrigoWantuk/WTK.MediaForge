@@ -7,6 +7,7 @@ internal sealed unsafe class VulkanSubmissionResourceScope : IDisposable
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly DescriptorPool _descriptorPool;
+    private readonly VulkanSubmissionResourceMetrics _metrics;
     private readonly List<Framebuffer> _framebuffers = [];
     private readonly List<DescriptorSet> _descriptorSets = [];
     private readonly List<VulkanOffscreenTargetHandle> _offscreenTargets = [];
@@ -15,11 +16,13 @@ internal sealed unsafe class VulkanSubmissionResourceScope : IDisposable
     public VulkanSubmissionResourceScope(
         Vk vk,
         Device device,
-        DescriptorPool descriptorPool)
+        DescriptorPool descriptorPool,
+        VulkanSubmissionResourceMetrics metrics)
     {
         _vk = vk;
         _device = device;
         _descriptorPool = descriptorPool;
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
     }
 
     public void RetainFramebuffer(Framebuffer framebuffer)
@@ -30,6 +33,7 @@ internal sealed unsafe class VulkanSubmissionResourceScope : IDisposable
             return;
 
         _framebuffers.Add(framebuffer);
+        _metrics.RetainFramebuffer();
         Interlocked.Increment(ref VulkanSubmissionResourceLifetime.LiveFramebuffers);
     }
 
@@ -41,6 +45,7 @@ internal sealed unsafe class VulkanSubmissionResourceScope : IDisposable
             return;
 
         _descriptorSets.Add(descriptorSet);
+        _metrics.RetainDescriptorSet();
         Interlocked.Increment(ref VulkanSubmissionResourceLifetime.LiveDescriptorSets);
     }
 
@@ -65,6 +70,7 @@ internal sealed unsafe class VulkanSubmissionResourceScope : IDisposable
             try
             {
                 _vk.DestroyFramebuffer(_device, framebuffer, null);
+                _metrics.ReleaseFramebuffer();
                 Interlocked.Decrement(ref VulkanSubmissionResourceLifetime.LiveFramebuffers);
                 Interlocked.Increment(ref VulkanSubmissionResourceLifetime.DestroyedFramebuffers);
             }
@@ -83,6 +89,7 @@ internal sealed unsafe class VulkanSubmissionResourceScope : IDisposable
                 if (result != Result.Success)
                     throw new InvalidOperationException($"vkFreeDescriptorSets failed: {result}");
 
+                _metrics.ReleaseDescriptorSet();
                 Interlocked.Decrement(ref VulkanSubmissionResourceLifetime.LiveDescriptorSets);
                 VulkanSubmissionResourceLifetime.RecordDescriptorSetFreed();
             }

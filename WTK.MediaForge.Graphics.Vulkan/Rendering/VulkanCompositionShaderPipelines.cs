@@ -45,6 +45,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     private readonly ShaderModule _textFragmentModule;
     private readonly ShaderModule _blurFragmentModule;
     private readonly VulkanIntermediateTargetPool _intermediateTargetPool;
+    private readonly VulkanSubmissionResourceMetrics _submissionMetrics = new();
     private VulkanFontAtlasBridge? _fontAtlasBridge;
     private bool _disposed;
 
@@ -92,10 +93,16 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     internal int IntermediateTargetPoolLiveCountForTests =>
         _intermediateTargetPool.LiveEntryCountForTests;
 
+    internal VulkanIntermediateTargetPoolMetrics IntermediateTargetMetrics =>
+        _intermediateTargetPool.GetMetricsSnapshot();
+
+    internal VulkanSubmissionResourceMetricsSnapshot SubmissionResourceMetrics =>
+        _submissionMetrics.GetSnapshot();
+
     public void InvalidateIntermediateTargets() => _intermediateTargetPool.InvalidateAll();
 
     public VulkanSubmissionResourceScope CreateSubmissionResourceScope() =>
-        new(_vk, _deviceHandle, _descriptorPool);
+        new(_vk, _deviceHandle, _descriptorPool, _submissionMetrics);
 
     public void ComposeOutput(
         CommandBuffer commandBuffer,
