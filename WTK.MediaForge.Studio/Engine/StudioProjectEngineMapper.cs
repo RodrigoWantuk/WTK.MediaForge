@@ -87,29 +87,49 @@ public sealed class StudioProjectEngineMapper
 
         foreach (var source in document.Sources)
         {
-            var settings = CreateSourceSettings(source);
-            if (settings is null)
+            var definition = CreateSourceDefinition(source);
+            if (definition is null)
                 continue;
 
-            project.SourceDefinitions.Add(new MediaForgeSourceDefinition
-            {
-                Id = StudioEngineIdMap.SourceId(source.Id),
-                Name = source.DisplayName,
-                TypeId = settings.TypeId,
-                SchemaVersion = settings.SchemaVersion,
-                Settings = MediaSourceSettingsSerializer.ToJson(settings)
-            });
+            project.SourceDefinitions.Add(definition);
             sourceIds.Add(source.Id);
         }
 
         foreach (var scene in document.Scenes)
-            project.Canvases.Add(CreateCanvas(scene, sourceIds));
+            project.Canvases.Add(CreateCanvasCore(scene, sourceIds));
 
         foreach (var output in document.Outputs)
             project.Outputs.Add(CreateOutput(output, document));
 
         MediaForgeProjectValidator.Validate(project).ThrowIfInvalid();
         return project;
+    }
+
+    public MediaForgeSourceDefinition? CreateSourceDefinition(StudioSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var settings = CreateSourceSettings(source);
+        return settings is null
+            ? null
+            : new MediaForgeSourceDefinition
+            {
+                Id = StudioEngineIdMap.SourceId(source.Id),
+                Name = source.DisplayName,
+                TypeId = settings.TypeId,
+                SchemaVersion = settings.SchemaVersion,
+                Settings = MediaSourceSettingsSerializer.ToJson(settings)
+            };
+    }
+
+    public MediaForgeCanvas CreateCanvas(StudioScene scene, IEnumerable<StudioSource> sources)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(sources);
+        var sourceIds = sources
+            .Where(source => CreateSourceSettings(source) is not null)
+            .Select(static source => source.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        return CreateCanvasCore(scene, sourceIds);
     }
 
     public MediaForgeDrawObject CreateLayer(StudioLayer layer, IEnumerable<StudioSource> sources)
@@ -125,7 +145,7 @@ public sealed class StudioProjectEngineMapper
         return CreateDrawObject(layer, sourceIds);
     }
 
-    private static MediaForgeCanvas CreateCanvas(
+    private static MediaForgeCanvas CreateCanvasCore(
         StudioScene scene,
         IReadOnlySet<string> sourceIds)
     {
@@ -216,7 +236,7 @@ public sealed class StudioProjectEngineMapper
         };
     }
 
-    private static MediaForgeRenderOutput CreateOutput(
+    public MediaForgeRenderOutput CreateOutput(
         StudioOutput output,
         StudioDocument document)
     {
@@ -321,7 +341,9 @@ public sealed class StudioProjectEngineMapper
             Id = drawObject.Id.Value.ToString("D"),
             Name = drawObject.Name,
             SourceId = sourceId,
-            SourceName = sourceNames.GetValueOrDefault(sourceId, drawObject.Name),
+            SourceName = drawObject is TextDrawObject text
+                ? text.Text
+                : sourceNames.GetValueOrDefault(sourceId, drawObject.Name),
             Type = drawObject switch
             {
                 TextDrawObject => "Text",
@@ -450,7 +472,7 @@ public sealed class StudioProjectEngineMapper
     }
 
     private static string ToHex(ColorRgba color) =>
-        $"#{ToByte(color.R):X2}{ToByte(color.G):X2}{ToByte(color.B):X2}";
+        $"#{ToByte(color.R):X2}{ToByte(color.G):X2}{ToByte(color.B):X2}{ToByte(color.A):X2}";
 
     private static int ToByte(float value) => (int)Math.Round(Math.Clamp(value, 0, 1) * 255);
 }

@@ -278,6 +278,13 @@ remain serializable and editable but are excluded from dependency routing,
 render snapshots, surface bindings, encoded groups, and recovery. Hosts must
 enable an output explicitly before attaching a sink or starting its route.
 
+Studio persistence is a projection over `MediaForgeProject`, not a competing
+document format. `StudioProjectSession` owns the canonical clone and applies
+edits by stable ids. Fields not represented by current ViewModels remain intact.
+Save produces and validates a detached snapshot, writes a temporary file in the
+destination directory, atomically replaces the destination, and only then
+advances the in-memory canonical session.
+
 Operational validation scripts use
 `./scripts/generate-media-proof-report.ps1` and
 `./scripts/verify-engine-readiness-v14.ps1` to write

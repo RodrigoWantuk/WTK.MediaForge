@@ -14,6 +14,8 @@ public sealed class RuntimeStudioProjectService : IStudioProjectService
 {
     private readonly StudioProjectEngineMapper _mapper;
     private readonly string _defaultPath;
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private StudioProjectSession? _session;
 
     public RuntimeStudioProjectService(StudioProjectEngineMapper mapper, string? defaultPath = null)
     {
@@ -27,46 +29,84 @@ public sealed class RuntimeStudioProjectService : IStudioProjectService
 
     public StudioProjectDocument Current { get; }
 
-    public Task<StudioDocument> NewAsync(CancellationToken cancellationToken)
+    public async Task<StudioDocument> NewAsync(CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        Current.Rename("Projeto sem título", _defaultPath, true);
-        return Task.FromResult(CreateEmptyDocument());
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var document = CreateEmptyDocument();
+            _session = StudioProjectSession.Create(_mapper, document);
+            Current.Rename("Projeto sem título", _defaultPath, true);
+            return document;
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
     }
 
     public async Task<StudioDocument> OpenAsync(string path, CancellationToken cancellationToken)
     {
-        var resolvedPath = ResolvePath(path);
-        var json = await File.ReadAllTextAsync(resolvedPath, cancellationToken).ConfigureAwait(false);
-        var result = MediaForgeProjectLoader.LoadFromJson(json);
-        if (!result.Validation.IsValid || result.Project is null)
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            throw new InvalidDataException(
-                $"O projeto não pôde ser aberto: {string.Join("; ", result.Validation.Issues.Select(static issue => issue.Message))}");
-        }
+            var resolvedPath = ResolvePath(path);
+            var json = await File.ReadAllTextAsync(resolvedPath, cancellationToken).ConfigureAwait(false);
+            var result = MediaForgeProjectLoader.LoadFromJson(json);
+            if (!result.Validation.IsValid || result.Project is null)
+            {
+                throw new InvalidDataException(
+                    $"O projeto não pôde ser aberto: {string.Join("; ", result.Validation.Issues.Select(static issue => issue.Message))}");
+            }
 
-        var displayName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(resolvedPath));
-        var document = _mapper.CreateDocument(result.Project, displayName);
-        Current.Rename(document.DisplayName, resolvedPath, false);
-        return document;
+            var displayName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(resolvedPath));
+            _session = StudioProjectSession.Open(_mapper, result.Project, displayName);
+            var document = _session.Document;
+            Current.Rename(document.DisplayName, resolvedPath, false);
+            return document;
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
     }
 
     public async Task SaveAsync(StudioDocument document, string? path, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(document);
-        var resolvedPath = ResolvePath(path ?? Current.Path ?? _defaultPath);
-        var project = _mapper.CreateProject(document);
-        var json = MediaForgeProjectSerializer.Serialize(project);
-        var directory = Path.GetDirectoryName(resolvedPath)
-            ?? throw new InvalidOperationException("O caminho do projeto não possui diretório.");
-        Directory.CreateDirectory(directory);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var resolvedPath = ResolvePath(path ?? Current.Path ?? _defaultPath);
+            if (_session is null || !ReferenceEquals(_session.Document, document))
+                _session = StudioProjectSession.Create(_mapper, document);
+            var project = _session.CreateValidatedSaveSnapshot(document);
+            var json = MediaForgeProjectSerializer.Serialize(project);
+            var directory = Path.GetDirectoryName(resolvedPath)
+                ?? throw new InvalidOperationException("O caminho do projeto não possui diretório.");
+            Directory.CreateDirectory(directory);
 
-        var temporaryPath = resolvedPath + ".tmp";
-        await File.WriteAllTextAsync(temporaryPath, json, cancellationToken).ConfigureAwait(false);
-        File.Move(temporaryPath, resolvedPath, overwrite: true);
+            var temporaryPath = $"{resolvedPath}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                await File.WriteAllTextAsync(temporaryPath, json, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(temporaryPath, resolvedPath, overwrite: true);
+                _session.CommitSavedSnapshot(project);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                    File.Delete(temporaryPath);
+            }
 
-        document.HasUnsavedChanges = false;
-        Current.Rename(document.DisplayName, resolvedPath, false);
+            document.HasUnsavedChanges = false;
+            Current.Rename(document.DisplayName, resolvedPath, false);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
     }
 
     private string ResolvePath(string path) =>
