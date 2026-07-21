@@ -51,8 +51,15 @@ public sealed class StudioApplicationSession(
 
     public StudioShellViewModel Shell { get; } = shell;
 
-    public Task InitializeAsync(CancellationToken cancellationToken = default) =>
-        _capabilityService.RefreshAsync(cancellationToken);
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        await _capabilityService.RefreshAsync(cancellationToken).ConfigureAwait(false);
+        await Shell.InitializeAsync(cancellationToken).ConfigureAwait(false);
+    }
 
-    public ValueTask DisposeAsync() => _engineService.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await Shell.DisposeAsync().ConfigureAwait(false);
+        await _engineService.DisposeAsync().ConfigureAwait(false);
+    }
 }

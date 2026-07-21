@@ -104,7 +104,11 @@ public sealed class StudioSceneEditRuntimeService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
-        var engineSession = Resolve(session);
+        if (!_sessions.TryGetValue(session.RuntimeSessionId, out var engineSession))
+            return;
+
+        if (!string.Equals(engineSession.StudioSceneId, session.StudioSceneId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Runtime scene edit session is bound to a different Studio scene.");
 
         try
         {
@@ -114,6 +118,22 @@ public sealed class StudioSceneEditRuntimeService(
         finally
         {
             _sessions.TryRemove(session.RuntimeSessionId, out _);
+        }
+    }
+
+    public async ValueTask DiscardAllSceneDraftsAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var entry in _sessions.ToArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await _bridge.DiscardAsync(entry.Value, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _sessions.TryRemove(entry.Key, out _);
+            }
         }
     }
 
@@ -131,7 +151,7 @@ public sealed class StudioSceneEditRuntimeService(
         return engineSession;
     }
 
-    private async ValueTask SynchronizeProjectAsync(
+    public async ValueTask SynchronizeProjectAsync(
         StudioDocument document,
         CancellationToken cancellationToken)
     {
@@ -147,11 +167,13 @@ public sealed class StudioSceneEditRuntimeService(
             if (string.Equals(_syncedProjectFingerprint, fingerprint, StringComparison.Ordinal))
                 return;
 
+            await DiscardAllSceneDraftsAsync(cancellationToken)
+                .ConfigureAwait(false);
+
             await _bridge
                 .SynchronizeProjectAsync(project, cancellationToken)
                 .ConfigureAwait(false);
 
-            _sessions.Clear();
             _syncedProjectFingerprint = fingerprint;
         }
         finally

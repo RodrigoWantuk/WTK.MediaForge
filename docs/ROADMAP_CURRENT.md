@@ -94,6 +94,9 @@ Experimental and not yet product-promoted:
   advanced text state, nested version bindings, and effects not editable by the
   current UI, and commits only after atomic file replacement succeeds. Native
   GPU preview and real output controls remain disabled until their runtime gates pass.
+  The shell now reflects engine Starting/Running/Degraded/Recovering/Failed/
+  Stopped state and performs deterministic project-switch/application shutdown;
+  all active scene drafts are explicitly discarded before project replacement.
 - Remote Scene has platform-neutral contracts and a separately deployable
   HTTPS/WebSocket signaling service with one-time hashed invitations, role-scoped
   bearer access, bounded SDP/ICE relay, SQLite session storage, expiration, rate

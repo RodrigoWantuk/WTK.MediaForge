@@ -13,9 +13,10 @@ using WTK.MediaForge.Studio.ViewModels.Docking;
 
 namespace WTK.MediaForge.Studio.ViewModels;
 
-public sealed class StudioShellViewModel : ViewModelBase
+public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 {
     private readonly IStudioProjectService _projectService;
+    private readonly IStudioEngineService _engineService;
     private readonly IStudioOutputService _outputService;
     private readonly IStudioDialogService _dialogService;
     private readonly IStudioUndoRedoService _undoRedoService;
@@ -25,6 +26,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     private readonly IStudioSelectionService _selectionService;
     private readonly IStudioSceneEditRuntimeService _sceneEditRuntimeService;
     private readonly IStudioUiTimer _uiTimer;
+    private readonly SynchronizationContext? _uiContext;
     private readonly SceneEditSessionService _sceneEditSessionService = new();
     private StudioLayoutDocument _layoutDocument = new();
     private StudioDocument _document;
@@ -37,6 +39,10 @@ public sealed class StudioShellViewModel : ViewModelBase
     private IDock? _dockLayout;
     private SceneEditSession? _editSession;
     private StudioSceneEditRuntimeSession? _runtimeEditSession;
+    private StudioEngineStatus _engineStatus;
+    private bool _acceptingActions = true;
+    private bool _subscriptionsAttached;
+    private int _disposed;
 
     public StudioShellViewModel()
         : this(StudioServiceFactory.CreateFake())
@@ -46,6 +52,7 @@ public sealed class StudioShellViewModel : ViewModelBase
     public StudioShellViewModel(StudioServiceBundle services)
         : this(
             services.ProjectService,
+            services.EngineService,
             services.OutputService,
             services.DialogService,
             services.UndoRedoService,
@@ -61,6 +68,7 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public StudioShellViewModel(
         IStudioProjectService projectService,
+        IStudioEngineService engineService,
         IStudioOutputService outputService,
         IStudioDialogService dialogService,
         IStudioUndoRedoService undoRedoService,
@@ -73,6 +81,7 @@ public sealed class StudioShellViewModel : ViewModelBase
         StudioDocument initialDocument)
     {
         _projectService = projectService;
+        _engineService = engineService;
         _outputService = outputService;
         _dialogService = dialogService;
         _undoRedoService = undoRedoService;
@@ -82,7 +91,9 @@ public sealed class StudioShellViewModel : ViewModelBase
         _selectionService = selectionService;
         _sceneEditRuntimeService = sceneEditRuntimeService;
         _uiTimer = uiTimer;
+        _uiContext = SynchronizationContext.Current;
         _document = initialDocument ?? throw new ArgumentNullException(nameof(initialDocument));
+        _engineStatus = _engineService.CurrentStatus;
 
         BottomWorkbench = new BottomWorkbenchViewModel();
         PreviewWorkspace = new PreviewWorkspaceViewModel(Preview);
@@ -96,9 +107,12 @@ public sealed class StudioShellViewModel : ViewModelBase
         WorkbenchDock = new StudioDockPanelViewModel("workbench", "Camadas e saídas", BottomWorkbench);
         Preview.LayerSelectionRequested += OnPreviewLayerSelectionRequested;
 
-        NewProjectCommand = new AsyncRelayCommand(NewProjectAsync);
-        OpenProjectCommand = new AsyncRelayCommand(OpenProjectAsync);
+        NewProjectCommand = new AsyncRelayCommand(NewProjectAsync, CanChangeProject);
+        OpenProjectCommand = new AsyncRelayCommand(OpenProjectAsync, CanChangeProject);
         SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
+        StartEngineCommand = new AsyncRelayCommand(StartEngineAsync, CanStartEngine);
+        StopEngineCommand = new AsyncRelayCommand(StopEngineAsync, CanStopEngine);
+        RestartEngineCommand = new AsyncRelayCommand(RestartEngineAsync, CanRestartEngine);
         AddSourceCommand = new RelayCommand(OpenAddSourceDialog);
         AddSceneCommand = new RelayCommand(OpenAddSceneDialog);
         ConfigureOutputCommand = new RelayCommand(OpenConfigureOutputDialog);
@@ -131,15 +145,14 @@ public sealed class StudioShellViewModel : ViewModelBase
         Preview.ShortcutHandler = ExecuteShortcut;
         Preview.SceneEdited += OnPreviewSceneEdited;
 
-        _outputService.StatusChanged += OnOutputStatusChanged;
-        _selectionService.SelectionChanged += OnSelectionChanged;
-        _uiTimer.Tick += OnUiTimerTick;
+        AttachRuntimeSubscriptions();
         _uiTimer.Start();
 
         ApplyLayoutDocument(_layoutDocument);
         LoadDesignData(_document, _diagnosticsService.Items);
         ApplyProjectDocument();
         ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
+        ApplyEngineStatus(_engineStatus);
     }
 
     public event EventHandler? SettingsRequested;
@@ -196,6 +209,12 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public IAsyncRelayCommand SaveProjectCommand { get; }
 
+    public IAsyncRelayCommand StartEngineCommand { get; }
+
+    public IAsyncRelayCommand StopEngineCommand { get; }
+
+    public IAsyncRelayCommand RestartEngineCommand { get; }
+
     public ICommand AddSourceCommand { get; }
 
     public ICommand AddSceneCommand { get; }
@@ -246,7 +265,33 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     public bool IsRecording => _outputService.RecordingState == StudioOutputUiState.Running;
 
+    public StudioEngineStatus EngineStatus => _engineStatus;
+
     public StudioDocument Document => _document;
+
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        await _sceneEditRuntimeService.SynchronizeProjectAsync(_document, cancellationToken).ConfigureAwait(false);
+        await _engineService.StartAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        _acceptingActions = false;
+        NotifyLifecycleCommandStates();
+        await _sceneEditRuntimeService.DiscardAllSceneDraftsAsync(CancellationToken.None).ConfigureAwait(false);
+        _runtimeEditSession = null;
+        _editSession = null;
+        await _outputService.StopAllAsync(CancellationToken.None).ConfigureAwait(false);
+        _uiTimer.Stop();
+        DetachRuntimeSubscriptions();
+        await _engineService.StopAsync(CancellationToken.None).ConfigureAwait(false);
+        Preview.LayerSelectionRequested -= OnPreviewLayerSelectionRequested;
+        Preview.SceneEdited -= OnPreviewSceneEdited;
+    }
 
     public StudioAdvancedSurfaceSnapshot CreateAdvancedSurfaceSnapshot()
     {
@@ -518,19 +563,87 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private async Task NewProjectAsync(CancellationToken cancellationToken)
     {
-        _document = await _projectService.NewAsync(cancellationToken).ConfigureAwait(true);
-        LoadDesignData(_document, _diagnosticsService.Items);
-        ApplyProjectDocument();
-        SetStatus("Novo projeto criado.");
+        await ReplaceProjectAsync(
+            token => _projectService.NewAsync(token),
+            "Novo projeto criado.",
+            cancellationToken).ConfigureAwait(true);
     }
 
     private async Task OpenProjectAsync(CancellationToken cancellationToken)
     {
         var path = _projectService.Current.Path ?? "mediaforge-project.mforge.json";
-        _document = await _projectService.OpenAsync(path, cancellationToken).ConfigureAwait(true);
-        LoadDesignData(_document, _diagnosticsService.Items);
-        ApplyProjectDocument();
-        SetStatus("Projeto aberto.");
+        await ReplaceProjectAsync(
+            token => _projectService.OpenAsync(path, token),
+            "Projeto aberto.",
+            cancellationToken).ConfigureAwait(true);
+    }
+
+    private async Task ReplaceProjectAsync(
+        Func<CancellationToken, Task<StudioDocument>> loadProject,
+        string successMessage,
+        CancellationToken cancellationToken)
+    {
+        _acceptingActions = false;
+        NotifyLifecycleCommandStates();
+        _uiTimer.Stop();
+        try
+        {
+            await _sceneEditRuntimeService.DiscardAllSceneDraftsAsync(cancellationToken).ConfigureAwait(true);
+            _runtimeEditSession = null;
+            _editSession = null;
+            await _outputService.StopAllAsync(cancellationToken).ConfigureAwait(true);
+            await _engineService.StopAsync(cancellationToken).ConfigureAwait(true);
+            _document = await loadProject(cancellationToken).ConfigureAwait(true);
+            await _sceneEditRuntimeService.SynchronizeProjectAsync(_document, cancellationToken).ConfigureAwait(true);
+            LoadDesignData(_document, _diagnosticsService.Items);
+            ApplyProjectDocument();
+            SetStatus(successMessage);
+        }
+        finally
+        {
+            _uiTimer.Start();
+            _acceptingActions = Volatile.Read(ref _disposed) == 0;
+            NotifyLifecycleCommandStates();
+        }
+    }
+
+    private bool CanChangeProject() => _acceptingActions &&
+        _engineStatus.State is not StudioEngineUiState.Starting and
+        not StudioEngineUiState.Stopping and
+        not StudioEngineUiState.Recovering;
+
+    private bool CanStartEngine() => _acceptingActions &&
+        _engineStatus.State is StudioEngineUiState.Stopped or StudioEngineUiState.Failed;
+
+    private bool CanStopEngine() => _acceptingActions &&
+        _engineStatus.State is StudioEngineUiState.Starting or StudioEngineUiState.Running or
+            StudioEngineUiState.Degraded or StudioEngineUiState.Recovering or StudioEngineUiState.Failed;
+
+    private bool CanRestartEngine() => _acceptingActions &&
+        _engineStatus.State is StudioEngineUiState.Running or StudioEngineUiState.Degraded or StudioEngineUiState.Failed;
+
+    private async Task StartEngineAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _engineService.StartAsync(cancellationToken).ConfigureAwait(true);
+        }
+        catch (Exception exception)
+        {
+            _diagnosticsService.Append("ERROR", "Engine", exception.Message);
+        }
+    }
+
+    private async Task StopEngineAsync(CancellationToken cancellationToken)
+    {
+        await _outputService.StopAllAsync(cancellationToken).ConfigureAwait(true);
+        await _engineService.StopAsync(cancellationToken).ConfigureAwait(true);
+    }
+
+    private async Task RestartEngineAsync(CancellationToken cancellationToken)
+    {
+        await StopEngineAsync(cancellationToken).ConfigureAwait(true);
+        await StartEngineAsync(cancellationToken).ConfigureAwait(true);
     }
 
     private async Task SaveProjectAsync(CancellationToken cancellationToken)
@@ -543,14 +656,18 @@ public sealed class StudioShellViewModel : ViewModelBase
 
     private bool CanToggleStreaming()
     {
-        return GetStreamingOutput() is not null
+        return _acceptingActions
+            && _engineStatus.State is StudioEngineUiState.Running or StudioEngineUiState.Degraded
+            && GetStreamingOutput() is not null
             && _outputService.StreamingState is StudioOutputUiState.Ready or StudioOutputUiState.Running
             && _outputService.StreamingState is not StudioOutputUiState.Starting and not StudioOutputUiState.Stopping;
     }
 
     private bool CanToggleRecording()
     {
-        return GetRecordingOutput() is not null
+        return _acceptingActions
+            && _engineStatus.State is StudioEngineUiState.Running or StudioEngineUiState.Degraded
+            && GetRecordingOutput() is not null
             && _outputService.RecordingState is StudioOutputUiState.Ready or StudioOutputUiState.Running
             && _outputService.RecordingState is not StudioOutputUiState.Starting and not StudioOutputUiState.Stopping;
     }
@@ -1460,9 +1577,74 @@ public sealed class StudioShellViewModel : ViewModelBase
         }
     }
 
-    private void OnOutputStatusChanged(object? sender, StudioOutputStatusChangedEventArgs e)
+    private void OnOutputStatusChanged(object? sender, StudioOutputStatusChangedEventArgs e) =>
+        DispatchRuntimeUpdate(() => ApplyOutputState(e.StreamingState, e.RecordingState));
+
+    private void OnEngineStatusChanged(object? sender, StudioEngineStatusChangedEventArgs e) =>
+        DispatchRuntimeUpdate(() => ApplyEngineStatus(e.Status));
+
+    private void OnEngineHealthChanged(object? sender, StudioEngineHealthChangedEventArgs e)
     {
-        ApplyOutputState(e.StreamingState, e.RecordingState);
+        if (e.Health.State is StudioEngineUiState.Degraded or StudioEngineUiState.Recovering or StudioEngineUiState.Failed)
+            DispatchRuntimeUpdate(() => ApplyEngineStatus(new StudioEngineStatus(e.Health.State, e.Health.Message)));
+    }
+
+    private void DispatchRuntimeUpdate(Action update)
+    {
+        if (_uiContext is null || ReferenceEquals(SynchronizationContext.Current, _uiContext))
+        {
+            update();
+            return;
+        }
+
+        _uiContext.Post(static state => ((Action)state!).Invoke(), update);
+    }
+
+    private void ApplyEngineStatus(StudioEngineStatus status)
+    {
+        _engineStatus = status;
+        Toolbar.StateBadge = status.Message;
+        if (status.State is StudioEngineUiState.Failed or StudioEngineUiState.Degraded or StudioEngineUiState.Recovering)
+            StatusBar.StatusText = status.Message;
+        OnPropertyChanged(nameof(EngineStatus));
+        NotifyLifecycleCommandStates();
+    }
+
+    private void AttachRuntimeSubscriptions()
+    {
+        if (_subscriptionsAttached)
+            return;
+
+        _engineService.StatusChanged += OnEngineStatusChanged;
+        _engineService.HealthChanged += OnEngineHealthChanged;
+        _outputService.StatusChanged += OnOutputStatusChanged;
+        _selectionService.SelectionChanged += OnSelectionChanged;
+        _uiTimer.Tick += OnUiTimerTick;
+        _subscriptionsAttached = true;
+    }
+
+    private void DetachRuntimeSubscriptions()
+    {
+        if (!_subscriptionsAttached)
+            return;
+
+        _engineService.StatusChanged -= OnEngineStatusChanged;
+        _engineService.HealthChanged -= OnEngineHealthChanged;
+        _outputService.StatusChanged -= OnOutputStatusChanged;
+        _selectionService.SelectionChanged -= OnSelectionChanged;
+        _uiTimer.Tick -= OnUiTimerTick;
+        _subscriptionsAttached = false;
+    }
+
+    private void NotifyLifecycleCommandStates()
+    {
+        StartEngineCommand.NotifyCanExecuteChanged();
+        StopEngineCommand.NotifyCanExecuteChanged();
+        RestartEngineCommand.NotifyCanExecuteChanged();
+        NewProjectCommand.NotifyCanExecuteChanged();
+        OpenProjectCommand.NotifyCanExecuteChanged();
+        ToggleStreamingCommand.NotifyCanExecuteChanged();
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyOutputState(StudioOutputUiState streamingState, StudioOutputUiState recordingState)

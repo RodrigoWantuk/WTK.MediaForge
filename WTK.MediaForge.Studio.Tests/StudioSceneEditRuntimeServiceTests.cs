@@ -74,6 +74,7 @@ public sealed class StudioSceneEditRuntimeServiceTests
         _ = await service.BeginApplySessionAsync(document, scene);
 
         Assert.Equal(2, engine.SyncCallCount);
+        Assert.Equal(1, engine.DiscardCallCount);
     }
 
     [Fact]

@@ -135,43 +135,146 @@ public sealed class RuntimeStudioProjectService : IStudioProjectService
     }
 }
 
-public sealed class RuntimeStudioEngineService(MediaForgeEngine engine) : IStudioEngineService, IAsyncDisposable
+public sealed class RuntimeStudioEngineService : IStudioEngineService, IAsyncDisposable
 {
-    private readonly MediaForgeEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+    private readonly MediaForgeEngine _engine;
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private StudioEngineStatus _status = new(StudioEngineUiState.Stopped, "Pronto");
+    private StudioEngineHealth _health = new(StudioEngineUiState.Stopped, "Pronto", DateTimeOffset.UtcNow);
+    private int _disposed;
+
+    public RuntimeStudioEngineService(MediaForgeEngine engine)
+    {
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _engine.StateChanged += OnEngineStateChanged;
+        _engine.RecoveryStateChanged += OnRecoveryStateChanged;
+        PublishHealth();
+    }
 
     public StudioEngineStatus CurrentStatus => _status;
 
+    public StudioEngineHealth CurrentHealth => _health;
+
     public event EventHandler<StudioEngineStatusChangedEventArgs>? StatusChanged;
+
+    public event EventHandler<StudioEngineHealthChangedEventArgs>? HealthChanged;
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        Publish(StudioEngineUiState.Starting, "Preparando composição");
+        ThrowIfDisposed();
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_engine.State is MediaForgeEngineState.Running or MediaForgeEngineState.Starting)
+                return;
+
+            Publish(StudioEngineUiState.Starting, "Preparando composição");
             await _engine.StartAsync(cancellationToken).ConfigureAwait(false);
             Publish(StudioEngineUiState.Running, "Em execução");
+            PublishHealth();
         }
-        catch
+        catch (Exception exception)
         {
-            Publish(StudioEngineUiState.Failed, "Falha ao iniciar");
+            Publish(StudioEngineUiState.Failed, $"Falha ao iniciar: {exception.Message}");
+            PublishHealth();
             throw;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
         }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        Publish(StudioEngineUiState.Stopping, "Finalizando");
-        await _engine.StopAsync(cancellationToken).ConfigureAwait(false);
-        Publish(StudioEngineUiState.Stopped, "Pronto");
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_engine.State is MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded or MediaForgeEngineState.Disposed)
+            {
+                Publish(StudioEngineUiState.Stopped, "Pronto");
+                return;
+            }
+
+            Publish(StudioEngineUiState.Stopping, "Finalizando");
+            await _engine.StopAsync(cancellationToken).ConfigureAwait(false);
+            Publish(StudioEngineUiState.Stopped, "Pronto");
+            PublishHealth();
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
     }
 
-    public ValueTask DisposeAsync() => _engine.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        await _lifecycleGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _engine.StateChanged -= OnEngineStateChanged;
+            _engine.RecoveryStateChanged -= OnRecoveryStateChanged;
+            await _engine.DisposeAsync().ConfigureAwait(false);
+            Publish(StudioEngineUiState.Stopped, "Encerrado");
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+            _lifecycleGate.Dispose();
+            StatusChanged = null;
+            HealthChanged = null;
+        }
+    }
 
     private void Publish(StudioEngineUiState state, string message)
     {
         _status = new StudioEngineStatus(state, message);
         StatusChanged?.Invoke(this, new StudioEngineStatusChangedEventArgs(_status));
+    }
+
+    private void PublishHealth()
+    {
+        var snapshot = _engine.GetRuntimeHealthSnapshot();
+        var state = snapshot.Status switch
+        {
+            MediaForgeRuntimeHealthStatus.Healthy => StudioEngineUiState.Running,
+            MediaForgeRuntimeHealthStatus.Degraded => StudioEngineUiState.Degraded,
+            MediaForgeRuntimeHealthStatus.Recovering => StudioEngineUiState.Recovering,
+            MediaForgeRuntimeHealthStatus.Failed => StudioEngineUiState.Failed,
+            _ => StudioEngineUiState.Stopped
+        };
+        var message = snapshot.Recoveries.LastOrDefault()?.Message ?? _status.Message;
+        _health = new StudioEngineHealth(state, message, snapshot.CapturedAt);
+        HealthChanged?.Invoke(this, new StudioEngineHealthChangedEventArgs(_health));
+        if (state is StudioEngineUiState.Degraded or StudioEngineUiState.Recovering or StudioEngineUiState.Failed)
+            Publish(state, message);
+    }
+
+    private void OnEngineStateChanged(object? sender, MediaForgeEngineStateChangedEventArgs args)
+    {
+        var state = args.NewState switch
+        {
+            MediaForgeEngineState.Starting => StudioEngineUiState.Starting,
+            MediaForgeEngineState.Running => StudioEngineUiState.Running,
+            MediaForgeEngineState.Stopping => StudioEngineUiState.Stopping,
+            MediaForgeEngineState.Failed => StudioEngineUiState.Failed,
+            _ => StudioEngineUiState.Stopped
+        };
+        Publish(state, state == StudioEngineUiState.Running ? "Em execução" : state.ToString());
+        PublishHealth();
+    }
+
+    private void OnRecoveryStateChanged(object? sender, MediaForgeRecoveryEventArgs args) => PublishHealth();
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
     }
 }
 

@@ -55,6 +55,10 @@ features are disabled with a reason instead of replaced by fake success.
 - Apply draft synchronization computes a deterministic layer diff and submits
   one atomic mutation batch. Unchanged 100-layer scenes submit no mutations;
   single-property edits submit only their required patch.
+- `StudioShellViewModel` owns the UI engine lifecycle and real health/status
+  subscriptions. Start, Stop, and Restart command availability follows engine
+  state; project replacement and application shutdown stop new work and unwind
+  drafts, outputs, timer, subscriptions, and engine deterministically.
 - Dock panel proportions are loaded before Dock creation and persisted on
   window close/settings save through `IStudioLayoutService`.
 - Diagnostics, performance metrics, and output monitor snapshots live in the

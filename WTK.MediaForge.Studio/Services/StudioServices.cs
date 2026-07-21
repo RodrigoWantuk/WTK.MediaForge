@@ -77,11 +77,25 @@ public sealed class StudioEngineStatusChangedEventArgs : EventArgs
     public StudioEngineStatus Status { get; }
 }
 
+public sealed record StudioEngineHealth(
+    StudioEngineUiState State,
+    string Message,
+    DateTimeOffset CapturedAt);
+
+public sealed class StudioEngineHealthChangedEventArgs(StudioEngineHealth health) : EventArgs
+{
+    public StudioEngineHealth Health { get; } = health ?? throw new ArgumentNullException(nameof(health));
+}
+
 public interface IStudioEngineService
 {
     StudioEngineStatus CurrentStatus { get; }
 
+    StudioEngineHealth CurrentHealth { get; }
+
     event EventHandler<StudioEngineStatusChangedEventArgs>? StatusChanged;
+
+    event EventHandler<StudioEngineHealthChangedEventArgs>? HealthChanged;
 
     Task StartAsync(CancellationToken cancellationToken);
 
@@ -100,6 +114,10 @@ public sealed record StudioSceneEditApplyResult(
 public interface IStudioSceneEditRuntimeService
 {
     bool IsEngineBacked { get; }
+
+    ValueTask SynchronizeProjectAsync(
+        StudioDocument document,
+        CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
     ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
         StudioDocument document,
@@ -126,6 +144,9 @@ public interface IStudioSceneEditRuntimeService
     ValueTask DiscardSceneDraftAsync(
         StudioSceneEditRuntimeSession session,
         CancellationToken cancellationToken = default);
+
+    ValueTask DiscardAllSceneDraftsAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.CompletedTask;
 }
 
 public sealed class StudioOutputStatusChangedEventArgs : EventArgs

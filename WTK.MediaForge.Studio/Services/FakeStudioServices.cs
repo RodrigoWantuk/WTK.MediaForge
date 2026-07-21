@@ -46,7 +46,12 @@ public sealed class FakeStudioEngineService : IStudioEngineService
 
     public StudioEngineStatus CurrentStatus => _currentStatus;
 
+    public StudioEngineHealth CurrentHealth { get; private set; } =
+        new(StudioEngineUiState.Stopped, "Pronto", DateTimeOffset.UtcNow);
+
     public event EventHandler<StudioEngineStatusChangedEventArgs>? StatusChanged;
+
+    public event EventHandler<StudioEngineHealthChangedEventArgs>? HealthChanged;
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -76,6 +81,8 @@ public sealed class FakeStudioEngineService : IStudioEngineService
     {
         _currentStatus = status;
         StatusChanged?.Invoke(this, new StudioEngineStatusChangedEventArgs(status));
+        CurrentHealth = new StudioEngineHealth(status.State, status.Message, DateTimeOffset.UtcNow);
+        HealthChanged?.Invoke(this, new StudioEngineHealthChangedEventArgs(CurrentHealth));
     }
 }
 
@@ -452,7 +459,9 @@ public static class StudioServiceFactory
     public static StudioServiceBundle CreateFake(
         IEnumerable<DiagnosticLogItemViewModel>? diagnostics = null,
         IStudioClock? clock = null,
+        IStudioEngineService? engineService = null,
         IStudioSceneEditRuntimeService? sceneEditRuntimeService = null,
+        IStudioOutputService? outputService = null,
         IStudioLayoutService? layoutService = null,
         IStudioUiTimer? uiTimer = null)
     {
@@ -460,9 +469,9 @@ public static class StudioServiceFactory
         var capabilityService = new FakeStudioCapabilityService();
         return new StudioServiceBundle(
             new FakeStudioProjectService(),
-            new FakeStudioEngineService(),
+            engineService ?? new FakeStudioEngineService(),
             sceneEditRuntimeService ?? new FakeStudioSceneEditRuntimeService(),
-            new FakeStudioOutputService(clock),
+            outputService ?? new FakeStudioOutputService(clock),
             capabilityService,
             new StudioDialogService(capabilityService),
             new StudioUndoRedoService(),

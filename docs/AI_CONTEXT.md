@@ -39,6 +39,13 @@ MediaForgeProject
   `SceneMutationBatchBuilder`; one atomic engine batch contains only actual
   add/remove/order/common/type-specific changes. The engine clones and validates
   the scene project once for the complete batch.
+- The Studio shell owns the UI-facing engine lifecycle. It subscribes to real
+  status/health, exposes serialized Start/Stop/Restart commands, blocks actions
+  during incompatible states, and shuts down drafts, outputs, timer,
+  subscriptions, and engine in ownership order.
+- Project replacement awaits `DiscardSceneDraftAsync` for every tracked runtime
+  session before synchronizing the next canonical project; session maps are
+  never cleared as a substitute for physical draft cleanup.
 - Sinks consume completed output; they never request a render.
 
 ## Runtime Path
