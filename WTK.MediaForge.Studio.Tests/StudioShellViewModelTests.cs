@@ -373,6 +373,34 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
+    public async Task Live_edit_publishes_immediately_without_apply_and_closes_cleanly()
+    {
+        var runtime = new RecordingSceneEditRuntimeService();
+        var shell = CreateShell(runtime);
+        await shell.ToggleEditingModeCommand.ExecuteAsync(null);
+        if (shell.Dialog.IsOpen)
+            shell.ConfirmDialogCommand.Execute(null);
+        var savedLayer = shell.Document.Scenes.Single(scene => scene.Id == "scene-main").Layers.First(layer => !layer.IsLocked);
+        var draftLayer = shell.BottomWorkbench.Layers.Single(layer => layer.Id == savedLayer.Id);
+        shell.Preview.MoveLayerFromStart(draftLayer, draftLayer.X, draftLayer.Y, new Vector(25, 0), KeyModifiers.None);
+        var publishedX = draftLayer.X;
+
+        Assert.True(shell.IsLiveEditing);
+        Assert.Equal(1, runtime.TrackedSceneDraftCount);
+        Assert.Equal(0, runtime.ApplyCallCount);
+        Assert.Equal(
+            publishedX,
+            shell.Document.Scenes.Single(scene => scene.Id == "scene-main").Layers.Single(layer => layer.Id == savedLayer.Id).Transform.X);
+        Assert.False(shell.ApplySceneDraftCommand.CanExecute(null));
+        Assert.False(shell.DiscardSceneDraftCommand.CanExecute(null));
+
+        await shell.ToggleEditingModeCommand.ExecuteAsync(null);
+
+        Assert.False(shell.IsLiveEditing);
+        Assert.Equal(1, runtime.DiscardCallCount);
+    }
+
+    [Fact]
     public void SafeArea_DefaultComesFromLinkedOutputProfile()
     {
         var shell = CreateShell();
@@ -437,6 +465,16 @@ public sealed class StudioShellViewModelTests
         {
             BegunSceneIds.Add(scene.Id);
             return ValueTask.FromResult(new StudioSceneEditRuntimeSession(Guid.NewGuid().ToString("N"), scene.Id, true));
+        }
+
+        public ValueTask<StudioSceneEditRuntimeSession> BeginLiveSessionAsync(
+            StudioDocument document,
+            StudioScene scene,
+            CancellationToken cancellationToken = default)
+        {
+            BegunSceneIds.Add(scene.Id);
+            return ValueTask.FromResult(new StudioSceneEditRuntimeSession(
+                Guid.NewGuid().ToString("N"), scene.Id, true, StudioSceneEditingMode.Live));
         }
 
         public ValueTask TrackLayerVisualStateAsync(

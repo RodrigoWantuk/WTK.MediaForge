@@ -16,6 +16,7 @@ public sealed class StudioSceneEditRuntimeService(
     private readonly StudioSceneEditBridge _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
     private readonly StudioProjectEngineMapper _projectMapper = projectMapper ?? new StudioProjectEngineMapper();
     private readonly ConcurrentDictionary<string, StudioSceneEditBridgeSession> _sessions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, LiveMutationCoalescer> _liveMutations = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _projectSyncGate = new(1, 1);
     private string? _syncedProjectFingerprint;
 
@@ -40,7 +41,25 @@ public sealed class StudioSceneEditRuntimeService(
         var runtimeSessionId = Guid.NewGuid().ToString("N");
         _sessions[runtimeSessionId] = engineSession;
 
-        return new StudioSceneEditRuntimeSession(runtimeSessionId, scene.Id, true);
+        return new StudioSceneEditRuntimeSession(runtimeSessionId, scene.Id, true, StudioSceneEditingMode.Draft);
+    }
+
+    public async ValueTask<StudioSceneEditRuntimeSession> BeginLiveSessionAsync(
+        StudioDocument document,
+        StudioScene scene,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(scene);
+        if (!document.Scenes.Any(candidate => string.Equals(candidate.Id, scene.Id, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"Scene '{scene.Id}' does not belong to the Studio document.");
+        await SynchronizeProjectAsync(document, cancellationToken).ConfigureAwait(false);
+        var engineSession = await _bridge.BeginAsync(scene, SceneEditMode.Live, cancellationToken).ConfigureAwait(false);
+        var runtimeSessionId = Guid.NewGuid().ToString("N");
+        _sessions[runtimeSessionId] = engineSession;
+        _liveMutations[runtimeSessionId] = new LiveMutationCoalescer(
+            patches => _bridge.ApplyBatchAsync(engineSession, patches, CancellationToken.None));
+        return new StudioSceneEditRuntimeSession(runtimeSessionId, scene.Id, true, StudioSceneEditingMode.Live);
     }
 
     public ValueTask TrackLayerVisualStateAsync(
@@ -77,6 +96,14 @@ public sealed class StudioSceneEditRuntimeService(
         if (patches.Count == 0)
             return;
 
+        if (session.Mode == StudioSceneEditingMode.Live)
+        {
+            if (!_liveMutations.TryGetValue(session.RuntimeSessionId, out var coalescer))
+                throw new InvalidOperationException("Live scene mutation coalescer is missing or already closed.");
+            await coalescer.EnqueueAsync(patches, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         await _bridge.ApplyBatchAsync(engineSession, patches, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -87,6 +114,8 @@ public sealed class StudioSceneEditRuntimeService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
+        if (session.Mode != StudioSceneEditingMode.Draft)
+            throw new InvalidOperationException("Live scene edit sessions publish mutations and cannot be applied.");
         var engineSession = Resolve(session);
 
         var result = await _bridge
@@ -110,15 +139,23 @@ public sealed class StudioSceneEditRuntimeService(
         if (!string.Equals(engineSession.StudioSceneId, session.StudioSceneId, StringComparison.Ordinal))
             throw new InvalidOperationException("Runtime scene edit session is bound to a different Studio scene.");
 
+        Exception? failure = null;
         try
         {
-            await _bridge.DiscardAsync(engineSession, cancellationToken)
-                .ConfigureAwait(false);
+            if (_liveMutations.TryRemove(session.RuntimeSessionId, out var coalescer))
+            {
+                try { await coalescer.FlushAsync(cancellationToken).ConfigureAwait(false); }
+                catch (Exception exception) { failure = exception; }
+            }
+            try { await _bridge.DiscardAsync(engineSession, cancellationToken).ConfigureAwait(false); }
+            catch (Exception exception) { failure = failure is null ? exception : new AggregateException(failure, exception); }
         }
         finally
         {
             _sessions.TryRemove(session.RuntimeSessionId, out _);
         }
+        if (failure is not null)
+            throw failure;
     }
 
     public async ValueTask DiscardAllSceneDraftsAsync(CancellationToken cancellationToken = default)
@@ -126,15 +163,42 @@ public sealed class StudioSceneEditRuntimeService(
         foreach (var entry in _sessions.ToArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Exception? failure = null;
             try
             {
-                await _bridge.DiscardAsync(entry.Value, cancellationToken).ConfigureAwait(false);
+                if (_liveMutations.TryRemove(entry.Key, out var coalescer))
+                {
+                    try { await coalescer.FlushAsync(cancellationToken).ConfigureAwait(false); }
+                    catch (Exception exception) { failure = exception; }
+                }
+                try { await _bridge.DiscardAsync(entry.Value, cancellationToken).ConfigureAwait(false); }
+                catch (Exception exception) { failure = failure is null ? exception : new AggregateException(failure, exception); }
             }
             finally
             {
                 _sessions.TryRemove(entry.Key, out _);
             }
+            if (failure is not null)
+                throw failure;
         }
+    }
+
+    public ValueTask FlushLiveMutationsAsync(
+        StudioSceneEditRuntimeSession session,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return _liveMutations.TryGetValue(session.RuntimeSessionId, out var coalescer)
+            ? new ValueTask(coalescer.FlushAsync(cancellationToken))
+            : ValueTask.CompletedTask;
+    }
+
+    public string? GetLastMutationError(StudioSceneEditRuntimeSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return _liveMutations.TryGetValue(session.RuntimeSessionId, out var coalescer)
+            ? coalescer.LastError
+            : null;
     }
 
     private StudioSceneEditBridgeSession Resolve(StudioSceneEditRuntimeSession session)
@@ -187,5 +251,83 @@ public sealed class StudioSceneEditRuntimeService(
         var json = MediaForgeProjectSerializer.Serialize(project);
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(bytes);
+    }
+
+    private sealed class LiveMutationCoalescer(
+        Func<IReadOnlyList<SceneMutationPatch>, ValueTask> publish)
+    {
+        private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(16);
+        private readonly object _gate = new();
+        private readonly Func<IReadOnlyList<SceneMutationPatch>, ValueTask> _publish = publish;
+        private IReadOnlyList<SceneMutationPatch>? _latest;
+        private List<TaskCompletionSource> _waiters = [];
+        private Task? _worker;
+        private string? _lastError;
+
+        public string? LastError => Volatile.Read(ref _lastError);
+
+        public Task EnqueueAsync(IReadOnlyList<SceneMutationPatch> patches, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_gate)
+            {
+                _latest = patches.ToArray();
+                _waiters.Add(completion);
+                _worker ??= RunAsync();
+            }
+            return completion.Task.WaitAsync(cancellationToken);
+        }
+
+        public async Task FlushAsync(CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                Task? worker;
+                lock (_gate)
+                    worker = _worker;
+                if (worker is null)
+                    return;
+                await worker.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private async Task RunAsync()
+        {
+            while (true)
+            {
+                await Task.Delay(FrameInterval).ConfigureAwait(false);
+                IReadOnlyList<SceneMutationPatch> patches;
+                List<TaskCompletionSource> waiters;
+                lock (_gate)
+                {
+                    patches = _latest!;
+                    waiters = _waiters;
+                    _latest = null;
+                    _waiters = [];
+                }
+                try
+                {
+                    await _publish(patches).ConfigureAwait(false);
+                    Volatile.Write(ref _lastError, null);
+                    foreach (var waiter in waiters)
+                        waiter.TrySetResult();
+                }
+                catch (Exception exception)
+                {
+                    Volatile.Write(ref _lastError, exception.Message);
+                    foreach (var waiter in waiters)
+                        waiter.TrySetException(exception);
+                }
+                lock (_gate)
+                {
+                    if (_latest is null)
+                    {
+                        _worker = null;
+                        return;
+                    }
+                }
+            }
+        }
     }
 }

@@ -207,9 +207,6 @@ public sealed class StudioSceneEditBridge(IStudioSceneEditEngine engine)
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
-        if (session.Mode != SceneEditMode.Apply)
-            throw new InvalidOperationException("Only Apply-mode Studio scene edit sessions can be discarded.");
-
         return _engine.DiscardSceneDraftAsync(session.SessionId, cancellationToken);
     }
 

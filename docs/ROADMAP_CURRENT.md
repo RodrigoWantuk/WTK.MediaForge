@@ -103,6 +103,10 @@ Experimental and not yet product-promoted:
   all active scene drafts are explicitly discarded before project replacement.
   Scene Apply reflects exactly engine-reported affected output ids and the
   route-owned Cut/Fade transition policy.
+  Draft and Live editing are now explicit Studio modes. Live activation is
+  confirmed when outputs are active, publishes coalesced atomic mutations
+  without Apply, reports rejection without replacing the last valid scene, and
+  deterministically discards its runtime session when leaving the mode.
 - Remote Scene has platform-neutral contracts and a separately deployable
   HTTPS/WebSocket signaling service with one-time hashed invitations, role-scoped
   bearer access, bounded SDP/ICE relay, SQLite session storage, expiration, rate

@@ -35,6 +35,9 @@ MediaForgeProject
   Layer order and every supported visual field participate; display names and
   other non-visual metadata do not invalidate rendered content.
 - Live edits publish transactionally. Apply edits remain draft until commit.
+- Studio exposes Draft and Live explicitly. Live drag mutations are coalesced to
+  one latest atomic batch per UI frame, keep the last valid published scene on
+  rejection, surface the error, and close their engine session on mode exit.
 - Studio draft synchronization uses `StudioSceneDraftDiff` and
   `SceneMutationBatchBuilder`; one atomic engine batch contains only actual
   add/remove/order/common/type-specific changes. The engine clones and validates

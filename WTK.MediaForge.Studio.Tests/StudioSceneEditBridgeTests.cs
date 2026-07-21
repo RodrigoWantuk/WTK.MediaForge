@@ -132,13 +132,13 @@ public sealed class StudioSceneEditBridgeTests
     }
 
     [Fact]
-    public async Task Discard_rejects_live_sessions()
+    public async Task Discard_closes_live_sessions_without_committing()
     {
         var engine = new RecordingSceneEditEngine();
         var bridge = new StudioSceneEditBridge(engine);
         var session = await bridge.BeginAsync(new StudioScene { Id = "scene-main" }, SceneEditMode.Live);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await bridge.DiscardAsync(session));
+        await bridge.DiscardAsync(session);
     }
 
     private sealed class RecordingSceneEditEngine : IStudioSceneEditEngine

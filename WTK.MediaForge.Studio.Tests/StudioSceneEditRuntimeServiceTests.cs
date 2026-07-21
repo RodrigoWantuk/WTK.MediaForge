@@ -126,6 +126,60 @@ public sealed class StudioSceneEditRuntimeServiceTests
         Assert.Empty(engine.Patches);
     }
 
+    [Fact]
+    public async Task Live_mutations_are_coalesced_and_publish_the_latest_pointer_state()
+    {
+        var engine = new RecordingSceneEditEngine();
+        var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
+        var document = StudioMockDocumentFactory.Create();
+        var original = document.Scenes.Single(item => item.Id == "scene-main");
+        var layerId = original.Layers.First().Id;
+        var session = await service.BeginLiveSessionAsync(document, original);
+        var mutations = new List<Task>();
+
+        for (var index = 1; index <= 40; index++)
+        {
+            var draft = SceneEditSessionService.CloneScene(original);
+            draft.Layers.Single(layer => layer.Id == layerId).Transform.X += index;
+            mutations.Add(service.TrackSceneDraftAsync(session, document, original, draft).AsTask());
+        }
+
+        await Task.WhenAll(mutations);
+        await service.FlushLiveMutationsAsync(session);
+
+        Assert.Equal(SceneEditMode.Live, engine.LastBeginMode);
+        Assert.InRange(engine.BatchCallCount, 1, 2);
+        var transform = Assert.IsType<SceneMutationPatch.SetLayerTransform>(engine.Patches.Last());
+        Assert.Equal(original.Layers.First().Transform.X + 40, transform.Transform.Position.X);
+        await service.DiscardSceneDraftAsync(session);
+        Assert.Equal(1, engine.DiscardCallCount);
+    }
+
+    [Fact]
+    public async Task Failed_live_mutation_preserves_session_for_a_later_valid_publish()
+    {
+        var engine = new RecordingSceneEditEngine { FailNextBatch = true };
+        var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
+        var document = StudioMockDocumentFactory.Create();
+        var original = document.Scenes.Single(item => item.Id == "scene-main");
+        var draft = SceneEditSessionService.CloneScene(original);
+        draft.Layers.First().Transform.X += 10;
+        var session = await service.BeginLiveSessionAsync(document, original);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.TrackSceneDraftAsync(session, document, original, draft).AsTask());
+        Assert.Equal("rejected mutation", service.GetLastMutationError(session));
+
+        draft.Layers.First().Transform.X += 10;
+        await service.TrackSceneDraftAsync(session, document, original, draft);
+
+        Assert.Null(service.GetLastMutationError(session));
+        Assert.Single(engine.Patches);
+        await service.DiscardSceneDraftAsync(session);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.TrackSceneDraftAsync(session, document, original, draft).AsTask());
+    }
+
     private sealed class RecordingSceneEditEngine : IStudioSceneEditEngine
     {
         private CanvasId _canvasId;
@@ -142,6 +196,10 @@ public sealed class StudioSceneEditRuntimeServiceTests
 
         public int BatchCallCount { get; private set; }
 
+        public SceneEditMode? LastBeginMode { get; private set; }
+
+        public bool FailNextBatch { get; set; }
+
         public Task SynchronizeProjectAsync(
             WTK.MediaForge.Composition.Project.MediaForgeProject project,
             CancellationToken cancellationToken = default)
@@ -156,6 +214,7 @@ public sealed class StudioSceneEditRuntimeServiceTests
             CancellationToken cancellationToken = default)
         {
             BeginCallCount++;
+            LastBeginMode = mode;
             _canvasId = canvasId;
             return ValueTask.FromResult(new SceneEditSessionDescriptor
             {
@@ -183,6 +242,11 @@ public sealed class StudioSceneEditRuntimeServiceTests
             CancellationToken cancellationToken = default)
         {
             BatchCallCount++;
+            if (FailNextBatch)
+            {
+                FailNextBatch = false;
+                throw new InvalidOperationException("rejected mutation");
+            }
             Patches.AddRange(patches);
             return ValueTask.CompletedTask;
         }

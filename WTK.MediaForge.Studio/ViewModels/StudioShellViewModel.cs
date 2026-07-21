@@ -43,6 +43,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
     private bool _acceptingActions = true;
     private bool _subscriptionsAttached;
     private int _disposed;
+    private StudioSceneEditingMode _editingMode = StudioSceneEditingMode.Draft;
 
     public StudioShellViewModel()
         : this(StudioServiceFactory.CreateFake())
@@ -119,10 +120,11 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         SettingsCommand = new RelayCommand(OpenSettingsDialog);
         RestoreLayoutCommand = new RelayCommand(RestoreDefaultLayout);
         RedockAllPanelsCommand = new RelayCommand(RedockAllPanels);
-        UndoCommand = new RelayCommand(UndoSceneDraft, () => _editSession is not null && _undoRedoService.CanUndo);
-        RedoCommand = new RelayCommand(RedoSceneDraft, () => _editSession is not null && _undoRedoService.CanRedo);
-        ApplySceneDraftCommand = new AsyncRelayCommand(ApplySceneDraftAsync, () => _editSession?.HasChanges == true);
-        DiscardSceneDraftCommand = new AsyncRelayCommand(DiscardSceneDraftAsync, () => _editSession?.HasChanges == true);
+        UndoCommand = new RelayCommand(UndoSceneDraft, () => _editingMode == StudioSceneEditingMode.Draft && _editSession is not null && _undoRedoService.CanUndo);
+        RedoCommand = new RelayCommand(RedoSceneDraft, () => _editingMode == StudioSceneEditingMode.Draft && _editSession is not null && _undoRedoService.CanRedo);
+        ApplySceneDraftCommand = new AsyncRelayCommand(ApplySceneDraftAsync, CanApplySceneDraft);
+        DiscardSceneDraftCommand = new AsyncRelayCommand(DiscardSceneDraftAsync, CanDiscardSceneDraft);
+        ToggleEditingModeCommand = new AsyncRelayCommand(ToggleEditingModeAsync, () => _acceptingActions);
         ToggleStreamingCommand = new AsyncRelayCommand(ToggleStreamingAsync, CanToggleStreaming);
         ToggleRecordingCommand = new AsyncRelayCommand(ToggleRecordingAsync, CanToggleRecording);
         SelectProjectItemCommand = new RelayCommand<ProjectTreeItemViewModel>(SelectProjectItem, item => item is not null);
@@ -235,6 +237,8 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
     public IAsyncRelayCommand DiscardSceneDraftCommand { get; }
 
+    public IAsyncRelayCommand ToggleEditingModeCommand { get; }
+
     public IAsyncRelayCommand ToggleStreamingCommand { get; }
 
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
@@ -266,6 +270,12 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
     public bool IsRecording => _outputService.RecordingState == StudioOutputUiState.Running;
 
     public StudioEngineStatus EngineStatus => _engineStatus;
+
+    public StudioSceneEditingMode EditingMode => _editingMode;
+
+    public bool IsLiveEditing => _editingMode == StudioSceneEditingMode.Live;
+
+    public string EditingModeButtonText => IsLiveEditing ? "Editando ao vivo" : "Editar em rascunho";
 
     public StudioDocument Document => _document;
 
@@ -897,6 +907,10 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
                 CloseDialog();
                 break;
+            case "live-edit-confirmation":
+                CloseDialog();
+                ActivateLiveEditing();
+                break;
         }
     }
 
@@ -912,6 +926,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         Dialog.TransitionOptions.Clear();
         Dialog.TargetOutputId = string.Empty;
         Dialog.SelectedSceneId = string.Empty;
+        Dialog.RequiresLiveConfirmation = false;
         Dialog.NotifyOptionsChanged();
     }
 
@@ -1044,6 +1059,73 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
             : $"{sceneName} aplicada; {affectedOutputIds.Count} saída(s) concluída(s) pela engine.");
     }
 
+    private bool CanApplySceneDraft() =>
+        _editingMode == StudioSceneEditingMode.Draft && _editSession?.HasChanges == true;
+
+    private bool CanDiscardSceneDraft() =>
+        _editingMode == StudioSceneEditingMode.Draft && _editSession?.HasChanges == true;
+
+    private async Task ToggleEditingModeAsync()
+    {
+        if (_editingMode == StudioSceneEditingMode.Draft)
+        {
+            if (_editSession?.HasChanges == true)
+            {
+                SetStatus("Aplique ou descarte o rascunho antes de editar ao vivo.");
+                return;
+            }
+            if (IsStreaming || IsRecording)
+            {
+                Dialog.Kind = "live-edit-confirmation";
+                Dialog.Title = "Ativar edição ao vivo?";
+                Dialog.Message = "As próximas alterações serão publicadas imediatamente nas saídas ativas.";
+                Dialog.PrimaryText = "Editar ao vivo";
+                Dialog.SecondaryText = "Cancelar";
+                Dialog.RequiresLiveConfirmation = true;
+                Dialog.IsOpen = true;
+                return;
+            }
+            ActivateLiveEditing();
+            return;
+        }
+
+        if (_runtimeEditSession is not null)
+        {
+            await _sceneEditRuntimeService.FlushLiveMutationsAsync(_runtimeEditSession, CancellationToken.None)
+                .ConfigureAwait(true);
+            await _sceneEditRuntimeService.DiscardSceneDraftAsync(_runtimeEditSession, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+        _runtimeEditSession = null;
+        _editingMode = StudioSceneEditingMode.Draft;
+        if (_editSession is not null)
+        {
+            _editSession = _sceneEditSessionService.Create(_editSession.Original);
+            CurrentScene = _editSession.Draft;
+            Preview.HasPendingChanges = false;
+            RebuildAll();
+        }
+        NotifyEditingModeChanged();
+        SetStatus("Edição em rascunho ativada.");
+    }
+
+    private void ActivateLiveEditing()
+    {
+        _editingMode = StudioSceneEditingMode.Live;
+        NotifyEditingModeChanged();
+        SetStatus("EDIÇÃO AO VIVO: alterações serão publicadas imediatamente.");
+    }
+
+    private void NotifyEditingModeChanged()
+    {
+        OnPropertyChanged(nameof(EditingMode));
+        OnPropertyChanged(nameof(IsLiveEditing));
+        OnPropertyChanged(nameof(EditingModeButtonText));
+        NotifySceneEditCommandStates();
+        ToggleEditingModeCommand.NotifyCanExecuteChanged();
+        Toolbar.StateBadge = IsLiveEditing ? "EDIÇÃO AO VIVO" : _engineStatus.Message;
+    }
+
     private async Task DiscardSceneDraftAsync()
     {
         if (_editSession is null)
@@ -1098,9 +1180,9 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
             throw new InvalidOperationException("No scene draft is active.");
         }
 
-        _runtimeEditSession = await _sceneEditRuntimeService
-            .BeginApplySessionAsync(_document, _editSession.Original, cancellationToken)
-            .ConfigureAwait(true);
+        _runtimeEditSession = _editingMode == StudioSceneEditingMode.Live
+            ? await _sceneEditRuntimeService.BeginLiveSessionAsync(_document, _editSession.Original, cancellationToken).ConfigureAwait(true)
+            : await _sceneEditRuntimeService.BeginApplySessionAsync(_document, _editSession.Original, cancellationToken).ConfigureAwait(true);
         return _runtimeEditSession;
     }
 
@@ -1118,9 +1200,29 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
             .ConfigureAwait(true);
     }
 
-    private void OnPreviewSceneEdited(object? sender, EventArgs e)
+    private async void OnPreviewSceneEdited(object? sender, EventArgs e)
     {
         MarkSceneDraftChanged();
+        if (_editingMode != StudioSceneEditingMode.Live || _editSession is null)
+            return;
+
+        try
+        {
+            var runtimeSession = await EnsureRuntimeEditSessionAsync(CancellationToken.None).ConfigureAwait(true);
+            await PushCurrentDraftToRuntimeAsync(runtimeSession, CancellationToken.None).ConfigureAwait(true);
+            _sceneEditSessionService.Apply(_editSession);
+            _editSession = _sceneEditSessionService.Create(_editSession.Original);
+            CurrentScene = _editSession.Draft;
+            _undoRedoService.Reset(CurrentScene);
+            Preview.HasPendingChanges = false;
+            ApplyProjectDocument();
+            SetStatus("EDIÇÃO AO VIVO: alteração publicada.");
+        }
+        catch (Exception exception)
+        {
+            _diagnosticsService.Append("ERROR", "Studio Live Edit", $"Mutação rejeitada; o último estado válido foi preservado: {exception.Message}");
+            SetStatus($"Edição ao vivo não publicada: {exception.Message}");
+        }
     }
 
     private void MarkSceneDraftChanged()
@@ -1147,6 +1249,11 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
     private bool CanLeaveCurrentScene()
     {
+        if (_editingMode == StudioSceneEditingMode.Live && _runtimeEditSession is not null)
+        {
+            SetStatus("Volte ao modo rascunho antes de trocar de cena.");
+            return false;
+        }
         if (_editSession?.HasChanges != true)
         {
             return true;
@@ -1572,7 +1679,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
     {
         TitleBar.ProjectName = _document.HasUnsavedChanges ? $"{_document.DisplayName} *" : _document.DisplayName;
         TitleBar.WorkspaceState = IsStreaming ? "Ao vivo" : IsRecording ? $"Gravando {_outputService.RecordingElapsed:hh\\:mm\\:ss}" : "Prévia pronta";
-        Toolbar.StateBadge = CurrentScene?.IsProgram == true ? "Cena principal" : "Cena em edição";
+        Toolbar.StateBadge = IsLiveEditing ? "EDIÇÃO AO VIVO" : CurrentScene?.IsProgram == true ? "Cena principal" : "Cena em edição";
         UpdateStatusBarSummary();
     }
 
@@ -1622,7 +1729,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
     private void ApplyEngineStatus(StudioEngineStatus status)
     {
         _engineStatus = status;
-        Toolbar.StateBadge = status.Message;
+        Toolbar.StateBadge = IsLiveEditing ? "EDIÇÃO AO VIVO" : status.Message;
         if (status.State is StudioEngineUiState.Failed or StudioEngineUiState.Degraded or StudioEngineUiState.Recovering)
             StatusBar.StatusText = status.Message;
         OnPropertyChanged(nameof(EngineStatus));

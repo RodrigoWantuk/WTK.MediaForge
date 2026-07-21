@@ -66,12 +66,21 @@
       </StackPanel>
 
       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Command="{Binding ToggleEditingModeCommand}"
+                Classes="production"
+                Classes.live="{Binding IsLiveEditing}"
+                TabIndex="5"
+                a11y:AutomationProperties.AutomationId="toolbar.editing-mode"
+                a11y:AutomationProperties.Name="{Binding EditingModeButtonText}"
+                a11y:AutomationProperties.HelpText="Alterna entre edição em rascunho e publicação imediata.">
+          <TextBlock Text="{Binding EditingModeButtonText}" FontWeight="SemiBold" />
+        </Button>
         <Button Command="{Binding ToggleStreamingCommand}"
                 Classes="production"
                 Classes.live="{Binding Toolbar.IsStreamingLive}"
                 Classes.busy="{Binding Toolbar.IsStreamBusy}"
                 Classes.warning="{Binding Toolbar.IsStreamNotConfigured}"
-                TabIndex="5"
+                TabIndex="6"
                 a11y:AutomationProperties.AutomationId="toolbar.stream"
                 a11y:AutomationProperties.Name="{Binding Toolbar.StreamButtonText}"
                 a11y:AutomationProperties.HelpText="Inicia ou interrompe a transmissão configurada.">
@@ -85,7 +94,7 @@
                 Classes.recording="{Binding Toolbar.IsRecordingLive}"
                 Classes.busy="{Binding Toolbar.IsRecordingBusy}"
                 Classes.warning="{Binding Toolbar.IsRecordingNotConfigured}"
-                TabIndex="6"
+                TabIndex="7"
                 a11y:AutomationProperties.AutomationId="toolbar.record"
                 a11y:AutomationProperties.Name="{Binding Toolbar.RecordingButtonText}"
                 a11y:AutomationProperties.HelpText="Inicia ou interrompe a gravação configurada.">
@@ -98,7 +107,7 @@
                 Command="{Binding SettingsCommand}"
                 Padding="7"
                 ToolTip.Tip="{loc:Loc Term_Settings}"
-                TabIndex="7"
+                TabIndex="8"
                 a11y:AutomationProperties.AutomationId="toolbar.settings"
                 a11y:AutomationProperties.Name="{loc:Loc Term_Settings}"
                 a11y:AutomationProperties.HelpText="Abre preferências, layout e recursos avançados.">

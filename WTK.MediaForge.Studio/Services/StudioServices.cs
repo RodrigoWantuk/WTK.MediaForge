@@ -105,7 +105,8 @@ public interface IStudioEngineService
 public sealed record StudioSceneEditRuntimeSession(
     string RuntimeSessionId,
     string StudioSceneId,
-    bool IsEngineBacked);
+    bool IsEngineBacked,
+    StudioSceneEditingMode Mode = StudioSceneEditingMode.Draft);
 
 public sealed record StudioSceneEditApplyResult(
     bool IsEngineBacked,
@@ -123,6 +124,12 @@ public interface IStudioSceneEditRuntimeService
         StudioDocument document,
         StudioScene scene,
         CancellationToken cancellationToken = default);
+
+    ValueTask<StudioSceneEditRuntimeSession> BeginLiveSessionAsync(
+        StudioDocument document,
+        StudioScene scene,
+        CancellationToken cancellationToken = default) =>
+        BeginApplySessionAsync(document, scene, cancellationToken);
 
     ValueTask TrackLayerVisualStateAsync(
         StudioSceneEditRuntimeSession session,
@@ -147,6 +154,12 @@ public interface IStudioSceneEditRuntimeService
 
     ValueTask DiscardAllSceneDraftsAsync(CancellationToken cancellationToken = default) =>
         ValueTask.CompletedTask;
+
+    ValueTask FlushLiveMutationsAsync(
+        StudioSceneEditRuntimeSession session,
+        CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+    string? GetLastMutationError(StudioSceneEditRuntimeSession session) => null;
 }
 
 public sealed class StudioOutputStatusChangedEventArgs : EventArgs
