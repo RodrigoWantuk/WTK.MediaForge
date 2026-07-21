@@ -66,7 +66,7 @@ internal static unsafe class VulkanOffscreenReadback
         var device = deviceContext.Device;
         var bufferSize = checked((ulong)target.Size.Width * target.Size.Height * 4);
 
-        lock (deviceContext.CommandQueueGate)
+        lock (deviceContext.AuxiliaryCommandPoolGate)
         {
             var stagingLease = VulkanOffscreenReadbackStagingPool.Rent(deviceContext, bufferSize);
             var stagingBuffer = stagingLease.Buffer;
@@ -147,10 +147,7 @@ internal static unsafe class VulkanOffscreenReadback
                     vk.DestroyFence(device, fence, null);
 
                 if (commandBuffer.Handle != 0)
-                {
-                    var localCommandBuffer = commandBuffer;
-                    vk.FreeCommandBuffers(device, deviceContext.CommandPool, 1, &localCommandBuffer);
-                }
+                    deviceContext.FreeAuxiliaryCommandBuffer(commandBuffer);
 
                 VulkanOffscreenReadbackStagingPool.Return(deviceContext, stagingLease);
             }
@@ -158,32 +155,7 @@ internal static unsafe class VulkanOffscreenReadback
     }
 
     private static CommandBuffer BeginCommandBuffer(VulkanHeadlessDevice deviceContext)
-    {
-        var allocateInfo = new CommandBufferAllocateInfo
-        {
-            SType = StructureType.CommandBufferAllocateInfo,
-            CommandPool = deviceContext.CommandPool,
-            Level = CommandBufferLevel.Primary,
-            CommandBufferCount = 1
-        };
-
-        if (deviceContext.Vk.AllocateCommandBuffers(deviceContext.Device, &allocateInfo, out var commandBuffer) !=
-            Result.Success)
-        {
-            throw new InvalidOperationException("vkAllocateCommandBuffers failed for offscreen readback.");
-        }
-
-        var beginInfo = new CommandBufferBeginInfo
-        {
-            SType = StructureType.CommandBufferBeginInfo,
-            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-        };
-
-        if (deviceContext.Vk.BeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success)
-            throw new InvalidOperationException("vkBeginCommandBuffer failed for offscreen readback.");
-
-        return commandBuffer;
-    }
+        => deviceContext.AllocateAndBeginAuxiliaryCommandBuffer("offscreen readback");
 
     private static Fence CreateFence(VulkanHeadlessDevice deviceContext)
     {
@@ -214,8 +186,11 @@ internal static unsafe class VulkanOffscreenReadback
             PCommandBuffers = commandBuffers
         };
 
-        if (deviceContext.Vk.QueueSubmit(deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
-            throw new InvalidOperationException("vkQueueSubmit failed for offscreen readback.");
+        lock (deviceContext.CommandQueueGate)
+        {
+            if (deviceContext.Vk.QueueSubmit(deviceContext.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
+                throw new InvalidOperationException("vkQueueSubmit failed for offscreen readback.");
+        }
 
         var deadline = Environment.TickCount64 + (long)ReadbackTimeout.TotalMilliseconds;
 

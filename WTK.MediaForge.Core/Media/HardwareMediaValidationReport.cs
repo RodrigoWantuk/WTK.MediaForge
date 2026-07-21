@@ -221,7 +221,7 @@ public static class HardwareMediaValidationReportBuilder
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        var overallStatus = ResolveOverallStatus(features, proofs, requireHardwareMedia);
+        var overallStatus = ResolveOverallStatus(features, proofs);
 
         return new HardwareMediaValidationReport
         {
@@ -463,8 +463,7 @@ public static class HardwareMediaValidationReportBuilder
 
     private static HardwareMediaValidationStatus ResolveOverallStatus(
         IReadOnlyList<HardwareMediaValidationFeature> features,
-        IReadOnlyList<HardwareMediaValidationProof> proofs,
-        bool requireHardwareMedia)
+        IReadOnlyList<HardwareMediaValidationProof> proofs)
     {
         if (proofs.Any(static proof => proof.Status == HardwareMediaValidationStatus.Failed))
             return HardwareMediaValidationStatus.Failed;
@@ -474,10 +473,9 @@ public static class HardwareMediaValidationReportBuilder
             .Any(static feature => feature.Status == HardwareMediaValidationStatus.Failed))
             return HardwareMediaValidationStatus.Failed;
 
-        if (requireHardwareMedia &&
-            features
-                .Where(static feature => feature.RequiredForHardwareRelease)
-                .Any(static feature => feature.Status != HardwareMediaValidationStatus.Passed))
+        if (features
+            .Where(static feature => feature.RequiredForHardwareRelease)
+            .Any(static feature => feature.Status != HardwareMediaValidationStatus.Passed))
             return HardwareMediaValidationStatus.Blocked;
 
         return HardwareMediaValidationStatus.Passed;

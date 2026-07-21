@@ -111,6 +111,34 @@ public sealed class HardwareMediaValidationReportTests
     }
 
     [Fact]
+    public void Validation_report_remains_blocked_without_strict_exit_policy_when_required_proofs_are_missing()
+    {
+        var capabilityReport = CreateCapabilityReport(
+            [
+                Capability(
+                    MediaForgeCapabilityCatalog.RecordingMp4H264,
+                    "Recording",
+                    MediaForgeSupportStatus.Unavailable,
+                    "Blocked in test.")
+            ],
+            [
+                UnavailableProof(MediaForgeCapabilityCatalog.HardwareEncodeProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.RenderToEncodeProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.Mp4RecordingProof),
+                UnavailableProof(MediaForgeCapabilityCatalog.Mp4OutputProductProof)
+            ]);
+
+        var report = HardwareMediaValidationReportBuilder.Build(
+            capabilityReport,
+            requireHardwareMedia: false);
+
+        Assert.False(report.RequireHardwareMedia);
+        Assert.False(report.ReleaseGatePassed);
+        Assert.Equal(HardwareMediaValidationStatus.Blocked, report.OverallStatus);
+        Assert.Empty(report.Failures);
+    }
+
+    [Fact]
     public void Validation_report_does_not_block_release_for_non_required_planned_features()
     {
         var capabilityReport = CreateCapabilityReport(

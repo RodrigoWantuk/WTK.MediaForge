@@ -1,4 +1,6 @@
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Engine;
+using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Encode;
 using WTK.MediaForge.Composition.Runtime.Rendering;
@@ -10,12 +12,34 @@ using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Media.Audit;
 using WTK.MediaForge.Core.Media.Encode;
 using WTK.MediaForge.Core.Media.Interop;
+using WTK.MediaForge.Composition.Tests.Engine;
 using Xunit;
 
 namespace WTK.MediaForge.Composition.Tests.MediaPipeline;
 
 public sealed class MediaPipelineRuntimeTests
 {
+    [Fact]
+    public async Task Engine_disposes_encoded_pipeline_after_render_thread_and_before_backend()
+    {
+        var backendFactory = new RecordingRenderBackendFactory();
+        MediaForgeEngine? observedEngine = null;
+        var routeFactory = new CleanupOrderEncodedOutputRouteFactory(
+            () => observedEngine?.RenderThreadForTests?.IsRunning == true,
+            () => backendFactory.Backend?.Disposed == true);
+        await using var engine = EngineLifecycleTestSupport.CreateEngine(
+            backendFactory: backendFactory,
+            encodedOutputRouteFactory: routeFactory);
+        observedEngine = engine;
+
+        await engine.LoadProjectAsync(EngineLifecycleTestSupport.CreateOffscreenProject());
+        await engine.StartAsync();
+        await engine.StopAsync();
+
+        Assert.True(routeFactory.RouteResourcesDisposed);
+        Assert.True(backendFactory.Backend!.Disposed);
+    }
+
     [Fact]
     public async Task Encoded_route_encodes_once_and_fans_out_packet_to_multiple_sinks()
     {
@@ -431,5 +455,63 @@ public sealed class MediaPipelineRuntimeTests
             IMediaTransportAuditSink auditSink,
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Rendered output runtime should export surfaces before scheduling.");
+    }
+
+    private sealed class CleanupOrderEncodedOutputRouteFactory(
+        Func<bool> isRenderThreadRunning,
+        Func<bool> isBackendDisposed)
+        : IEncodedOutputRouteFactory
+    {
+        private readonly Func<bool> _isRenderThreadRunning = isRenderThreadRunning;
+        private readonly Func<bool> _isBackendDisposed = isBackendDisposed;
+
+        public bool RouteResourcesDisposed { get; private set; }
+
+        public bool CanCreate(RenderOutputTypeId typeId) => true;
+
+        public async ValueTask RegisterAsync(
+            MediaForgeProject project,
+            MediaForgeRenderOutput output,
+            MediaPipelineRuntime runtime,
+            CancellationToken cancellationToken)
+        {
+            await runtime.RegisterEncodedOutputAsync(
+                output.Id,
+                new RenderedOutputEncodeFrameAdapter(new ImmediateRenderedOutputExporter()),
+                new PreExportedInputRecordingEncoder(),
+                new ThrowingGpuFrameExporter(),
+                CreateSinkContext(),
+                [new RecordingEncodedPacketSink()],
+                new CollectingMediaTransportAuditSink(),
+                routeResources: new OrderedRouteResources(
+                    this,
+                    _isRenderThreadRunning,
+                    _isBackendDisposed),
+                cancellationToken: cancellationToken);
+        }
+
+        private sealed class OrderedRouteResources(
+            CleanupOrderEncodedOutputRouteFactory owner,
+            Func<bool> isRenderThreadRunning,
+            Func<bool> isBackendDisposed) : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync()
+            {
+                if (isRenderThreadRunning())
+                {
+                    throw new InvalidOperationException(
+                        "Encoded route resources were disposed before the render thread stopped.");
+                }
+
+                if (isBackendDisposed())
+                {
+                    throw new InvalidOperationException(
+                        "Encoded route resources were disposed after the render backend.");
+                }
+
+                owner.RouteResourcesDisposed = true;
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }

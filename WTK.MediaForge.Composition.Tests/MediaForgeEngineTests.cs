@@ -46,8 +46,31 @@ public class MediaForgeEngineTests
         Assert.True(health.Recoveries[0].IsolatesSource);
         var backendResources = Assert.IsAssignableFrom<IRenderBackendResourceDiagnostics>(engine.BackendForTests)
             .GetResourceSnapshot();
-        Assert.Equal(backendResources.BoundOutputTargets, health.GpuResources.BoundOutputTargets);
-        Assert.Equal(engine.RenderThreadForTests!.PendingTracker.PendingCount, health.GpuResources.PendingSubmissions);
+        MediaForgeRuntimeHealthSnapshot? consistentResourceHealth = null;
+        var consistentPendingCount = -1;
+        await WaitUntilAsync(
+            () =>
+            {
+                var candidate = engine.GetRuntimeHealthSnapshot();
+                var pendingCount = engine.RenderThreadForTests!.PendingTracker.PendingCount;
+                if (candidate.GpuResources.PendingSubmissions != pendingCount)
+                {
+                    return false;
+                }
+
+                consistentResourceHealth = candidate;
+                consistentPendingCount = pendingCount;
+                return true;
+            },
+            TimeSpan.FromSeconds(2));
+
+        Assert.NotNull(consistentResourceHealth);
+        Assert.Equal(
+            backendResources.BoundOutputTargets,
+            consistentResourceHealth.GpuResources.BoundOutputTargets);
+        Assert.Equal(
+            consistentPendingCount,
+            consistentResourceHealth.GpuResources.PendingSubmissions);
     }
 
     [Fact]

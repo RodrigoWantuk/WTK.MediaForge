@@ -565,12 +565,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
 
         if (commandBuffer.Handle != 0)
         {
-            var localCommandBuffer = commandBuffer;
-            lock (_deviceContext.CommandQueueGate)
-            {
-                vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &localCommandBuffer);
-            }
-
+            _deviceContext.FreePrimaryCommandBuffer(commandBuffer);
             commandBufferFreed = true;
         }
 
@@ -781,37 +776,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
     }
 
     private CommandBuffer BeginCommandBuffer()
-    {
-        var allocInfo = new CommandBufferAllocateInfo
-        {
-            SType = StructureType.CommandBufferAllocateInfo,
-            CommandPool = _deviceContext.CommandPool,
-            Level = CommandBufferLevel.Primary,
-            CommandBufferCount = 1
-        };
-
-        CommandBuffer commandBuffer;
-
-        lock (_deviceContext.CommandQueueGate)
-        {
-            if (_deviceContext.Vk.AllocateCommandBuffers(_deviceContext.Device, &allocInfo, out commandBuffer) !=
-                Result.Success)
-            {
-                throw new InvalidOperationException("vkAllocateCommandBuffers failed.");
-            }
-
-            var beginInfo = new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-            };
-
-            if (_deviceContext.Vk.BeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success)
-                throw new InvalidOperationException("vkBeginCommandBuffer failed.");
-        }
-
-        return commandBuffer;
-    }
+        => _deviceContext.AllocateAndBeginPrimaryCommandBuffer("Vulkan render submission");
 
     private Fence CreateFence()
     {

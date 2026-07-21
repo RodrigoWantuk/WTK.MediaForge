@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Engine;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Runtime.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Runtime.Sources;
@@ -22,12 +23,14 @@ internal static class EngineLifecycleTestSupport
         IMediaSourceProviderFactory? providerFactory = null,
         IRenderBackendFactory? backendFactory = null,
         IRenderOutputSinkFactory? outputSinkFactory = null,
-        IMediaForgeDiagnosticsSink? diagnostics = null) =>
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        IEncodedOutputRouteFactory? encodedOutputRouteFactory = null) =>
         new(
             providerFactory ?? new FakeMediaSourceProviderFactory(),
             outputSinkFactory ?? new FakeRenderOutputSinkFactory(),
             backendFactory ?? new RecordingRenderBackendFactory(),
-            diagnostics);
+            diagnostics,
+            encodedOutputRouteFactory);
 
     public static WinFormsPreviewRenderOutputTarget CreatePreviewTarget(nint handle) =>
         new(handle);

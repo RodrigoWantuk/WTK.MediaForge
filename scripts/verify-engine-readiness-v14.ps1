@@ -74,22 +74,27 @@ function Read-MediaProofSummary {
         throw "Media proof report contains a failed proof."
     }
 
-    if ($RequireHardwareMedia -and
-        ($report.OverallStatus -ne "Passed" -or -not $report.ReleaseGatePassed)) {
-        throw "Strict media proof report is not Passed."
+    $requiredFeatures = @($report.Features | Where-Object { $_.RequiredForHardwareRelease })
+    $blockedRequiredFeatures = @($requiredFeatures | Where-Object { $_.Status -ne "Passed" })
+    $requiredFeaturesPassed = $blockedRequiredFeatures.Count -eq 0
+
+    if ([bool]$report.ReleaseGatePassed -ne $requiredFeaturesPassed) {
+        throw "Media proof report has contradictory required feature and ReleaseGatePassed values."
     }
 
     if (($report.OverallStatus -eq "Passed") -ne [bool]$report.ReleaseGatePassed) {
         throw "Media proof report has contradictory OverallStatus and ReleaseGatePassed values."
     }
 
+    if ($RequireHardwareMedia -and -not $report.ReleaseGatePassed) {
+        throw "Strict media proof report is not Passed."
+    }
+
     return [pscustomobject]@{
         overallStatus = [string]$report.OverallStatus
         releaseGatePassed = [bool]$report.ReleaseGatePassed
-        requiredFeatureCount = @($report.Features | Where-Object { $_.RequiredForHardwareRelease }).Count
-        blockedRequiredFeatureCount = @($report.Features | Where-Object {
-            $_.RequiredForHardwareRelease -and $_.Status -ne "Passed"
-        }).Count
+        requiredFeatureCount = $requiredFeatures.Count
+        blockedRequiredFeatureCount = $blockedRequiredFeatures.Count
     }
 }
 

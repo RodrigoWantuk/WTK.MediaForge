@@ -1470,6 +1470,28 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             _renderThreadGuard = null;
         }
 
+        var mediaPipelineRuntime = _mediaPipelineRuntime;
+        _mediaPipelineRuntime = null;
+
+        if (mediaPipelineRuntime is not null)
+        {
+            try
+            {
+                await mediaPipelineRuntime.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                cleanupErrors.Add(ex);
+                MediaForgeDiagnostics.Report(
+                    _diagnostics,
+                    MediaForgeDiagnosticSeverity.Error,
+                    "engine.media_pipeline_dispose_failed",
+                    "Failed to dispose media pipeline runtime during engine cleanup.",
+                    nameof(MediaForgeEngine),
+                    ex);
+            }
+        }
+
         if (backend is not null)
         {
             if (renderThreadStopped)
@@ -1501,28 +1523,6 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     MediaForgeDiagnosticSeverity.Fatal,
                     "engine.backend_dispose_skipped_render_thread_alive",
                     ex.Message,
-                    nameof(MediaForgeEngine),
-                    ex);
-            }
-        }
-
-        var mediaPipelineRuntime = _mediaPipelineRuntime;
-        _mediaPipelineRuntime = null;
-
-        if (mediaPipelineRuntime is not null)
-        {
-            try
-            {
-                await mediaPipelineRuntime.DisposeAsync().ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                cleanupErrors.Add(ex);
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Error,
-                    "engine.media_pipeline_dispose_failed",
-                    "Failed to dispose media pipeline runtime during engine cleanup.",
                     nameof(MediaForgeEngine),
                     ex);
             }

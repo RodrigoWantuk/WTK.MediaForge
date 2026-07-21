@@ -14,6 +14,7 @@ namespace WTK.MediaForge.Composition.Sources;
 internal sealed class VideoSourceRuntime : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan DefaultDisposeCleanupTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan SynchronousDisposeSchedulingGrace = TimeSpan.FromMilliseconds(250);
 
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly VideoClock _clock = new();
@@ -172,6 +173,7 @@ internal sealed class VideoSourceRuntime : IDisposable, IAsyncDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         _clock.Pause();
+        StreamQueue.Clear();
 
         Exception? cleanupFailure = null;
 
@@ -194,8 +196,6 @@ internal sealed class VideoSourceRuntime : IDisposable, IAsyncDisposable
                 cleanupFailure = ex;
             }
 
-            StreamQueue.Clear();
-
             try
             {
                 await AwaitCleanupAsync(
@@ -212,11 +212,6 @@ internal sealed class VideoSourceRuntime : IDisposable, IAsyncDisposable
                     : new AggregateException(cleanupFailure, ex);
             }
         }
-        else
-        {
-            StreamQueue.Clear();
-        }
-
         State = MediaSourceState.Stopped;
 
         if (cleanupFailure is not null)
@@ -259,24 +254,39 @@ internal sealed class VideoSourceRuntime : IDisposable, IAsyncDisposable
         try
         {
             StopCoreAsync(CancellationToken.None, DisposeCleanupTimeout)
-                .WaitAsync(TimeSpan.FromTicks(DisposeCleanupTimeout.Ticks * 2))
+                .WaitAsync(GetSynchronousDisposeTimeout())
                 .GetAwaiter()
                 .GetResult();
         }
         catch (Exception ex)
         {
+            var reportedException = ex is TimeoutException &&
+                                    !ex.Message.Contains("Video source decoder", StringComparison.Ordinal)
+                ? new TimeoutException(
+                    $"Video source decoder flush/dispose cleanup did not complete within the bounded synchronous disposal timeout {GetSynchronousDisposeTimeout()}.",
+                    ex)
+                : ex;
             MediaForgeDiagnostics.Report(
                 _diagnostics,
                 MediaForgeDiagnosticSeverity.Error,
-                ex is TimeoutException ? "source.video.dispose_timeout" : "source.video.dispose_failed",
-                ex.Message,
+                reportedException is TimeoutException ? "source.video.dispose_timeout" : "source.video.dispose_failed",
+                reportedException.Message,
                 nameof(VideoSourceRuntime),
-                ex);
+                reportedException);
         }
         finally
         {
             StreamQueue.Dispose();
         }
+    }
+
+    private TimeSpan GetSynchronousDisposeTimeout()
+    {
+        var maximumPerOperationTicks =
+            (TimeSpan.MaxValue.Ticks - SynchronousDisposeSchedulingGrace.Ticks) / 2;
+        var boundedOperationTicks = Math.Min(DisposeCleanupTimeout.Ticks, maximumPerOperationTicks);
+        return TimeSpan.FromTicks(
+            checked((boundedOperationTicks * 2) + SynchronousDisposeSchedulingGrace.Ticks));
     }
 
     public async ValueTask DisposeAsync()

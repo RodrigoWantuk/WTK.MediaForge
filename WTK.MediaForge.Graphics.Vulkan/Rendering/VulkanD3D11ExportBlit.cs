@@ -21,101 +21,101 @@ internal static unsafe class VulkanD3D11ExportBlit
         ArgumentNullException.ThrowIfNull(destination);
 
         var waitTimeout = timeout ?? DefaultTimeout;
-        using var exportImport = VulkanD3D11ExportImport.Import(deviceContext, destination);
-
-        var vk = deviceContext.Vk;
-        var device = deviceContext.Device;
-        CommandBuffer commandBuffer = default;
-        Fence fence = default;
-
-        try
+        lock (deviceContext.AuxiliaryCommandPoolGate)
         {
-            commandBuffer = BeginCommandBuffer(deviceContext);
+            using var exportImport = VulkanD3D11ExportImport.Import(deviceContext, destination);
 
-            var sourceLayout = source.CurrentLayout;
-            if (sourceLayout != ImageLayout.TransferSrcOptimal)
-            {
-                VulkanImageLayoutTransition.Transition(
-                    vk,
-                    commandBuffer,
-                    source.Image,
-                    sourceLayout,
-                    ImageLayout.TransferSrcOptimal);
-            }
+            var vk = deviceContext.Vk;
+            var device = deviceContext.Device;
+            CommandBuffer commandBuffer = default;
+            Fence fence = default;
 
-            var destLayout = exportImport.CurrentLayout;
-            if (destLayout != ImageLayout.TransferDstOptimal)
+            try
             {
-                VulkanImageLayoutTransition.Transition(
-                    vk,
-                    commandBuffer,
-                    exportImport.Image,
-                    destLayout,
-                    ImageLayout.TransferDstOptimal);
-            }
+                commandBuffer = BeginCommandBuffer(deviceContext);
 
-            var blitRegion = new ImageBlit
-            {
-                SrcSubresource = new ImageSubresourceLayers
+                var sourceLayout = source.CurrentLayout;
+                if (sourceLayout != ImageLayout.TransferSrcOptimal)
                 {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    LayerCount = 1
-                },
-                DstSubresource = new ImageSubresourceLayers
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    LayerCount = 1
+                    VulkanImageLayoutTransition.Transition(
+                        vk,
+                        commandBuffer,
+                        source.Image,
+                        sourceLayout,
+                        ImageLayout.TransferSrcOptimal);
                 }
-            };
-            blitRegion.SrcOffsets[0] = new Offset3D(0, 0, 0);
-            blitRegion.SrcOffsets[1] = new Offset3D((int)source.Size.Width, (int)source.Size.Height, 1);
-            blitRegion.DstOffsets[0] = new Offset3D(0, 0, 0);
-            blitRegion.DstOffsets[1] = new Offset3D(
-                (int)destination.TextureSize.Width,
-                (int)destination.TextureSize.Height,
-                1);
 
-            vk.CmdBlitImage(
-                commandBuffer,
-                source.Image,
-                ImageLayout.TransferSrcOptimal,
-                exportImport.Image,
-                ImageLayout.TransferDstOptimal,
-                1,
-                in blitRegion,
-                Filter.Linear);
+                var destLayout = exportImport.CurrentLayout;
+                if (destLayout != ImageLayout.TransferDstOptimal)
+                {
+                    VulkanImageLayoutTransition.Transition(
+                        vk,
+                        commandBuffer,
+                        exportImport.Image,
+                        destLayout,
+                        ImageLayout.TransferDstOptimal);
+                }
 
-            if (sourceLayout != ImageLayout.TransferSrcOptimal)
-            {
-                VulkanImageLayoutTransition.Transition(
-                    vk,
+                var blitRegion = new ImageBlit
+                {
+                    SrcSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        LayerCount = 1
+                    },
+                    DstSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        LayerCount = 1
+                    }
+                };
+                blitRegion.SrcOffsets[0] = new Offset3D(0, 0, 0);
+                blitRegion.SrcOffsets[1] = new Offset3D((int)source.Size.Width, (int)source.Size.Height, 1);
+                blitRegion.DstOffsets[0] = new Offset3D(0, 0, 0);
+                blitRegion.DstOffsets[1] = new Offset3D(
+                    (int)destination.TextureSize.Width,
+                    (int)destination.TextureSize.Height,
+                    1);
+
+                vk.CmdBlitImage(
                     commandBuffer,
                     source.Image,
                     ImageLayout.TransferSrcOptimal,
-                    sourceLayout);
+                    exportImport.Image,
+                    ImageLayout.TransferDstOptimal,
+                    1,
+                    in blitRegion,
+                    Filter.Linear);
+
+                if (sourceLayout != ImageLayout.TransferSrcOptimal)
+                {
+                    VulkanImageLayoutTransition.Transition(
+                        vk,
+                        commandBuffer,
+                        source.Image,
+                        ImageLayout.TransferSrcOptimal,
+                        sourceLayout);
+                }
+
+                exportImport.SetLayout(ImageLayout.General);
+                source.CurrentLayout = sourceLayout;
+
+                if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
+                    throw new InvalidOperationException("vkEndCommandBuffer failed for D3D11 export blit.");
+
+                fence = CreateFence(deviceContext);
+                SubmitWithKeyedMutex(deviceContext, commandBuffer, exportImport, fence);
+                WaitFence(deviceContext, fence, waitTimeout, cancellationToken);
+
+                destination.NotifyVulkanReleasedToProducer();
             }
-
-            exportImport.SetLayout(ImageLayout.General);
-            source.CurrentLayout = sourceLayout;
-
-            if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
-                throw new InvalidOperationException("vkEndCommandBuffer failed for D3D11 export blit.");
-
-            fence = CreateFence(deviceContext);
-            SubmitWithKeyedMutex(deviceContext, commandBuffer, exportImport, fence);
-            WaitFence(deviceContext, fence, waitTimeout, cancellationToken);
-
-            destination.NotifyVulkanReleasedToProducer();
-        }
-        finally
-        {
-            if (fence.Handle != 0)
-                vk.DestroyFence(device, fence, null);
-
-            if (commandBuffer.Handle != 0)
+            finally
             {
-                var localCommandBuffer = commandBuffer;
-                vk.FreeCommandBuffers(device, deviceContext.CommandPool, 1, &localCommandBuffer);
+                if (fence.Handle != 0)
+                    vk.DestroyFence(device, fence, null);
+
+                if (commandBuffer.Handle != 0)
+                    deviceContext.FreeAuxiliaryCommandBuffer(commandBuffer);
             }
         }
     }
@@ -133,111 +133,86 @@ internal static unsafe class VulkanD3D11ExportBlit
 
         var deviceContext = target.DeviceContext;
         var waitTimeout = timeout ?? DefaultTimeout;
-        var vk = deviceContext.Vk;
-        var device = deviceContext.Device;
-        CommandBuffer commandBuffer = default;
-        Fence fence = default;
-
-        try
+        lock (deviceContext.AuxiliaryCommandPoolGate)
         {
-            commandBuffer = BeginCommandBuffer(deviceContext);
+            var vk = deviceContext.Vk;
+            var device = deviceContext.Device;
+            CommandBuffer commandBuffer = default;
+            Fence fence = default;
 
-            var originalLayout = target.CurrentLayout;
-            if (originalLayout != ImageLayout.TransferDstOptimal)
+            try
             {
-                VulkanImageLayoutTransition.Transition(
-                    vk,
-                    commandBuffer,
-                    target.Image,
-                    originalLayout,
-                    ImageLayout.TransferDstOptimal);
-            }
+                commandBuffer = BeginCommandBuffer(deviceContext);
 
-            var clearColor = new ClearColorValue(r, g, b, a);
-            var clearRange = new ImageSubresourceRange
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = 0,
-                LayerCount = 1
-            };
+                var originalLayout = target.CurrentLayout;
+                if (originalLayout != ImageLayout.TransferDstOptimal)
+                {
+                    VulkanImageLayoutTransition.Transition(
+                        vk,
+                        commandBuffer,
+                        target.Image,
+                        originalLayout,
+                        ImageLayout.TransferDstOptimal);
+                }
 
-            vk.CmdClearColorImage(
-                commandBuffer,
-                target.Image,
-                ImageLayout.TransferDstOptimal,
-                &clearColor,
-                1,
-                &clearRange);
+                var clearColor = new ClearColorValue(r, g, b, a);
+                var clearRange = new ImageSubresourceRange
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    BaseMipLevel = 0,
+                    LevelCount = 1,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1
+                };
 
-            if (originalLayout != ImageLayout.TransferDstOptimal)
-            {
-                var restoreLayout = originalLayout == ImageLayout.Undefined
-                    ? ImageLayout.ColorAttachmentOptimal
-                    : originalLayout;
-
-                VulkanImageLayoutTransition.Transition(
-                    vk,
+                vk.CmdClearColorImage(
                     commandBuffer,
                     target.Image,
                     ImageLayout.TransferDstOptimal,
-                    restoreLayout);
+                    &clearColor,
+                    1,
+                    &clearRange);
 
-                target.CurrentLayout = restoreLayout;
+                if (originalLayout != ImageLayout.TransferDstOptimal)
+                {
+                    var restoreLayout = originalLayout == ImageLayout.Undefined
+                        ? ImageLayout.ColorAttachmentOptimal
+                        : originalLayout;
+
+                    VulkanImageLayoutTransition.Transition(
+                        vk,
+                        commandBuffer,
+                        target.Image,
+                        ImageLayout.TransferDstOptimal,
+                        restoreLayout);
+
+                    target.CurrentLayout = restoreLayout;
+                }
+                else
+                {
+                    target.CurrentLayout = ImageLayout.TransferDstOptimal;
+                }
+
+                if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
+                    throw new InvalidOperationException("vkEndCommandBuffer failed for offscreen clear.");
+
+                fence = CreateFence(deviceContext);
+                SubmitSimple(deviceContext, commandBuffer, fence);
+                WaitFence(deviceContext, fence, waitTimeout, cancellationToken);
             }
-            else
+            finally
             {
-                target.CurrentLayout = ImageLayout.TransferDstOptimal;
-            }
+                if (fence.Handle != 0)
+                    vk.DestroyFence(device, fence, null);
 
-            if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
-                throw new InvalidOperationException("vkEndCommandBuffer failed for offscreen clear.");
-
-            fence = CreateFence(deviceContext);
-            SubmitSimple(deviceContext, commandBuffer, fence);
-            WaitFence(deviceContext, fence, waitTimeout, cancellationToken);
-        }
-        finally
-        {
-            if (fence.Handle != 0)
-                vk.DestroyFence(device, fence, null);
-
-            if (commandBuffer.Handle != 0)
-            {
-                var localCommandBuffer = commandBuffer;
-                vk.FreeCommandBuffers(device, deviceContext.CommandPool, 1, &localCommandBuffer);
+                if (commandBuffer.Handle != 0)
+                    deviceContext.FreeAuxiliaryCommandBuffer(commandBuffer);
             }
         }
     }
 
     private static CommandBuffer BeginCommandBuffer(VulkanHeadlessDevice deviceContext)
-    {
-        var allocateInfo = new CommandBufferAllocateInfo
-        {
-            SType = StructureType.CommandBufferAllocateInfo,
-            CommandPool = deviceContext.CommandPool,
-            Level = CommandBufferLevel.Primary,
-            CommandBufferCount = 1
-        };
-
-        if (deviceContext.Vk.AllocateCommandBuffers(deviceContext.Device, &allocateInfo, out var commandBuffer) !=
-            Result.Success)
-        {
-            throw new InvalidOperationException("vkAllocateCommandBuffers failed for D3D11 export blit.");
-        }
-
-        var beginInfo = new CommandBufferBeginInfo
-        {
-            SType = StructureType.CommandBufferBeginInfo,
-            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-        };
-
-        if (deviceContext.Vk.BeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success)
-            throw new InvalidOperationException("vkBeginCommandBuffer failed for D3D11 export blit.");
-
-        return commandBuffer;
-    }
+        => deviceContext.AllocateAndBeginAuxiliaryCommandBuffer("D3D11 export blit");
 
     private static Fence CreateFence(VulkanHeadlessDevice deviceContext)
     {

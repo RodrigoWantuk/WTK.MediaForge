@@ -221,6 +221,8 @@ internal static class WindowsRenderedOutputH264ProofPipeline
                     outputId,
                     frameIndex + 1);
 
+                WindowsPhysicalRenderProofPreparation.Execute(snapshot, outputId);
+
                 submission = renderer.Submit(snapshot);
                 await submission.WaitForCompletionAsync(perSubmissionTimeout, cancellationToken).ConfigureAwait(false);
                 renderedFrameCount++;

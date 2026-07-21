@@ -117,10 +117,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
             try
             {
                 var commandBuffer = CommandBuffer;
-                lock (_deviceContext.CommandQueueGate)
-                {
-                    vk.FreeCommandBuffers(device, _deviceContext.CommandPool, 1, &commandBuffer);
-                }
+                _deviceContext.FreePrimaryCommandBuffer(commandBuffer);
             }
             catch (Exception ex)
             {

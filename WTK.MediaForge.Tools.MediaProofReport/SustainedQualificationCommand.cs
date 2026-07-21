@@ -138,6 +138,7 @@ public static class SustainedQualificationCommand
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             var now = DateTimeOffset.UtcNow;
+            var failureReason = FormatExceptionChain(ex);
             var report = new SustainedQualificationReport
             {
                 Status = "Failed",
@@ -160,11 +161,32 @@ public static class SustainedQualificationCommand
                 PostStopHandleDelta = 0,
                 Mp4FileBytes = 0,
                 RtmpVideoPacketCount = 0,
-                FailureReason = ex.Message
+                FailureReason = failureReason
             };
             await WriteReportsAsync(report, reportPath, markdownPath, CancellationToken.None).ConfigureAwait(false);
-            await error.WriteLineAsync($"Sustained media qualification failed: {ex.Message}").ConfigureAwait(false);
+            await error.WriteLineAsync($"Sustained media qualification failed: {failureReason}").ConfigureAwait(false);
             return 1;
+        }
+    }
+
+    private static string FormatExceptionChain(Exception exception)
+    {
+        var messages = new List<string>();
+        Append(exception, messages);
+        return string.Join(" | ", messages.Distinct(StringComparer.Ordinal));
+
+        static void Append(Exception current, ICollection<string> target)
+        {
+            target.Add($"{current.GetType().Name}: {current.Message}");
+            if (current is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.Flatten().InnerExceptions)
+                    Append(inner, target);
+            }
+            else if (current.InnerException is not null)
+            {
+                Append(current.InnerException, target);
+            }
         }
     }
 

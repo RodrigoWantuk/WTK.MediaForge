@@ -39,6 +39,9 @@ internal enum MediaFoundationH264EncoderSessionState
 internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 {
     private const int MaxOutputDrainIterations = 64;
+    private const int MediaFoundationEventNoWait = 1;
+    private static readonly TimeSpan AsyncEventTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan AsyncEventPollInterval = TimeSpan.FromMilliseconds(1);
 
     private readonly ID3D11Device _device;
     private readonly HardwareVideoEncoderSettings _settings;
@@ -46,6 +49,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private readonly Queue<EncodedSurfaceResult> _pendingOutputPackets = new();
     private IMFDXGIDeviceManager? _deviceManager;
     private IMFTransform? _transform;
+    private IMFMediaEventGenerator? _eventGenerator;
     private MediaFoundationRuntimeLease? _mediaFoundationRuntimeLease;
     private string? _transformName;
     private ReadOnlyMemory<byte> _codecConfiguration;
@@ -53,6 +57,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private bool _acceptedInput;
     private H264Profile? _negotiatedProfile;
     private H264Level? _negotiatedLevel;
+    private bool _isAsyncTransform;
+    private int _asyncNeedInputCredits;
 
     public MediaFoundationHardwareH264EncoderSession(
         ID3D11Device device,
@@ -132,6 +138,9 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
         try
         {
+            if (_isAsyncTransform)
+                WaitForAsyncInputCredit(frameNumber, auditSink);
+
             inputSample = CreateInputSample(inputTexture, presentationTime);
             _transform.ProcessInput(0, inputSample, 0);
             Interlocked.Exchange(ref _lastSubmittedFrameNumber, frameNumber);
@@ -148,7 +157,11 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
                 Detail = $"Media Foundation hardware MFT accepted D3D11 surface input ({_transformName ?? "unknown MFT"}, {_settings.Width}x{_settings.Height}@{_settings.FramesPerSecond}, {_settings.PixelFormat})."
             });
 
-            DrainAvailableOutputPackets(frameNumber, auditSink);
+            if (_isAsyncTransform)
+                PumpAvailableAsyncEvents(frameNumber, auditSink);
+            else
+                DrainAvailableOutputPackets(frameNumber, auditSink);
+
             return _pendingOutputPackets.Count > 0
                 ? _pendingOutputPackets.Dequeue()
                 : null;
@@ -175,13 +188,6 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         var drainIterations = 0;
         while (true)
         {
-            if (++drainIterations > MaxOutputDrainIterations)
-            {
-                throw CreateUnavailableException(
-                    new InvalidOperationException(
-                        $"Media Foundation hardware encoder exceeded {MaxOutputDrainIterations} output drain iteration(s) for one input surface. The backend returned too many empty or partial outputs to be safe for sustained product encoding."));
-            }
-
             IMFSample? outputSample = null;
             IMFMediaBuffer? outputBuffer = null;
             OutputDataBuffer outputData = default;
@@ -231,6 +237,13 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
                             $"Media Foundation hardware encoder did not produce an output packet. HRESULT={result.Code:X8} {result.Description}"));
                 }
 
+                if (++drainIterations > MaxOutputDrainIterations)
+                {
+                    throw CreateUnavailableException(
+                        new InvalidOperationException(
+                            $"Media Foundation hardware encoder exceeded {MaxOutputDrainIterations} output drain iteration(s) for one input surface. The backend returned too many empty or partial outputs to be safe for sustained product encoding."));
+                }
+
                 var sample = outputData.Sample ?? outputSample;
                 if (sample is null)
                     continue;
@@ -274,6 +287,124 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private static bool IsOutputNotReadyQuirk(Result result) =>
         result.Code == unchecked((int)0x8000FFFF);
 
+    private void WaitForAsyncInputCredit(
+        long frameNumber,
+        IMediaTransportAuditSink auditSink)
+    {
+        var deadline = Environment.TickCount64 + (long)AsyncEventTimeout.TotalMilliseconds;
+        using var pollDelay = new ManualResetEventSlim(false);
+        while (_asyncNeedInputCredits == 0)
+        {
+            if (TryProcessNextAsyncEvent(frameNumber, auditSink, out _))
+                continue;
+
+            if (Environment.TickCount64 >= deadline)
+            {
+                throw new TimeoutException(
+                    $"Media Foundation asynchronous encoder did not request input within {AsyncEventTimeout}.");
+            }
+
+            pollDelay.Wait(AsyncEventPollInterval);
+        }
+
+        _asyncNeedInputCredits--;
+    }
+
+    private void PumpAvailableAsyncEvents(
+        long frameNumber,
+        IMediaTransportAuditSink auditSink)
+    {
+        while (TryProcessNextAsyncEvent(frameNumber, auditSink, out _))
+        {
+        }
+    }
+
+    private void WaitForAsyncDrainComplete(
+        long frameNumber,
+        IMediaTransportAuditSink auditSink)
+    {
+        var deadline = Environment.TickCount64 + (long)AsyncEventTimeout.TotalMilliseconds;
+        using var pollDelay = new ManualResetEventSlim(false);
+        while (true)
+        {
+            if (TryProcessNextAsyncEvent(frameNumber, auditSink, out var drainCompleted))
+            {
+                if (drainCompleted)
+                    return;
+
+                continue;
+            }
+
+            if (Environment.TickCount64 >= deadline)
+            {
+                throw new TimeoutException(
+                    $"Media Foundation asynchronous encoder did not complete drain within {AsyncEventTimeout}.");
+            }
+
+            pollDelay.Wait(AsyncEventPollInterval);
+        }
+    }
+
+    private bool TryProcessNextAsyncEvent(
+        long frameNumber,
+        IMediaTransportAuditSink auditSink,
+        out bool drainCompleted)
+    {
+        drainCompleted = false;
+        if (_eventGenerator is null)
+        {
+            throw new InvalidOperationException(
+                "Media Foundation asynchronous encoder is missing its event generator.");
+        }
+
+        IMFMediaEvent? mediaEvent;
+        try
+        {
+            mediaEvent = _eventGenerator.GetEvent(MediaFoundationEventNoWait);
+        }
+        catch (SharpGenException ex) when (
+            ex.HResult == Vortice.MediaFoundation.ResultCode.NoEventsAvailable.Code)
+        {
+            return false;
+        }
+
+        using (mediaEvent)
+        {
+            var status = mediaEvent.Status;
+            if (status.Failure)
+            {
+                throw new InvalidOperationException(
+                    $"Media Foundation asynchronous encoder event '{mediaEvent.EventType}' failed. " +
+                    $"HRESULT={status.Code:X8} {status.Description}");
+            }
+
+            switch (mediaEvent.EventType)
+            {
+                case MediaEventTypes.TransformNeedInput:
+                    checked
+                    {
+                        _asyncNeedInputCredits++;
+                    }
+
+                    break;
+
+                case MediaEventTypes.TransformHaveOutput:
+                    DrainAvailableOutputPackets(frameNumber, auditSink);
+                    break;
+
+                case MediaEventTypes.TransformDrainComplete:
+                    drainCompleted = true;
+                    break;
+
+                case MediaEventTypes.Error:
+                    throw new InvalidOperationException(
+                        "Media Foundation asynchronous encoder reported an error event without a failing status.");
+            }
+        }
+
+        return true;
+    }
+
     private IMFTransform CreateConfiguredHardwareTransform()
     {
         var outputType = new RegisterTypeInfo
@@ -297,12 +428,19 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             {
                 candidate = activation.ActivateObject<IMFTransform>();
                 ConfigureTransform(candidate);
+                if (_isAsyncTransform)
+                    _eventGenerator = candidate.QueryInterface<IMFMediaEventGenerator>();
+
                 _transformName = transformName;
                 return candidate;
             }
             catch (Exception ex) when (ex is not ObjectDisposedException)
             {
                 failures.Add($"{transformName}: {ex.GetType().Name} 0x{ex.HResult:X8} - {ex.Message}");
+                _eventGenerator?.Dispose();
+                _eventGenerator = null;
+                _isAsyncTransform = false;
+                _asyncNeedInputCredits = 0;
                 candidate?.Dispose();
             }
         }
@@ -315,7 +453,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
     private void ConfigureTransform(IMFTransform transform)
     {
-        UnlockAsyncTransformIfRequired(transform);
+        _isAsyncTransform = UnlockAsyncTransformIfRequired(transform);
         transform.ProcessMessage(TMessageType.MessageSetD3DManager, (UIntPtr)_deviceManager!.NativePointer);
 
         using var outputType = MediaFactory.MFCreateMediaType();
@@ -358,7 +496,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         transform.ProcessMessage(TMessageType.MessageNotifyStartOfStream, UIntPtr.Zero);
     }
 
-    private static void UnlockAsyncTransformIfRequired(IMFTransform transform)
+    private static bool UnlockAsyncTransformIfRequired(IMFTransform transform)
     {
         IMFAttributes? attributes = null;
         try
@@ -366,11 +504,12 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             attributes = transform.Attributes;
             var isAsync = TryGetUInt32(attributes, TransformAttributeKeys.TransformAsync) != 0;
             if (!isAsync)
-                return;
+                return false;
 
             attributes
                 .Set(TransformAttributeKeys.TransformAsyncUnlock, 1)
                 .CheckError();
+            return true;
         }
         finally
         {
@@ -560,6 +699,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private void DisposeTransformResources()
     {
         ReleaseAllPendingInputSurfaces();
+        _eventGenerator?.Dispose();
+        _eventGenerator = null;
         _transform?.Dispose();
         _transform = null;
         _deviceManager?.Dispose();
@@ -567,6 +708,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         _codecConfiguration = ReadOnlyMemory<byte>.Empty;
         _negotiatedProfile = null;
         _negotiatedLevel = null;
+        _isAsyncTransform = false;
+        _asyncNeedInputCredits = 0;
         _pendingOutputPackets.Clear();
         _mediaFoundationRuntimeLease?.Dispose();
         _mediaFoundationRuntimeLease = null;
@@ -635,7 +778,10 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
         {
             SendEndOfStream();
             SendDrainCommand();
-            DrainAvailableOutputPackets(Math.Max(lastFrameNumber, 1), auditSink);
+            if (_isAsyncTransform)
+                WaitForAsyncDrainComplete(Math.Max(lastFrameNumber, 1), auditSink);
+            else
+                DrainAvailableOutputPackets(Math.Max(lastFrameNumber, 1), auditSink);
 
             if (_acceptedInput && _codecConfiguration.IsEmpty)
             {
@@ -652,6 +798,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             _transform.ProcessMessage(TMessageType.MessageCommandFlush, UIntPtr.Zero);
             _state = MediaFoundationH264EncoderSessionState.Drained;
             _acceptedInput = false;
+            _asyncNeedInputCredits = 0;
             auditSink.Record(new MediaTransportAuditEvent
             {
                 Kind = MediaTransportAuditEventKind.HardwareEncoderDrainCompleted,

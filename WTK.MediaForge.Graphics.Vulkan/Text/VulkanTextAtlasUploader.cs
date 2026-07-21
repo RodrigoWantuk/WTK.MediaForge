@@ -96,7 +96,7 @@ internal sealed class VulkanTextAtlasUploader : IDisposable
         Fence fence = default;
         void* mapped = null;
 
-        lock (_device.CommandQueueGate)
+        lock (_device.AuxiliaryCommandPoolGate)
         {
             try
             {
@@ -164,10 +164,7 @@ internal sealed class VulkanTextAtlasUploader : IDisposable
                     vk.DestroyFence(device, fence, null);
 
                 if (commandBuffer.Handle != 0)
-                {
-                    var localCommandBuffer = commandBuffer;
-                    vk.FreeCommandBuffers(device, _device.CommandPool, 1, &localCommandBuffer);
-                }
+                    _device.FreeAuxiliaryCommandBuffer(commandBuffer);
 
                 if (stagingBuffer.Handle != 0)
                     vk.DestroyBuffer(device, stagingBuffer, null);
@@ -233,29 +230,7 @@ internal sealed class VulkanTextAtlasUploader : IDisposable
     }
 
     private unsafe CommandBuffer BeginCommandBuffer()
-    {
-        var allocateInfo = new CommandBufferAllocateInfo
-        {
-            SType = StructureType.CommandBufferAllocateInfo,
-            CommandPool = _device.CommandPool,
-            Level = CommandBufferLevel.Primary,
-            CommandBufferCount = 1
-        };
-
-        if (_device.Vk.AllocateCommandBuffers(_device.Device, &allocateInfo, out var commandBuffer) != Result.Success)
-            throw new InvalidOperationException("vkAllocateCommandBuffers failed for text atlas upload.");
-
-        var beginInfo = new CommandBufferBeginInfo
-        {
-            SType = StructureType.CommandBufferBeginInfo,
-            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
-        };
-
-        if (_device.Vk.BeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success)
-            throw new InvalidOperationException("vkBeginCommandBuffer failed for text atlas upload.");
-
-        return commandBuffer;
-    }
+        => _device.AllocateAndBeginAuxiliaryCommandBuffer("text atlas upload");
 
     private unsafe Fence CreateFence()
     {
@@ -282,8 +257,11 @@ internal sealed class VulkanTextAtlasUploader : IDisposable
             PCommandBuffers = commandBuffers
         };
 
-        if (_device.Vk.QueueSubmit(_device.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
-            throw new InvalidOperationException("vkQueueSubmit failed for text atlas upload.");
+        lock (_device.CommandQueueGate)
+        {
+            if (_device.Vk.QueueSubmit(_device.GraphicsQueue, 1, &submitInfo, fence) != Result.Success)
+                throw new InvalidOperationException("vkQueueSubmit failed for text atlas upload.");
+        }
 
         var deadline = Environment.TickCount64 + (long)UploadTimeout.TotalMilliseconds;
 

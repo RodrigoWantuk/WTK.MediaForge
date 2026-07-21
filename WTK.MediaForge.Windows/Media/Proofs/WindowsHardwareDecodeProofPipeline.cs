@@ -221,6 +221,7 @@ internal static class WindowsHardwareDecodeProofPipeline
             renderer.BindOutput(CreateOffscreenBinding(outputId));
             snapshot = CreateDecodedSourceSnapshot(canvasId, outputId, sourceLease);
             leaseTransferredToSnapshot = true;
+            WindowsPhysicalRenderProofPreparation.Execute(snapshot, outputId);
             submission = renderer.Submit(snapshot);
             await submission.WaitForCompletionAsync(ProofTimeout, cancellationToken).ConfigureAwait(false);
 

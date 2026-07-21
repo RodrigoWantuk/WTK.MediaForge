@@ -10,6 +10,7 @@ namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
 internal sealed unsafe class VulkanHeadlessDevice : IDisposable
 {
     private readonly object _commandQueueGate = new();
+    private readonly object _auxiliaryCommandPoolGate = new();
     private readonly Vk _vk;
     private bool _disposed;
 
@@ -19,6 +20,7 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
     private Queue _graphicsQueue;
     private uint _graphicsQueueFamilyIndex;
     private CommandPool _commandPool;
+    private CommandPool _auxiliaryCommandPool;
     private KhrSurface? _khrSurface;
     private KhrWin32Surface? _khrWin32Surface;
     private KhrSwapchain? _khrSwapchain;
@@ -34,6 +36,7 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         Queue graphicsQueue,
         uint graphicsQueueFamilyIndex,
         CommandPool commandPool,
+        CommandPool auxiliaryCommandPool,
         KhrSurface? khrSurface,
         KhrWin32Surface? khrWin32Surface,
         KhrSwapchain? khrSwapchain,
@@ -48,6 +51,7 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         _graphicsQueue = graphicsQueue;
         _graphicsQueueFamilyIndex = graphicsQueueFamilyIndex;
         _commandPool = commandPool;
+        _auxiliaryCommandPool = auxiliaryCommandPool;
         _khrSurface = khrSurface;
         _khrWin32Surface = khrWin32Surface;
         _khrSwapchain = khrSwapchain;
@@ -84,11 +88,59 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
 
     public object CommandQueueGate => _commandQueueGate;
 
+    public object AuxiliaryCommandPoolGate => _auxiliaryCommandPoolGate;
+
     public string DeviceName => _deviceName;
 
     public GpuAdapterLuid DeviceLuid => _deviceLuid;
 
     public bool DeviceLuidValid => _deviceLuidValid;
+
+    public CommandBuffer AllocateAndBeginPrimaryCommandBuffer(string operationName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationName);
+
+        lock (_commandQueueGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return AllocateAndBeginCommandBuffer(_commandPool, operationName);
+        }
+    }
+
+    public void FreePrimaryCommandBuffer(CommandBuffer commandBuffer)
+    {
+        if (commandBuffer.Handle == 0)
+            return;
+
+        lock (_commandQueueGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _vk.FreeCommandBuffers(_device, _commandPool, 1, &commandBuffer);
+        }
+    }
+
+    public CommandBuffer AllocateAndBeginAuxiliaryCommandBuffer(string operationName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationName);
+
+        lock (_auxiliaryCommandPoolGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return AllocateAndBeginCommandBuffer(_auxiliaryCommandPool, operationName);
+        }
+    }
+
+    public void FreeAuxiliaryCommandBuffer(CommandBuffer commandBuffer)
+    {
+        if (commandBuffer.Handle == 0)
+            return;
+
+        lock (_auxiliaryCommandPoolGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _vk.FreeCommandBuffers(_device, _auxiliaryCommandPool, 1, &commandBuffer);
+        }
+    }
 
     public static VulkanHeadlessDevice Create()
     {
@@ -97,6 +149,7 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
         PickPhysicalDevice(vk, instance, out var physicalDevice, out var graphicsQueueFamilyIndex);
         CreateLogicalDevice(vk, physicalDevice, graphicsQueueFamilyIndex, out var device, out var graphicsQueue);
         CreateCommandPool(vk, device, graphicsQueueFamilyIndex, out var commandPool);
+        CreateCommandPool(vk, device, graphicsQueueFamilyIndex, out var auxiliaryCommandPool);
         LoadPresentationExtensions(vk, instance, device, out var khrSurface, out var khrWin32Surface, out var khrSwapchain);
         GetPhysicalDeviceIdentity(vk, physicalDevice, out var deviceName, out var deviceLuid, out var deviceLuidValid);
 
@@ -108,6 +161,7 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
             graphicsQueue,
             graphicsQueueFamilyIndex,
             commandPool,
+            auxiliaryCommandPool,
             khrSurface,
             khrWin32Surface,
             khrSwapchain,
@@ -173,31 +227,73 @@ internal sealed unsafe class VulkanHeadlessDevice : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-
-        if (_commandPool.Handle != 0)
+        lock (_auxiliaryCommandPoolGate)
+        lock (_commandQueueGate)
         {
-            _vk.DestroyCommandPool(_device, _commandPool, null);
-            _commandPool = default;
+            if (_disposed)
+                return;
+
+            _disposed = true;
+
+            if (_auxiliaryCommandPool.Handle != 0)
+            {
+                _vk.DestroyCommandPool(_device, _auxiliaryCommandPool, null);
+                _auxiliaryCommandPool = default;
+            }
+
+            if (_commandPool.Handle != 0)
+            {
+                _vk.DestroyCommandPool(_device, _commandPool, null);
+                _commandPool = default;
+            }
+
+            if (_device.Handle != 0)
+            {
+                _vk.DestroyDevice(_device, null);
+                _device = default;
+                _graphicsQueue = default;
+            }
+
+            if (_instance.Handle != 0)
+            {
+                _vk.DestroyInstance(_instance, null);
+                _instance = default;
+            }
+
+            _vk.Dispose();
+        }
+    }
+
+    private CommandBuffer AllocateAndBeginCommandBuffer(
+        CommandPool commandPool,
+        string operationName)
+    {
+        var allocateInfo = new CommandBufferAllocateInfo
+        {
+            SType = StructureType.CommandBufferAllocateInfo,
+            CommandPool = commandPool,
+            Level = CommandBufferLevel.Primary,
+            CommandBufferCount = 1
+        };
+
+        if (_vk.AllocateCommandBuffers(_device, &allocateInfo, out var commandBuffer) != Result.Success)
+        {
+            throw new InvalidOperationException(
+                $"vkAllocateCommandBuffers failed for {operationName}.");
         }
 
-        if (_device.Handle != 0)
+        var beginInfo = new CommandBufferBeginInfo
         {
-            _vk.DestroyDevice(_device, null);
-            _device = default;
-            _graphicsQueue = default;
-        }
+            SType = StructureType.CommandBufferBeginInfo,
+            Flags = CommandBufferUsageFlags.OneTimeSubmitBit
+        };
+        var beginResult = _vk.BeginCommandBuffer(commandBuffer, &beginInfo);
+        if (beginResult == Result.Success)
+            return commandBuffer;
 
-        if (_instance.Handle != 0)
-        {
-            _vk.DestroyInstance(_instance, null);
-            _instance = default;
-        }
-
-        _vk.Dispose();
+        _vk.FreeCommandBuffers(_device, commandPool, 1, &commandBuffer);
+        throw new InvalidOperationException(
+            $"vkBeginCommandBuffer failed for {operationName}: {beginResult}.");
     }
 
     private static void CreateInstance(Vk vk, out Instance instance)

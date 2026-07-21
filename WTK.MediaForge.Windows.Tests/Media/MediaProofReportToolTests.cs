@@ -26,7 +26,16 @@ public sealed class MediaProofReportToolTests
             Assert.True(File.Exists(Path.Combine(directory, "media-proof-report.json")));
             Assert.True(File.Exists(Path.Combine(directory, "media-proof-report.md")));
             Assert.Contains("Media proof report generated", output.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Overall status: Blocked", output.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Release gate passed: False", output.ToString(), StringComparison.Ordinal);
             Assert.Equal(string.Empty, error.ToString());
+
+            using var json = JsonDocument.Parse(
+                File.ReadAllText(Path.Combine(directory, "media-proof-report.json")));
+            Assert.Equal(
+                nameof(HardwareMediaValidationStatus.Blocked),
+                json.RootElement.GetProperty("OverallStatus").GetString());
+            Assert.False(json.RootElement.GetProperty("ReleaseGatePassed").GetBoolean());
         }
         finally
         {
@@ -168,6 +177,37 @@ public sealed class MediaProofReportToolTests
 
             Assert.Equal(2, exitCode);
             Assert.Contains("memory growth", error.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Sustained_tool_reports_nested_cleanup_failures()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var error = new StringWriter();
+            var exitCode = await SustainedQualificationCommand.RunAsync(
+                ["--sustained-qualification", "--out", directory],
+                (_, _) => ValueTask.FromException<SustainedQualificationReport>(
+                    new InvalidOperationException(
+                        "Engine cleanup failed.",
+                        new AggregateException(
+                            new TimeoutException("Encoder worker did not stop."),
+                            new InvalidOperationException("Backend lease remained active.")))),
+                TextWriter.Null,
+                error);
+
+            Assert.Equal(1, exitCode);
+            Assert.Contains("Encoder worker did not stop", error.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Backend lease remained active", error.ToString(), StringComparison.Ordinal);
+            var json = File.ReadAllText(Path.Combine(directory, "sustained-media-qualification.json"));
+            Assert.Contains("Encoder worker did not stop", json, StringComparison.Ordinal);
+            Assert.Contains("Backend lease remained active", json, StringComparison.Ordinal);
         }
         finally
         {
