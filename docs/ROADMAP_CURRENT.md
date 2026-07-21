@@ -48,6 +48,8 @@ Implemented foundations:
   exposed in runtime health.
 - Compatible MP4/RTMP routes share one rendered output, NV12 conversion, and
   hardware encoder; sinks retain independent bounded queues and status.
+- Shared encoded routes support dynamic logical consumer activation and
+  bounded per-sink drain/finalization, preserving healthy peers.
 - H.264 profile and level are validated public enum contracts with legacy JSON
   migration. The Media Foundation session has transactional lifecycle states,
   rejects negotiated profile/level divergence, drains delayed packets before
@@ -93,10 +95,14 @@ Experimental and not yet product-promoted:
   preserves extension settings, encode profiles, color/output configuration,
   advanced text state, nested version bindings, and effects not editable by the
   current UI, and commits only after atomic file replacement succeeds. Native
-  GPU preview and real output controls remain disabled until their runtime gates pass.
+  GPU preview remains disabled until its runtime gate passes. MP4/RTMP controls
+  now activate real proof-gated routes, report health/metrics and elapsed time,
+  and roll restarted recording to a new numbered segment.
   The shell now reflects engine Starting/Running/Degraded/Recovering/Failed/
   Stopped state and performs deterministic project-switch/application shutdown;
   all active scene drafts are explicitly discarded before project replacement.
+  Scene Apply reflects exactly engine-reported affected output ids and the
+  route-owned Cut/Fade transition policy.
 - Remote Scene has platform-neutral contracts and a separately deployable
   HTTPS/WebSocket signaling service with one-time hashed invitations, role-scoped
   bearer access, bounded SDP/ICE relay, SQLite session storage, expiration, rate

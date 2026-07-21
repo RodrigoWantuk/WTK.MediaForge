@@ -16,7 +16,7 @@ public static class StudioBootstrapper
         var sceneEditService = new StudioSceneEditRuntimeService(
             new StudioSceneEditBridge(new MediaForgeStudioSceneEditEngine(engine)),
             mapper);
-        var outputService = new RuntimeStudioOutputService();
+        var outputService = new RuntimeStudioOutputService(engine, capabilityService);
         var initialDocument = RuntimeStudioProjectService.CreateEmptyDocument();
         var services = new StudioServiceBundle(
             projectService,

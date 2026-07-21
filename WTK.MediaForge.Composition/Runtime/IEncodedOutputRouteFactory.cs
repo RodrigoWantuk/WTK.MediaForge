@@ -17,6 +17,13 @@ internal interface IEncodedOutputRouteFactory
         MediaPipelineRuntime runtime,
         CancellationToken cancellationToken);
 
+    async ValueTask UnregisterAsync(
+        MediaForgeRenderOutput output,
+        MediaPipelineRuntime runtime,
+        TimeSpan timeout,
+        CancellationToken cancellationToken) =>
+        _ = await runtime.RemoveEncodedOutputSinkAsync(output.Id, timeout, cancellationToken).ConfigureAwait(false);
+
     async ValueTask RecreateAsync(
         MediaForgeProject project,
         MediaForgeRenderOutput output,

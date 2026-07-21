@@ -277,6 +277,65 @@ public sealed class MediaPipelineRuntimeTests
         Assert.Contains("Synthetic sink failure", cleanup.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Logical_output_can_join_and_leave_shared_encoder_without_stopping_peer()
+    {
+        var surfaceOutputId = RenderOutputId.New();
+        var dynamicOutputId = RenderOutputId.New();
+        var encoder = new PreExportedInputRecordingEncoder();
+        var recording = new RecordingEncodedPacketSink();
+        var streaming = new RecordingEncodedPacketSink();
+        await using var runtime = new MediaPipelineRuntime();
+
+        await runtime.RegisterEncodedOutputAsync(
+            surfaceOutputId,
+            new RenderedOutputEncodeFrameAdapter(new ImmediateRenderedOutputExporter()),
+            encoder,
+            new ThrowingGpuFrameExporter(),
+            CreateSinkContext(),
+            [recording],
+            new CollectingMediaTransportAuditSink(),
+            cancellationToken: CancellationToken.None);
+        await runtime.AddEncodedOutputSinkAsync(
+            surfaceOutputId,
+            new EncodedOutputSinkRegistration(
+                dynamicOutputId,
+                streaming,
+                EncodedOutputBackpressurePolicy.Streaming()),
+            CreateSinkContext(),
+            CancellationToken.None);
+
+        await PublishAndWaitAsync(runtime, surfaceOutputId, 1, recording, streaming);
+        var removedWholeRoute = await runtime.RemoveEncodedOutputSinkAsync(
+            dynamicOutputId,
+            TimeSpan.FromSeconds(2),
+            CancellationToken.None);
+        await PublishAndWaitAsync(runtime, surfaceOutputId, 2, recording);
+
+        Assert.False(removedWholeRoute);
+        Assert.Equal(2, recording.Packets.Count);
+        Assert.Single(streaming.Packets);
+        Assert.True(runtime.IsEncodedOutputRegistered(surfaceOutputId));
+        Assert.False(runtime.IsEncodedOutputRegistered(dynamicOutputId));
+        Assert.Equal(0, encoder.DisposeCount);
+    }
+
+    private static async Task PublishAndWaitAsync(
+        MediaPipelineRuntime runtime,
+        RenderOutputId surfaceOutputId,
+        long frameId,
+        params RecordingEncodedPacketSink[] expectedSinks)
+    {
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces(
+            [new TrackingRenderedOutputSurfaceLease(surfaceOutputId)],
+            new RenderFrameContext(frameId, TimeSpan.FromMilliseconds(frameId * 33), TimeSpan.FromMilliseconds(33), 30, CancellationToken.None));
+        runtime.PublishCompletedFrames(batch);
+        await WaitForConditionAsync(
+            () => expectedSinks.All(sink => sink.Packets.Count >= frameId),
+            TimeSpan.FromSeconds(2));
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+    }
+
     private static EncodedPacketSinkContext CreateSinkContext() =>
         new()
         {

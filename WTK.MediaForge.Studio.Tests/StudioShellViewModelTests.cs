@@ -278,7 +278,7 @@ public sealed class StudioShellViewModelTests
         var updatedSavedLayer = savedScene.Layers.Single(item => item.Id == savedLayer.Id);
         Assert.Equal(draftLayer.Id, updatedSavedLayer.Id);
         Assert.Equal(editedX, updatedSavedLayer.Transform.X);
-        Assert.Contains(shell.Document.Outputs, item => item.AssignedSceneId == "scene-main" && item.HasPendingSceneUpdate);
+        Assert.DoesNotContain(shell.Document.Outputs, item => item.HasPendingSceneUpdate);
 
         var appliedX = updatedSavedLayer.Transform.X;
         var secondDraft = shell.BottomWorkbench.Layers.Single(item => item.Id == updatedSavedLayer.Id);
@@ -307,6 +307,25 @@ public sealed class StudioShellViewModelTests
         Assert.Equal(1, runtime.TrackedSceneDraftCount);
         Assert.Contains(runtime.TrackedLayers, item => item.Id == draftLayer.Id && item.X == editedX);
         Assert.False(shell.Preview.HasPendingChanges);
+    }
+
+    [Fact]
+    public async Task Apply_updates_only_outputs_returned_by_engine()
+    {
+        var runtime = new RecordingSceneEditRuntimeService();
+        var shell = CreateShell(runtime);
+        var affected = shell.Document.Outputs.First(output => output.AssignedSceneId == "scene-main");
+        var unrelated = shell.Document.Outputs.Last(output => output.Id != affected.Id);
+        affected.HasPendingSceneUpdate = true;
+        unrelated.HasPendingSceneUpdate = true;
+        runtime.AffectedOutputIds = [affected.Id];
+        var draftLayer = shell.BottomWorkbench.Layers.First(item => !item.IsLocked);
+        shell.Preview.MoveLayerFromStart(draftLayer, draftLayer.X, draftLayer.Y, new Vector(10, 0), KeyModifiers.None);
+
+        await shell.ApplySceneDraftCommand.ExecuteAsync(null);
+
+        Assert.False(affected.HasPendingSceneUpdate);
+        Assert.True(unrelated.HasPendingSceneUpdate);
     }
 
     [Fact]
@@ -407,6 +426,8 @@ public sealed class StudioShellViewModelTests
 
         public int TrackedSceneDraftCount { get; private set; }
 
+        public IReadOnlyList<string> AffectedOutputIds { get; set; } = [];
+
         public List<string[]> TrackedSceneLayerIds { get; } = [];
 
         public ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
@@ -450,7 +471,7 @@ public sealed class StudioShellViewModelTests
             CancellationToken cancellationToken = default)
         {
             ApplyCallCount++;
-            return ValueTask.FromResult(new StudioSceneEditApplyResult(true, []));
+            return ValueTask.FromResult(new StudioSceneEditApplyResult(true, AffectedOutputIds));
         }
 
         public ValueTask DiscardSceneDraftAsync(

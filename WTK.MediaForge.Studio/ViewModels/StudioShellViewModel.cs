@@ -658,6 +658,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
     {
         return _acceptingActions
             && _engineStatus.State is StudioEngineUiState.Running or StudioEngineUiState.Degraded
+            && _outputService.CanToggleStreaming
             && GetStreamingOutput() is not null
             && _outputService.StreamingState is StudioOutputUiState.Ready or StudioOutputUiState.Running
             && _outputService.StreamingState is not StudioOutputUiState.Starting and not StudioOutputUiState.Stopping;
@@ -667,6 +668,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
     {
         return _acceptingActions
             && _engineStatus.State is StudioEngineUiState.Running or StudioEngineUiState.Degraded
+            && _outputService.CanToggleRecording
             && GetRecordingOutput() is not null
             && _outputService.RecordingState is StudioOutputUiState.Ready or StudioOutputUiState.Running
             && _outputService.RecordingState is not StudioOutputUiState.Starting and not StudioOutputUiState.Stopping;
@@ -683,6 +685,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
         await _outputService.ToggleStreamingAsync(cancellationToken).ConfigureAwait(true);
         output.IsLive = IsStreaming;
+        output.IsEnabled = IsStreaming;
         output.State = IsStreaming ? StudioOutputState.Live : StudioOutputState.Running;
         RebuildAll();
         ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
@@ -700,6 +703,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
         await _outputService.ToggleRecordingAsync(cancellationToken).ConfigureAwait(true);
         output.IsRecording = IsRecording;
+        output.IsEnabled = IsRecording;
         output.State = IsRecording ? StudioOutputState.Recording : StudioOutputState.Running;
         RebuildAll();
         ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
@@ -995,8 +999,8 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
             return;
         }
 
-        var sceneId = _editSession.SceneId;
         var sceneName = _editSession.Draft.DisplayName;
+        IReadOnlySet<string> affectedOutputIds = new HashSet<string>(StringComparer.Ordinal);
         try
         {
             if (_sceneEditRuntimeService.IsEngineBacked)
@@ -1005,9 +1009,10 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
                     .ConfigureAwait(true);
                 await PushCurrentDraftToRuntimeAsync(runtimeSession, CancellationToken.None)
                     .ConfigureAwait(true);
-                await _sceneEditRuntimeService
+                var result = await _sceneEditRuntimeService
                     .ApplySceneDraftAsync(runtimeSession, transition: null, CancellationToken.None)
                     .ConfigureAwait(true);
+                affectedOutputIds = result.AffectedOutputIds.ToHashSet(StringComparer.Ordinal);
             }
         }
         catch (Exception ex)
@@ -1018,9 +1023,10 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         }
 
         _sceneEditSessionService.Apply(_editSession);
-        foreach (var output in _document.Outputs.Where(item => item.AssignedSceneId == sceneId))
+        foreach (var output in _document.Outputs.Where(item => affectedOutputIds.Contains(item.Id)))
         {
-            output.HasPendingSceneUpdate = true;
+            output.HasPendingSceneUpdate = false;
+            output.AppliedSceneSnapshot = SceneEditSessionService.CloneScene(_editSession.Original);
         }
 
         _document.HasUnsavedChanges = true;
@@ -1033,7 +1039,9 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         ClearLayerSelectionAndShowScene();
         ApplyProjectDocument();
         NotifySceneEditCommandStates();
-        SetStatus($"{sceneName} aplicada à cena salva. Saídas vinculadas têm atualização disponível.");
+        SetStatus(affectedOutputIds.Count == 0
+            ? $"{sceneName} aplicada à cena salva."
+            : $"{sceneName} aplicada; {affectedOutputIds.Count} saída(s) concluída(s) pela engine.");
     }
 
     private async Task DiscardSceneDraftAsync()
@@ -1570,6 +1578,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
     private void OnUiTimerTick(object? sender, EventArgs e)
     {
+        _outputService.RefreshStatus();
         if (_outputService.RecordingState == StudioOutputUiState.Running)
         {
             ApplyOutputState(_outputService.StreamingState, _outputService.RecordingState);
@@ -1578,7 +1587,17 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
     }
 
     private void OnOutputStatusChanged(object? sender, StudioOutputStatusChangedEventArgs e) =>
-        DispatchRuntimeUpdate(() => ApplyOutputState(e.StreamingState, e.RecordingState));
+        DispatchRuntimeUpdate(() =>
+        {
+            ApplyOutputState(e.StreamingState, e.RecordingState);
+            var detail = e.StreamingState == StudioOutputUiState.Error
+                ? e.StreamingDetail
+                : e.RecordingState == StudioOutputUiState.Error
+                    ? e.RecordingDetail
+                    : null;
+            if (!string.IsNullOrWhiteSpace(detail))
+                SetStatus(detail);
+        });
 
     private void OnEngineStatusChanged(object? sender, StudioEngineStatusChangedEventArgs e) =>
         DispatchRuntimeUpdate(() => ApplyEngineStatus(e.Status));

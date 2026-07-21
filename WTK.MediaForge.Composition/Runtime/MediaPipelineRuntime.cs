@@ -41,6 +41,95 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
             return _encodedRoutes.ContainsKey(outputId);
     }
 
+    public bool TryGetSurfaceOutputId(RenderOutputId outputId, out RenderOutputId surfaceOutputId)
+    {
+        lock (_gate)
+        {
+            if (_encodedRoutes.TryGetValue(outputId, out var route))
+            {
+                surfaceOutputId = route.SurfaceOutputId;
+                return true;
+            }
+        }
+        surfaceOutputId = default;
+        return false;
+    }
+
+    public IReadOnlyList<RenderOutputId> GetActiveSurfaceOutputIds()
+    {
+        lock (_gate)
+            return _encodedRoutes.Values.Select(static route => route.SurfaceOutputId).Distinct().ToArray();
+    }
+
+    public async ValueTask AddEncodedOutputSinkAsync(
+        RenderOutputId existingOutputId,
+        EncodedOutputSinkRegistration registration,
+        EncodedPacketSinkContext sinkContext,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(registration.Sink);
+        ArgumentNullException.ThrowIfNull(sinkContext);
+        EncodedRenderOutputRoute? route;
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_encodedRoutes.ContainsKey(registration.OutputId))
+                return;
+            route = _encodedRoutes.TryGetValue(existingOutputId, out var found)
+                ? found
+                : throw new InvalidOperationException($"Encoded output route {existingOutputId} is not registered.");
+        }
+
+        await registration.Sink.StartAsync(sinkContext, cancellationToken).ConfigureAwait(false);
+        var accepted = false;
+        try
+        {
+            route.AddLogicalOutput(registration);
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_encodedRoutes.ContainsKey(registration.OutputId))
+                    throw new InvalidOperationException($"Encoded output route {registration.OutputId} is already registered.");
+                _encodedRoutes.Add(registration.OutputId, route);
+            }
+            accepted = true;
+        }
+        finally
+        {
+            if (!accepted)
+            {
+                await registration.Sink.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                await registration.Sink.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    public async ValueTask<bool> RemoveEncodedOutputSinkAsync(
+        RenderOutputId outputId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        EncodedRenderOutputRoute? route;
+        bool removeWholeRoute;
+        lock (_gate)
+        {
+            if (!_encodedRoutes.TryGetValue(outputId, out route))
+                return false;
+            removeWholeRoute = route.OutputIds.Count == 1;
+            if (!removeWholeRoute)
+                _encodedRoutes.Remove(outputId);
+        }
+
+        if (removeWholeRoute)
+        {
+            await UnregisterEncodedOutputAsync(outputId, timeout, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        await route!.RemoveLogicalOutputAsync(outputId, cancellationToken).ConfigureAwait(false);
+        return false;
+    }
+
     public ValueTask RegisterEncodedOutputAsync(
         RenderOutputId outputId,
         RenderedOutputEncodeFrameAdapter frameAdapter,
@@ -468,8 +557,9 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
 
     private sealed class EncodedRenderOutputRoute
     {
-        private readonly IReadOnlyList<EncodedOutputSinkRegistration> _registrations;
-        private readonly IReadOnlyDictionary<RenderOutputId, List<EncodedPacketConsumerWorker>> _workers;
+        private readonly Dictionary<RenderOutputId, List<EncodedOutputSinkRegistration>> _registrations;
+        private readonly Dictionary<RenderOutputId, List<EncodedPacketConsumerWorker>> _workers;
+        private readonly object _gate = new();
         private readonly IAsyncDisposable? _resources;
 
         public EncodedRenderOutputRoute(
@@ -483,14 +573,24 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
             SurfaceOutputId = surfaceOutputId;
             Router = router ?? throw new ArgumentNullException(nameof(router));
             Policy = policy ?? throw new ArgumentNullException(nameof(policy));
-            _registrations = registrations ?? throw new ArgumentNullException(nameof(registrations));
-            _workers = workers ?? throw new ArgumentNullException(nameof(workers));
+            ArgumentNullException.ThrowIfNull(registrations);
+            ArgumentNullException.ThrowIfNull(workers);
+            _registrations = registrations.GroupBy(static item => item.OutputId)
+                .ToDictionary(static group => group.Key, static group => group.ToList());
+            _workers = workers.ToDictionary(static item => item.Key, static item => item.Value.ToList());
             _resources = resources;
         }
 
         public RenderOutputId SurfaceOutputId { get; }
 
-        public IReadOnlyCollection<RenderOutputId> OutputIds => _workers.Keys.ToArray();
+        public IReadOnlyCollection<RenderOutputId> OutputIds
+        {
+            get
+            {
+                lock (_gate)
+                    return _workers.Keys.ToArray();
+            }
+        }
 
         public EncodedOutputRouter Router { get; }
 
@@ -498,9 +598,13 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
 
         public EncodedPacketConsumerStatistics GetConsumerStatistics(RenderOutputId outputId)
         {
-            if (!_workers.TryGetValue(outputId, out var workers))
-                throw new KeyNotFoundException($"Encoded output {outputId} is not part of this route group.");
-
+            EncodedPacketConsumerWorker[] workers;
+            lock (_gate)
+            {
+                if (!_workers.TryGetValue(outputId, out var found))
+                    throw new KeyNotFoundException($"Encoded output {outputId} is not part of this route group.");
+                workers = found.ToArray();
+            }
             var statistics = workers.Select(static worker => worker.GetStatistics()).ToArray();
             return new EncodedPacketConsumerStatistics(
                 string.Join(", ", statistics.Select(static item => item.DisplayName)),
@@ -511,6 +615,67 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                 statistics.Sum(static item => item.FailedWrites),
                 statistics.Sum(static item => item.TimedOutWrites),
                 statistics.Select(static item => item.LastError).FirstOrDefault(static error => !string.IsNullOrWhiteSpace(error)));
+        }
+
+        public void AddLogicalOutput(EncodedOutputSinkRegistration registration)
+        {
+            lock (_gate)
+            {
+                if (_workers.ContainsKey(registration.OutputId))
+                    throw new InvalidOperationException($"Encoded output {registration.OutputId} is already part of this route group.");
+                var worker = Router.RegisterConsumer(
+                    new EncodedPacketSinkConsumer(registration.Sink),
+                    CreateConsumerOptionsForSink(registration.Sink, registration.Policy));
+                _workers.Add(registration.OutputId, [worker]);
+                _registrations.Add(registration.OutputId, [registration]);
+            }
+        }
+
+        public async ValueTask RemoveLogicalOutputAsync(
+            RenderOutputId outputId,
+            CancellationToken cancellationToken)
+        {
+            List<EncodedPacketConsumerWorker> workers;
+            List<EncodedOutputSinkRegistration> registrations;
+            lock (_gate)
+            {
+                if (!_workers.Remove(outputId, out workers!) || !_registrations.Remove(outputId, out registrations!))
+                    return;
+            }
+
+            List<Exception>? errors = null;
+            foreach (var worker in workers)
+            {
+                try
+                {
+                    await Router.UnregisterConsumerAsync(worker, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    (errors ??= []).Add(exception);
+                }
+            }
+            foreach (var registration in registrations)
+            {
+                try
+                {
+                    await registration.Sink.StopAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    (errors ??= []).Add(exception);
+                }
+                try
+                {
+                    await registration.Sink.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    (errors ??= []).Add(exception);
+                }
+            }
+            if (errors is not null)
+                throw new AggregateException($"Failed to finalize encoded output {outputId}.", errors);
         }
 
         public async ValueTask DisposeAsync(CancellationToken cancellationToken)
@@ -526,7 +691,10 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                 (errors ??= []).Add(ex);
             }
 
-            foreach (var registration in _registrations)
+            EncodedOutputSinkRegistration[] registrations;
+            lock (_gate)
+                registrations = _registrations.Values.SelectMany(static item => item).ToArray();
+            foreach (var registration in registrations)
             {
                 try
                 {
@@ -547,7 +715,7 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                 (errors ??= []).Add(ex);
             }
 
-            foreach (var registration in _registrations)
+            foreach (var registration in registrations)
             {
                 try
                 {

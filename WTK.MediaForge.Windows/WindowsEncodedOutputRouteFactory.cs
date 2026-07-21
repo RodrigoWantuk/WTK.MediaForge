@@ -89,6 +89,27 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
             foreach (var groupedOutput in groupedOutputs)
                 await EnsureCapabilityAllowsRouteAsync(groupedOutput, cancellationToken).ConfigureAwait(false);
 
+            var existingOutput = groupedOutputs.FirstOrDefault(candidate => runtime.IsEncodedOutputRegistered(candidate.Id));
+            if (existingOutput is not null)
+            {
+                var encoderSettings = CreateEncoderSettings(existingOutput);
+                foreach (var groupedOutput in groupedOutputs.Where(candidate => !runtime.IsEncodedOutputRegistered(candidate.Id)))
+                {
+                    _ = SinkCompatibilityKey.Create(groupedOutput);
+                    var sink = CreateSink(groupedOutput, new CollectingMediaTransportAuditSink());
+                    await runtime.AddEncodedOutputSinkAsync(
+                        existingOutput.Id,
+                        new EncodedOutputSinkRegistration(
+                            groupedOutput.Id,
+                            sink,
+                            EncodedOutputBackpressurePolicy.ForOutputType(groupedOutput.TypeId)),
+                        CreateSinkContext(existingOutput, encoderSettings),
+                        cancellationToken).ConfigureAwait(false);
+                    _registeredOutputIds.Add(groupedOutput.Id);
+                }
+                return;
+            }
+
             var surfaceOutput = groupedOutputs[0];
             var audit = new CollectingMediaTransportAuditSink();
             var routeResources = WindowsEncodedOutputRouteResources.Create(_adapterAffinity);
@@ -155,6 +176,26 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
         }
     }
 
+    public async ValueTask UnregisterAsync(
+        MediaForgeRenderOutput output,
+        MediaPipelineRuntime runtime,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(runtime);
+        await _registrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _ = await runtime.RemoveEncodedOutputSinkAsync(output.Id, timeout, cancellationToken).ConfigureAwait(false);
+            _registeredOutputIds.Remove(output.Id);
+        }
+        finally
+        {
+            _registrationGate.Release();
+        }
+    }
+
     public async ValueTask RecreateAsync(
         MediaForgeProject project,
         MediaForgeRenderOutput output,
@@ -200,6 +241,7 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
             throw new InvalidOperationException($"Encoded output '{output.Name}' was not found in its project.");
 
         var compatible = project.Outputs
+            .Where(static candidate => candidate.Enabled)
             .Where(candidate => CanCreate(candidate.TypeId))
             .Where(candidate => EncodedRouteCompatibilityKey.Create(candidate) == key)
             .ToArray();

@@ -39,6 +39,8 @@ MediaForgeProject
   `SceneMutationBatchBuilder`; one atomic engine batch contains only actual
   add/remove/order/common/type-specific changes. The engine clones and validates
   the scene project once for the complete batch.
+- Apply completion trusts only engine `AffectedOutputIds`; Studio does not
+  synthesize a second pending-update state or mark unrelated outputs.
 - The Studio shell owns the UI-facing engine lifecycle. It subscribes to real
   status/health, exposes serialized Start/Stop/Restart commands, blocks actions
   during incompatible states, and shuts down drafts, outputs, timer,
@@ -66,6 +68,12 @@ Compatible encoded outputs share scene, dimensions, color space, H.264 profile,
 FPS, bitrate, GOP, and pixel format. They render/convert/encode once and fan out
 ref-counted packets. Recording never silently drops; RTMP uses explicit
 drop/reconnect policy.
+
+Logical MP4/RTMP consumers can join or leave a live shared encoder without
+stopping peers; removal drains and physically finalizes only that sink unless
+it is the last route member. Studio output controls use this real route API and
+surface capability truth, status details, packet/drop/latency metrics,
+reconnect state, elapsed recording time, and numbered MP4 segment rollover.
 
 Compatibility is intentionally split: rendered-output identity describes
 pixels, encoder identity describes the complete codec configuration, and sink

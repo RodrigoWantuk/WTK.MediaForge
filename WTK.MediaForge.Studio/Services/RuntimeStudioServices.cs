@@ -1,8 +1,10 @@
 using WTK.MediaForge.Composition.Engine;
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Engine;
 using WTK.MediaForge.Studio.Models;
@@ -278,38 +280,290 @@ public sealed class RuntimeStudioEngineService : IStudioEngineService, IAsyncDis
     }
 }
 
+internal interface IStudioEncodedOutputEngine
+{
+    MediaForgeEngineState State { get; }
+    MediaForgeProject? CurrentProject { get; }
+    IReadOnlyList<EncodedOutputRuntimeSnapshot> GetSnapshots();
+    Task StartAsync(RenderOutputId outputId, CancellationToken cancellationToken);
+    Task StopAsync(RenderOutputId outputId, CancellationToken cancellationToken);
+    Task SetRecordingPathAsync(
+        RenderOutputId outputId,
+        RecordingMp4OutputSettings settings,
+        string path,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class StudioEncodedOutputEngine(MediaForgeEngine engine) : IStudioEncodedOutputEngine
+{
+    private readonly MediaForgeEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+    public MediaForgeEngineState State => _engine.State;
+    public MediaForgeProject? CurrentProject => _engine.CurrentProject;
+    public IReadOnlyList<EncodedOutputRuntimeSnapshot> GetSnapshots() => _engine.GetEncodedOutputRuntimeSnapshots();
+    public Task StartAsync(RenderOutputId outputId, CancellationToken cancellationToken) =>
+        _engine.StartEncodedOutputAsync(outputId, cancellationToken);
+    public Task StopAsync(RenderOutputId outputId, CancellationToken cancellationToken) =>
+        _engine.StopEncodedOutputAsync(outputId, cancellationToken);
+    public Task SetRecordingPathAsync(
+        RenderOutputId outputId,
+        RecordingMp4OutputSettings settings,
+        string path,
+        CancellationToken cancellationToken) =>
+        _engine.ApplyProjectUpdateAsync(
+            editor => editor.Project.Outputs.Single(candidate => candidate.Id == outputId).Settings =
+                RenderOutputSettingsSerializer.ToJson(new RecordingMp4OutputSettings
+                {
+                    Path = path,
+                    Video = settings.Video,
+                    SchemaVersion = settings.SchemaVersion
+                }),
+            cancellationToken);
+}
+
 public sealed class RuntimeStudioOutputService : IStudioOutputService
 {
+    private readonly IStudioEncodedOutputEngine _engine;
+    private readonly IStudioCapabilityService _capabilities;
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private DateTimeOffset? _recordingStartedAt;
+    private int _recordingSegment;
+    private string? _recordingBasePath;
+
+    public RuntimeStudioOutputService(MediaForgeEngine engine, IStudioCapabilityService capabilities)
+        : this(new StudioEncodedOutputEngine(engine), capabilities)
+    {
+    }
+
+    internal RuntimeStudioOutputService(IStudioEncodedOutputEngine engine, IStudioCapabilityService capabilities)
+    {
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+    }
+
     public StudioOutputUiState StreamingState { get; private set; } = StudioOutputUiState.NotConfigured;
 
     public StudioOutputUiState RecordingState { get; private set; } = StudioOutputUiState.NotConfigured;
 
-    public DateTimeOffset? RecordingStartedAt => null;
+    public DateTimeOffset? RecordingStartedAt => _recordingStartedAt;
 
-    public TimeSpan RecordingElapsed => TimeSpan.Zero;
+    public TimeSpan RecordingElapsed => RecordingState == StudioOutputUiState.Running && _recordingStartedAt is not null
+        ? DateTimeOffset.UtcNow - _recordingStartedAt.Value
+        : TimeSpan.Zero;
+
+    public bool CanToggleStreaming => StreamingState == StudioOutputUiState.Running ||
+        CanStart(RenderOutputTypes.StreamingRtmp, "output.rtmp");
+
+    public bool CanToggleRecording => RecordingState == StudioOutputUiState.Running ||
+        CanStart(RenderOutputTypes.RecordingMp4, "output.file.mp4");
+
+    public string? StreamingDetail { get; private set; }
+
+    public string? RecordingDetail { get; private set; }
+
+    public StudioOutputMetrics? StreamingMetrics { get; private set; }
+
+    public StudioOutputMetrics? RecordingMetrics { get; private set; }
 
     public event EventHandler<StudioOutputStatusChangedEventArgs>? StatusChanged;
 
-    public Task ToggleStreamingAsync(CancellationToken cancellationToken) => RejectAsync(cancellationToken, streaming: true);
+    public Task ToggleStreamingAsync(CancellationToken cancellationToken) =>
+        ToggleAsync(RenderOutputTypes.StreamingRtmp, streaming: true, cancellationToken);
 
-    public Task ToggleRecordingAsync(CancellationToken cancellationToken) => RejectAsync(cancellationToken, streaming: false);
+    public Task ToggleRecordingAsync(CancellationToken cancellationToken) =>
+        ToggleAsync(RenderOutputTypes.RecordingMp4, streaming: false, cancellationToken);
 
-    public Task StopAllAsync(CancellationToken cancellationToken)
+    public async Task StopAllAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.CompletedTask;
+        List<Exception>? failures = null;
+        foreach (var output in _engine.CurrentProject?.Outputs.Where(output =>
+                     output.TypeId == RenderOutputTypes.StreamingRtmp ||
+                     output.TypeId == RenderOutputTypes.RecordingMp4).ToArray() ?? [])
+        {
+            if (!_engine.GetSnapshots().Any(snapshot => snapshot.OutputId == output.Id))
+                continue;
+            try
+            {
+                await _engine.StopAsync(output.Id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                (failures ??= []).Add(exception);
+            }
+        }
+        _recordingStartedAt = null;
+        RefreshStatus();
+        if (failures is not null)
+            throw new AggregateException("One or more Studio outputs failed to stop.", failures);
     }
 
-    private Task RejectAsync(CancellationToken cancellationToken, bool streaming)
+    public void RefreshStatus()
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        var snapshots = _engine.GetSnapshots();
+        ApplySnapshot(
+            streaming: true,
+            FindOutput(RenderOutputTypes.StreamingRtmp),
+            snapshots);
+        ApplySnapshot(
+            streaming: false,
+            FindOutput(RenderOutputTypes.RecordingMp4),
+            snapshots);
+        Publish();
+    }
+
+    private async Task ToggleAsync(
+        RenderOutputTypeId typeId,
+        bool streaming,
+        CancellationToken cancellationToken)
+    {
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var output = FindOutput(typeId);
+            if (output is null)
+            {
+                SetState(streaming, StudioOutputUiState.NotConfigured, "Nenhuma rota configurada.");
+                Publish();
+                return;
+            }
+
+            var running = _engine.GetSnapshots().Any(snapshot => snapshot.OutputId == output.Id);
+            if (!running && !(streaming ? CanToggleStreaming : CanToggleRecording))
+            {
+                SetState(streaming, StudioOutputUiState.NotConfigured, CapabilityReason(streaming ? "output.rtmp" : "output.file.mp4"));
+                Publish();
+                return;
+            }
+
+            SetState(streaming, running ? StudioOutputUiState.Stopping : StudioOutputUiState.Starting, null);
+            Publish();
+            try
+            {
+                if (running)
+                {
+                    await _engine.StopAsync(output.Id, cancellationToken).ConfigureAwait(false);
+                    if (!streaming)
+                        _recordingStartedAt = null;
+                }
+                else
+                {
+                    if (!streaming)
+                        await PrepareRecordingSegmentAsync(output.Id, cancellationToken).ConfigureAwait(false);
+                    await _engine.StartAsync(output.Id, cancellationToken).ConfigureAwait(false);
+                    if (!streaming)
+                    {
+                        _recordingStartedAt = DateTimeOffset.UtcNow;
+                        _recordingSegment++;
+                    }
+                }
+                RefreshStatus();
+            }
+            catch (Exception exception)
+            {
+                SetState(streaming, StudioOutputUiState.Error, exception.Message);
+                Publish();
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    private async Task PrepareRecordingSegmentAsync(RenderOutputId outputId, CancellationToken cancellationToken)
+    {
+        var output = _engine.CurrentProject!.Outputs.Single(candidate => candidate.Id == outputId);
+        var settings = (RecordingMp4OutputSettings)RenderOutputSettingsSerializer.Deserialize(output.TypeId, output.Settings);
+        _recordingBasePath ??= settings.Path;
+        if (_recordingSegment == 0)
+            return;
+        var directory = Path.GetDirectoryName(_recordingBasePath);
+        var name = Path.GetFileNameWithoutExtension(_recordingBasePath);
+        var extension = Path.GetExtension(_recordingBasePath);
+        var segmentPath = Path.Combine(directory ?? string.Empty, $"{name}.segment-{_recordingSegment + 1:0000}{extension}");
+        await _engine.SetRecordingPathAsync(outputId, settings, segmentPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void ApplySnapshot(
+        bool streaming,
+        MediaForgeRenderOutput? output,
+        IReadOnlyList<EncodedOutputRuntimeSnapshot> snapshots)
+    {
+        if (output is null)
+        {
+            SetMetrics(streaming, null);
+            SetState(streaming, StudioOutputUiState.NotConfigured, "Nenhuma rota configurada.");
+            return;
+        }
+        var snapshot = snapshots.FirstOrDefault(candidate => candidate.OutputId == output.Id);
+        if (snapshot is null)
+        {
+            SetMetrics(streaming, null);
+            var typeId = streaming ? "output.rtmp" : "output.file.mp4";
+            SetState(streaming, IsCapabilitySelectable(typeId) ? StudioOutputUiState.Ready : StudioOutputUiState.NotConfigured, CapabilityReason(typeId));
+            return;
+        }
+        var state = snapshot.Status switch
+        {
+            EncodedOutputRuntimeStatus.Starting => StudioOutputUiState.Starting,
+            EncodedOutputRuntimeStatus.Running or EncodedOutputRuntimeStatus.Backpressure => StudioOutputUiState.Running,
+            EncodedOutputRuntimeStatus.Failed => StudioOutputUiState.Error,
+            EncodedOutputRuntimeStatus.Unavailable => StudioOutputUiState.NotConfigured,
+            _ => StudioOutputUiState.Ready
+        };
+        SetMetrics(streaming, new StudioOutputMetrics(
+            snapshot.FramesSubmitted,
+            snapshot.PacketsProduced,
+            snapshot.PacketsWritten,
+            snapshot.FramesDropped,
+            snapshot.LastPacketLatency));
+        if (!streaming && state == StudioOutputUiState.Running && _recordingStartedAt is null)
+        {
+            _recordingStartedAt = DateTimeOffset.UtcNow;
+            _recordingSegment = Math.Max(1, _recordingSegment);
+        }
+        SetState(streaming, state, snapshot.Reason);
+    }
+
+    private bool CanStart(RenderOutputTypeId outputType, string capabilityTypeId) =>
+        _engine.State == MediaForgeEngineState.Running &&
+        FindOutput(outputType) is not null &&
+        IsCapabilitySelectable(capabilityTypeId);
+
+    private MediaForgeRenderOutput? FindOutput(RenderOutputTypeId typeId) =>
+        _engine.CurrentProject?.Outputs.FirstOrDefault(output => output.TypeId == typeId);
+
+    private bool IsCapabilitySelectable(string typeId) =>
+        _capabilities.GetOutputCapabilities().FirstOrDefault(capability => capability.TypeId == typeId)?.IsSelectable == true;
+
+    private string? CapabilityReason(string typeId) =>
+        _capabilities.GetOutputCapabilities().FirstOrDefault(capability => capability.TypeId == typeId)?.Reason;
+
+    private void SetState(bool streaming, StudioOutputUiState state, string? detail)
+    {
         if (streaming)
-            StreamingState = StudioOutputUiState.Error;
+        {
+            StreamingState = state;
+            StreamingDetail = detail;
+        }
         else
-            RecordingState = StudioOutputUiState.Error;
-        StatusChanged?.Invoke(this, new StudioOutputStatusChangedEventArgs(StreamingState, RecordingState));
-        return Task.CompletedTask;
+        {
+            RecordingState = state;
+            RecordingDetail = detail;
+        }
     }
+
+    private void SetMetrics(bool streaming, StudioOutputMetrics? metrics)
+    {
+        if (streaming)
+            StreamingMetrics = metrics;
+        else
+            RecordingMetrics = metrics;
+    }
+
+    private void Publish() => StatusChanged?.Invoke(
+        this,
+        new StudioOutputStatusChangedEventArgs(StreamingState, RecordingState, StreamingDetail, RecordingDetail));
 }
 
 public sealed class RuntimeStudioCapabilityService : IStudioCapabilityService

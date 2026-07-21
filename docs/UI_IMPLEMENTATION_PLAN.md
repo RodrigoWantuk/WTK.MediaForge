@@ -59,6 +59,10 @@ features are disabled with a reason instead of replaced by fake success.
   subscriptions. Start, Stop, and Restart command availability follows engine
   state; project replacement and application shutdown stop new work and unwind
   drafts, outputs, timer, subscriptions, and engine deterministically.
+- Recording and streaming controls use real MP4/RTMP route activation,
+  capability truth, detailed failure state, route metrics, reconnect polling,
+  elapsed recording time, and numbered segment rollover. Apply completion is
+  scoped only to `AffectedOutputIds` returned by the engine.
 - Dock panel proportions are loaded before Dock creation and persisted on
   window close/settings save through `IStudioLayoutService`.
 - Diagnostics, performance metrics, and output monitor snapshots live in the

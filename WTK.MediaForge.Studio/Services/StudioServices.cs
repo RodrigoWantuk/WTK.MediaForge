@@ -151,16 +151,33 @@ public interface IStudioSceneEditRuntimeService
 
 public sealed class StudioOutputStatusChangedEventArgs : EventArgs
 {
-    public StudioOutputStatusChangedEventArgs(StudioOutputUiState streamingState, StudioOutputUiState recordingState)
+    public StudioOutputStatusChangedEventArgs(
+        StudioOutputUiState streamingState,
+        StudioOutputUiState recordingState,
+        string? streamingDetail = null,
+        string? recordingDetail = null)
     {
         StreamingState = streamingState;
         RecordingState = recordingState;
+        StreamingDetail = streamingDetail;
+        RecordingDetail = recordingDetail;
     }
 
     public StudioOutputUiState StreamingState { get; }
 
     public StudioOutputUiState RecordingState { get; }
+
+    public string? StreamingDetail { get; }
+
+    public string? RecordingDetail { get; }
 }
+
+public sealed record StudioOutputMetrics(
+    long FramesSubmitted,
+    long PacketsProduced,
+    long PacketsWritten,
+    long FramesDropped,
+    TimeSpan LastPacketLatency);
 
 public interface IStudioOutputService
 {
@@ -172,6 +189,18 @@ public interface IStudioOutputService
 
     TimeSpan RecordingElapsed { get; }
 
+    bool CanToggleStreaming => true;
+
+    bool CanToggleRecording => true;
+
+    string? StreamingDetail => null;
+
+    string? RecordingDetail => null;
+
+    StudioOutputMetrics? StreamingMetrics => null;
+
+    StudioOutputMetrics? RecordingMetrics => null;
+
     event EventHandler<StudioOutputStatusChangedEventArgs>? StatusChanged;
 
     Task ToggleStreamingAsync(CancellationToken cancellationToken);
@@ -179,6 +208,10 @@ public interface IStudioOutputService
     Task ToggleRecordingAsync(CancellationToken cancellationToken);
 
     Task StopAllAsync(CancellationToken cancellationToken);
+
+    void RefreshStatus()
+    {
+    }
 }
 
 public enum StudioCapabilityStatus

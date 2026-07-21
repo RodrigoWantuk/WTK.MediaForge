@@ -182,6 +182,95 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _mediaPipelineRuntime?.GetEncodedOutputRuntimeSnapshots()
         ?? Array.Empty<EncodedOutputRuntimeSnapshot>();
 
+    public async Task StartEncodedOutputAsync(
+        RenderOutputId outputId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureEncodedOutputControlAvailable(outputId);
+            if (_mediaPipelineRuntime!.IsEncodedOutputRegistered(outputId))
+                return;
+
+            var workingProject = MediaForgeProjectCloner.DeepClone(_currentProject!);
+            var output = workingProject.Outputs.Single(candidate => candidate.Id == outputId);
+            output.Enabled = true;
+            MediaForgeProjectValidator.Validate(workingProject).ThrowIfInvalid();
+
+            var surfaceOutputId = _encodedOutputRouteFactory!.ResolveSurfaceOutputId(workingProject, output);
+            var surfaceOutput = workingProject.Outputs.Single(candidate => candidate.Id == surfaceOutputId);
+            var createdBinding = await EnsureAutomaticSurfaceBindingAsync(surfaceOutput, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _encodedOutputRouteFactory.RegisterAsync(
+                    workingProject,
+                    output,
+                    _mediaPipelineRuntime,
+                    cancellationToken).ConfigureAwait(false);
+                _currentProject = workingProject;
+                RefreshPublishedRuntimeAfterProjectMutation();
+            }
+            catch
+            {
+                if (createdBinding)
+                    await RemoveSurfaceBindingAsync(surfaceOutputId, CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task StopEncodedOutputAsync(
+        RenderOutputId outputId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureEncodedOutputControlAvailable(outputId);
+            var output = _currentProject!.Outputs.Single(candidate => candidate.Id == outputId);
+            if (!_mediaPipelineRuntime!.TryGetSurfaceOutputId(outputId, out var surfaceOutputId))
+                return;
+
+            Exception? finalizationFailure = null;
+            try
+            {
+                await _encodedOutputRouteFactory!.UnregisterAsync(
+                    output,
+                    _mediaPipelineRuntime,
+                    SinkStopTimeout,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                finalizationFailure = exception;
+            }
+
+            var workingProject = MediaForgeProjectCloner.DeepClone(_currentProject);
+            workingProject.Outputs.Single(candidate => candidate.Id == outputId).Enabled = false;
+            _currentProject = workingProject;
+            RefreshPublishedRuntimeAfterProjectMutation();
+
+            if (!_mediaPipelineRuntime.GetActiveSurfaceOutputIds().Contains(surfaceOutputId))
+                await RemoveSurfaceBindingAsync(surfaceOutputId, CancellationToken.None).ConfigureAwait(false);
+
+            if (finalizationFailure is not null)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(finalizationFailure).Throw();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     internal SceneRuntime? SceneRuntimeForTests => _sceneRuntime;
 
     internal OutputRouteTransitionRuntime OutputRouteTransitionRuntimeForTests => _outputRouteTransitions;
@@ -327,7 +416,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 foreach (var (outputId, entry) in _outputSinks)
                 {
                     var output = _currentProject.Outputs.First(o => o.Id == outputId);
-                    if (!output.Enabled)
+                    if (!output.Enabled &&
+                        !(_mediaPipelineRuntime?.GetActiveSurfaceOutputIds().Contains(outputId) ?? false))
                         continue;
                     await EnqueueBindOutputAsync(output, entry.Sink, entry.Target, cancellationToken)
                         .ConfigureAwait(false);
@@ -1043,12 +1133,31 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                renderThread.CanAcceptPublishedFrame;
     }
 
-    private IReadOnlyList<RenderOutputId> GetScheduledTargetOutputs() =>
-        _currentProject?.Outputs
+    private IReadOnlyList<RenderOutputId> GetScheduledTargetOutputs()
+    {
+        var enabled = _currentProject?.Outputs
             .Where(static output => output.Enabled)
             .Select(static output => output.Id)
-            .ToArray()
-        ?? Array.Empty<RenderOutputId>();
+            ?? [];
+        var encodedSurfaces = _mediaPipelineRuntime?.GetActiveSurfaceOutputIds() ?? [];
+        return enabled.Concat(encodedSurfaces).Distinct().ToArray();
+    }
+
+    private void EnsureEncodedOutputControlAvailable(RenderOutputId outputId)
+    {
+        if (outputId.IsEmpty)
+            throw CreateEngineException("Encoded output id cannot be empty.");
+        if (State != MediaForgeEngineState.Running)
+            throw CreateEngineException("Encoded outputs can only be controlled while the engine is running.");
+        if (_currentProject is null || _mediaPipelineRuntime is null || _encodedOutputRouteFactory is null)
+            throw CreateEngineException("Encoded output runtime is unavailable.");
+        var output = _currentProject.Outputs.FirstOrDefault(candidate => candidate.Id == outputId)
+            ?? throw CreateEngineException($"Encoded output {outputId} was not found.");
+        if (!_encodedOutputRouteFactory.CanCreate(output.TypeId))
+            throw new MediaForgeUnsupportedFeatureException(
+                $"output.{output.TypeId.Value}",
+                $"Output '{output.Name}' is not a controllable encoded route.");
+    }
 
     private void PublishScheduledRenderFrame(FrameExecutionContext executionContext)
     {
@@ -2081,6 +2190,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 return false;
             }
 
+            _mediaPipelineRuntime.TryGetSurfaceOutputId(outputId, out var previousSurfaceOutputId);
+
             await _encodedOutputRouteFactory
                 .RecreateAsync(
                     _currentProject,
@@ -2089,6 +2200,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     StopTimeout,
                     cancellationToken)
                 .ConfigureAwait(false);
+            var surfaceOutput = _currentProject.Outputs.Single(candidate => candidate.Id == surfaceOutputId);
+            var createdBinding = await EnsureAutomaticSurfaceBindingAsync(surfaceOutput, cancellationToken).ConfigureAwait(false);
+            if (createdBinding && _outputSinks.TryGetValue(surfaceOutputId, out var entry))
+            {
+                await EnqueueBindOutputAsync(surfaceOutput, entry.Sink, entry.Target, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            if (!previousSurfaceOutputId.IsEmpty && previousSurfaceOutputId != surfaceOutputId)
+                await RemoveSurfaceBindingAsync(previousSurfaceOutputId, CancellationToken.None).ConfigureAwait(false);
             _renderPump?.RequestFrame();
             return _mediaPipelineRuntime.IsEncodedOutputRegistered(outputId);
         }

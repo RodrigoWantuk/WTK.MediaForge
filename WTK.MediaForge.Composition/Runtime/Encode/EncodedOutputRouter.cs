@@ -43,6 +43,7 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
 {
     private readonly IHardwareVideoEncoder _encoder;
     private readonly List<EncodedPacketConsumerWorker> _consumers = [];
+    private readonly object _gate = new();
     private readonly int _consumerQueueCapacity;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private bool _disposed;
@@ -65,7 +66,8 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
     public IReadOnlyList<EncodedPacketConsumerStatistics> GetConsumerStatistics()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _consumers.Select(static consumer => consumer.GetStatistics()).ToArray();
+        lock (_gate)
+            return _consumers.Select(static consumer => consumer.GetStatistics()).ToArray();
     }
 
     public EncodedPacketConsumerWorker RegisterConsumer(
@@ -75,17 +77,47 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(consumer);
 
-        var existing = _consumers.FirstOrDefault(worker => ReferenceEquals(worker.Consumer, consumer));
-        if (existing is not null)
-            return existing;
+        lock (_gate)
+        {
+            var existing = _consumers.FirstOrDefault(worker => ReferenceEquals(worker.Consumer, consumer));
+            if (existing is not null)
+                return existing;
 
-        var worker = new EncodedPacketConsumerWorker(
-            consumer,
-            _consumerQueueCapacity,
-            options ?? new EncodedPacketConsumerOptions(),
-            _diagnostics);
-        _consumers.Add(worker);
-        return worker;
+            var worker = new EncodedPacketConsumerWorker(
+                consumer,
+                _consumerQueueCapacity,
+                options ?? new EncodedPacketConsumerOptions(),
+                _diagnostics);
+            _consumers.Add(worker);
+            return worker;
+        }
+    }
+
+    public async ValueTask UnregisterConsumerAsync(
+        EncodedPacketConsumerWorker worker,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_consumers.Remove(worker))
+                return;
+        }
+
+        Exception? flushFailure = null;
+        try
+        {
+            await worker.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            flushFailure = exception;
+        }
+
+        await worker.DisposeAsync().ConfigureAwait(false);
+        if (flushFailure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(flushFailure).Throw();
     }
 
     public void RoutePacket(EncodedVideoPacket packet)
@@ -93,7 +125,10 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(packet);
 
-        foreach (var consumer in _consumers)
+        EncodedPacketConsumerWorker[] consumers;
+        lock (_gate)
+            consumers = _consumers.ToArray();
+        foreach (var consumer in consumers)
         {
             try
             {
@@ -125,7 +160,10 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         List<Exception>? failures = null;
-        foreach (var consumer in _consumers)
+        EncodedPacketConsumerWorker[] consumers;
+        lock (_gate)
+            consumers = _consumers.ToArray();
+        foreach (var consumer in consumers)
         {
             try
             {
@@ -153,14 +191,18 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
         if (_disposed)
             return;
 
-        _disposed = true;
-        foreach (var consumer in _consumers)
+        EncodedPacketConsumerWorker[] consumers;
+        lock (_gate)
+        {
+            _disposed = true;
+            consumers = _consumers.ToArray();
+            _consumers.Clear();
+        }
+        foreach (var consumer in consumers)
             consumer.Complete();
 
-        foreach (var consumer in _consumers)
+        foreach (var consumer in consumers)
             await consumer.DisposeAsync().ConfigureAwait(false);
-
-        _consumers.Clear();
         await _encoder.DisposeAsync().ConfigureAwait(false);
     }
 }
