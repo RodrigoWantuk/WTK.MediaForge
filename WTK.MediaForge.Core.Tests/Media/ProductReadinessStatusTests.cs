@@ -19,6 +19,8 @@ public sealed class ProductReadinessStatusTests
         AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.RtmpH264);
         AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.MfHardwareH264);
         AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.VideoFileMp4);
+        AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.RemoteScenePublish);
+        AssertUnprovenUnavailable(report, MediaForgeCapabilityCatalog.RemoteSceneSubscribe);
     }
 
     [Fact]

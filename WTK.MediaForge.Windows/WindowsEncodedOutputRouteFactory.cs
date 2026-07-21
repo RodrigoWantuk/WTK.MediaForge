@@ -44,7 +44,8 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
 
     public bool CanCreate(RenderOutputTypeId typeId) =>
         typeId == RenderOutputTypes.RecordingMp4 ||
-        typeId == RenderOutputTypes.StreamingRtmp;
+        typeId == RenderOutputTypes.StreamingRtmp ||
+        typeId == RenderOutputTypes.RemoteScene;
 
     public RenderOutputId ResolveSurfaceOutputId(
         MediaForgeProject project,
@@ -255,12 +256,15 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
         MediaForgeRenderOutput output,
         CancellationToken cancellationToken)
     {
-        if (_allowUnvalidatedRoutes)
+        if (_allowUnvalidatedRoutes && output.TypeId != RenderOutputTypes.RemoteScene)
             return;
 
-        var capabilityId = output.TypeId == RenderOutputTypes.RecordingMp4
-            ? MediaForgeCapabilityCatalog.RecordingMp4H264
-            : MediaForgeCapabilityCatalog.RtmpH264;
+        var capabilityId = output.TypeId switch
+        {
+            var typeId when typeId == RenderOutputTypes.RecordingMp4 => MediaForgeCapabilityCatalog.RecordingMp4H264,
+            var typeId when typeId == RenderOutputTypes.StreamingRtmp => MediaForgeCapabilityCatalog.RtmpH264,
+            _ => MediaForgeCapabilityCatalog.RemoteScenePublish
+        };
 
         var report = await _capabilityReportFactory(cancellationToken).ConfigureAwait(false);
         var capability = report.TryGetEntry(capabilityId);
@@ -302,6 +306,11 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
                 output.Settings);
             return new RtmpPacketSink(CombineRtmpUrl(settings.Url, settings.StreamKey));
         }
+
+        if (output.TypeId == RenderOutputTypes.RemoteScene)
+            throw new MediaForgeUnsupportedFeatureException(
+                MediaForgeCapabilityCatalog.RemoteScenePublish,
+                "Remote Scene native publisher factory is unavailable until the pinned backend and physical proofs pass.");
 
         throw new ArgumentOutOfRangeException(nameof(output), output.TypeId.Value, "Unsupported encoded output route.");
     }
@@ -352,6 +361,14 @@ internal sealed class WindowsEncodedOutputRouteFactory : IEncodedOutputRouteFact
         if (output.TypeId == RenderOutputTypes.StreamingRtmp)
         {
             var settings = (StreamingRtmpOutputSettings)RenderOutputSettingsSerializer.Deserialize(
+                output.TypeId,
+                output.Settings);
+            return settings.Video;
+        }
+
+        if (output.TypeId == RenderOutputTypes.RemoteScene)
+        {
+            var settings = (RemoteSceneOutputSettings)RenderOutputSettingsSerializer.Deserialize(
                 output.TypeId,
                 output.Settings);
             return settings.Video;

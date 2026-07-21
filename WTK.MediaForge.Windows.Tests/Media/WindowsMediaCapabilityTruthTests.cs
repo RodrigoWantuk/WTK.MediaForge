@@ -393,4 +393,32 @@ public sealed class WindowsMediaCapabilityTruthTests
         Assert.Equal(recording.Id, factory.ResolveSurfaceOutputId(project, recording));
         Assert.Equal(streaming.Id, factory.ResolveSurfaceOutputId(project, streaming));
     }
+
+    [Fact]
+    public async Task Remote_scene_route_is_engine_known_but_cannot_bypass_physical_proof_gate()
+    {
+        var output = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(),
+            Name = "Remote",
+            TypeId = RenderOutputTypes.RemoteScene,
+            CanvasId = CanvasId.New(),
+            OutputSize = new FrameSize(1920, 1080),
+            Settings = RenderOutputSettingsSerializer.ToJson(
+                MediaForgeOutputs.RemoteScene("wss://signal.example.test", "program"))
+        };
+        var factory = new WindowsEncodedOutputRouteFactory(allowUnvalidatedRoutes: true);
+        await using var runtime = new MediaPipelineRuntime();
+
+        Assert.True(factory.CanCreate(RenderOutputTypes.RemoteScene));
+        var exception = await Assert.ThrowsAsync<MediaForgeUnsupportedFeatureException>(() =>
+            factory.RegisterAsync(
+                new MediaForgeProject { Outputs = [output] },
+                output,
+                runtime,
+                CancellationToken.None).AsTask());
+
+        Assert.Equal(MediaForgeCapabilityCatalog.RemoteScenePublish, exception.FeatureCode);
+        Assert.Equal(0, runtime.EncodedOutputCount);
+    }
 }

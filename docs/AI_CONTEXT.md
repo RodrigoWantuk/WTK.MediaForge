@@ -190,6 +190,13 @@ capability reports; it is never converted into a hosted-runner product pass.
   `86676d3c4ee49b92380647d4b68388ed8f0ce94a`. The contract-test library reports
   backend unavailable and cannot be packaged; capability promotion requires the
   actual pinned adapter and physical proofs.
+- Remote Scene output participates in existing render/encoder compatibility and
+  isolated encoded-sink routing; packets require trusted hardware evidence and
+  explicit leases. Receive uses a bounded reorder buffer and hardware decoder
+  pump that yields GPU textures and recreates on format changes. Windows knows
+  both canonical types but refuses activation until the native/Direct/TURN
+  composite capabilities pass, including when other unvalidated routes are
+  enabled for tests.
 - NDI product video remains blocked because Standard SDK CPU framebuffer APIs do
   not satisfy the GPU media law.
 - Audio, SRT, virtual camera, and FFmpeg are deferred.

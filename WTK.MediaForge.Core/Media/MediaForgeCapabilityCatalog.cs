@@ -27,6 +27,10 @@ public static class MediaForgeCapabilityCatalog
     public const string NdiOutputProductProof = "proof.media_io.ndi_output.product";
     public const string VideoFileMp4 = "source.video.file.mp4";
     public const string EnginePerformanceBaseline = "engine.performance.baseline";
+    public const string RemoteScenePublish = "remote-scene.publish";
+    public const string RemoteSceneSubscribe = "remote-scene.subscribe";
+    public const string RemoteSceneDirectProof = "proof.remote_scene.direct";
+    public const string RemoteSceneTurnProof = "proof.remote_scene.turn";
 
     public static IReadOnlyList<CapabilityEntry> CreateDefaultEntries(GpuExportProofStatus exportProofStatus) =>
         CreateDefaultEntries(new HardwareMediaCapabilityReport
@@ -52,6 +56,28 @@ public static class MediaForgeCapabilityCatalog
             MediaForgeSupportStatus.Planned, MediaForgeLicenseStatus.RequiresLegalReview,
             MediaForgeProductReadinessStatus.Contract,
             "Blocked by license review and transport design."),
+
+        Entry(CapabilityCategories.Sink, RemoteScenePublish, "Remote Scene publish",
+            MediaForgeSupportStatus.Unavailable, MediaForgeLicenseStatus.Approved,
+            MediaForgeProductReadinessStatus.Contract,
+            "Unavailable until the pinned libwebrtc backend and Direct/TURN hardware encode proofs pass.",
+            MediaTransportKind.EncodedPacket),
+
+        Entry(CapabilityCategories.Source, RemoteSceneSubscribe, "Remote Scene subscribe",
+            MediaForgeSupportStatus.Unavailable, MediaForgeLicenseStatus.Approved,
+            MediaForgeProductReadinessStatus.Contract,
+            "Unavailable until the pinned libwebrtc backend, Direct/TURN receive, hardware decode, and decode-to-render proofs pass.",
+            MediaTransportKind.EncodedPacket),
+
+        Entry(CapabilityCategories.Proof, RemoteSceneDirectProof, "Remote Scene direct path proof",
+            MediaForgeSupportStatus.Unavailable, MediaForgeLicenseStatus.Approved,
+            MediaForgeProductReadinessStatus.Contract,
+            "Direct proof has not passed on two physical peers.", MediaTransportKind.EncodedPacket),
+
+        Entry(CapabilityCategories.Proof, RemoteSceneTurnProof, "Remote Scene TURN path proof",
+            MediaForgeSupportStatus.Unavailable, MediaForgeLicenseStatus.Approved,
+            MediaForgeProductReadinessStatus.Contract,
+            "TURN proof has not passed on two physical peers.", MediaTransportKind.EncodedPacket),
 
         Entry(CapabilityCategories.License, LibX264, "libx264",
             MediaForgeSupportStatus.Prohibited, MediaForgeLicenseStatus.Prohibited,

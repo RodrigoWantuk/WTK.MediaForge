@@ -58,7 +58,13 @@ public sealed record RemoteSceneTelemetry(
     double PacketLossPercent,
     long FramesDropped,
     bool RelayActive,
-    string? FailureReason = null);
+    string? FailureReason = null,
+    TimeSpan? Jitter = null,
+    string? SelectedCandidate = null,
+    long FramesSent = 0,
+    long FramesReceived = 0,
+    long KeyFrames = 0,
+    long ReconnectCount = 0);
 
 public sealed class RemoteSceneFormatChangedEventArgs(int width, int height, EncodedVideoProfile profile) : EventArgs
 {

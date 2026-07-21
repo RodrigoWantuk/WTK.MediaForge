@@ -16,6 +16,29 @@ V1 is opaque H.264 video only. Audio, alpha, scene-graph synchronization, remote
 
 The native bridge must inject H.264 after MediaForge encoding and surface received access units before MediaForge decoding. It must not create or accept WebRTC `VideoFrame` CPU paths, software codecs, or continuous uncompressed CPU frames.
 
+## Engine media integration
+
+The engine recognizes `remote-scene` as an encoded output route and includes it
+in the existing render/encoder compatibility keys, so compatible MP4, RTMP, and
+Remote Scene outputs may share rendered pixels and the hardware encoder while
+retaining independent sink workers and failure state. The Remote Scene sink
+accepts only `BackendOutputValidated` H.264 packets, transfers an explicit lease
+to the publisher, and forwards keyframe feedback to the encoder boundary.
+
+Receive-side contracts provide a bounded presentation-time jitter/reorder
+buffer with keyframe-preserving drop behavior and deterministic lease cleanup.
+`RemoteSceneHardwareDecodePump` recreates the hardware decoder on negotiated
+format generation changes, rejects non-GPU decoder output, and yields owned GPU
+frames. Its interruption policy explicitly selects last-frame freeze or a
+placeholder; a host/provider owns the actual retained-frame presentation.
+Telemetry carries RTT, loss, bitrate, jitter, selected candidate, frame,
+keyframe, drop, relay, and reconnect values without media payloads.
+
+Windows registers the source/output types but rejects activation with the
+specific `remote-scene.publish`/`remote-scene.subscribe` capability reason. Even
+test bypass flags cannot bypass this physical proof gate. This prevents the
+contract-only native ABI from becoming a product route.
+
 ## Capability Truth
 
 The presence of the managed contracts does not promote Remote Scene. Publish and subscribe remain unavailable until all of the following pass on the active adapter:

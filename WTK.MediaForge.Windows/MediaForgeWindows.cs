@@ -35,7 +35,8 @@ public static class MediaForgeWindows
             new WindowsWindowCaptureSourceProviderFactory(
                 options.Diagnostics,
                 adapterAffinity),
-            new WindowsVideoFileSourceProviderFactory(options.Diagnostics)),
+            new WindowsVideoFileSourceProviderFactory(options.Diagnostics),
+            new WindowsRemoteSceneSourceProviderFactory(options.Diagnostics)),
             new WindowsRenderOutputSinkFactory(),
             new MediaForgeVulkanRenderBackendFactory(
                 new WindowsSystemDrawingFontAtlasRasterizer(),
