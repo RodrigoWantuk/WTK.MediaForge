@@ -91,7 +91,7 @@ public class GpuFrameSlotRingTests
     }
 
     [Fact]
-    public void Generation_mismatch_release_throws_in_debug()
+    public void Generation_mismatch_release_matches_build_contract()
     {
         var ring = new GpuFrameSlotRing(slotCount: 3);
         CaptureFrame(ring, frameNumber: 1);
@@ -99,7 +99,11 @@ public class GpuFrameSlotRingTests
         Assert.True(ring.TryRetainLatest(out var lease));
         var staleGeneration = lease!.Generation - 1;
 
+#if DEBUG
         Assert.Throws<InvalidOperationException>(() => ring.Release(lease.SlotIndex, staleGeneration));
+#else
+        ring.Release(lease.SlotIndex, staleGeneration);
+#endif
         Assert.Equal(1, ring.GenerationMismatchCount);
 
         lease.Dispose();

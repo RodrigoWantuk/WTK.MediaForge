@@ -138,6 +138,44 @@ public sealed class MediaPipelineRuntimeTests
     }
 
     [Fact]
+    public async Task Unregister_cancellation_still_disposes_unowned_route_resources()
+    {
+        var outputId = RenderOutputId.New();
+        var exporter = new CancellationBlockingRenderedOutputExporter();
+        var routeResources = new TrackingRouteResources();
+        await using var runtime = new MediaPipelineRuntime();
+
+        await runtime.RegisterEncodedOutputAsync(
+            outputId,
+            new RenderedOutputEncodeFrameAdapter(exporter),
+            new PreExportedInputRecordingEncoder(),
+            new ThrowingGpuFrameExporter(),
+            CreateSinkContext(),
+            [new RecordingEncodedPacketSink()],
+            new CollectingMediaTransportAuditSink(),
+            routeResources: routeResources,
+            cancellationToken: CancellationToken.None);
+
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces(
+            [new TrackingRenderedOutputSurfaceLease(outputId)]);
+        runtime.PublishCompletedFrames(batch);
+        await exporter.WaitUntilStartedAsync(TimeSpan.FromSeconds(2));
+
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await runtime.UnregisterEncodedOutputAsync(
+                outputId,
+                TimeSpan.FromSeconds(2),
+                cancellation.Token));
+
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.True(routeResources.Disposed);
+        Assert.Equal(0, runtime.EncodedOutputCount);
+    }
+
+    [Fact]
     public async Task Compatible_logical_outputs_share_one_surface_and_encoder()
     {
         var surfaceOutputId = RenderOutputId.New();
@@ -369,6 +407,42 @@ public sealed class MediaPipelineRuntimeTests
             }));
     }
 
+    private sealed class CancellationBlockingRenderedOutputExporter : IRenderedOutputEncoderSurfaceExporter
+    {
+        private readonly TaskCompletionSource _started =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool CanExport(
+            IRenderedOutputSurfaceLease surface,
+            HardwareEncoderInputRequirement requirement) =>
+            surface.BackendSurface is not null;
+
+        public async ValueTask<HardwareEncoderInputLease> ExportAsync(
+            IRenderedOutputSurfaceLease surface,
+            HardwareEncoderInputRequirement requirement,
+            IMediaTransportAuditSink auditSink,
+            CancellationToken cancellationToken)
+        {
+            _started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The cancellation-blocking exporter completed without cancellation.");
+        }
+
+        public async Task WaitUntilStartedAsync(TimeSpan timeout) =>
+            await _started.Task.WaitAsync(timeout);
+    }
+
+    private sealed class TrackingRouteResources : IAsyncDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class TrackingRenderedOutputSurfaceLease(RenderOutputId outputId) : IRenderedOutputSurfaceLease
     {
         private int _disposeCount;
@@ -464,8 +538,9 @@ public sealed class MediaPipelineRuntimeTests
     {
         private readonly Func<bool> _isRenderThreadRunning = isRenderThreadRunning;
         private readonly Func<bool> _isBackendDisposed = isBackendDisposed;
+        private int _routeResourcesDisposed;
 
-        public bool RouteResourcesDisposed { get; private set; }
+        public bool RouteResourcesDisposed => Volatile.Read(ref _routeResourcesDisposed) != 0;
 
         public bool CanCreate(RenderOutputTypeId typeId) => true;
 
@@ -509,7 +584,7 @@ public sealed class MediaPipelineRuntimeTests
                         "Encoded route resources were disposed after the render backend.");
                 }
 
-                owner.RouteResourcesDisposed = true;
+                Interlocked.Exchange(ref owner._routeResourcesDisposed, 1);
                 return ValueTask.CompletedTask;
             }
         }

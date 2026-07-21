@@ -47,7 +47,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private MediaForgeRenderPump? _renderPump;
     private ProjectStateSnapshot? _projectState;
     private MediaForgeProject? _currentProject;
-    private MediaForgeEngineState _state = MediaForgeEngineState.Idle;
+    private int _state = (int)MediaForgeEngineState.Idle;
     private TimeSpan _sinkStopTimeout = TimeSpan.FromSeconds(5);
     private long _bindingVersion;
     private int _disposed;
@@ -115,7 +115,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             ? null
             : MediaForgeProjectCloner.DeepClone(_currentProject);
 
-    public MediaForgeEngineState State => _state;
+    public MediaForgeEngineState State => (MediaForgeEngineState)Volatile.Read(ref _state);
 
     public bool IsRunning => State == MediaForgeEngineState.Running;
 
@@ -1624,7 +1624,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         if (oldState == newState)
             return;
 
-        _state = newState;
+        Volatile.Write(ref _state, (int)newState);
         RaiseStateChanged(oldState, newState);
     }
 

@@ -169,6 +169,8 @@ Before considering a change complete, verify:
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
 - [ ] Engine readiness v14 (`verify-engine-readiness-v14.ps1`) is the only official hardware-first gate; it performs locked restore, serializes GPU ownership across test assemblies, rejects contradictory aggregate/proof status, tests encoded output profiles, adapter LUID identity and Media Foundation ownership, and regenerates the proof report.
+- [ ] GitHub-hosted CI runs only the portable Release filter; GPU/capture/Media Foundation qualification runs sequentially on the labeled self-hosted RX 580 runner with `-RequireHardwareMedia`.
+- [ ] `dotnet test` does not rebuild after the CI Release build, and shader inputs are included exactly once by the Vulkan project.
 - [ ] Scripts v4-v12 under `docs/history/readiness-scripts` are not executed as current gates.
 - [ ] Release hardware media readiness uses the current readiness script with `-RequireHardwareMedia`; missing required proofs must fail with an actionable report, not silent success.
 - [ ] Preview remains Experimental until hosted resize and repeated timeout-recovery evidence passes.

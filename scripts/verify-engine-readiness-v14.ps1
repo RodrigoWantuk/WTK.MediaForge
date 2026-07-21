@@ -134,8 +134,12 @@ try {
         dotnet build .\WTK.MediaForge.sln --no-restore --verbosity minimal
     }
 
-    Invoke-ReadinessStep "solution tests" {
-        dotnet test .\WTK.MediaForge.sln --no-restore --verbosity minimal
+    Invoke-ReadinessStep "portable solution tests" {
+        dotnet test .\WTK.MediaForge.sln `
+            --no-restore `
+            --no-build `
+            --filter "Category!=GPU&Category!=Stress&Category!=Performance" `
+            --verbosity minimal
     }
 
     Invoke-ReadinessStep "fast contracts" {

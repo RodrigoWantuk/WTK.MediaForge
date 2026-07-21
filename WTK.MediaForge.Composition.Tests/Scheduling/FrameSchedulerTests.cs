@@ -77,6 +77,35 @@ public sealed class FrameSchedulerTests
         Assert.Equal(0, publishCount);
     }
 
+    [Fact]
+    public async Task Stop_timeout_retains_scheduler_ownership_until_retry_completes()
+    {
+        using var publishEntered = new ManualResetEventSlim();
+        using var releasePublish = new ManualResetEventSlim();
+        await using var scheduler = new FrameScheduler(
+            framesPerSecond: 60,
+            canPublish: static () => true,
+            publish: _ =>
+            {
+                publishEntered.Set();
+                releasePublish.Wait();
+            },
+            targetOutputs: static () => Array.Empty<RenderOutputId>(),
+            diagnostics: null);
+
+        scheduler.RequestFrame();
+        Assert.True(publishEntered.Wait(TimeSpan.FromSeconds(2)));
+
+        var timeout = await Assert.ThrowsAsync<TimeoutException>(async () =>
+            await scheduler.StopAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None));
+        Assert.Contains("ownership is retained", timeout.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(scheduler.IsRunning);
+
+        releasePublish.Set();
+        await scheduler.StopAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.False(scheduler.IsRunning);
+    }
+
     private static async Task WaitForConditionAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
@@ -87,6 +116,9 @@ public sealed class FrameSchedulerTests
 
             await Task.Delay(10);
         }
+
+        if (condition())
+            return;
 
         throw new TimeoutException("Condition was not met before timeout.");
     }

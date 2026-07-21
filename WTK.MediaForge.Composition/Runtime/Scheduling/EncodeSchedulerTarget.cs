@@ -49,6 +49,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
     private readonly Queue<ScheduledRenderedFrame> _pendingFrames = new();
     private readonly object _queueGate = new();
     private readonly SemaphoreSlim _queueSignal = new(0, 1);
+    private readonly SemaphoreSlim _stopGate = new(1, 1);
     private readonly CancellationTokenSource _abort = new();
     private readonly Task _encodeLoop;
     private readonly TimeSpan _encodeTimeout;
@@ -207,44 +208,81 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
 
     public async ValueTask StopAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Encode scheduler stop timeout must be positive.");
 
-        Volatile.Write(ref _acceptingFrames, 0);
-        Volatile.Write(ref _stopRequested, 1);
-        SignalQueue();
-
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
+        await _stopGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await _encodeLoop.WaitAsync(linked.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
-        {
-            await _abort.CancelAsync().ConfigureAwait(false);
+            if (Volatile.Read(ref _disposed) != 0)
+                return;
+
+            Volatile.Write(ref _acceptingFrames, 0);
+            Volatile.Write(ref _stopRequested, 1);
             SignalQueue();
-            throw new TimeoutException("Encode scheduler target did not stop within the expected timeout.", ex);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            await _abort.CancelAsync().ConfigureAwait(false);
-            SignalQueue();
-            throw;
+
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            try
+            {
+                await _encodeLoop.WaitAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
+            {
+                await AbortAndAwaitLoopAsync(timeout, ex).ConfigureAwait(false);
+                throw new TimeoutException(
+                    "Encode scheduler target exceeded its graceful stop timeout; forced cancellation completed.",
+                    ex);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await _abort.CancelAsync().ConfigureAwait(false);
+                SignalQueue();
+                throw;
+            }
+            finally
+            {
+                if (_encodeLoop.IsCompleted)
+                    CompleteStop();
+            }
         }
         finally
         {
-            if (_encodeLoop.IsCompleted)
-            {
-                ClearPendingFrames();
-                _queueSignal.Dispose();
-                _abort.Dispose();
-            }
+            _stopGate.Release();
         }
     }
 
     public ValueTask DisposeAsync() => StopAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+    private async ValueTask AbortAndAwaitLoopAsync(
+        TimeSpan timeout,
+        OperationCanceledException gracefulTimeout)
+    {
+        await _abort.CancelAsync().ConfigureAwait(false);
+        SignalQueue();
+
+        try
+        {
+            await _encodeLoop.WaitAsync(timeout, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (TimeoutException abortTimeout)
+        {
+            throw new TimeoutException(
+                "Encode scheduler target remained active after forced cancellation. Cleanup ownership is retained and StopAsync may be retried.",
+                new AggregateException(gracefulTimeout, abortTimeout));
+        }
+    }
+
+    private void CompleteStop()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        ClearPendingFrames();
+        _queueSignal.Dispose();
+        _abort.Dispose();
+    }
 
     private async Task ProcessEncodeQueueAsync()
     {

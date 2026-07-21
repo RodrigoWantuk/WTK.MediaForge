@@ -53,6 +53,9 @@ public class GpuFrameSlotRingIntegrationTests
             Thread.Sleep(10);
         }
 
+        if (condition())
+            return;
+
         throw new TimeoutException("Condition was not met before timeout.");
     }
 

@@ -1638,6 +1638,9 @@ public class MediaForgeVulkanRendererTests
             Thread.Sleep(1);
         }
 
+        if (condition())
+            return;
+
         throw new TimeoutException("Condition was not met before timeout.");
     }
 

@@ -186,6 +186,11 @@ public sealed class EncodeSchedulerTargetTests
 
         Assert.Equal(1, target.PendingFrameCount);
         Assert.Equal(default, replacedLease.TextureId);
+
+        var stopFailure = await Assert.ThrowsAsync<TimeoutException>(async () =>
+            await target.StopAsync(TimeSpan.FromMilliseconds(100), CancellationToken.None));
+        Assert.Contains("forced cancellation completed", stopFailure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(encoder.CancellationObserved);
     }
 
     [Fact]
@@ -342,6 +347,9 @@ public sealed class EncodeSchedulerTargetTests
 
             await Task.Delay(10);
         }
+
+        if (condition())
+            return;
 
         throw new TimeoutException("Condition was not met before timeout.");
     }

@@ -46,6 +46,9 @@ internal sealed class WindowsLocalRtmpProofServer : IAsyncDisposable
         }
 
         ThrowIfFailed();
+        if (VideoPacketCount >= count)
+            return;
+
         throw new TimeoutException($"RTMP proof server did not receive {count} video packet(s) within {timeout}.");
     }
 

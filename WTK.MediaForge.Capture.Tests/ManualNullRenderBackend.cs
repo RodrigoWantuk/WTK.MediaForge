@@ -29,11 +29,12 @@ internal sealed class ManualNullRenderBackend : IRenderBackend
         _threadGuard.AssertOnRenderThread();
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        Interlocked.Increment(ref _submitCount);
         var submission = new ManualRenderFrameSubmission(snapshot);
 
         lock (_pending)
             _pending.Add(submission);
+
+        Interlocked.Increment(ref _submitCount);
 
         return submission;
     }

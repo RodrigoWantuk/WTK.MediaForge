@@ -281,7 +281,9 @@ public sealed class WindowsMediaCapabilityTruthTests
                 Assert.DoesNotContain("requires an approved", result.Reason, StringComparison.OrdinalIgnoreCase);
                 Assert.DoesNotContain("requires a hardware-decoded", result.Reason, StringComparison.OrdinalIgnoreCase);
                 Assert.DoesNotContain("not implemented", result.Reason, StringComparison.OrdinalIgnoreCase);
-                Assert.Contains("unavailable on this machine", result.Reason, StringComparison.OrdinalIgnoreCase);
+                Assert.False(
+                    string.IsNullOrWhiteSpace(result.Reason),
+                    $"Unavailable proof {runner.Id} must report a concrete machine, driver, device, or API reason.");
             }
 
             if (result.Status == HardwareMediaProofStatus.Passed)

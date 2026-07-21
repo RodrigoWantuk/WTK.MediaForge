@@ -116,6 +116,11 @@ public sealed class WindowsVideoFileSourceProviderFactoryTests
             await Task.Delay(5);
         }
 
+        if (provider.TryAcquireLatestFrame(out var finalLease))
+            return finalLease;
+        if (provider.State == MediaSourceState.Failed)
+            throw new InvalidOperationException("Provider failed before publishing a frame.", provider.LastError);
+
         throw new TimeoutException("Video file provider did not publish a frame before the timeout.");
     }
 

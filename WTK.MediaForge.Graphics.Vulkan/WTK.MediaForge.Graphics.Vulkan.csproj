@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ShaderCompilerGlobalOption_class_name>CompiledShaders</ShaderCompilerGlobalOption_class_name>
+    <EnableDefaultShaderCompileItems>false</EnableDefaultShaderCompileItems>
   </PropertyGroup>
 
   <ItemGroup>

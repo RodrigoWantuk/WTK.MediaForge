@@ -478,6 +478,9 @@ public class RenderOutputSinkDispatcherTests
             await Task.Delay(10);
         }
 
+        if (condition())
+            return;
+
         throw new TimeoutException("Condition was not met within the expected timeout.");
     }
 

@@ -11,15 +11,19 @@ internal sealed class FrameScheduler : IAsyncDisposable
     private readonly Action<FrameExecutionContext> _publish;
     private readonly Func<IReadOnlyList<RenderOutputId>> _targetOutputs;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
-    private readonly SemaphoreSlim _wake = new(0, int.MaxValue);
-    private readonly CancellationTokenSource _stop = new();
+    private readonly AutoResetEvent _wake = new(false);
+    private readonly SemaphoreSlim _stopGate = new(1, 1);
+    private readonly TaskCompletionSource _completion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeSpan _frameBudget;
-    private readonly Task _loop;
+    private readonly Thread _thread;
     private long _frameId;
     private long _presentationTimeTicks;
     private long _lastBackpressureDiagnosticTicks;
     private int _backpressureDropCount;
-    private int _disposed;
+    private int _stopRequested;
+    private int _resourcesDisposed;
+    private FrameExecutionContext? _lastPublishedContext;
 
     public FrameScheduler(
         double framesPerSecond,
@@ -36,118 +40,128 @@ internal sealed class FrameScheduler : IAsyncDisposable
         _targetOutputs = targetOutputs ?? throw new ArgumentNullException(nameof(targetOutputs));
         _diagnostics = diagnostics;
         _frameBudget = TimeSpan.FromSeconds(1d / framesPerSecond);
-        _loop = Task.Run(RunAsync);
+        _thread = new Thread(Run)
+        {
+            IsBackground = true,
+            Name = "MediaForge.FrameScheduler"
+        };
+        _thread.Start();
     }
 
     public TimeSpan FrameBudget => _frameBudget;
 
-    public bool IsRunning => !_loop.IsCompleted;
+    public bool IsRunning => !_completion.Task.IsCompleted;
 
-    internal FrameExecutionContext? LastPublishedContext { get; private set; }
+    internal FrameExecutionContext? LastPublishedContext => Volatile.Read(ref _lastPublishedContext);
 
     public void RequestFrame()
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        if (Volatile.Read(ref _stopRequested) != 0 || Volatile.Read(ref _resourcesDisposed) != 0)
             return;
 
-        try
-        {
-            _wake.Release();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
+        SafeSignalWake();
     }
 
     public async ValueTask StopAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Frame scheduler stop timeout must be positive.");
 
-        _stop.Cancel();
-        SafeReleaseWake();
-
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            timeoutCts.Token);
-
+        await _stopGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await _loop.WaitAsync(linked.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
-        {
-            throw new TimeoutException("Frame scheduler did not stop within the expected timeout.", ex);
+            if (Volatile.Read(ref _resourcesDisposed) != 0)
+                return;
+
+            Volatile.Write(ref _stopRequested, 1);
+            SafeSignalWake();
+
+            try
+            {
+                await _completion.Task.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TimeoutException ex)
+            {
+                throw new TimeoutException(
+                    "Frame scheduler did not stop within the expected timeout. Cleanup ownership is retained and StopAsync may be retried.",
+                    ex);
+            }
+            finally
+            {
+                if (_completion.Task.IsCompleted)
+                    CompleteStop();
+            }
         }
         finally
         {
-            _wake.Dispose();
-            _stop.Dispose();
+            _stopGate.Release();
         }
     }
 
     public ValueTask DisposeAsync() => StopAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
 
-    private async Task RunAsync()
+    private void Run()
     {
-        while (!_stop.IsCancellationRequested)
+        try
         {
-            try
+            while (Volatile.Read(ref _stopRequested) == 0)
             {
-                await WaitForNextTickAsync().ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (_stop.IsCancellationRequested)
-            {
-                break;
-            }
-
-            if (_stop.IsCancellationRequested)
-                break;
-
-            if (!_canPublish())
-            {
-                ReportBackpressureDrop();
-                continue;
-            }
-
-            try
-            {
-                var context = new FrameExecutionContext
+                _wake.WaitOne(_frameBudget);
+                while (_wake.WaitOne(TimeSpan.Zero))
                 {
-                    FrameId = Interlocked.Increment(ref _frameId),
-                    Timestamp = DateTimeOffset.UtcNow,
-                    PresentationTime = AdvancePresentationTime(),
-                    FrameBudget = _frameBudget,
-                    TargetOutputs = _targetOutputs()
-                };
+                }
 
-                LastPublishedContext = context;
-                _publish(context);
+                if (Volatile.Read(ref _stopRequested) != 0)
+                    break;
+
+                if (!_canPublish())
+                {
+                    ReportBackpressureDrop();
+                    continue;
+                }
+
+                try
+                {
+                    var context = new FrameExecutionContext
+                    {
+                        FrameId = Interlocked.Increment(ref _frameId),
+                        Timestamp = DateTimeOffset.UtcNow,
+                        PresentationTime = AdvancePresentationTime(),
+                        FrameBudget = _frameBudget,
+                        TargetOutputs = _targetOutputs()
+                    };
+
+                    Volatile.Write(ref _lastPublishedContext, context);
+                    _publish(context);
+                }
+                catch (ObjectDisposedException) when (Volatile.Read(ref _stopRequested) != 0)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.frame_scheduler_publish_failed",
+                        "Frame scheduler failed to publish a frame.",
+                        nameof(FrameScheduler),
+                        ex);
+                }
             }
-            catch (ObjectDisposedException) when (_stop.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Error,
-                    "engine.frame_scheduler_publish_failed",
-                    "Frame scheduler failed to publish a frame.",
-                    nameof(FrameScheduler),
-                    ex);
-            }
+
+            _completion.TrySetResult();
         }
-    }
-
-    private async Task WaitForNextTickAsync()
-    {
-        _ = await _wake.WaitAsync(_frameBudget, _stop.Token).ConfigureAwait(false);
-
-        while (_wake.Wait(0))
+        catch (Exception ex)
         {
+            MediaForgeDiagnostics.Report(
+                _diagnostics,
+                MediaForgeDiagnosticSeverity.Error,
+                "engine.frame_scheduler_loop_failed",
+                "Frame scheduler loop terminated unexpectedly.",
+                nameof(FrameScheduler),
+                ex);
+            _completion.TrySetException(ex);
         }
     }
 
@@ -177,11 +191,19 @@ internal sealed class FrameScheduler : IAsyncDisposable
             nameof(FrameScheduler));
     }
 
-    private void SafeReleaseWake()
+    private void CompleteStop()
+    {
+        if (Interlocked.Exchange(ref _resourcesDisposed, 1) != 0)
+            return;
+
+        _wake.Dispose();
+    }
+
+    private void SafeSignalWake()
     {
         try
         {
-            _wake.Release();
+            _wake.Set();
         }
         catch (ObjectDisposedException)
         {

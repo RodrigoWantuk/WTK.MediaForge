@@ -125,6 +125,9 @@ public class CaptureRenderThreadVulkanIntegrationTests
             await Task.Delay(20);
         }
 
+        if (condition())
+            return;
+
         throw new TimeoutException("Condition was not met within the expected timeout.");
     }
 }

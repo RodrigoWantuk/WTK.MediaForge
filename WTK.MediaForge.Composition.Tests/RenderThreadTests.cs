@@ -414,6 +414,9 @@ public class RenderThreadTests
             Thread.Sleep(10);
         }
 
+        if (condition())
+            return;
+
         throw new TimeoutException("Condition was not met before timeout.");
     }
 
@@ -581,12 +584,13 @@ internal sealed class ManualNullRenderBackend : IRenderBackend
         _threadGuard.AssertOnRenderThread();
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        Interlocked.Increment(ref _submitCount);
         LastRenderGraphExecution = snapshot.RenderGraphExecution;
         var submission = new ManualRenderFrameSubmission(snapshot);
 
         lock (_pending)
             _pending.Add(submission);
+
+        Interlocked.Increment(ref _submitCount);
 
         return submission;
     }

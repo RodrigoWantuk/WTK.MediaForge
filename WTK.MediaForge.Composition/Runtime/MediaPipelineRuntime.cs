@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Encode;
 using WTK.MediaForge.Composition.Runtime.Rendering;
@@ -259,8 +260,41 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                 _encodedRoutes.Remove(logicalOutputId);
         }
 
-        await Encoding.StopOutputAsync(route.SurfaceOutputId, timeout, cancellationToken).ConfigureAwait(false);
-        await route.DisposeAsync(cancellationToken).ConfigureAwait(false);
+        Exception? stopFailure = null;
+        Exception? routeCleanupFailure = null;
+
+        try
+        {
+            await Encoding.StopOutputAsync(route.SurfaceOutputId, timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            stopFailure = ex;
+        }
+
+        // The route no longer has a registry owner. Its physical resources must
+        // be finalized even when scheduler shutdown was canceled or failed.
+        try
+        {
+            await route.DisposeAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            routeCleanupFailure = ex;
+        }
+
+        if (stopFailure is not null && routeCleanupFailure is not null)
+        {
+            throw new AggregateException(
+                $"Failed to stop and dispose encoded output route {outputId}.",
+                stopFailure,
+                routeCleanupFailure);
+        }
+
+        if (stopFailure is not null)
+            ExceptionDispatchInfo.Capture(stopFailure).Throw();
+        if (routeCleanupFailure is not null)
+            ExceptionDispatchInfo.Capture(routeCleanupFailure).Throw();
     }
 
     public void PublishCompletedFrames(RenderedOutputFrameBatch frameBatch) =>

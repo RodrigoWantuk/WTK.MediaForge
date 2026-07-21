@@ -110,6 +110,13 @@ The official validation is:
 Historical readiness scripts are stored under `docs/history/readiness-scripts`
 and must not be executed as current gates.
 
+GitHub-hosted `windows-latest` runners execute the Release build and portable
+test filter only. They do not qualify Vulkan, D3D11, Media Foundation devices,
+capture hardware, or strict media proofs. Those tests run sequentially through
+the GPU tier and `-RequireHardwareMedia` on the self-hosted
+`windows, mediaforge-rx580` runner. Hardware absence must remain explicit in
+capability reports; it is never converted into a hosted-runner product pass.
+
 ## Current Constraints
 
 - Preview is experimental until hosted resize and timeout-recovery evidence passes.
