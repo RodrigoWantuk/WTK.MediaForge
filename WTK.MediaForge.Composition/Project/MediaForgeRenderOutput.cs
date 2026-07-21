@@ -14,6 +14,8 @@ public sealed class MediaForgeRenderOutput
 
     public string Name { get; set; } = string.Empty;
 
+    public bool Enabled { get; set; } = true;
+
     public RenderOutputTypeId TypeId { get; set; } = RenderOutputTypes.PreviewWindow;
 
     public int SchemaVersion { get; set; } = 1;

@@ -653,6 +653,20 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Disabled_output_cannot_be_bound()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateValidProject();
+        project.Outputs[0].Enabled = false;
+        await engine.LoadProjectAsync(project);
+
+        var error = await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.BindOutputAsync(project.Outputs[0].Id, CreatePreviewTarget(1)));
+
+        Assert.Contains("disabled", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task BindOutput_unsupported_output_factory_throws_feature_exception()
     {
         await using var engine = CreateEngine(outputSinkFactory: new RejectingRenderOutputSinkFactory());
@@ -908,6 +922,20 @@ public class MediaForgeEngineTests
 
         Assert.True(engine.IsSinkAttachedForTests(project.Outputs[0].Id, sink.Id));
         Assert.Equal(1, engine.OutputSinkCountForTests);
+    }
+
+    [Fact]
+    public async Task Disabled_output_cannot_accept_a_sink()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateOffscreenProject();
+        project.Outputs[0].Enabled = false;
+        await engine.LoadProjectAsync(project);
+
+        var error = await Assert.ThrowsAsync<MediaForgeEngineException>(() =>
+            engine.AttachSinkAsync(project.Outputs[0].Id, new FrameNotificationSink()));
+
+        Assert.Contains("disabled", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

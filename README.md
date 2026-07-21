@@ -29,7 +29,7 @@ WTK MediaForge is being built around a few core principles:
   Scenes, overlays, text, layouts, and media sources should be adjustable while the pipeline is running.
 
 * **Studio application**
-  The Avalonia Studio has a real runtime/design composition boundary, canonical project persistence, capability probing, and an editable overlay. Native preview/output controls remain capability-gated.
+  The Avalonia Studio has a real runtime/design composition boundary, capability probing, and an editable overlay. Disabled outputs already round-trip as canonical project state; lossless preservation of settings not exposed by the UI remains active work. Native preview/output controls remain capability-gated.
 
 ## Technology Direction
 

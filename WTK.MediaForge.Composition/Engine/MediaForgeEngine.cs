@@ -327,6 +327,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 foreach (var (outputId, entry) in _outputSinks)
                 {
                     var output = _currentProject.Outputs.First(o => o.Id == outputId);
+                    if (!output.Enabled)
+                        continue;
                     await EnqueueBindOutputAsync(output, entry.Sink, entry.Target, cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -758,6 +760,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
             var output = _currentProject.Outputs.FirstOrDefault(o => o.Id == outputId)
                 ?? throw CreateEngineException($"Output {outputId} was not found in the current project.");
+            if (!output.Enabled)
+                throw CreateEngineException($"Output {outputId} is disabled and cannot be bound.");
 
             if (output.TypeId != target.TypeId)
             {
@@ -852,6 +856,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
             var output = _currentProject.Outputs.FirstOrDefault(o => o.Id == outputId)
                 ?? throw CreateEngineException($"Output {outputId} was not found in the current project.");
+            if (!output.Enabled)
+                throw CreateEngineException($"Output {outputId} is disabled and cannot accept sinks.");
 
             if (output.TypeId != RenderOutputTypes.Offscreen)
             {
@@ -1038,7 +1044,10 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     }
 
     private IReadOnlyList<RenderOutputId> GetScheduledTargetOutputs() =>
-        _currentProject?.Outputs.Select(output => output.Id).ToArray()
+        _currentProject?.Outputs
+            .Where(static output => output.Enabled)
+            .Select(static output => output.Id)
+            .ToArray()
         ?? Array.Empty<RenderOutputId>();
 
     private void PublishScheduledRenderFrame(FrameExecutionContext executionContext)
@@ -1103,6 +1112,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     {
         foreach (var output in project.Outputs)
         {
+            if (!output.Enabled)
+                continue;
             if (_sinkDispatcher.HasSinks(output.Id))
                 await EnsureAutomaticSurfaceBindingAsync(output, cancellationToken).ConfigureAwait(false);
         }
@@ -1117,6 +1128,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
         foreach (var output in project.Outputs)
         {
+            if (!output.Enabled)
+                continue;
             if (!_encodedOutputRouteFactory.CanCreate(output.TypeId))
                 continue;
 
@@ -2045,11 +2058,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             }
 
             var output = _currentProject.Outputs.FirstOrDefault(candidate => candidate.Id == outputId);
-            if (output is null || !_encodedOutputRouteFactory.CanCreate(output.TypeId))
+            if (output is null || !output.Enabled || !_encodedOutputRouteFactory.CanCreate(output.TypeId))
                 return false;
 
             var surfaceOutputId = _encodedOutputRouteFactory.ResolveSurfaceOutputId(_currentProject, output);
             var groupedOutputs = _currentProject.Outputs
+                .Where(static candidate => candidate.Enabled)
                 .Where(candidate => _encodedOutputRouteFactory.CanCreate(candidate.TypeId))
                 .Where(candidate =>
                     _encodedOutputRouteFactory.ResolveSurfaceOutputId(_currentProject, candidate) == surfaceOutputId)
@@ -2155,6 +2169,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 foreach (var (outputId, entry) in _outputSinks)
                 {
                     var output = _currentProject.Outputs.First(candidate => candidate.Id == outputId);
+                    if (!output.Enabled)
+                        continue;
                     await EnqueueBindOutputAsync(output, entry.Sink, entry.Target, cancellationToken)
                         .ConfigureAwait(false);
                 }

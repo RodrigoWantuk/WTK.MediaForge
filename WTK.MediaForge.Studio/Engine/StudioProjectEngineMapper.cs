@@ -105,7 +105,7 @@ public sealed class StudioProjectEngineMapper
         foreach (var scene in document.Scenes)
             project.Canvases.Add(CreateCanvas(scene, sourceIds));
 
-        foreach (var output in document.Outputs.Where(static output => output.IsEnabled))
+        foreach (var output in document.Outputs)
             project.Outputs.Add(CreateOutput(output, document));
 
         MediaForgeProjectValidator.Validate(project).ThrowIfInvalid();
@@ -228,6 +228,7 @@ public sealed class StudioProjectEngineMapper
         {
             Id = StudioEngineIdMap.RenderOutputId(output.Id),
             Name = output.DisplayName,
+            Enabled = output.IsEnabled,
             TypeId = settings.TypeId,
             SchemaVersion = settings.SchemaVersion,
             Settings = RenderOutputSettingsSerializer.ToJson(settings),
@@ -383,7 +384,7 @@ public sealed class StudioProjectEngineMapper
             DisplayName = output.Name,
             TypeId = ToStudioOutputType(output.TypeId),
             AssignedSceneId = output.CanvasId.Value.ToString("D"),
-            IsEnabled = true,
+            IsEnabled = output.Enabled,
             IsConfigured = true,
             State = StudioOutputState.Offline,
             DefaultTransitionId = output.RouteTransition.Id,

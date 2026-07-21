@@ -80,9 +80,12 @@ Experimental and not yet product-promoted:
   are wired. MP4 route recovery intentionally requires a new recording segment;
   silently overwriting an active recording is prohibited. Sustained fault
   injection for every matrix item remains a release activity.
-- Studio: production bootstrap now uses a real engine session, canonical
-  `MediaForgeProject` persistence, and asynchronous capability probing. Native
-  GPU preview and real output controls remain disabled until their runtime gates pass.
+- Studio: production bootstrap uses a real engine session and asynchronous
+  capability probing. Disabled outputs are now canonical `MediaForgeProject`
+  state and survive Studio round trips without creating runtime routes. The
+  remaining `StudioProjectSession` work must preserve fields and effects not
+  exposed by the UI before persistence can be called fully lossless. Native GPU
+  preview and real output controls remain disabled until their runtime gates pass.
 - Remote Scene has platform-neutral contracts and a separately deployable
   HTTPS/WebSocket signaling service with one-time hashed invitations, role-scoped
   bearer access, bounded SDP/ICE relay, SQLite session storage, expiration, rate

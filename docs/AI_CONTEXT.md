@@ -125,8 +125,10 @@ and must not be executed as current gates.
 - Window Capture uses `Direct3D11CaptureFramePool`, copies the WinRT frame
   GPU-to-GPU into an engine-owned shared D3D11 slot, and is capability-promoted
   only after its HWND-to-Vulkan product proof passes.
-- Studio persists canonical projects and probes runtime capabilities, but native
-  preview/output control stays gated by runtime readiness.
+- Studio probes runtime capabilities and persists disabled outputs as canonical
+  project state. Its remaining project-session work must preserve settings and
+  effects not represented by current ViewModels before persistence is fully
+  lossless. Native preview/output control stays gated by runtime readiness.
 - Remote Scene signaling is a separate HTTPS/WebSocket service. It stores only
   hashes of invitation/access secrets, relays bounded SDP/ICE messages, and can
   issue temporary coturn REST/HMAC credentials. It never transports media and

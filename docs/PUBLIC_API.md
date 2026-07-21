@@ -273,6 +273,11 @@ does not expose a media source or sink capability. Remote publish/subscribe APIs
 remain unavailable until the native encoded-access-unit bridge and composite
 GPU proofs pass.
 
+`MediaForgeRenderOutput.Enabled` is canonical project state. Disabled outputs
+remain serializable and editable but are excluded from dependency routing,
+render snapshots, surface bindings, encoded groups, and recovery. Hosts must
+enable an output explicitly before attaching a sink or starting its route.
+
 Operational validation scripts use
 `./scripts/generate-media-proof-report.ps1` and
 `./scripts/verify-engine-readiness-v14.ps1` to write

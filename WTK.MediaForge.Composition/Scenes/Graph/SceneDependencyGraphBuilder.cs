@@ -28,6 +28,7 @@ internal static class SceneDependencyGraphBuilder
                 }));
 
         var outputs = project.Outputs
+            .Where(static output => output.Enabled)
             .GroupBy(static output => output.CanvasId)
             .ToDictionary(
                 static group => group.Key,

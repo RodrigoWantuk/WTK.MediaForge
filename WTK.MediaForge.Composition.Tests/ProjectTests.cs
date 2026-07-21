@@ -241,6 +241,7 @@ public class ProjectJsonRoundTripTests
                 {
                     Id = RenderOutputId.New(),
                     Name = "Out",
+                    Enabled = false,
                     CanvasId = mainCanvasId,
                     OutputSize = new FrameSize(1280, 720),
                     CanvasLayoutMode = LayoutMode.Fit
@@ -259,6 +260,7 @@ public class ProjectJsonRoundTripTests
         Assert.IsType<TextDrawObject>(restored.Canvases[1].Objects[1]);
         Assert.IsType<SolidDrawObject>(restored.Canvases[1].Objects[2]);
         Assert.IsType<CanvasDrawObject>(restored.Canvases[1].Objects[3]);
+        Assert.False(Assert.Single(restored.Outputs).Enabled);
 
         var validation = MediaForgeProjectValidator.Validate(restored);
         Assert.True(validation.IsValid, string.Join("; ", validation.Issues.Select(i => i.Message)));

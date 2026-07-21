@@ -17,7 +17,10 @@ internal static class ProjectStateSnapshotFactory
             Version = Interlocked.Increment(ref _snapshotCounter),
             Sources = project.SourceDefinitions.Select(CloneSource).ToImmutableArray(),
             Canvases = project.Canvases.Select(CloneCanvas).ToImmutableArray(),
-            Outputs = project.Outputs.Select(CloneOutput).ToImmutableArray()
+            Outputs = project.Outputs
+                .Where(static output => output.Enabled)
+                .Select(CloneOutput)
+                .ToImmutableArray()
         };
     }
 

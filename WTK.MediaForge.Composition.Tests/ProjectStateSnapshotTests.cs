@@ -79,6 +79,19 @@ public class ProjectStateSnapshotTests
         Assert.IsType<TextDrawObjectSnapshot>(snapshot.Canvases[0].Objects[1]);
     }
 
+    [Fact]
+    public void Snapshot_excludes_disabled_outputs_without_removing_them_from_project()
+    {
+        var project = CreateSampleProject();
+        project.Outputs[0].Enabled = false;
+
+        var snapshot = ProjectStateSnapshotFactory.CreateImmutableSnapshot(project);
+
+        Assert.Empty(snapshot.Outputs);
+        Assert.Single(project.Outputs);
+        Assert.False(project.Outputs[0].Enabled);
+    }
+
     private static MediaForgeProject CreateSampleProject()
     {
         var sourceId = SourceId.New();

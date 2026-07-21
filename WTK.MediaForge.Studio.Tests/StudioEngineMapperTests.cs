@@ -129,6 +129,25 @@ public sealed class StudioEngineMapperTests
         Assert.Contains("not exportable", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Project_mapper_preserves_disabled_outputs_in_canonical_project()
+    {
+        var document = StudioMockDocumentFactory.Create();
+        var disabled = document.Outputs.First();
+        disabled.IsEnabled = false;
+        var mapper = new StudioProjectEngineMapper();
+
+        var project = mapper.CreateProject(document);
+        var canonicalOutput = project.Outputs.Single(output =>
+            output.Id == StudioEngineIdMap.RenderOutputId(disabled.Id));
+        var restored = mapper.CreateDocument(project);
+
+        Assert.False(canonicalOutput.Enabled);
+        Assert.False(restored.Outputs.Single(output =>
+            output.Id == canonicalOutput.Id.Value.ToString("D")).IsEnabled);
+        Assert.Equal(document.Outputs.Count, project.Outputs.Count);
+    }
+
     private static StudioLayer CreateLayer(string sourceId = "source-camera")
     {
         var layer = new StudioLayer
