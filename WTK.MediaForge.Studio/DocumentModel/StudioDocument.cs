@@ -1,8 +1,24 @@
 using System.Collections.ObjectModel;
+using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WTK.MediaForge.Studio.Models;
 
 namespace WTK.MediaForge.Studio.DocumentModel;
+
+public enum StudioProjectionKind
+{
+    KnownEditable = 0,
+    KnownReadOnly = 1,
+    Opaque = 2
+}
+
+public enum StudioEffectKind
+{
+    ChromaKey = 0,
+    Blur = 1,
+    ColorCorrection = 2,
+    Transition = 3
+}
 
 public sealed partial class StudioDocument : ObservableObject
 {
@@ -96,6 +112,14 @@ public sealed partial class StudioSource : ObservableObject
     private string _metadata = string.Empty;
     private string _endpoint = string.Empty;
     private StudioHealthState _health = StudioHealthState.Healthy;
+
+    public StudioProjectionKind ProjectionKind { get; set; } = StudioProjectionKind.KnownEditable;
+
+    public string EngineTypeId { get; set; } = string.Empty;
+
+    public int EngineSchemaVersion { get; set; } = 1;
+
+    public JsonObject PreservedSettings { get; set; } = new();
 
     public string Id
     {
@@ -223,6 +247,15 @@ public sealed partial class StudioEffect : ObservableObject
     private double _tolerance = 0.32;
     private double _spill = 0.18;
     private double _edgeSmooth = 0.24;
+    private double _blurRadius = 4;
+    private double _brightness;
+    private double _contrast = 1;
+    private double _saturation = 1;
+    private double _hueDegrees;
+    private double _transitionProgress;
+    private double _transitionDurationSeconds = 1;
+
+    public StudioEffectKind Kind { get; set; }
 
     public string Id
     {
@@ -277,6 +310,50 @@ public sealed partial class StudioEffect : ObservableObject
         get => _edgeSmooth;
         set => SetProperty(ref _edgeSmooth, Math.Clamp(value, 0, 1));
     }
+
+    public double BlurRadius
+    {
+        get => _blurRadius;
+        set => SetProperty(ref _blurRadius, Math.Max(0, value));
+    }
+
+    public double Brightness
+    {
+        get => _brightness;
+        set => SetProperty(ref _brightness, value);
+    }
+
+    public double Contrast
+    {
+        get => _contrast;
+        set => SetProperty(ref _contrast, value);
+    }
+
+    public double Saturation
+    {
+        get => _saturation;
+        set => SetProperty(ref _saturation, value);
+    }
+
+    public double HueDegrees
+    {
+        get => _hueDegrees;
+        set => SetProperty(ref _hueDegrees, value);
+    }
+
+    public int TransitionKind { get; set; }
+
+    public double TransitionProgress
+    {
+        get => _transitionProgress;
+        set => SetProperty(ref _transitionProgress, value);
+    }
+
+    public double TransitionDurationSeconds
+    {
+        get => _transitionDurationSeconds;
+        set => SetProperty(ref _transitionDurationSeconds, value);
+    }
 }
 
 public sealed partial class StudioOutput : ObservableObject
@@ -298,6 +375,14 @@ public sealed partial class StudioOutput : ObservableObject
     private StudioOutputState _state = StudioOutputState.Running;
     private bool _hasPendingSceneUpdate;
     private StudioScene? _appliedSceneSnapshot;
+
+    public StudioProjectionKind ProjectionKind { get; set; } = StudioProjectionKind.KnownEditable;
+
+    public string EngineTypeId { get; set; } = string.Empty;
+
+    public int EngineSchemaVersion { get; set; } = 1;
+
+    public JsonObject PreservedSettings { get; set; } = new();
     public string Id
     {
         get => _id;
@@ -465,6 +550,8 @@ public sealed partial class StudioTransform : ObservableObject
     private double _height = 180;
     private double _rotationDegrees;
     private double _opacity = 100;
+    private double _pivotX = 0.5;
+    private double _pivotY = 0.5;
 
     public double X
     {
@@ -481,25 +568,37 @@ public sealed partial class StudioTransform : ObservableObject
     public double Width
     {
         get => _width;
-        set => SetProperty(ref _width, Math.Max(16, value));
+        set => SetProperty(ref _width, value);
     }
 
     public double Height
     {
         get => _height;
-        set => SetProperty(ref _height, Math.Max(16, value));
+        set => SetProperty(ref _height, value);
     }
 
     public double RotationDegrees
     {
         get => _rotationDegrees;
-        set => SetProperty(ref _rotationDegrees, Math.Clamp(value, -360, 360));
+        set => SetProperty(ref _rotationDegrees, value);
     }
 
     public double Opacity
     {
         get => _opacity;
         set => SetProperty(ref _opacity, Math.Clamp(value, 0, 100));
+    }
+
+    public double PivotX
+    {
+        get => _pivotX;
+        set => SetProperty(ref _pivotX, value);
+    }
+
+    public double PivotY
+    {
+        get => _pivotY;
+        set => SetProperty(ref _pivotY, value);
     }
 }
 

@@ -82,11 +82,19 @@ public sealed class StudioProjectSession
         var result = new List<MediaForgeSourceDefinition>();
         foreach (var studioSource in document.Sources)
         {
+            var sourceId = StudioEngineIdMap.SourceId(studioSource.Id);
+            if (existing.TryGetValue(sourceId, out var canonical) &&
+                studioSource.ProjectionKind != StudioProjectionKind.KnownEditable)
+            {
+                result.Add(canonical);
+                continue;
+            }
+
             var projected = _mapper.CreateSourceDefinition(studioSource);
             if (projected is null)
                 continue;
 
-            if (!existing.TryGetValue(projected.Id, out var canonical) || canonical.TypeId != projected.TypeId)
+            if (canonical is null || canonical.TypeId != projected.TypeId)
             {
                 result.Add(projected);
                 continue;
@@ -205,7 +213,22 @@ public sealed class StudioProjectSession
                     chroma.SpillReduction = ToUnitSingle(studioEffect.Spill, nameof(studioEffect.Spill));
                     break;
                 case BlurEffect blur:
-                    blur.Radius = ToNonNegativeSingle(studioEffect.Tolerance * 64d, nameof(studioEffect.Tolerance));
+                    blur.Radius = ToNonNegativeSingle(studioEffect.BlurRadius, nameof(studioEffect.BlurRadius));
+                    break;
+                case ColorCorrectionEffect color:
+                    color.Brightness = ToFiniteSingle(studioEffect.Brightness, nameof(studioEffect.Brightness));
+                    color.Contrast = ToPositiveSingle(studioEffect.Contrast, nameof(studioEffect.Contrast));
+                    color.Saturation = ToPositiveSingle(studioEffect.Saturation, nameof(studioEffect.Saturation));
+                    color.HueDegrees = ToFiniteSingle(studioEffect.HueDegrees, nameof(studioEffect.HueDegrees));
+                    break;
+                case TransitionEffect transition:
+                    transition.Kind = Enum.IsDefined(typeof(TransitionKind), studioEffect.TransitionKind)
+                        ? (TransitionKind)studioEffect.TransitionKind
+                        : throw new ArgumentOutOfRangeException(nameof(studioEffect.TransitionKind));
+                    transition.Progress = ToUnitSingle(studioEffect.TransitionProgress, nameof(studioEffect.TransitionProgress));
+                    transition.DurationSeconds = ToPositiveSingle(
+                        studioEffect.TransitionDurationSeconds,
+                        nameof(studioEffect.TransitionDurationSeconds));
                     break;
             }
             result.Add(effect);
@@ -222,8 +245,16 @@ public sealed class StudioProjectSession
         var result = new List<MediaForgeRenderOutput>(document.Outputs.Count);
         foreach (var studioOutput in document.Outputs)
         {
+            var outputId = StudioEngineIdMap.RenderOutputId(studioOutput.Id);
+            if (existing.TryGetValue(outputId, out var output) &&
+                studioOutput.ProjectionKind != StudioProjectionKind.KnownEditable)
+            {
+                result.Add(output);
+                continue;
+            }
+
             var projected = _mapper.CreateOutput(studioOutput, document);
-            if (!existing.TryGetValue(projected.Id, out var output) || output.TypeId != projected.TypeId)
+            if (output is null || output.TypeId != projected.TypeId)
             {
                 result.Add(projected);
                 continue;
@@ -319,6 +350,21 @@ public sealed class StudioProjectSession
         if (!double.IsFinite(value) || value < 0)
             throw new ArgumentOutOfRangeException(name, $"{name} must be finite and non-negative.");
         return checked((float)value);
+    }
+
+    private static float ToFiniteSingle(double value, string name)
+    {
+        if (!double.IsFinite(value))
+            throw new ArgumentOutOfRangeException(name, $"{name} must be finite.");
+        return checked((float)value);
+    }
+
+    private static float ToPositiveSingle(double value, string name)
+    {
+        var result = ToFiniteSingle(value, name);
+        if (result <= 0)
+            throw new ArgumentOutOfRangeException(name, $"{name} must be positive.");
+        return result;
     }
 
     private static bool IsSameUiColor(ColorRgba canonical, ColorRgba projected) =>

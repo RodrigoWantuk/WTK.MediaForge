@@ -65,7 +65,9 @@ public static class StudioSceneMutationFactory
                 ToPositiveSingle(layer.Transform.Width, nameof(layer.Transform.Width)),
                 ToPositiveSingle(layer.Transform.Height, nameof(layer.Transform.Height))),
             RotationDegrees = ToFiniteSingle(layer.Transform.RotationDegrees, nameof(layer.Transform.RotationDegrees)),
-            Pivot = NormalizedPoint.Center
+            Pivot = new NormalizedPoint(
+                ToUnitSingle(layer.Transform.PivotX, nameof(layer.Transform.PivotX)),
+                ToUnitSingle(layer.Transform.PivotY, nameof(layer.Transform.PivotY)))
         };
     }
 
@@ -98,7 +100,9 @@ public static class StudioSceneMutationFactory
                 Enabled = effect.IsEnabled,
                 Order = order,
                 SchemaVersion = 1,
-                Radius = ToNonNegativeSingle(effect.Tolerance * 64d, nameof(effect.Tolerance))
+                Radius = effect.Kind == StudioEffectKind.Blur
+                    ? ToNonNegativeSingle(effect.BlurRadius, nameof(effect.BlurRadius))
+                    : ToNonNegativeSingle(effect.Tolerance * 64d, nameof(effect.Tolerance))
             };
         }
 

@@ -139,8 +139,11 @@ capability reports; it is never converted into a hosted-runner product pass.
   only after its HWND-to-Vulkan product proof passes.
 - Studio probes runtime capabilities and uses `StudioProjectSession` to mutate a
   cloned canonical project. Save preserves extension settings, output profiles,
-  advanced text/effect fields, alpha, nested bindings, and disabled outputs;
-  session state advances only after atomic file replacement. Native
+  advanced text/effect fields, transform pivots, alpha, nested bindings, and
+  disabled outputs. Source/output projections are explicitly editable,
+  read-only, or opaque; valid engine definitions that Studio cannot edit retain
+  their canonical type, schema, and settings. Session state advances only after
+  atomic file replacement. Native
   preview/output control stays gated by runtime readiness.
 - Remote Scene signaling is a separate HTTPS/WebSocket service. It stores only
   hashes of invitation/access secrets, relays bounded SDP/ICE messages, and can

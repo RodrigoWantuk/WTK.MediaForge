@@ -153,7 +153,16 @@ public sealed class SceneEditSessionService
             KeyColor = source.KeyColor,
             Tolerance = source.Tolerance,
             Spill = source.Spill,
-            EdgeSmooth = source.EdgeSmooth
+            EdgeSmooth = source.EdgeSmooth,
+            BlurRadius = source.BlurRadius,
+            Brightness = source.Brightness,
+            Contrast = source.Contrast,
+            Saturation = source.Saturation,
+            HueDegrees = source.HueDegrees,
+            TransitionKind = source.TransitionKind,
+            TransitionProgress = source.TransitionProgress,
+            TransitionDurationSeconds = source.TransitionDurationSeconds,
+            Kind = source.Kind
         };
     }
 
@@ -173,5 +182,7 @@ public sealed class SceneEditSessionService
         target.Height = source.Height;
         target.RotationDegrees = source.RotationDegrees;
         target.Opacity = source.Opacity;
+        target.PivotX = source.PivotX;
+        target.PivotY = source.PivotY;
     }
 }

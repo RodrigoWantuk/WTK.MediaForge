@@ -33,6 +33,7 @@ public sealed class StudioProjectEngineMapper
         foreach (var source in project.SourceDefinitions)
         {
             var id = source.Id.Value.ToString("D");
+            var projectionKind = ResolveSourceProjectionKind(source.TypeId);
             var studioSource = new StudioSource
             {
                 Id = id,
@@ -40,7 +41,11 @@ public sealed class StudioProjectEngineMapper
                 TypeId = ToStudioSourceType(source.TypeId),
                 Endpoint = ReadSourceEndpoint(source),
                 Metadata = source.TypeId.Value,
-                Health = StudioHealthState.Healthy
+                Health = StudioHealthState.Healthy,
+                ProjectionKind = projectionKind,
+                EngineTypeId = source.TypeId.Value,
+                EngineSchemaVersion = source.SchemaVersion,
+                PreservedSettings = source.Settings.DeepClone().AsObject()
             };
             document.Sources.Add(studioSource);
             sourceNames[id] = source.Name;
@@ -67,6 +72,19 @@ public sealed class StudioProjectEngineMapper
 
         foreach (var output in project.Outputs)
         {
+            if (!document.Transitions.Any(transition => transition.Id == output.RouteTransition.Id))
+            {
+                document.Transitions.Add(new StudioTransition
+                {
+                    Id = output.RouteTransition.Id,
+                    DisplayName = output.RouteTransition.DisplayName,
+                    Kind = output.RouteTransition.Kind == OutputRouteTransitionKind.Fade
+                        ? StudioTransitionKind.Fade
+                        : StudioTransitionKind.Cut,
+                    DurationMs = output.RouteTransition.DurationMs
+                });
+            }
+
             var studioOutput = CreateStudioOutput(output);
             document.Outputs.Add(studioOutput);
             document.Scenes
@@ -108,6 +126,21 @@ public sealed class StudioProjectEngineMapper
     public MediaForgeSourceDefinition? CreateSourceDefinition(StudioSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
+        if (source.ProjectionKind != StudioProjectionKind.KnownEditable)
+        {
+            if (string.IsNullOrWhiteSpace(source.EngineTypeId))
+                throw new InvalidOperationException($"Read-only source '{source.DisplayName}' has no canonical engine type id.");
+
+            return new MediaForgeSourceDefinition
+            {
+                Id = StudioEngineIdMap.SourceId(source.Id),
+                Name = source.DisplayName,
+                TypeId = new Core.Identifiers.MediaSourceTypeId(source.EngineTypeId),
+                SchemaVersion = source.EngineSchemaVersion,
+                Settings = source.PreservedSettings.DeepClone().AsObject()
+            };
+        }
+
         var settings = CreateSourceSettings(source);
         return settings is null
             ? null
@@ -126,7 +159,6 @@ public sealed class StudioProjectEngineMapper
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(sources);
         var sourceIds = sources
-            .Where(source => CreateSourceSettings(source) is not null)
             .Select(static source => source.Id)
             .ToHashSet(StringComparer.Ordinal);
         return CreateCanvasCore(scene, sourceIds);
@@ -223,6 +255,9 @@ public sealed class StudioProjectEngineMapper
 
     private static IMediaSourceSettings? CreateSourceSettings(StudioSource source)
     {
+        if (source.ProjectionKind != StudioProjectionKind.KnownEditable)
+            return null;
+
         return source.TypeId switch
         {
             "source.desktop" => MediaForgeSources.Desktop(),
@@ -361,6 +396,8 @@ public sealed class StudioProjectEngineMapper
         layer.Transform.Height = drawObject.Transform.Size.Height;
         layer.Transform.RotationDegrees = drawObject.Transform.RotationDegrees;
         layer.Transform.Opacity = drawObject.Opacity * 100;
+        layer.Transform.PivotX = drawObject.Transform.Pivot.X;
+        layer.Transform.PivotY = drawObject.Transform.Pivot.Y;
 
         if (drawObject.Crop is { } crop)
         {
@@ -389,10 +426,33 @@ public sealed class StudioProjectEngineMapper
 
         if (effect is ChromaKeyEffect chroma)
         {
+            studio.Kind = StudioEffectKind.ChromaKey;
             studio.KeyColor = ToHex(chroma.KeyColor);
             studio.Tolerance = chroma.Similarity;
             studio.Spill = chroma.SpillReduction;
             studio.EdgeSmooth = chroma.Smoothness;
+        }
+
+        else if (effect is BlurEffect blur)
+        {
+            studio.Kind = StudioEffectKind.Blur;
+            studio.BlurRadius = blur.Radius;
+            studio.Tolerance = Math.Clamp(blur.Radius / 64d, 0d, 1d);
+        }
+        else if (effect is ColorCorrectionEffect color)
+        {
+            studio.Kind = StudioEffectKind.ColorCorrection;
+            studio.Brightness = color.Brightness;
+            studio.Contrast = color.Contrast;
+            studio.Saturation = color.Saturation;
+            studio.HueDegrees = color.HueDegrees;
+        }
+        else if (effect is TransitionEffect transition)
+        {
+            studio.Kind = StudioEffectKind.Transition;
+            studio.TransitionKind = (int)transition.Kind;
+            studio.TransitionProgress = transition.Progress;
+            studio.TransitionDurationSeconds = transition.DurationSeconds;
         }
 
         return studio;
@@ -410,7 +470,11 @@ public sealed class StudioProjectEngineMapper
             IsConfigured = true,
             State = StudioOutputState.Offline,
             DefaultTransitionId = output.RouteTransition.Id,
-            TransitionDurationMs = output.RouteTransition.DurationMs
+            TransitionDurationMs = output.RouteTransition.DurationMs,
+            ProjectionKind = ResolveOutputProjectionKind(output.TypeId),
+            EngineTypeId = output.TypeId.Value,
+            EngineSchemaVersion = output.SchemaVersion,
+            PreservedSettings = output.Settings.DeepClone().AsObject()
         };
 
         var settings = RenderOutputSettingsSerializer.Deserialize(output.TypeId, output.Settings);
@@ -443,7 +507,12 @@ public sealed class StudioProjectEngineMapper
         if (typeId == MediaSourceTypes.VideoFile) return "source.media";
         if (typeId == MediaSourceTypes.NdiInput) return "source.ndi";
         if (typeId == MediaSourceTypes.RtspInput) return "source.rtsp";
-        throw new NotSupportedException($"Engine source type '{typeId}' cannot be opened by Studio.");
+        if (typeId == MediaSourceTypes.WindowCapture) return "source.window";
+        if (typeId == MediaSourceTypes.IpCamera) return "source.ip-camera";
+        if (typeId == MediaSourceTypes.AnimatedImage) return "source.animated-image";
+        if (typeId == MediaSourceTypes.Lottie) return "source.lottie";
+        if (typeId == MediaSourceTypes.Generated) return "source.generated";
+        return "source.opaque";
     }
 
     private static string ReadSourceEndpoint(MediaForgeSourceDefinition source)
@@ -457,6 +526,11 @@ public sealed class StudioProjectEngineMapper
             NdiInputSourceSettings ndi => ndi.SourceName,
             RtspInputSourceSettings rtsp => rtsp.Url,
             DesktopCaptureSourceSettings desktop => $"adapter:{desktop.AdapterIndex}/output:{desktop.OutputIndex}",
+            WindowCaptureSourceSettings window => $"hwnd:{window.WindowHandle}",
+            AnimatedImageSourceSettings animated => animated.Path,
+            LottieSourceSettings lottie => lottie.Path,
+            IpCameraSourceSettings camera => camera.Url,
+            GeneratedSourceSettings generated => generated.GeneratorKind,
             _ => string.Empty
         };
     }
@@ -468,7 +542,40 @@ public sealed class StudioProjectEngineMapper
         if (typeId == RenderOutputTypes.StreamingRtmp) return "output.rtmp";
         if (typeId == RenderOutputTypes.Ndi) return "output.ndi";
         if (typeId == RenderOutputTypes.VirtualCamera) return "output.virtual-camera";
-        throw new NotSupportedException($"Engine output type '{typeId}' cannot be opened by Studio.");
+        return "output.readonly";
+    }
+
+    private static StudioProjectionKind ResolveSourceProjectionKind(Core.Identifiers.MediaSourceTypeId typeId)
+    {
+        if (typeId == MediaSourceTypes.Desktop ||
+            typeId == MediaSourceTypes.Webcam ||
+            typeId == MediaSourceTypes.ImageFile ||
+            typeId == MediaSourceTypes.VideoFile ||
+            typeId == MediaSourceTypes.NdiInput ||
+            typeId == MediaSourceTypes.RtspInput)
+        {
+            return StudioProjectionKind.KnownEditable;
+        }
+
+        return MediaSourceTypeRegistry.IsKnown(typeId)
+            ? StudioProjectionKind.KnownReadOnly
+            : StudioProjectionKind.Opaque;
+    }
+
+    private static StudioProjectionKind ResolveOutputProjectionKind(Core.Identifiers.RenderOutputTypeId typeId)
+    {
+        if (typeId == RenderOutputTypes.PreviewWindow ||
+            typeId == RenderOutputTypes.RecordingMp4 ||
+            typeId == RenderOutputTypes.StreamingRtmp ||
+            typeId == RenderOutputTypes.Ndi ||
+            typeId == RenderOutputTypes.VirtualCamera)
+        {
+            return StudioProjectionKind.KnownEditable;
+        }
+
+        return RenderOutputTypeRegistry.IsKnown(typeId)
+            ? StudioProjectionKind.KnownReadOnly
+            : StudioProjectionKind.Opaque;
     }
 
     private static string ToHex(ColorRgba color) =>

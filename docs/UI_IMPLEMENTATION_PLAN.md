@@ -24,6 +24,10 @@ features are disabled with a reason instead of replaced by fake success.
   asynchronous cached capability probe.
 - New projects start empty. Open/save validate and atomically write canonical
   engine JSON; runtime leases and native handles are never serialized.
+- Engine sources and outputs are projected as known-editable, known-read-only,
+  or opaque. A save without edits preserves canonical settings, advanced effect
+  parameters, transform pivots, disabled outputs, and definitions with no
+  Studio editor.
 - `CurrentScene` drives the canvas, layer table, scene outputs, and properties.
 - The primary left panel lists only scenes.
 - Sources are global and reusable, but are added through the source library

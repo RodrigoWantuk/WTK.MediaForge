@@ -154,6 +154,8 @@ public sealed class StudioUndoRedoService : IStudioUndoRedoService
             Append(builder, layer.Transform.Height);
             Append(builder, layer.Transform.RotationDegrees);
             Append(builder, layer.Transform.Opacity);
+            Append(builder, layer.Transform.PivotX);
+            Append(builder, layer.Transform.PivotY);
 
             foreach (var effect in layer.Effects.OrderBy(item => item.Id, StringComparer.Ordinal))
             {
@@ -175,6 +177,15 @@ public sealed class StudioUndoRedoService : IStudioUndoRedoService
         Append(builder, effect.Tolerance);
         Append(builder, effect.Spill);
         Append(builder, effect.EdgeSmooth);
+        Append(builder, effect.Kind);
+        Append(builder, effect.BlurRadius);
+        Append(builder, effect.Brightness);
+        Append(builder, effect.Contrast);
+        Append(builder, effect.Saturation);
+        Append(builder, effect.HueDegrees);
+        Append(builder, effect.TransitionKind);
+        Append(builder, effect.TransitionProgress);
+        Append(builder, effect.TransitionDurationSeconds);
     }
 
     private static void Append<T>(StringBuilder builder, T value)
