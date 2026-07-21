@@ -73,53 +73,12 @@ public sealed class StudioSceneEditRuntimeService(
         }
 
         var engineSession = Resolve(session);
-        var originalById = originalScene.Layers.ToDictionary(layer => layer.Id, StringComparer.Ordinal);
-        var draftById = draftScene.Layers.ToDictionary(layer => layer.Id, StringComparer.Ordinal);
+        var patches = new SceneMutationBatchBuilder(_projectMapper).Build(document, originalScene, draftScene);
+        if (patches.Count == 0)
+            return;
 
-        foreach (var removedLayer in originalScene.Layers.Where(layer => !draftById.ContainsKey(layer.Id)))
-        {
-            await _bridge
-                .ApplyPatchAsync(
-                    engineSession,
-                    new SceneMutationPatch.RemoveLayer(StudioEngineIdMap.DrawObjectId(removedLayer.Id)),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        var orderedDraftLayers = draftScene.Layers
-            .OrderBy(static layer => layer.Order)
-            .ToArray();
-
-        for (var index = 0; index < orderedDraftLayers.Length; index++)
-        {
-            var layer = orderedDraftLayers[index];
-            if (originalById.ContainsKey(layer.Id))
-                continue;
-
-            var drawObject = _projectMapper.CreateLayer(layer, document.Sources);
-            await _bridge
-                .ApplyPatchAsync(
-                    engineSession,
-                    new SceneMutationPatch.AddLayer(drawObject, index),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        foreach (var layer in orderedDraftLayers)
-        {
-            await TrackLayerVisualStateAsync(session, layer, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        for (var index = 0; index < orderedDraftLayers.Length; index++)
-        {
-            await _bridge
-                .ApplyPatchAsync(
-                    engineSession,
-                    new SceneMutationPatch.SetLayerOrder(StudioEngineIdMap.DrawObjectId(orderedDraftLayers[index].Id), index),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await _bridge.ApplyBatchAsync(engineSession, patches, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<StudioSceneEditApplyResult> ApplySceneDraftAsync(

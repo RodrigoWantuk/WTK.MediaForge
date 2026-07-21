@@ -4,6 +4,8 @@ using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Studio.DocumentModel;
+using WTK.MediaForge.Studio.Models;
+using WTK.MediaForge.Core.Media;
 
 namespace WTK.MediaForge.Studio.Engine;
 
@@ -43,6 +45,26 @@ public static class StudioSceneMutationFactory
         return new SceneMutationPatch.SetLayerOpacity(
             StudioEngineIdMap.DrawObjectId(layer.Id),
             ToOpacity(layer.Transform.Opacity));
+    }
+
+    public static SceneMutationPatch.SetLayerCrop SetLayerCrop(StudioLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        return new SceneMutationPatch.SetLayerCrop(
+            StudioEngineIdMap.DrawObjectId(layer.Id),
+            ToNormalizedCrop(layer));
+    }
+
+    public static SceneMutationPatch.SetLayerBlendMode SetLayerBlendMode(StudioLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        var blendMode = layer.BlendMode switch
+        {
+            StudioBlendMode.Alpha => BlendMode.Normal,
+            StudioBlendMode.Additive => BlendMode.Add,
+            _ => throw new NotSupportedException($"Blend mode '{layer.BlendMode}' is not supported by the engine.")
+        };
+        return new SceneMutationPatch.SetLayerBlendMode(StudioEngineIdMap.DrawObjectId(layer.Id), blendMode);
     }
 
     public static SceneMutationPatch.SetLayerEffects SetLayerEffects(StudioLayer layer)
@@ -133,6 +155,22 @@ public static class StudioSceneMutationFactory
 
     public static float ToOpacity(double opacityPercent) =>
         ToUnitSingle(opacityPercent / 100d, nameof(opacityPercent));
+
+    public static NormalizedRect? ToNormalizedCrop(StudioLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (layer.Crop == default)
+            return null;
+        var transform = ToTransform(layer);
+        var crop = new NormalizedRect(
+            (float)Math.Clamp(layer.Crop.Left / transform.Size.Width, 0, 1),
+            (float)Math.Clamp(layer.Crop.Top / transform.Size.Height, 0, 1),
+            (float)Math.Clamp(1 - layer.Crop.Right / transform.Size.Width, 0, 1),
+            (float)Math.Clamp(1 - layer.Crop.Bottom / transform.Size.Height, 0, 1));
+        if (!crop.IsValid)
+            throw new InvalidOperationException($"Layer '{layer.Name}' crop values remove the whole layer.");
+        return crop;
+    }
 
     private static bool IsChromaKey(StudioEffect effect) =>
         effect.Id.Contains("chroma", StringComparison.OrdinalIgnoreCase) ||

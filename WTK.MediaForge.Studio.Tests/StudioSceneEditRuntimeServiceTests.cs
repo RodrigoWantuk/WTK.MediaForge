@@ -103,8 +103,26 @@ public sealed class StudioSceneEditRuntimeServiceTests
         var session = await service.BeginApplySessionAsync(document, original);
         await service.TrackSceneDraftAsync(session, document, original, draft);
 
-        Assert.Contains(engine.Patches, patch => patch is SceneMutationPatch.AddLayer add && add.Layer.Id == StudioEngineIdMap.DrawObjectId(newLayer.Id));
-        Assert.Contains(engine.Patches, patch => patch is SceneMutationPatch.SetLayerOrder order && order.LayerId == StudioEngineIdMap.DrawObjectId(newLayer.Id));
+        var add = Assert.IsType<SceneMutationPatch.AddLayer>(Assert.Single(engine.Patches));
+        Assert.Equal(StudioEngineIdMap.DrawObjectId(newLayer.Id), add.Layer.Id);
+        Assert.Equal(original.Layers.Count, add.Index);
+        Assert.Equal(1, engine.BatchCallCount);
+    }
+
+    [Fact]
+    public async Task TrackSceneDraft_with_no_changes_does_not_call_engine_batch()
+    {
+        var engine = new RecordingSceneEditEngine();
+        var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
+        var document = StudioMockDocumentFactory.Create();
+        var original = document.Scenes.Single(item => item.Id == "scene-main");
+        var draft = SceneEditSessionService.CloneScene(original);
+        var session = await service.BeginApplySessionAsync(document, original);
+
+        await service.TrackSceneDraftAsync(session, document, original, draft);
+
+        Assert.Equal(0, engine.BatchCallCount);
+        Assert.Empty(engine.Patches);
     }
 
     private sealed class RecordingSceneEditEngine : IStudioSceneEditEngine
@@ -120,6 +138,8 @@ public sealed class StudioSceneEditRuntimeServiceTests
         public int CommitCallCount { get; private set; }
 
         public int DiscardCallCount { get; private set; }
+
+        public int BatchCallCount { get; private set; }
 
         public Task SynchronizeProjectAsync(
             WTK.MediaForge.Composition.Project.MediaForgeProject project,
@@ -153,6 +173,16 @@ public sealed class StudioSceneEditRuntimeServiceTests
             CancellationToken cancellationToken = default)
         {
             Patches.Add(patch);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ApplySceneMutationsAsync(
+            SceneEditSessionId sessionId,
+            IReadOnlyList<SceneMutationPatch> patches,
+            CancellationToken cancellationToken = default)
+        {
+            BatchCallCount++;
+            Patches.AddRange(patches);
             return ValueTask.CompletedTask;
         }
 

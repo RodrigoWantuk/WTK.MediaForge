@@ -35,6 +35,10 @@ MediaForgeProject
   Layer order and every supported visual field participate; display names and
   other non-visual metadata do not invalidate rendered content.
 - Live edits publish transactionally. Apply edits remain draft until commit.
+- Studio draft synchronization uses `StudioSceneDraftDiff` and
+  `SceneMutationBatchBuilder`; one atomic engine batch contains only actual
+  add/remove/order/common/type-specific changes. The engine clones and validates
+  the scene project once for the complete batch.
 - Sinks consume completed output; they never request a render.
 
 ## Runtime Path

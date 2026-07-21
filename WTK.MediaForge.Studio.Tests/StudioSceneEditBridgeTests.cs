@@ -55,6 +55,7 @@ public sealed class StudioSceneEditBridgeTests
         await bridge.ApplyLayerVisualStateAsync(session, layer);
 
         Assert.Equal(4, engine.Patches.Count);
+        Assert.Equal(1, engine.BatchCallCount);
         Assert.IsType<SceneMutationPatch.SetLayerTransform>(engine.Patches[0]);
         Assert.IsType<SceneMutationPatch.SetLayerVisibility>(engine.Patches[1]);
         Assert.IsType<SceneMutationPatch.SetLayerOpacity>(engine.Patches[2]);
@@ -148,6 +149,8 @@ public sealed class StudioSceneEditBridgeTests
 
         public List<SceneMutationPatch> Patches { get; } = [];
 
+        public int BatchCallCount { get; private set; }
+
         public SceneCommitRequest? CommitRequest { get; private set; }
 
         public Task SynchronizeProjectAsync(
@@ -179,6 +182,16 @@ public sealed class StudioSceneEditBridgeTests
             CancellationToken cancellationToken = default)
         {
             Patches.Add(patch);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ApplySceneMutationsAsync(
+            SceneEditSessionId sessionId,
+            IReadOnlyList<SceneMutationPatch> patches,
+            CancellationToken cancellationToken = default)
+        {
+            BatchCallCount++;
+            Patches.AddRange(patches);
             return ValueTask.CompletedTask;
         }
 

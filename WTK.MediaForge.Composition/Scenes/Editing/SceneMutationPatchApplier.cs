@@ -38,6 +38,18 @@ internal static class SceneMutationPatchApplier
                 RequireLayer(canvas, set.LayerId).Opacity = set.Opacity;
                 break;
 
+            case SceneMutationPatch.SetLayerCrop set:
+                if (set.Crop is { IsValid: false })
+                    throw new ArgumentOutOfRangeException(nameof(patch), "Layer crop must be normalized and non-empty.");
+                RequireLayer(canvas, set.LayerId).Crop = set.Crop;
+                break;
+
+            case SceneMutationPatch.SetLayerBlendMode set:
+                if (!Enum.IsDefined(set.BlendMode))
+                    throw new ArgumentOutOfRangeException(nameof(patch), "Layer blend mode is invalid.");
+                RequireLayer(canvas, set.LayerId).BlendMode = set.BlendMode;
+                break;
+
             case SceneMutationPatch.SetLayerOrder set:
                 MoveLayer(canvas, set.LayerId, set.NewIndex);
                 break;
@@ -48,6 +60,20 @@ internal static class SceneMutationPatchApplier
                 if (RequireLayer(canvas, set.LayerId) is not SourceLayerDrawObject sourceLayer)
                     throw new InvalidOperationException($"Layer {set.LayerId} is not a source layer.");
                 sourceLayer.SourceId = set.SourceId;
+                break;
+
+            case SceneMutationPatch.SetTextLayerContent set:
+                if (RequireLayer(canvas, set.LayerId) is not TextDrawObject textLayer)
+                    throw new InvalidOperationException($"Layer {set.LayerId} is not a text layer.");
+                textLayer.Text = set.Text ?? throw new ArgumentNullException(nameof(set.Text));
+                break;
+
+            case SceneMutationPatch.SetNestedCanvas set:
+                if (!project.Canvases.Any(candidate => candidate.Id == set.NestedCanvasId))
+                    throw new InvalidOperationException($"Nested canvas {set.NestedCanvasId} was not found.");
+                if (RequireLayer(canvas, set.LayerId) is not CanvasDrawObject nestedLayer)
+                    throw new InvalidOperationException($"Layer {set.LayerId} is not a nested canvas layer.");
+                nestedLayer.NestedCanvasId = set.NestedCanvasId;
                 break;
 
             case SceneMutationPatch.SetLayerEffects set:

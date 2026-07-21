@@ -52,6 +52,9 @@ features are disabled with a reason instead of replaced by fake success.
 - Scene draft editing now has bounded undo/redo history through
   `IStudioUndoRedoService`; Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y, project shortcuts, and
   canvas zoom shortcuts resolve through `IStudioShortcutService`.
+- Apply draft synchronization computes a deterministic layer diff and submits
+  one atomic mutation batch. Unchanged 100-layer scenes submit no mutations;
+  single-property edits submit only their required patch.
 - Dock panel proportions are loaded before Dock creation and persisted on
   window close/settings save through `IStudioLayoutService`.
 - Diagnostics, performance metrics, and output monitor snapshots live in the

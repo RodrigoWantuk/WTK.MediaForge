@@ -23,6 +23,11 @@ public interface IStudioSceneEditEngine
         SceneMutationPatch patch,
         CancellationToken cancellationToken = default);
 
+    ValueTask ApplySceneMutationsAsync(
+        SceneEditSessionId sessionId,
+        IReadOnlyList<SceneMutationPatch> patches,
+        CancellationToken cancellationToken = default);
+
     ValueTask<SceneCommitResult> ApplySceneDraftAsync(
         SceneEditSessionId sessionId,
         SceneCommitRequest request,
@@ -62,6 +67,12 @@ public sealed class MediaForgeStudioSceneEditEngine(MediaForgeEngine engine) : I
         SceneMutationPatch patch,
         CancellationToken cancellationToken = default) =>
         _engine.ApplySceneMutationAsync(sessionId, patch, cancellationToken);
+
+    public ValueTask ApplySceneMutationsAsync(
+        SceneEditSessionId sessionId,
+        IReadOnlyList<SceneMutationPatch> patches,
+        CancellationToken cancellationToken = default) =>
+        _engine.ApplySceneMutationsAsync(sessionId, patches, cancellationToken);
 
     public ValueTask<SceneCommitResult> ApplySceneDraftAsync(
         SceneEditSessionId sessionId,
@@ -144,14 +155,15 @@ public sealed class StudioSceneEditBridge(IStudioSceneEditEngine engine)
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(layer);
 
-        await ApplyPatchAsync(session, StudioSceneMutationFactory.SetLayerTransform(layer), cancellationToken)
-            .ConfigureAwait(false);
-        await ApplyPatchAsync(session, StudioSceneMutationFactory.SetLayerVisibility(layer), cancellationToken)
-            .ConfigureAwait(false);
-        await ApplyPatchAsync(session, StudioSceneMutationFactory.SetLayerOpacity(layer), cancellationToken)
-            .ConfigureAwait(false);
-        await ApplyPatchAsync(session, StudioSceneMutationFactory.SetLayerEffects(layer), cancellationToken)
-            .ConfigureAwait(false);
+        await ApplyBatchAsync(
+            session,
+            [
+                StudioSceneMutationFactory.SetLayerTransform(layer),
+                StudioSceneMutationFactory.SetLayerVisibility(layer),
+                StudioSceneMutationFactory.SetLayerOpacity(layer),
+                StudioSceneMutationFactory.SetLayerEffects(layer)
+            ],
+            cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask ApplyPatchAsync(
@@ -162,6 +174,16 @@ public sealed class StudioSceneEditBridge(IStudioSceneEditEngine engine)
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(patch);
         return _engine.ApplySceneMutationAsync(session.SessionId, patch, cancellationToken);
+    }
+
+    public ValueTask ApplyBatchAsync(
+        StudioSceneEditBridgeSession session,
+        IReadOnlyList<SceneMutationPatch> patches,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(patches);
+        return _engine.ApplySceneMutationsAsync(session.SessionId, patches, cancellationToken);
     }
 
     public ValueTask<SceneCommitResult> CommitAsync(
