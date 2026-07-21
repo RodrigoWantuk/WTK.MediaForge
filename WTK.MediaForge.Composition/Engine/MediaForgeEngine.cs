@@ -30,9 +30,14 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private readonly IRenderBackendFactory _backendFactory;
     private readonly IMediaForgeDiagnosticsSink? _externalDiagnostics;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
-    private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly Dictionary<RenderOutputId, OutputSinkEntry> _outputSinks = [];
-    private readonly Dictionary<SceneEditSessionId, ActiveSceneEditSession> _sceneEditSessions = [];
+    private readonly EngineLifecycleCoordinator _lifecycleCoordinator = new();
+    private readonly EngineProjectCoordinator _projectCoordinator = new();
+    private readonly EngineOutputRouteCoordinator<OutputSinkEntry> _outputRouteCoordinator = new();
+    private readonly SceneEditSessionCoordinator<ActiveSceneEditSession> _sceneEditSessionCoordinator = new();
+    private readonly EngineRecoveryCoordinator _engineRecoveryCoordinator = new();
+    private SemaphoreSlim _gate => _lifecycleCoordinator.Gate;
+    private Dictionary<RenderOutputId, OutputSinkEntry> _outputSinks => _outputRouteCoordinator.Sinks;
+    private Dictionary<SceneEditSessionId, ActiveSceneEditSession> _sceneEditSessions => _sceneEditSessionCoordinator.Sessions;
     private readonly RenderOutputSinkDispatcher _sinkDispatcher;
     private readonly OutputRouteTransitionRuntime _outputRouteTransitions = new();
 
@@ -46,13 +51,13 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private MediaForgeRenderThread? _renderThread;
     private MediaForgeRenderPump? _renderPump;
     private ProjectStateSnapshot? _projectState;
-    private MediaForgeProject? _currentProject;
-    private int _state = (int)MediaForgeEngineState.Idle;
+    private MediaForgeProject? _currentProject
+    {
+        get => _projectCoordinator.Current;
+        set => _projectCoordinator.Current = value;
+    }
     private TimeSpan _sinkStopTimeout = TimeSpan.FromSeconds(5);
     private long _bindingVersion;
-    private int _disposed;
-    private readonly Dictionary<string, Task> _activeRecoveries = new(StringComparer.Ordinal);
-    private readonly object _recoveryGate = new();
     private CancellationTokenSource? _recoveryCancellation;
 
     internal TimeSpan RenderThreadJoinTimeout { get; set; } = TimeSpan.FromSeconds(10);
@@ -110,12 +115,9 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     public bool HasProject => _currentProject is not null;
 
-    public MediaForgeProject? CurrentProject =>
-        _currentProject is null
-            ? null
-            : MediaForgeProjectCloner.DeepClone(_currentProject);
+    public MediaForgeProject? CurrentProject => _projectCoordinator.CreatePublicSnapshot();
 
-    public MediaForgeEngineState State => (MediaForgeEngineState)Volatile.Read(ref _state);
+    public MediaForgeEngineState State => _lifecycleCoordinator.State;
 
     public bool IsRunning => State == MediaForgeEngineState.Running;
 
@@ -133,19 +135,11 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         var internalRecoveries = _faultRecoveryCoordinator?.States.Values.ToArray() ?? [];
         var recoveries = internalRecoveries.Select(ToPublicRecoverySnapshot).ToArray();
         var backendResources = (_backend as IRenderBackendResourceDiagnostics)?.GetResourceSnapshot();
-        var status = State switch
-        {
-            MediaForgeEngineState.Failed => MediaForgeRuntimeHealthStatus.Failed,
-            MediaForgeEngineState.Idle or MediaForgeEngineState.Loaded or MediaForgeEngineState.Disposed =>
-                MediaForgeRuntimeHealthStatus.Stopped,
-            _ when internalRecoveries.Any(static state => state.Status == FaultRecoveryStatus.Recovering) =>
-                MediaForgeRuntimeHealthStatus.Recovering,
-            _ when internalRecoveries.Any(static state => state.Status == FaultRecoveryStatus.Exhausted) ||
-                   outputs.Any(static output => output.Status == EncodedOutputRuntimeStatus.Failed) ||
-                   backendResources is { FailedRetiredResources: > 0 } =>
-                MediaForgeRuntimeHealthStatus.Degraded,
-            _ => MediaForgeRuntimeHealthStatus.Healthy
-        };
+        var status = EngineHealthCoordinator.ResolveStatus(
+            State,
+            internalRecoveries,
+            outputs,
+            backendResources?.FailedRetiredResources ?? 0);
 
         return new MediaForgeRuntimeHealthSnapshot
         {
@@ -1050,7 +1044,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        if (!_lifecycleCoordinator.TryBeginDispose())
             return;
 
         try
@@ -1107,7 +1101,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         }
         finally
         {
-            _gate.Dispose();
+            _lifecycleCoordinator.Dispose();
         }
     }
 
@@ -1328,13 +1322,13 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         if (sessionId.IsEmpty)
             throw CreateEngineException("Scene edit session id cannot be empty.");
 
-        return _sceneEditSessions.TryGetValue(sessionId, out var session)
+        return _sceneEditSessionCoordinator.TryGet(sessionId, out var session)
             ? session
             : throw CreateEngineException($"Scene edit session {sessionId} was not found.");
     }
 
     private void ReplaceSceneEditSession(ActiveSceneEditSession session) =>
-        _sceneEditSessions[session.Descriptor.SessionId] = session;
+        _sceneEditSessionCoordinator.Replace(session.Descriptor.SessionId, session);
 
     private SceneVersionId GetPublishedSceneVersion(CanvasId canvasId)
     {
@@ -1733,7 +1727,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         if (oldState == newState)
             return;
 
-        Volatile.Write(ref _state, (int)newState);
+        _lifecycleCoordinator.SetState(newState);
         RaiseStateChanged(oldState, newState);
     }
 
@@ -1887,7 +1881,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         aggregate.InnerExceptions.Any(IsTimeoutFailure);
 
     private void ThrowIfDisposed() =>
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(_lifecycleCoordinator.IsDisposed, this);
 
     private void RaiseDiagnosticReported(MediaForgeDiagnostic diagnostic)
     {
@@ -1951,34 +1945,22 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             return;
 
         var key = $"source:{sourceId}";
-        lock (_recoveryGate)
-        {
-            if (_activeRecoveries.ContainsKey(key))
-                return;
-
-            var task = RunSourceRecoveryAsync(coordinator, sourceId, key, detail, cancellation.Token);
-            _activeRecoveries.Add(key, task);
-            _ = task.ContinueWith(
-                completed =>
+        _engineRecoveryCoordinator.TryStart(
+            key,
+            () => RunSourceRecoveryAsync(coordinator, sourceId, key, detail, cancellation.Token),
+            completed =>
+            {
+                if (completed.IsFaulted)
                 {
-                    lock (_recoveryGate)
-                        _activeRecoveries.Remove(key);
-
-                    if (completed.IsFaulted)
-                    {
-                        MediaForgeDiagnostics.Report(
-                            _externalDiagnostics,
-                            MediaForgeDiagnosticSeverity.Error,
-                            "engine.source_recovery_failed",
-                            $"Automatic recovery failed for source {sourceId}.",
-                            nameof(MediaForgeEngine),
-                            completed.Exception?.GetBaseException());
-                    }
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
-        }
+                    MediaForgeDiagnostics.Report(
+                        _externalDiagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.source_recovery_failed",
+                        $"Automatic recovery failed for source {sourceId}.",
+                        nameof(MediaForgeEngine),
+                        completed.Exception?.GetBaseException());
+                }
+            });
     }
 
     private void ScheduleGraphicsDeviceRecovery(string detail)
@@ -1989,34 +1971,22 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             return;
 
         const string key = "graphics-device";
-        lock (_recoveryGate)
-        {
-            if (_activeRecoveries.ContainsKey(key))
-                return;
-
-            var task = RunGraphicsDeviceRecoveryAsync(coordinator, key, detail, cancellation.Token);
-            _activeRecoveries.Add(key, task);
-            _ = task.ContinueWith(
-                completed =>
+        _engineRecoveryCoordinator.TryStart(
+            key,
+            () => RunGraphicsDeviceRecoveryAsync(coordinator, key, detail, cancellation.Token),
+            completed =>
+            {
+                if (completed.IsFaulted)
                 {
-                    lock (_recoveryGate)
-                        _activeRecoveries.Remove(key);
-
-                    if (completed.IsFaulted)
-                    {
-                        MediaForgeDiagnostics.Report(
-                            _externalDiagnostics,
-                            MediaForgeDiagnosticSeverity.Error,
-                            "engine.graphics_device_recovery_failed",
-                            "Automatic graphics device recovery failed.",
-                            nameof(MediaForgeEngine),
-                            completed.Exception?.GetBaseException());
-                    }
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
-        }
+                    MediaForgeDiagnostics.Report(
+                        _externalDiagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.graphics_device_recovery_failed",
+                        "Automatic graphics device recovery failed.",
+                        nameof(MediaForgeEngine),
+                        completed.Exception?.GetBaseException());
+                }
+            });
     }
 
     private void ScheduleEncodedOutputRecovery(RenderOutputId outputId, string detail)
@@ -2027,40 +1997,23 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             return;
 
         var key = $"encoded-output:{outputId}";
-        lock (_recoveryGate)
-        {
-            if (_activeRecoveries.ContainsKey(key))
-                return;
-
-            var task = RunEncodedOutputRecoveryAsync(
-                coordinator,
-                outputId,
-                key,
-                detail,
-                cancellation.Token);
-            _activeRecoveries.Add(key, task);
-            _ = task.ContinueWith(
-                completed =>
+        _engineRecoveryCoordinator.TryStart(
+            key,
+            () => RunEncodedOutputRecoveryAsync(coordinator, outputId, key, detail, cancellation.Token),
+            completed =>
+            {
+                if (completed.IsFaulted)
                 {
-                    lock (_recoveryGate)
-                        _activeRecoveries.Remove(key);
-
-                    if (completed.IsFaulted)
-                    {
-                        MediaForgeDiagnostics.Report(
-                            _externalDiagnostics,
-                            MediaForgeDiagnosticSeverity.Error,
-                            "engine.encoded_output_recovery_failed",
-                            $"Automatic recovery failed for encoded output {outputId}.",
-                            nameof(MediaForgeEngine),
-                            completed.Exception?.GetBaseException(),
-                            outputId: outputId.Value);
-                    }
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
-        }
+                    MediaForgeDiagnostics.Report(
+                        _externalDiagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.encoded_output_recovery_failed",
+                        $"Automatic recovery failed for encoded output {outputId}.",
+                        nameof(MediaForgeEngine),
+                        completed.Exception?.GetBaseException(),
+                        outputId: outputId.Value);
+                }
+            });
     }
 
     private async Task RunSourceRecoveryAsync(
@@ -2393,9 +2346,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             return;
 
         await cancellation.CancelAsync().ConfigureAwait(false);
-        Task[] recoveries;
-        lock (_recoveryGate)
-            recoveries = _activeRecoveries.Values.ToArray();
+        var recoveries = _engineRecoveryCoordinator.Snapshot();
 
         try
         {

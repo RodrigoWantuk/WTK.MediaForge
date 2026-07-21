@@ -5,6 +5,7 @@ using Dock.Model.Core;
 using Dock.Model.Controls;
 using Dock.Model.Mvvm.Controls;
 using WTK.MediaForge.Studio.DesignData;
+using WTK.MediaForge.Studio.Coordinators;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Docking;
 using WTK.MediaForge.Studio.Localization;
@@ -82,16 +83,16 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         IStudioUiTimer uiTimer,
         StudioDocument initialDocument)
     {
-        _projectService = projectService;
-        _engineService = engineService;
-        _outputService = outputService;
+        _projectService = new StudioProjectCoordinator(projectService);
+        _engineService = new StudioEngineLifecycleCoordinator(engineService);
+        _outputService = new StudioOutputCoordinator(outputService);
         _dialogService = dialogService;
         _undoRedoService = undoRedoService;
         _shortcutService = shortcutService;
-        _layoutService = layoutService;
+        _layoutService = new StudioLayoutCoordinator(layoutService);
         _diagnosticsService = diagnosticsService;
-        _selectionService = selectionService;
-        _sceneEditRuntimeService = sceneEditRuntimeService;
+        _selectionService = new StudioSelectionCoordinator(selectionService);
+        _sceneEditRuntimeService = new StudioSceneEditCoordinator(sceneEditRuntimeService);
         _uiTimer = uiTimer;
         _uiContext = SynchronizationContext.Current;
         _document = initialDocument ?? throw new ArgumentNullException(nameof(initialDocument));
