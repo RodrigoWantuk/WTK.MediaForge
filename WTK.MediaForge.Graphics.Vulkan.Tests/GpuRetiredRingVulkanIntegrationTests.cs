@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Vortice.DXGI;
 using WTK.MediaForge.Capture.Gpu;
 using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Runtime.Scheduling;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
@@ -61,6 +62,22 @@ public class GpuRetiredRingVulkanIntegrationTests
             });
 
             var snapshot = CreateSnapshot(frame, gpuLease);
+            var renderGraphPlan = MediaForgeRenderGraphCompiler.Compile(snapshot);
+            snapshot.RenderGraphExecution = RenderGraphExecutor.Execute(
+                renderGraphPlan,
+                new RenderGraphContext
+                {
+                    FrameContext = new FrameExecutionContext
+                    {
+                        FrameId = 1,
+                        FrameBudget = TimeSpan.FromMilliseconds(16),
+                        TargetOutputs = snapshot.Outputs.Select(static output => output.Id).ToArray()
+                    },
+                    SourceFrames = new Dictionary<SourceId, GpuFrameReference>
+                    {
+                        [frame.SourceId] = frame
+                    }
+                });
 
             using var replacementRing = CreateSlotRing(device.Device);
             retiredRing.Retire();

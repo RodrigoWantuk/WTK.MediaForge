@@ -733,7 +733,7 @@ internal static class VulkanCompositionTestHarness
         try
         {
             var guard = new RenderThreadGuard();
-            if (!MediaForgeVulkanRenderer.TryCreate(
+            if (!MediaForgeVulkanRenderer.TryCreateForLowLevelTests(
                 guard,
                 diagnostics,
                 faultInjector ?? NullVulkanRendererFaultInjector.Instance,

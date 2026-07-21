@@ -37,6 +37,35 @@ public class MediaForgeVulkanRendererTests
     }
 
     [Fact]
+    public void Product_renderer_rejects_snapshot_without_executed_physical_plan()
+    {
+        var guard = new RenderThreadGuard();
+        if (!MediaForgeVulkanRenderer.TryCreate(
+                guard,
+                diagnostics: null,
+                NullVulkanRendererFaultInjector.Instance,
+                out var backend) ||
+            backend is null)
+        {
+            return;
+        }
+
+        using var snapshot = CreateEmptySnapshot();
+        guard.BindToCurrentThread();
+        try
+        {
+            var error = Assert.Throws<InvalidOperationException>(() => backend.Submit(snapshot));
+            Assert.Contains("executed physical RenderGraph plan", error.Message);
+            Assert.Equal(0, backend.TextureRegistry.EntryCount);
+        }
+        finally
+        {
+            guard.Clear();
+            backend.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task Renderer_Dispose_throws_before_marking_disposed_when_texture_leases_are_active()
     {
         if (!TryCreateRenderer(out var renderer))
@@ -1253,10 +1282,11 @@ public class MediaForgeVulkanRendererTests
         try
         {
             var guard = new RenderThreadGuard();
-            if (!MediaForgeVulkanRenderer.TryCreate(
+            if (!MediaForgeVulkanRenderer.TryCreateForLowLevelTests(
                     guard,
                     diagnostics: null,
                     faultInjector ?? NullVulkanRendererFaultInjector.Instance,
+                    fontAtlasRasterizer: null,
                     out var backend) ||
                 backend is null)
             {

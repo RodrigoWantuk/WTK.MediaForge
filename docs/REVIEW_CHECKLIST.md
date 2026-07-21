@@ -98,6 +98,7 @@ Before considering a change complete, verify:
 - [ ] Apply in a nested canvas computes direct/transitive canvas consumers and affected output routes before transition execution.
 - [ ] RenderGraph/cache keys include canvas version binding; no cache key relies only on canvas id and size.
 - [ ] Physical RenderGraph validation rejects duplicate keys, missing/forward dependencies, unknown canvases/outputs, and missing output passes before Vulkan command recording.
+- [ ] Product Vulkan creation rejects snapshots without an executed physical plan before importing GPU resources; ad hoc plan synthesis is available only through the explicit low-level-test factory.
 - [ ] Routes use `CanvasId -> RenderOutput -> RenderOutputSink(s)` and never direct canvas-to-encoder/NDI/preview shortcuts.
 - [ ] NDI Standard SDK runtime detection/source discovery is not treated as video product support; NDI source/output video paths remain blocked unless GPU-safe product proofs pass.
 - [ ] Same scene routed to multiple sinks/outputs does not require duplicate canvas rendering when size/config/version match.

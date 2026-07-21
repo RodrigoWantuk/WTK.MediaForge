@@ -28,6 +28,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
     private readonly bool _useGpuResourcePool;
     private readonly Action _disposeDevice;
     private readonly VulkanCompositionShaderPipelines _compositionPipelines;
+    private readonly bool _allowUnplannedSnapshotsForTests;
     private readonly ConcurrentDictionary<RenderOutputId, RenderOutputBindingSnapshot> _bindings = new();
     private readonly ConcurrentDictionary<RenderOutputId, VulkanOffscreenTargetHandle> _offscreenTargets = new();
     private int _disposed;
@@ -44,13 +45,15 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
         RenderThreadGuard threadGuard,
         IMediaForgeDiagnosticsSink? diagnostics,
         IVulkanRendererFaultInjector faultInjector,
-        IFontAtlasRasterizer? fontAtlasRasterizer)
+        IFontAtlasRasterizer? fontAtlasRasterizer,
+        bool allowUnplannedSnapshotsForTests = false)
         : this(
             threadGuard,
             VulkanHeadlessDevice.Create(),
             diagnostics,
             faultInjector,
-            fontAtlasRasterizer: fontAtlasRasterizer)
+            fontAtlasRasterizer: fontAtlasRasterizer,
+            allowUnplannedSnapshotsForTests: allowUnplannedSnapshotsForTests)
     {
     }
 
@@ -61,12 +64,14 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
         IVulkanRendererFaultInjector faultInjector,
         Func<VulkanHeadlessDevice, FrameSize, IVulkanOffscreenRenderTarget>? offscreenTargetFactory = null,
         Action? disposeDevice = null,
-        IFontAtlasRasterizer? fontAtlasRasterizer = null)
+        IFontAtlasRasterizer? fontAtlasRasterizer = null,
+        bool allowUnplannedSnapshotsForTests = false)
     {
         _threadGuard = threadGuard ?? throw new ArgumentNullException(nameof(threadGuard));
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
         _diagnostics = diagnostics;
         _faultInjector = faultInjector ?? throw new ArgumentNullException(nameof(faultInjector));
+        _allowUnplannedSnapshotsForTests = allowUnplannedSnapshotsForTests;
         _offscreenTargetFactory = offscreenTargetFactory ?? CreateOffscreenRenderTarget;
         _useGpuResourcePool = offscreenTargetFactory is null;
         _disposeDevice = disposeDevice ?? _deviceContext.Dispose;
@@ -226,13 +231,47 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
         IVulkanRendererFaultInjector faultInjector,
         IFontAtlasRasterizer? fontAtlasRasterizer,
         out MediaForgeVulkanRenderer? renderer)
+        => TryCreateCore(
+            threadGuard,
+            diagnostics,
+            faultInjector,
+            fontAtlasRasterizer,
+            allowUnplannedSnapshotsForTests: false,
+            out renderer);
+
+    internal static bool TryCreateForLowLevelTests(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        IVulkanRendererFaultInjector faultInjector,
+        IFontAtlasRasterizer? fontAtlasRasterizer,
+        out MediaForgeVulkanRenderer? renderer)
+        => TryCreateCore(
+            threadGuard,
+            diagnostics,
+            faultInjector,
+            fontAtlasRasterizer,
+            allowUnplannedSnapshotsForTests: true,
+            out renderer);
+
+    private static bool TryCreateCore(
+        RenderThreadGuard threadGuard,
+        IMediaForgeDiagnosticsSink? diagnostics,
+        IVulkanRendererFaultInjector faultInjector,
+        IFontAtlasRasterizer? fontAtlasRasterizer,
+        bool allowUnplannedSnapshotsForTests,
+        out MediaForgeVulkanRenderer? renderer)
     {
         ArgumentNullException.ThrowIfNull(threadGuard);
         ArgumentNullException.ThrowIfNull(faultInjector);
 
         try
         {
-            renderer = new MediaForgeVulkanRenderer(threadGuard, diagnostics, faultInjector, fontAtlasRasterizer);
+            renderer = new MediaForgeVulkanRenderer(
+                threadGuard,
+                diagnostics,
+                faultInjector,
+                fontAtlasRasterizer,
+                allowUnplannedSnapshotsForTests);
             return true;
         }
         catch
@@ -332,6 +371,9 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
 
         Interlocked.Increment(ref _submitCount);
 
+        var physicalPlan = ResolvePhysicalPlan(snapshot);
+        physicalPlan.ValidateFor(snapshot);
+
         var handles = RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot);
 
         if (handles.Count > MaxExternalTextureImportsPerSubmit)
@@ -354,8 +396,6 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
             PrepareOffscreenTargetsForSubmit(snapshot);
             var previousTargetLayouts = CaptureOffscreenTargetLayouts();
             submissionResources = _compositionPipelines.CreateSubmissionResourceScope();
-            var physicalPlan = ResolvePhysicalPlan(snapshot);
-            physicalPlan.ValidateFor(snapshot);
 
             try
             {
@@ -461,13 +501,17 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
         }
     }
 
-    private static PhysicalRenderGraphPlan ResolvePhysicalPlan(RenderFrameSnapshot snapshot)
+    private PhysicalRenderGraphPlan ResolvePhysicalPlan(RenderFrameSnapshot snapshot)
     {
         if (snapshot.RenderGraphExecution is { } execution)
             return execution.PhysicalPlan;
 
-        // Direct low-level backend submissions are internal test/diagnostic entry points.
-        // Product engine submissions always arrive with an executed compiled graph.
+        if (!_allowUnplannedSnapshotsForTests)
+        {
+            throw new InvalidOperationException(
+                "Vulkan submission requires an executed physical RenderGraph plan.");
+        }
+
         return MediaForgeRenderGraphCompiler.Compile(snapshot).PhysicalPlan;
     }
 

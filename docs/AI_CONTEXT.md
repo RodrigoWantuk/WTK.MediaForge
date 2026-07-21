@@ -113,8 +113,11 @@ and must not be executed as current gates.
 ## Current Constraints
 
 - Preview is experimental until hosted resize and timeout-recovery evidence passes.
-- Physical RenderGraph execution is incomplete for source acquisition, all
-  effect passes, encoded dispatch, and exclusive temporary-resource ownership.
+- Product Vulkan submissions require a pre-executed physical RenderGraph plan;
+  missing plans fail before GPU resource import. Only an explicitly named
+  low-level-test factory may synthesize a plan. Physical execution remains
+  incomplete for source acquisition, all effect passes, encoded dispatch, and
+  exclusive temporary-resource ownership.
 - Vulkan canvas/effect/transition/output recording is controlled by a validated
   physical plan. Invalid topology, canvas identity, or output identity fails
   before command recording instead of being skipped.

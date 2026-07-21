@@ -70,10 +70,12 @@ Experimental and not yet product-promoted:
 - MP4 recording, RTMP, MP4 input, webcam, desktop, and window capture: real Windows
   implementations exist, but product availability remains hardware-dependent
   and requires the current composite proof report plus sustained route evidence.
-- Physical RenderGraph: Vulkan consumes physical output/canvas and blur
-  intermediate operations and validates topology/identity before command
-  recording. Source acquisition, every effect, encoded dispatch, and all
-  temporary-resource ownership are not yet exclusively graph-driven.
+- Physical RenderGraph: the product Vulkan backend accepts only snapshots with
+  an executed physical plan and validates topology/identity before importing
+  textures or recording commands. An explicit low-level-test factory alone may
+  synthesize plans for renderer tests. Source acquisition, every effect,
+  encoded dispatch, and all temporary-resource ownership are not yet physical
+  operations owned exclusively by the graph.
 - Fault recovery: source restart, RTMP reconnect, and Vulkan backend recreation
   are wired. MP4 route recovery intentionally requires a new recording segment;
   silently overwriting an active recording is prohibited. Sustained fault
@@ -99,8 +101,9 @@ Unavailable/planned:
    reconnect, and shutdown during a frame in flight.
 4. Connect recovery to physical device-lost recreation and prove isolation:
    RTMP failure must not interrupt recording; source loss must not stop unrelated routes.
-5. Make the compiled physical RenderGraph the sole renderer input and move source,
-   all effect intermediates, output fanout, and encoded dispatch behind it.
+5. Extend the now-mandatory compiled physical RenderGraph so source acquisition,
+   all effect intermediates, output fanout, and encoded dispatch execute as
+   graph-owned physical operations.
 6. Extend the bounded GPU pools and live/high-water diagnostics already used by
    Vulkan targets, framebuffers, descriptor sets, and textures to every export
    intermediate, then enforce baseline-return assertions in sustained runs.
