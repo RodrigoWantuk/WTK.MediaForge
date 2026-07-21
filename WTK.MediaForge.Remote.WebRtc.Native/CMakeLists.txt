@@ -1,6 +1,19 @@
 cmake_minimum_required(VERSION 3.24)
 project(wtk_mediaforge_webrtc LANGUAGES CXX)
-# libwebrtc revision and the encoded-access-unit bridge patch are intentionally supplied by the reproducible native build pipeline.
+option(MF_WEBRTC_CONTRACT_TEST_BUILD "Build the ABI contract library without a libwebrtc backend; never package this artifact" OFF)
+if(NOT MF_WEBRTC_CONTRACT_TEST_BUILD)
+  message(FATAL_ERROR "The pinned libwebrtc adapter is required. See BUILDING.md; contract-only binaries cannot be packaged.")
+endif()
 add_library(wtk_mediaforge_webrtc SHARED src/wtk_mediaforge_webrtc.cpp)
 target_include_directories(wtk_mediaforge_webrtc PUBLIC include)
 target_compile_features(wtk_mediaforge_webrtc PRIVATE cxx_std_20)
+set_target_properties(wtk_mediaforge_webrtc PROPERTIES
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN YES)
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(wtk_mediaforge_webrtc_abi_tests tests/abi_contract_tests.cpp)
+  target_include_directories(wtk_mediaforge_webrtc_abi_tests PRIVATE include)
+  target_link_libraries(wtk_mediaforge_webrtc_abi_tests PRIVATE wtk_mediaforge_webrtc)
+  add_test(NAME wtk_mediaforge_webrtc_abi_contract COMMAND wtk_mediaforge_webrtc_abi_tests)
+endif()

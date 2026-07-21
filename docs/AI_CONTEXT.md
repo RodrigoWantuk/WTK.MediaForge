@@ -184,6 +184,12 @@ capability reports; it is never converted into a hosted-runner product pass.
   encoded-access-unit bridge, Windows hardware packet decoder integration, and
   direct/TURN GPU end-to-end proofs exist. Never route WebRTC `VideoFrame` CPU
   data or a software codec around this requirement.
+- The native Remote Scene C ABI is version 2 and fully declares opaque session,
+  SDP/ICE, encoded packet, callback, candidate, stats, error, buffer ownership,
+  and destroy semantics. Its supply-chain manifest pins official LKGR
+  `86676d3c4ee49b92380647d4b68388ed8f0ce94a`. The contract-test library reports
+  backend unavailable and cannot be packaged; capability promotion requires the
+  actual pinned adapter and physical proofs.
 - NDI product video remains blocked because Standard SDK CPU framebuffer APIs do
   not satisfy the GPU media law.
 - Audio, SRT, virtual camera, and FFmpeg are deferred.

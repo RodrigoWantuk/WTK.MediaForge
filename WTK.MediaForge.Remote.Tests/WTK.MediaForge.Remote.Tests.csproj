@@ -4,5 +4,6 @@
   <ItemGroup>
     <ProjectReference Include="..\WTK.MediaForge.Remote\WTK.MediaForge.Remote.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Remote.Signaling\WTK.MediaForge.Remote.Signaling.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Remote.WebRtc\WTK.MediaForge.Remote.WebRtc.csproj" />
   </ItemGroup>
 </Project>

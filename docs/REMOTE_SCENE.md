@@ -81,4 +81,17 @@ The implemented signaling service does not by itself make Remote Scene media ava
 
 ## Native Distribution
 
-Before shipping the native bridge, pin the libwebrtc revision and include its BSD-3-Clause license, `PATENTS`, `AUTHORS`, and all transitive native dependency notices in `THIRD_PARTY_NOTICES.md`. A standalone ABI stub is not a WebRTC implementation and must not be packaged as a supported remote-media feature.
+The C ABI is frozen at version 2 with opaque handles, versioned/sized structs,
+typed error codes/messages, idempotent pointer-clearing destroy, explicit
+borrowed callback buffers, and a no-callback-after-destroy guarantee. It covers
+session SDP/ICE, ICE servers, connect/close, encoded H.264/optional audio,
+packet/keyframe/state/candidate callbacks, selected candidate, and stats.
+
+`WTK.MediaForge.Remote.WebRtc.Native/native-supply-chain.json` pins the official
+libwebrtc LKGR source/tree and depot_tools revisions, toolchain, GN constraints,
+wrapper hashes, artifacts, notices, platforms, and update process. The checked-in
+contract build reports `mf_webrtc_backend_available() == 0`; it exists for ABI
+testing only and CMake refuses that mode unless explicitly requested. It must
+never be packaged as a supported remote-media feature. Only an adapter built
+from the pin, with built-in software video codecs disabled, may report backend
+availability, and it still requires Direct/TURN proof promotion.

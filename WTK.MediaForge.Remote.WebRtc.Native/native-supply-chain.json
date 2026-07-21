@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://webrtc.googlesource.com/src",
+    "revision": "86676d3c4ee49b92380647d4b68388ed8f0ce94a",
+    "gitTree": "34010c8b649b5938784d015318dc100ce80c3285",
+    "track": "refs/heads/lkgr",
+    "verifiedAtUtc": "2026-07-21T00:00:00Z"
+  },
+  "depotTools": {
+    "repository": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+    "revision": "980d6af16e06ff993a52029019dc0628c0a0e1f0"
+  },
+  "toolchain": {
+    "host": "windows-x64",
+    "visualStudio": "2022 17.10",
+    "windowsSdk": "10.0.26100.0",
+    "cmakeMinimum": "3.24",
+    "cxxStandard": "20",
+    "clangAndSysroots": "resolved transitively by the pinned libwebrtc DEPS"
+  },
+  "gnArgs": [
+    "is_debug=false",
+    "is_component_build=false",
+    "rtc_build_examples=false",
+    "rtc_include_tests=false",
+    "rtc_include_builtin_video_codecs=false",
+    "rtc_enable_protobuf=false",
+    "target_os=\"win\"",
+    "target_cpu=\"x64\""
+  ],
+  "mediaBoundary": {
+    "video": "one externally hardware-encoded H.264 track",
+    "audio": "optional encoded packets",
+    "simulcast": false,
+    "alpha": false,
+    "rawVideoFrames": false,
+    "softwareCodecs": false
+  },
+  "wrapperFiles": [
+    {
+      "path": "include/wtk_mediaforge_webrtc.h",
+      "sha256": "A77349DA6FD104A2A6FEDFC5A7A6BF996881C2EEF28893A18B3079ACEF40E3D7"
+    },
+    {
+      "path": "src/wtk_mediaforge_webrtc.cpp",
+      "sha256": "18EE0154FFDBEB3B78EC61A6057116F6E131ADD82C37283B54A30BDC2B01BA22"
+    }
+  ],
+  "artifacts": [
+    "runtimes/win-x64/native/wtk_mediaforge_webrtc.dll",
+    "runtimes/win-x64/native/wtk_mediaforge_webrtc.pdb"
+  ],
+  "requiredNotices": [
+    "LICENSE",
+    "PATENTS",
+    "AUTHORS",
+    "README.chromium",
+    "transitive license scan output"
+  ],
+  "supportedPlatforms": [
+    "win-x64"
+  ],
+  "updateProcess": "Review the new LKGR and DEPS, regenerate license inventory, rebuild Direct/TURN proofs, update source/tree/wrapper/artifact hashes, and review ABI compatibility before promotion."
+}
+

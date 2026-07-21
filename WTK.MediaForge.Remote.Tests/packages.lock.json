@@ -163,6 +163,12 @@
           "WTK.MediaForge.Remote": "[1.0.0, )"
         }
       },
+      "wtk.mediaforge.remote.webrtc": {
+        "type": "Project",
+        "dependencies": {
+          "WTK.MediaForge.Remote": "[1.0.0, )"
+        }
+      },
       "Microsoft.Data.Sqlite": {
         "type": "CentralTransitive",
         "requested": "[10.0.10, )",
