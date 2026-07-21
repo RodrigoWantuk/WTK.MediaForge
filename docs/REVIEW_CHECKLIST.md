@@ -93,6 +93,7 @@ Before considering a change complete, verify:
 - [ ] Published, Draft, and Explicit bindings retain the logical `CanvasId` and use a deterministic resolved physical key; no render-frame path mints replacement canvas ids.
 - [ ] Equivalent resolved versions share physical work, while different version, draft-session, nested-graph, transition, format, or size identities cannot alias.
 - [ ] Scene version retention is bounded and pinned ownership prevents removal of published, draft, and explicit versions; transitions and in-flight snapshots must either own immutable state directly or hold an explicit pin, and health counters return to baseline after release.
+- [ ] Pinned historical versions do not displace the latest 32 versions per canvas, and transition replacement/completion/clear/dispose releases its complete version graph atomically.
 - [ ] Scene dirty/version fingerprints include typed effect parameters, not only effect type/order/enabled state.
 - [ ] Apply in a nested canvas computes direct/transitive canvas consumers and affected output routes before transition execution.
 - [ ] RenderGraph/cache keys include canvas version binding; no cache key relies only on canvas id and size.

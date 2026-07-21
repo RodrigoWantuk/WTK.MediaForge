@@ -117,6 +117,34 @@ internal sealed class SceneVersionStore
         return new PinHandle(this, versionId, owner);
     }
 
+    public IDisposable PinVersions(
+        IEnumerable<SceneVersionId> versionIds,
+        string owner)
+    {
+        ArgumentNullException.ThrowIfNull(versionIds);
+        if (string.IsNullOrWhiteSpace(owner))
+            throw new ArgumentException("A scene version pin owner is required.", nameof(owner));
+
+        var versions = versionIds.Distinct().ToArray();
+        if (versions.Length == 0)
+            throw new ArgumentException("At least one scene version is required.", nameof(versionIds));
+
+        lock (_gate)
+        {
+            var missing = versions.FirstOrDefault(version => !_snapshotsByVersion.ContainsKey(version));
+            if (!missing.IsEmpty)
+                throw new InvalidOperationException($"Scene version '{missing}' is not retained and cannot be pinned.");
+
+            foreach (var version in versions)
+            {
+                _ownedPins.TryGetValue(version, out var count);
+                _ownedPins[version] = checked(count + 1);
+            }
+        }
+
+        return new PinSetHandle(this, versions, owner);
+    }
+
     public IReadOnlyDictionary<CanvasId, SceneVersionId> CreateVersionMap()
     {
         lock (_gate)
@@ -151,16 +179,26 @@ internal sealed class SceneVersionStore
     }
 
     private void ReleasePin(SceneVersionId versionId)
+        => ReleasePins([versionId]);
+
+    private void ReleasePins(IReadOnlyList<SceneVersionId> versionIds)
     {
         lock (_gate)
         {
-            if (!_ownedPins.TryGetValue(versionId, out var count) || count <= 0)
-                throw new InvalidOperationException($"Scene version pin '{versionId}' was released without ownership.");
+            foreach (var versionId in versionIds)
+            {
+                if (!_ownedPins.TryGetValue(versionId, out var count) || count <= 0)
+                    throw new InvalidOperationException($"Scene version pin '{versionId}' was released without ownership.");
+            }
 
-            if (count == 1)
-                _ownedPins.Remove(versionId);
-            else
-                _ownedPins[versionId] = count - 1;
+            foreach (var versionId in versionIds)
+            {
+                var count = _ownedPins[versionId];
+                if (count == 1)
+                    _ownedPins.Remove(versionId);
+                else
+                    _ownedPins[versionId] = count - 1;
+            }
 
             TrimAllCore();
         }
@@ -177,26 +215,40 @@ internal sealed class SceneVersionStore
         if (!_versionsByCanvas.TryGetValue(canvasId, out var versions))
             return;
 
-        while (versions.Count > MaximumRetainedVersionsPerCanvas)
+        if (!_published.ContainsKey(canvasId))
         {
-            var removable = versions.First;
-            while (removable is not null && IsPinned(removable.Value))
-                removable = removable.Next;
-
-            if (removable is null)
-                return;
-
-            RemoveVersionCore(canvasId, versions, removable);
+            RemoveUnpinnedVersionsCore(canvasId, versions, retainedRecentVersions: null);
         }
-
-        if (!_published.ContainsKey(canvasId) && versions.All(version => !IsPinned(version)))
+        else
         {
-            while (versions.First is { } removable)
-                RemoveVersionCore(canvasId, versions, removable);
+            var retainedRecentVersions = versions
+                .Reverse()
+                .Take(MaximumRetainedVersionsPerCanvas)
+                .ToHashSet();
+            RemoveUnpinnedVersionsCore(canvasId, versions, retainedRecentVersions);
         }
 
         if (versions.Count == 0)
             _versionsByCanvas.Remove(canvasId);
+    }
+
+    private void RemoveUnpinnedVersionsCore(
+        CanvasId canvasId,
+        LinkedList<SceneVersionId> versions,
+        IReadOnlySet<SceneVersionId>? retainedRecentVersions)
+    {
+        var candidate = versions.First;
+        while (candidate is not null)
+        {
+            var next = candidate.Next;
+            if ((retainedRecentVersions is null || !retainedRecentVersions.Contains(candidate.Value)) &&
+                !IsPinned(candidate.Value))
+            {
+                RemoveVersionCore(canvasId, versions, candidate);
+            }
+
+            candidate = next;
+        }
     }
 
     private bool IsPinned(SceneVersionId versionId) =>
@@ -302,5 +354,21 @@ internal sealed class SceneVersionStore
         }
 
         public override string ToString() => $"{ownerName}:{versionId}";
+    }
+
+    private sealed class PinSetHandle(
+        SceneVersionStore owner,
+        IReadOnlyList<SceneVersionId> versionIds,
+        string ownerName) : IDisposable
+    {
+        private SceneVersionStore? _owner = owner;
+
+        public void Dispose()
+        {
+            var current = Interlocked.Exchange(ref _owner, null);
+            current?.ReleasePins(versionIds);
+        }
+
+        public override string ToString() => $"{ownerName}:{string.Join(',', versionIds)}";
     }
 }

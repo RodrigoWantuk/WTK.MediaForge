@@ -252,6 +252,49 @@ public sealed class SceneRuntimeTests
     }
 
     [Fact]
+    public void Transition_version_graph_pins_survive_history_trimming_and_release_to_baseline()
+    {
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var runtime = new SceneRuntime();
+        runtime.SyncFrom(CreateVersionedProjectState(canvasId, outputId, "previous", SceneVersionBinding.Published));
+        var previousVersion = runtime.GetPublishedVersion(canvasId);
+        runtime.SyncFrom(CreateVersionedProjectState(canvasId, outputId, "current", SceneVersionBinding.Published));
+        var currentVersion = runtime.GetPublishedVersion(canvasId);
+        var previousGraph = new SceneVersionGraph(
+            canvasId,
+            new Dictionary<CanvasId, SceneVersionId> { [canvasId] = previousVersion });
+        var currentGraph = new SceneVersionGraph(
+            canvasId,
+            new Dictionary<CanvasId, SceneVersionId> { [canvasId] = currentVersion });
+
+        using (runtime.PinVersionGraphs(previousGraph, currentGraph, "test-transition"))
+        {
+            for (var revision = 0; revision < 100; revision++)
+            {
+                runtime.SyncFrom(CreateVersionedProjectState(
+                    canvasId,
+                    outputId,
+                    $"after-{revision}",
+                    SceneVersionBinding.Published));
+            }
+
+            var pinnedState = runtime.CreateSnapshot().ProjectState;
+            Assert.Contains(previousVersion, pinnedState.CanvasVersionSnapshots.Keys);
+            Assert.Contains(currentVersion, pinnedState.CanvasVersionSnapshots.Keys);
+            Assert.Equal(3, runtime.VersionRetentionSnapshot.PinnedVersionCount);
+        }
+
+        runtime.SyncFrom(CreateVersionedProjectState(canvasId, outputId, "trim-after-release", SceneVersionBinding.Published));
+
+        var releasedState = runtime.CreateSnapshot().ProjectState;
+        Assert.DoesNotContain(previousVersion, releasedState.CanvasVersionSnapshots.Keys);
+        Assert.DoesNotContain(currentVersion, releasedState.CanvasVersionSnapshots.Keys);
+        Assert.Equal(1, runtime.VersionRetentionSnapshot.PinnedVersionCount);
+        Assert.Equal(SceneVersionStore.MaximumRetainedVersionsPerCanvas, runtime.VersionRetentionSnapshot.RetainedVersionCount);
+    }
+
+    [Fact]
     public void Hidden_layer_skips_render_node()
     {
         var project = MediaForgeProjectBuilder.Create()

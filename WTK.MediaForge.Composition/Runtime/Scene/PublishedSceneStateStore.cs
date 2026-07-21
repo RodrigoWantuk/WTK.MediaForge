@@ -28,6 +28,9 @@ internal sealed class PublishedSceneStateStore
     public IDisposable RegisterAndPinVersion(CanvasStateSnapshot canvas, SceneVersionId versionId, string owner) =>
         _versionStore.RegisterAndPinVersion(canvas, versionId, owner);
 
+    public IDisposable PinVersions(IEnumerable<SceneVersionId> versionIds, string owner) =>
+        _versionStore.PinVersions(versionIds, owner);
+
     public IReadOnlyDictionary<CanvasId, SceneVersionId> CreateVersionMap() =>
         _versionStore.CreateVersionMap();
 

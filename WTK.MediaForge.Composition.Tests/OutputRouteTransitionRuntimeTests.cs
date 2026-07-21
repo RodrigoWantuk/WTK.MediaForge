@@ -79,6 +79,7 @@ public sealed class OutputRouteTransitionRuntimeTests
         var oldNestedVersion = SceneVersionId.New();
         var newNestedVersion = SceneVersionId.New();
         var previousProjectState = new ProjectStateSnapshot();
+        var ownership = new TrackingDisposable();
 
         runtime.BeginSceneVersionTransition(
             outputId,
@@ -95,7 +96,8 @@ public sealed class OutputRouteTransitionRuntimeTests
                 {
                     [nestedCanvasId] = newNestedVersion
                 }),
-            previousProjectState);
+            previousProjectState,
+            ownership);
 
         Assert.True(runtime.TryGetTransition(outputId, out var state));
         Assert.Equal(rootCanvasId, state.FromCanvasId);
@@ -103,5 +105,52 @@ public sealed class OutputRouteTransitionRuntimeTests
         Assert.Same(previousProjectState, state.PreviousProjectState);
         Assert.Equal(oldNestedVersion, state.PreviousVersionGraph.CanvasVersions[nestedCanvasId]);
         Assert.Equal(newNestedVersion, state.CurrentVersionGraph.CanvasVersions[nestedCanvasId]);
+        Assert.False(ownership.IsDisposed);
+
+        runtime.Advance(outputId, TimeSpan.FromSeconds(1));
+
+        Assert.True(ownership.IsDisposed);
+    }
+
+    [Fact]
+    public void Replacing_scene_version_transition_releases_previous_ownership()
+    {
+        using var runtime = new OutputRouteTransitionRuntime();
+        var outputId = RenderOutputId.New();
+        var canvasId = CanvasId.New();
+        var firstOwnership = new TrackingDisposable();
+        var secondOwnership = new TrackingDisposable();
+        var graph = new SceneVersionGraph(
+            canvasId,
+            new Dictionary<CanvasId, SceneVersionId> { [canvasId] = SceneVersionId.New() });
+
+        runtime.BeginSceneVersionTransition(
+            outputId,
+            OutputRouteTransition.Fade("first", durationMs: 1_000),
+            graph,
+            graph,
+            new ProjectStateSnapshot(),
+            firstOwnership);
+        runtime.BeginSceneVersionTransition(
+            outputId,
+            OutputRouteTransition.Fade("second", durationMs: 1_000),
+            graph,
+            graph,
+            new ProjectStateSnapshot(),
+            secondOwnership);
+
+        Assert.True(firstOwnership.IsDisposed);
+        Assert.False(secondOwnership.IsDisposed);
+
+        runtime.Clear();
+
+        Assert.True(secondOwnership.IsDisposed);
+    }
+
+    private sealed class TrackingDisposable : IDisposable
+    {
+        public bool IsDisposed { get; private set; }
+
+        public void Dispose() => IsDisposed = true;
     }
 }

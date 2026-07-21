@@ -76,6 +76,10 @@ or include secrets directly; destination identity uses a one-way fingerprint.
 - Intermediate Vulkan targets are never borrowed by two in-flight submissions.
   Cache invalidation retires an active target and physical disposal waits for
   the post-fence submission lease to return.
+- Scene history retains the latest 32 versions per canvas plus every explicitly
+  pinned older version. Draft and transition owners release pins on replacement,
+  completion, clear, or disposal; pinned history must never displace the recent
+  retention window.
 - GPU, keyed-mutex, sink, provider, and shutdown waits always have timeouts.
 - Finalization errors are observable and cannot be reported as success.
 - Runtime health reports aggregate live, retired, pending-fence, cached, and

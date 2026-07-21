@@ -432,6 +432,13 @@ public class MediaForgeEngineTests
         Assert.Equal(result.OldVersionId, transition.PreviousVersionGraph.CanvasVersions[childCanvas.Id]);
         Assert.Equal(result.NewVersionId, transition.CurrentVersionGraph.CanvasVersions[childCanvas.Id]);
         Assert.NotNull(transition.PreviousProjectState);
+        Assert.Equal(3, engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount);
+
+        engine.OutputRouteTransitionRuntimeForTests.Advance(
+            parentOutput.Id,
+            TimeSpan.FromMilliseconds(300));
+
+        Assert.Equal(2, engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount);
     }
 
     [Fact]

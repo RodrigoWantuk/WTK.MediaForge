@@ -111,9 +111,12 @@ Unavailable/planned:
 9. Freeze Core adapter contracts, then implement Linux and macOS backends in
    their own projects.
 
-Scene identity and the first bounded retention store are complete. Remaining
-retention work in v14 is to connect transition and submission ownership to
-explicit pin handles and qualify baseline return under sustained Apply traffic.
+Scene identity and bounded retention are complete. The store retains the latest
+32 versions per canvas in addition to older pinned versions. Drafts and output
+transitions own explicit pin handles, replacement/completion releases them, and
+runtime health exposes retained, pinned, discarded, and high-water counts.
+Remaining v14 work is sustained Apply qualification with baseline-return
+assertions across transitions and submissions.
 
 ## Readiness v14
 

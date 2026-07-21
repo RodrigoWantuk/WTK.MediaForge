@@ -212,7 +212,8 @@ public class RenderFrameSnapshotFactoryTests
                 {
                     [canvasId] = currentVersion
                 }),
-            previousProjectState);
+            previousProjectState,
+            new CancellationTokenSource());
         transitions.Advance(outputId, TimeSpan.FromMilliseconds(250));
 
         using var result = RenderFrameSnapshotFactory.Build(

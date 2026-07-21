@@ -646,12 +646,28 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             if (transition.Kind == OutputRouteTransitionKind.Cut)
                 continue;
 
-            _outputRouteTransitions.BeginSceneVersionTransition(
-                output.Id,
-                transition,
-                CreateSceneVersionGraph(output.CanvasId, previousVersionMap, graph),
-                CreateSceneVersionGraph(output.CanvasId, currentVersionMap, graph),
-                previousProjectState);
+            var previousGraph = CreateSceneVersionGraph(output.CanvasId, previousVersionMap, graph);
+            var currentGraph = CreateSceneVersionGraph(output.CanvasId, currentVersionMap, graph);
+            var versionOwnership = _sceneRuntime!.PinVersionGraphs(
+                previousGraph,
+                currentGraph,
+                $"transition:{output.Id}");
+
+            try
+            {
+                _outputRouteTransitions.BeginSceneVersionTransition(
+                    output.Id,
+                    transition,
+                    previousGraph,
+                    currentGraph,
+                    previousProjectState,
+                    versionOwnership);
+            }
+            catch
+            {
+                versionOwnership.Dispose();
+                throw;
+            }
         }
     }
 

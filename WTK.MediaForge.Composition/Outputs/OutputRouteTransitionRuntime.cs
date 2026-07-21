@@ -18,7 +18,7 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
         ArgumentNullException.ThrowIfNull(transition);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _active[outputId] = new ActiveTransition
+        var active = new ActiveTransition
         {
             Transition = transition,
             FromCanvasId = fromCanvasId,
@@ -29,6 +29,8 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
             Elapsed = TimeSpan.Zero,
             Progress = transition.Kind == OutputRouteTransitionKind.Cut ? 1f : 0f
         };
+
+        ReplaceActiveTransition(outputId, active);
     }
 
     internal void BeginSceneVersionTransition(
@@ -36,15 +38,17 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
         OutputRouteTransition transition,
         SceneVersionGraph previousVersionGraph,
         SceneVersionGraph currentVersionGraph,
-        ProjectStateSnapshot previousProjectState)
+        ProjectStateSnapshot previousProjectState,
+        IDisposable versionOwnership)
     {
         ArgumentNullException.ThrowIfNull(transition);
         ArgumentNullException.ThrowIfNull(previousVersionGraph);
         ArgumentNullException.ThrowIfNull(currentVersionGraph);
         ArgumentNullException.ThrowIfNull(previousProjectState);
+        ArgumentNullException.ThrowIfNull(versionOwnership);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _active[outputId] = new ActiveTransition
+        var active = new ActiveTransition
         {
             Transition = transition,
             FromCanvasId = previousVersionGraph.RootCanvasId,
@@ -52,9 +56,12 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
             PreviousVersionGraph = previousVersionGraph,
             CurrentVersionGraph = currentVersionGraph,
             PreviousProjectState = previousProjectState,
+            VersionOwnership = versionOwnership,
             Elapsed = TimeSpan.Zero,
             Progress = transition.Kind == OutputRouteTransitionKind.Cut ? 1f : 0f
         };
+
+        ReplaceActiveTransition(outputId, active);
     }
 
     public bool TryGetProgress(RenderOutputId outputId, out float progress)
@@ -105,8 +112,8 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
         active.Elapsed += deltaTime < TimeSpan.Zero ? TimeSpan.Zero : deltaTime;
         active.Progress = Math.Clamp((float)(active.Elapsed.TotalMilliseconds / duration.TotalMilliseconds), 0f, 1f);
 
-        if (active.Progress >= 1f)
-            _active.Remove(outputId);
+        if (active.Progress >= 1f && _active.Remove(outputId, out var completed))
+            completed.Dispose();
     }
 
     internal void AdvanceAll(TimeSpan deltaTime)
@@ -119,7 +126,7 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
     internal void Clear()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _active.Clear();
+        DisposeActiveTransitions();
     }
 
     public void Dispose()
@@ -128,11 +135,42 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
             return;
 
         _disposed = true;
-        _active.Clear();
+        DisposeActiveTransitions();
     }
 
-    private sealed class ActiveTransition
+    private void ReplaceActiveTransition(RenderOutputId outputId, ActiveTransition active)
     {
+        if (_active.Remove(outputId, out var previous))
+            previous.Dispose();
+
+        _active.Add(outputId, active);
+    }
+
+    private void DisposeActiveTransitions()
+    {
+        var activeTransitions = _active.Values.ToArray();
+        _active.Clear();
+        List<Exception>? errors = null;
+        foreach (var active in activeTransitions)
+        {
+            try
+            {
+                active.Dispose();
+            }
+            catch (Exception ex)
+            {
+                (errors ??= []).Add(ex);
+            }
+        }
+
+        if (errors is not null)
+            throw new AggregateException("Failed to release scene version transition ownership.", errors);
+    }
+
+    private sealed class ActiveTransition : IDisposable
+    {
+        private IDisposable? _versionOwnership;
+
         public required OutputRouteTransition Transition { get; init; }
 
         public required CanvasId FromCanvasId { get; init; }
@@ -145,9 +183,17 @@ public sealed class OutputRouteTransitionRuntime : IDisposable
 
         public required ProjectStateSnapshot? PreviousProjectState { get; init; }
 
+        public IDisposable? VersionOwnership { init => _versionOwnership = value; }
+
         public TimeSpan Elapsed { get; set; }
 
         public float Progress { get; set; }
+
+        public void Dispose()
+        {
+            var ownership = Interlocked.Exchange(ref _versionOwnership, null);
+            ownership?.Dispose();
+        }
     }
 }
 

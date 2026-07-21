@@ -190,6 +190,19 @@ internal sealed class SceneRuntime
     public SceneVersionId GetPublishedVersion(CanvasId canvasId) =>
         _publishedStore.GetVersion(canvasId);
 
+    public IDisposable PinVersionGraphs(
+        SceneVersionGraph previous,
+        SceneVersionGraph current,
+        string owner)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(current);
+
+        return _publishedStore.PinVersions(
+            previous.CanvasVersions.Values.Concat(current.CanvasVersions.Values),
+            owner);
+    }
+
     public void UpsertDraft(SceneDraftState draftState, ProjectStateSnapshot projectState)
     {
         ArgumentNullException.ThrowIfNull(draftState);
