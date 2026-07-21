@@ -72,7 +72,7 @@ Unavailable/planned:
 - NDI discovery/runtime packaging exists, but Standard SDK raw CPU video buffers
   do not satisfy the GPU Media Transport Law.
 
-## v13 Execution Order
+## v14 Execution Order
 
 1. Close Desktop Duplication and preview presenter lifetime under repeated stop,
    timeout, resize, and device/display-reset cycles.
@@ -87,29 +87,31 @@ Unavailable/planned:
 6. Add bounded GPU pools for render/effect/export intermediates with post-fence
    retirement diagnostics and baseline-return assertions.
 7. Promote preview/desktop/window/webcam/video/MP4/RTMP only from sustained
-   v13 evidence on the target adapter.
+   v14 evidence on the target adapter.
 8. Integrate Studio preview and output controls after promotion; keep Avalonia
    overlays independent from the native presentation surface.
 9. Freeze Core adapter contracts, then implement Linux and macOS backends in
    their own projects.
 
-## Readiness v13
+## Readiness v14
 
 The only current engine readiness entrypoint is:
 
 ```powershell
-./scripts/verify-engine-readiness-v13.ps1
+./scripts/verify-engine-readiness-v14.ps1
 ```
 
 It runs one flat sequence: build, Fast, GPU, transport/license policies,
 composite media proofs, real performance-tagged workloads, a short sustained
 engine MP4+RTMP route, and writes
-`test-reports/engine-readiness-v13.json` plus the media proof reports.
+`test-reports/engine-readiness-v14.json` plus the media proof reports. The gate
+performs a locked restore first and verifies that the aggregate status agrees
+with the composite media report.
 
 Release hardware validation uses:
 
 ```powershell
-./scripts/verify-engine-readiness-v13.ps1 -RequireHardwareMedia
+./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia
 ```
 
 Missing or skipped required hardware evidence returns exit code `2`. A normal
@@ -118,8 +120,8 @@ developer run may report hardware as unavailable, but cannot promote the feature
 Full local and release-candidate qualification are explicit modes:
 
 ```powershell
-./scripts/verify-engine-readiness-v13.ps1 -RequireHardwareMedia -RunLocalQualification
-./scripts/verify-engine-readiness-v13.ps1 -RequireHardwareMedia -ReleaseCandidateQualification
+./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia -RunLocalQualification
+./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia -ReleaseCandidateQualification
 ```
 
 ## Release Acceptance
@@ -138,6 +140,6 @@ Full local and release-candidate qualification are explicit modes:
 
 ## Deferred Scope
 
-Audio, SRT, virtual camera, FFmpeg, and product NDI video remain outside v13.
+Audio, SRT, virtual camera, FFmpeg, and product NDI video remain outside v14.
 FFmpeg/libav may only be reconsidered after native sustained routes and a
 separate encoded-packet/container legal review.

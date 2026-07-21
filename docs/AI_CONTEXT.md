@@ -81,8 +81,8 @@ chain. Non-passed proofs require reasons. Product H.264 packets require trusted
 The official validation is:
 
 ```powershell
-./scripts/verify-engine-readiness-v13.ps1
-./scripts/verify-engine-readiness-v13.ps1 -RequireHardwareMedia
+./scripts/verify-engine-readiness-v14.ps1
+./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia
 ```
 
 Historical readiness scripts are stored under `docs/history/readiness-scripts`

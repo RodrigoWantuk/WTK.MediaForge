@@ -24,6 +24,7 @@
     <ProjectReference Include="..\WTK.MediaForge.Graphics.Vulkan\WTK.MediaForge.Graphics.Vulkan.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Tools.MediaProofReport\WTK.MediaForge.Tools.MediaProofReport.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Windows\WTK.MediaForge.Windows.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Testing\WTK.MediaForge.Testing.csproj" />
   </ItemGroup>
 
 </Project>

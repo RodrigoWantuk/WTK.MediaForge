@@ -244,6 +244,9 @@
           "WTK.MediaForge.Graphics.D3D11": "[1.0.0, )"
         }
       },
+      "wtk.mediaforge.testing": {
+        "type": "Project"
+      },
       "wtk.mediaforge.windows": {
         "type": "Project",
         "dependencies": {

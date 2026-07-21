@@ -68,8 +68,8 @@ marketing:
 |--------|-----------|--------|-------|
 | Preview panel | GpuSurface | Experimental | Vulkan/Win32 GPU presentation with retryable fence-timeout ownership; hosted resize/attach/detach and sustained presentation still gate promotion |
 | CPU readback | DebugOnlyCpuReadback | Debug only | Not product |
-| Recording MP4 H.264 | EncodedPacket | Hardware-dependent | Shared Windows encoded route uses non-dropping backpressure and fails the recording on overflow/finalize failure. v13 requires composite proofs plus sustained route qualification. |
-| RTMP H.264 | EncodedPacket | Hardware-dependent experimental | TCP RTMP/FLV path has bounded queues, drop accounting, and reconnect that is isolated from recording. v13 requires composite proofs plus sustained route qualification. |
+| Recording MP4 H.264 | EncodedPacket | Hardware-dependent | Shared Windows encoded route uses non-dropping backpressure and fails the recording on overflow/finalize failure. v14 requires composite proofs plus sustained route qualification. |
+| RTMP H.264 | EncodedPacket | Hardware-dependent experimental | TCP RTMP/FLV path has bounded queues, drop accounting, and reconnect that is isolated from recording. v14 requires composite proofs plus sustained route qualification. |
 | SRT | N/A | Planned | Blocked by license/transport review |
 | NDI output | Runtime-detected NDI SDK -> GpuSurface/EncodedPacket required | Blocked/unavailable | Windows adapter can package/detect Standard NDI runtime, but product output requires GPU-safe send without continuous CPU readback |
 | Virtual camera | N/A | Unsupported | |
@@ -85,11 +85,11 @@ marketing:
 | libx264 / software H.264 | Prohibited | |
 | FFmpeg (future) | Deferred / RequiresLegalReview | Future encoded-packet/container-only review; never a raw video frame product path |
 
-## v13 Media I/O Proof Set and Readiness Gate
+## v14 Media I/O Proof Set and Readiness Gate
 
 Recording MP4 and RTMP are **runtime proof-gated** end-to-end product
 features. The static catalog stays conservative, but a hardware proof report can
-promote them when the v13 readiness gate is green for the current
+promote them when the v14 readiness gate is green for the current
 machine/driver:
 
 ```text
@@ -124,9 +124,9 @@ codec/backend proof:
   separately from the current hardware release gate so MP4/RTMP/webcam/decode
   can ship without pretending NDI is complete.
 
-`./scripts/verify-engine-readiness-v13.ps1` is the only current
+`./scripts/verify-engine-readiness-v14.ps1` is the only current
 product-boundary gate. Older scripts are archived under `docs/history` and are
-not executed recursively. The v13 Windows composite runners execute render-to-encode, packet-only MP4,
+not executed recursively. The v14 Windows composite runners execute render-to-encode, packet-only MP4,
 TCP RTMP, hardware decode, and decode-to-render product proofs where the
 current machine supports the required hardware/driver/API path.
 Proof success is adapter/driver specific and does not replace the 30-minute

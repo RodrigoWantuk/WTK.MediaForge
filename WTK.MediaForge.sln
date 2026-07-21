@@ -61,6 +61,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTK.MediaForge.Remote.WebRt
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTK.MediaForge.Remote.Tests", "WTK.MediaForge.Remote.Tests\WTK.MediaForge.Remote.Tests.csproj", "{ED251F2F-8F79-4CDE-B8A2-BEEF8FCDEAA8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTK.MediaForge.Testing", "WTK.MediaForge.Testing\WTK.MediaForge.Testing.csproj", "{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -371,6 +373,18 @@ Global
 		{ED251F2F-8F79-4CDE-B8A2-BEEF8FCDEAA8}.Release|x64.Build.0 = Release|Any CPU
 		{ED251F2F-8F79-4CDE-B8A2-BEEF8FCDEAA8}.Release|x86.ActiveCfg = Release|Any CPU
 		{ED251F2F-8F79-4CDE-B8A2-BEEF8FCDEAA8}.Release|x86.Build.0 = Release|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Debug|x64.Build.0 = Debug|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Debug|x86.Build.0 = Debug|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Release|x64.ActiveCfg = Release|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Release|x64.Build.0 = Release|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Release|x86.ActiveCfg = Release|Any CPU
+		{5F27559E-D01E-47CB-A425-DEFDBEF63BAE}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

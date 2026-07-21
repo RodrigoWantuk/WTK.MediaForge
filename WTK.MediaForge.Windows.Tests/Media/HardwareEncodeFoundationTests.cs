@@ -339,6 +339,7 @@ public sealed class HardwareEncodeFoundationTests
         try
         {
             _ = await encoder.SubmitFrameAsync(textureLease, context, exporter, audit);
+            _ = await encoder.DrainAsync(audit, CancellationToken.None);
         }
         catch (InvalidOperationException)
         {
@@ -348,8 +349,6 @@ public sealed class HardwareEncodeFoundationTests
         {
             // Some adapters expose the device but not the required VideoProcessor conversion.
         }
-
-        _ = await encoder.DrainAsync(audit, CancellationToken.None);
 
         Assert.True(exporter.CanExportCalled);
         Assert.False(exporter.ExportCalled);

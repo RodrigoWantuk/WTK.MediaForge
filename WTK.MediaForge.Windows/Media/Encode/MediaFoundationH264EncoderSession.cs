@@ -42,6 +42,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
     private bool _disposed;
     private bool _initialized;
     private bool _drained;
+    private bool _drainAttempted;
     private bool _acceptedInput;
 
     public MediaFoundationHardwareH264EncoderSession(
@@ -69,6 +70,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             _deviceManager.ResetDevice(_device).CheckError();
             _transform = CreateConfiguredHardwareTransform();
             _drained = false;
+            _drainAttempted = false;
             _initialized = true;
         }
         catch (Exception ex) when (ex is not ObjectDisposedException)
@@ -523,7 +525,7 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
             return;
 
         _disposed = true;
-        var abandonedAcceptedInput = _initialized && _acceptedInput && !_drained;
+        var abandonedAcceptedInput = _initialized && _acceptedInput && !_drained && !_drainAttempted;
         DisposeTransformResources();
 
         if (abandonedAcceptedInput)
@@ -597,6 +599,8 @@ internal sealed class MediaFoundationHardwareH264EncoderSession : IDisposable
 
         if (_transform is null)
             return DrainPendingOutputPackets();
+
+        _drainAttempted = true;
 
         try
         {

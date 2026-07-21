@@ -234,7 +234,7 @@ Capability and license status are queryable without starting the engine:
   metadata/discovery only and must not be used as proof that NDI video
   input/output is available.
 - `HardwareMediaBackendCapability` reports runtime-detected OS/vendor backend facts for hardware decode/encode. A backend that requires CPU staging for continuous video, or is only `Prototype`/`Skeleton`, must not be reported as `Supported` or `Experimental`.
-- `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v13 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, window capture input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` executes proof runners once per cached adapter/device generation. Non-passed proofs require a user-visible reason; passed packet/media proofs require trusted backend evidence.
+- `HardwareMediaProof` and `HardwareMediaProofStatus` report concrete v14 proof results for render-to-encode, hardware encode, MP4 recording, hardware decode, decode-to-render, MP4 input/output, webcam input, window capture input, RTMP network output, and NDI input/output. `HardwareMediaProofRegistry` executes proof runners once per cached adapter/device generation. Non-passed proofs require a user-visible reason; passed packet/media proofs require trusted backend evidence.
 - `MediaForgeHardwareAdapterInfo` and `MediaForgeCapabilitySnapshot` expose immutable adapter identity, driver/device generation, capture time, and the capability report. Hosts call asynchronous platform probes; they must not block a UI thread.
 - `MediaForgeRuntimeHealthSnapshot` and recovery events expose high-level engine/output/source health without leaking Vulkan or D3D11 details.
 - `CapabilityEntry.ProductReadinessStatus` separates contract/prototype/skeleton/backend-call/product-validated evidence from user-facing support status. `Prototype` and `Skeleton` entries must never be `Supported` or `Experimental`.
@@ -250,7 +250,7 @@ Studio and host apps must use capability status to disable or label features tha
 
 Operational validation scripts use
 `./scripts/generate-media-proof-report.ps1` and
-`./scripts/verify-engine-readiness-v13.ps1` to write
+`./scripts/verify-engine-readiness-v14.ps1` to write
 `test-reports/media-proof-report.json` and
 `test-reports/media-proof-report.md`. In normal development, unavailable
 hardware paths are allowed only when the report contains explicit blockers. In

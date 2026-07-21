@@ -94,6 +94,7 @@ public sealed class HardwareMediaValidationFeature
 public enum HardwareMediaValidationStatus
 {
     Passed,
+    SkippedWithReason,
     Planned,
     Unavailable,
     Blocked,
@@ -227,7 +228,7 @@ public static class HardwareMediaValidationReportBuilder
             GeneratedAtUtc = generatedAtUtc ?? DateTimeOffset.UtcNow,
             RequireHardwareMedia = requireHardwareMedia,
             OverallStatus = overallStatus,
-            ReleaseGatePassed = failures.Length == 0,
+            ReleaseGatePassed = overallStatus == HardwareMediaValidationStatus.Passed,
             Platform = capabilityReport.Hardware.Platform,
             GpuVendor = capabilityReport.Hardware.GpuVendor,
             DeviceName = capabilityReport.Hardware.DeviceName,
@@ -379,7 +380,7 @@ public static class HardwareMediaValidationReportBuilder
             HardwareMediaProofStatus.Passed => HardwareMediaValidationStatus.Passed,
             HardwareMediaProofStatus.Failed => HardwareMediaValidationStatus.Failed,
             HardwareMediaProofStatus.Unavailable => HardwareMediaValidationStatus.Unavailable,
-            HardwareMediaProofStatus.Skipped => HardwareMediaValidationStatus.Planned,
+            HardwareMediaProofStatus.Skipped => HardwareMediaValidationStatus.SkippedWithReason,
             _ => HardwareMediaValidationStatus.NotImplemented
         };
 
@@ -468,24 +469,16 @@ public static class HardwareMediaValidationReportBuilder
         if (proofs.Any(static proof => proof.Status == HardwareMediaValidationStatus.Failed))
             return HardwareMediaValidationStatus.Failed;
 
+        if (features
+            .Where(static feature => feature.RequiredForHardwareRelease)
+            .Any(static feature => feature.Status == HardwareMediaValidationStatus.Failed))
+            return HardwareMediaValidationStatus.Failed;
+
         if (requireHardwareMedia &&
             features
                 .Where(static feature => feature.RequiredForHardwareRelease)
                 .Any(static feature => feature.Status != HardwareMediaValidationStatus.Passed))
-        {
-            return HardwareMediaValidationStatus.Failed;
-        }
-
-        if (features.Any(static feature => feature.Status == HardwareMediaValidationStatus.Blocked))
             return HardwareMediaValidationStatus.Blocked;
-
-        if (features.Any(static feature => feature.Status is
-                HardwareMediaValidationStatus.Unavailable or
-                HardwareMediaValidationStatus.Planned or
-                HardwareMediaValidationStatus.NotImplemented))
-        {
-            return HardwareMediaValidationStatus.Unavailable;
-        }
 
         return HardwareMediaValidationStatus.Passed;
     }

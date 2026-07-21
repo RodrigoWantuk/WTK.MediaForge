@@ -50,7 +50,7 @@ public sealed class MediaProofReportToolTests
                 error);
 
             Assert.Equal(2, exitCode);
-            Assert.Contains("Hardware media release gate failed", error.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Hardware media release gate is blocked", error.ToString(), StringComparison.Ordinal);
             var json = File.ReadAllText(Path.Combine(directory, "media-proof-report.json"));
             Assert.Contains("\"ReleaseGatePassed\": false", json, StringComparison.Ordinal);
         }

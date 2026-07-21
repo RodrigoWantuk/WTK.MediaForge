@@ -22,6 +22,7 @@ $d3d11Tests = "WTK.MediaForge.Graphics.D3D11.Tests\WTK.MediaForge.Graphics.D3D11
 $vulkanTests = "WTK.MediaForge.Graphics.Vulkan.Tests\WTK.MediaForge.Graphics.Vulkan.Tests.csproj"
 $windowsTests = "WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj"
 $captureTests = "WTK.MediaForge.Capture.Tests\WTK.MediaForge.Capture.Tests.csproj"
+$remoteTests = "WTK.MediaForge.Remote.Tests\WTK.MediaForge.Remote.Tests.csproj"
 
 function Invoke-TestProject {
     param(
@@ -71,6 +72,7 @@ switch ($Tier) {
         Invoke-TestProject -Project $vulkanTests -Filter $fastFilter -MaxCpuOne
         Invoke-TestProject -Project $captureTests -Filter $fastFilter -MaxCpuOne
         Invoke-TestProject -Project $windowsTests -Filter $fastFilter -MaxCpuOne
+        Invoke-TestProject -Project $remoteTests -Filter $fastFilter
         if (-not $SkipPolicyChecks) {
             & "$PSScriptRoot/verify-media-transport-rules.ps1"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

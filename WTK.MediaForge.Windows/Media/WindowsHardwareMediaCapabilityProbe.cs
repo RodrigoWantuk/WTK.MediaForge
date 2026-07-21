@@ -29,7 +29,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             AcceptsGpuSurfaceInput = false,
             RequiresCpuStaging = false,
             ExportProofStatus = GpuExportProofStatus.Pending,
-            ExportProofReason = "Run the v13 proof runners to validate hardware encode/decode on this machine; baseline probing does not promote product media without executed proof evidence.",
+            ExportProofReason = "Run the v14 proof runners to validate hardware encode/decode on this machine; baseline probing does not promote product media without executed proof evidence.",
             BackendCapabilities = CreateBackendCapabilities(vendor, ndiRuntime),
             Proofs = CreateProofs(vendor, ndiRuntime)
         };
@@ -50,7 +50,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             DecodeCodecs = ["H264"],
             SupportStatus = MediaForgeSupportStatus.Unavailable,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
-            UnavailableReason = "Run the v13 hardware decode proof to validate real D3D11VA IMFDXGIBuffer output for this machine."
+            UnavailableReason = "Run the v14 hardware decode proof to validate real D3D11VA IMFDXGIBuffer output for this machine."
         },
         new HardwareMediaBackendCapability
         {
@@ -61,7 +61,7 @@ public sealed class WindowsHardwareMediaCapabilityProbe : IHardwareMediaCapabili
             EncodeCodecs = ["H264"],
             SupportStatus = MediaForgeSupportStatus.Unavailable,
             ProductReadinessStatus = MediaForgeProductReadinessStatus.Contract,
-            UnavailableReason = "Run the v13 hardware encode proof to validate real Media Foundation hardware MFT packets for this machine."
+            UnavailableReason = "Run the v14 hardware encode proof to validate real Media Foundation hardware MFT packets for this machine."
         },
         new HardwareMediaBackendCapability
         {

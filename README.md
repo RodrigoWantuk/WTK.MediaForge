@@ -46,12 +46,12 @@ The current technical direction is:
 FFmpeg is not part of the first hardware MP4/RTMP product path. Any future FFmpeg/libav usage must pass the dedicated license and GPU media transport review, and may only operate on encoded packets, containers, metadata, or bitstream data.
 
 Product media availability is proof-gated. Continuous decode/encode and real
-media I/O features must pass the v13 hardware media proofs (`HardwareMediaProof`
+media I/O features must pass the v14 hardware media proofs (`HardwareMediaProof`
 entries for render-to-encode, hardware encode, MP4 recording, hardware decode,
 decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI
 input/output) before they can be advertised as supported. The current official
-gate is `./scripts/verify-engine-readiness-v13.ps1`; release hardware
-validation uses `./scripts/verify-engine-readiness-v13.ps1 -RequireHardwareMedia`.
+gate is `./scripts/verify-engine-readiness-v14.ps1`; release hardware
+validation uses `./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia`.
 Real Windows implementations exist for MP4 recording, RTMP, MP4 input, webcam,
 desktop capture, and preview, but runtime availability remains adapter/proof
 dependent. Preview is temporarily experimental until hosted resize and

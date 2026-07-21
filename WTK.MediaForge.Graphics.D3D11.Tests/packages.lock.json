@@ -163,6 +163,9 @@
           "WTK.MediaForge.Diagnostics": "[1.0.0, )"
         }
       },
+      "wtk.mediaforge.testing": {
+        "type": "Project"
+      },
       "Vortice.Direct3D11": {
         "type": "CentralTransitive",
         "requested": "[3.8.3, )",

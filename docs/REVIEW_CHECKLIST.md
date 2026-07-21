@@ -150,7 +150,7 @@ Before considering a change complete, verify:
 - [ ] Continuous video decode/encode paths use validated hardware acceleration or report unavailable; no software fallback or CPU staging is introduced.
 - [ ] OS-specific media adapters stay in OS-specific projects and capability reports expose runtime-detected backend/vendor status.
 - [ ] libx264/libx265 appear as Prohibited in capability/license matrix.
-- [ ] v13 render-to-encode, hardware encode, MP4 recording, MP4 input/output, webcam input, window capture input, RTMP network output, and NDI input/output proofs pass before those media I/O paths are promoted.
+- [ ] v14 render-to-encode, hardware encode, MP4 recording, MP4 input/output, webcam input, window capture input, RTMP network output, and NDI input/output proofs pass before those media I/O paths are promoted.
 - [ ] `scripts/generate-media-proof-report.ps1` writes `test-reports/media-proof-report.json` and `test-reports/media-proof-report.md` with explicit reasons for every non-passed proof or feature.
 - [ ] `IMediaTransportAuditSink` proves product encode path without `CpuReadbackAttempted` or `StagingBufferCreated`.
 - [ ] Product MP4 recording and public RTMP streaming reject packets without trusted `BackendOutputValidated` evidence; public callers cannot forge that evidence through packet initializers.
@@ -160,12 +160,12 @@ Before considering a change complete, verify:
 - [ ] `Supported` and `Experimental` capability entries are the only user-available states; every unavailable entry includes a non-empty reason.
 - [ ] Guard rails (`verify-media-transport-rules.ps1`) pass on Fast tier.
 - [ ] License policy verification (`verify-license-policy.ps1`) passes.
-- [ ] Engine readiness v13 (`verify-engine-readiness-v13.ps1`) is the only official hardware-first gate; encoded outputs use `EncodedVideoProfile`, adapter LUID identity and Media Foundation ownership are tested, and the proof report is regenerated.
+- [ ] Engine readiness v14 (`verify-engine-readiness-v14.ps1`) is the only official hardware-first gate; it performs locked restore, serializes GPU ownership across test assemblies, rejects contradictory aggregate/proof status, tests encoded output profiles, adapter LUID identity and Media Foundation ownership, and regenerates the proof report.
 - [ ] Scripts v4-v12 under `docs/history/readiness-scripts` are not executed as current gates.
 - [ ] Release hardware media readiness uses the current readiness script with `-RequireHardwareMedia`; missing required proofs must fail with an actionable report, not silent success.
 - [ ] Preview remains Experimental until hosted resize and repeated timeout-recovery evidence passes.
 - [ ] Performance evidence executes real engine/GPU work; no `Task.Delay` scenario is accepted.
-- [ ] Readiness v13 runs the short sustained engine route; release sign-off also runs `-RunLocalQualification` and `-ReleaseCandidateQualification` on each required adapter family.
+- [ ] Readiness v14 runs a 1080p60 sustained-route smoke; release sign-off also runs `-RunLocalQualification` and `-ReleaseCandidateQualification` on each required adapter family.
 
 ## FFmpeg / external codec review checklist
 

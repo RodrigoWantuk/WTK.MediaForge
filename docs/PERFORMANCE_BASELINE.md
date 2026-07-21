@@ -15,7 +15,7 @@ The tier requires at least one Composition workload and one Vulkan workload:
 - repeated physical Vulkan multi-layer submissions with actual descriptor,
 framebuffer, target-pool, fence, and cleanup accounting.
 
-Readiness v13 additionally runs a short real engine route through Vulkan,
+Readiness v14 additionally runs a 1080p60 real engine route through Vulkan,
 D3D11/NV12, Media Foundation H.264, MP4, and a local TCP RTMP server. The
 standalone sustained command is:
 

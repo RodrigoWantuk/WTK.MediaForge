@@ -28,7 +28,7 @@ public sealed class WindowsMediaCapabilityTruthTests
         Assert.False(report.AcceptsGpuSurfaceInput);
         Assert.False(report.RequiresCpuStaging);
         Assert.Equal(GpuExportProofStatus.Pending, report.ExportProofStatus);
-        Assert.Contains("v13 proof runners", report.ExportProofReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("v14 proof runners", report.ExportProofReason, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(report.BackendCapabilities, backend =>
             backend.Id == "windows.mf.d3d11va.decode.h264" &&
             backend.SupportStatus == MediaForgeSupportStatus.Unavailable &&
@@ -46,7 +46,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Windows_capability_probe_reports_v13_media_proofs_with_explicit_reasons()
+    public async Task Windows_capability_probe_reports_v14_media_proofs_with_explicit_reasons()
     {
         var report = await new WindowsHardwareMediaCapabilityProbe()
             .ProbeAsync(CancellationToken.None);
@@ -102,7 +102,7 @@ public sealed class WindowsMediaCapabilityTruthTests
     }
 
     [Fact]
-    public async Task Required_hardware_media_release_gate_fails_until_all_v13_proofs_pass()
+    public async Task Required_hardware_media_release_gate_fails_until_all_v14_proofs_pass()
     {
         if (!string.Equals(
             Environment.GetEnvironmentVariable("WTK_MEDIAFORGE_REQUIRE_HARDWARE_MEDIA"),
@@ -125,7 +125,7 @@ public sealed class WindowsMediaCapabilityTruthTests
 
         Assert.True(
             validation.ReleaseGatePassed && missing.Length == 0,
-            "Hardware media release gate requires all required v13 proofs to pass: " + string.Join("; ", missing));
+            "Hardware media release gate requires all required v14 proofs to pass: " + string.Join("; ", missing));
     }
 
     [Fact]

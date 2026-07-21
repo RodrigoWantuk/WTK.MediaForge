@@ -83,9 +83,16 @@ public static class MediaProofReportCommand
             await output.WriteLineAsync($"Overall status: {report.OverallStatus}").ConfigureAwait(false);
             await output.WriteLineAsync($"Release gate passed: {report.ReleaseGatePassed}").ConfigureAwait(false);
 
-            if (options.RequireHardwareMedia && !report.ReleaseGatePassed)
+            if (report.OverallStatus == HardwareMediaValidationStatus.Failed)
             {
-                await error.WriteLineAsync("Hardware media release gate failed. See media proof report for blockers.")
+                await error.WriteLineAsync("Hardware media validation failed. See media proof report for diagnostics.")
+                    .ConfigureAwait(false);
+                return ErrorExitCode;
+            }
+
+            if (options.RequireHardwareMedia && report.OverallStatus != HardwareMediaValidationStatus.Passed)
+            {
+                await error.WriteLineAsync("Hardware media release gate is blocked. See media proof report for blockers.")
                     .ConfigureAwait(false);
                 return HardwareBlockedExitCode;
             }

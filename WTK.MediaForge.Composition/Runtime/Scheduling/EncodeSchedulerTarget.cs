@@ -474,6 +474,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
         if (Interlocked.Exchange(ref _fatalFailure, 1) == 0)
         {
             ClearPendingFrames();
+            _abort.Cancel();
             SignalQueue();
         }
     }

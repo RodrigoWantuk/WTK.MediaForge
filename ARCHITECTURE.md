@@ -79,7 +79,7 @@ version, complete effect fingerprint, placement where relevant, dimensions,
 format, color space, layout, and letterbox color.
 
 Vulkan currently executes physical output/canvas fanout and blur intermediate
-operations. The v13 target is to make the compiled graph the sole renderer
+operations. The v14 target is to make the compiled graph the sole renderer
 input and sole owner of all temporary-resource scope.
 
 Before Vulkan command recording, the physical plan is validated against the

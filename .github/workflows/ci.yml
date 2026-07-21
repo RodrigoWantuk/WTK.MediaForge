@@ -52,7 +52,7 @@ jobs:
       - name: Restore locked dependencies
         run: dotnet restore .\\WTK.MediaForge.sln --locked-mode
       - name: Strict hardware-media readiness
-        run: .\\scripts\\verify-engine-readiness-v13.ps1 -RequireHardwareMedia
+        run: .\\scripts\\verify-engine-readiness-v14.ps1 -RequireHardwareMedia
       - name: Publish hardware evidence
         if: always()
         uses: actions/upload-artifact@v4

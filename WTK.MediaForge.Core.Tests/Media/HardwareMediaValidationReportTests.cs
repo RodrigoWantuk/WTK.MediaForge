@@ -105,9 +105,53 @@ public sealed class HardwareMediaValidationReportTests
         var report = HardwareMediaValidationReportBuilder.Build(capabilityReport, requireHardwareMedia: true);
 
         Assert.False(report.ReleaseGatePassed);
-        Assert.Equal(HardwareMediaValidationStatus.Failed, report.OverallStatus);
+        Assert.Equal(HardwareMediaValidationStatus.Blocked, report.OverallStatus);
         Assert.Contains(report.Failures, failure =>
             failure.Contains("MP4 recording", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Validation_report_does_not_block_release_for_non_required_planned_features()
+    {
+        var capabilityReport = CreateCapabilityReport(
+            [
+                Capability(MediaForgeCapabilityCatalog.RecordingMp4H264, "Recording", MediaForgeSupportStatus.Supported),
+                Capability(MediaForgeCapabilityCatalog.RtmpH264, "RTMP", MediaForgeSupportStatus.Experimental),
+                Capability(MediaForgeCapabilityCatalog.VideoFileMp4, "Video file", MediaForgeSupportStatus.Experimental),
+                Capability("source.wtk.source.webcam", "Webcam", MediaForgeSupportStatus.Experimental),
+                Capability("source.wtk.source.ndi.input", "NDI input", MediaForgeSupportStatus.Planned)
+            ],
+            AllRequiredProofsPassed());
+
+        var report = HardwareMediaValidationReportBuilder.Build(capabilityReport, requireHardwareMedia: true);
+
+        Assert.True(report.ReleaseGatePassed);
+        Assert.Equal(HardwareMediaValidationStatus.Passed, report.OverallStatus);
+        Assert.Equal(
+            HardwareMediaValidationStatus.Planned,
+            Assert.Single(report.Features, feature => feature.Id == "feature.input.ndi").Status);
+    }
+
+    [Fact]
+    public void Validation_report_preserves_skipped_proof_as_skipped_with_reason()
+    {
+        var capabilityReport = CreateCapabilityReport(
+            [],
+            [
+                new HardwareMediaProof
+                {
+                    Id = MediaForgeCapabilityCatalog.HardwareEncodeProof,
+                    DisplayName = "Encode",
+                    Status = HardwareMediaProofStatus.Skipped,
+                    Reason = "No compatible adapter is installed."
+                }
+            ]);
+
+        var report = HardwareMediaValidationReportBuilder.Build(capabilityReport, requireHardwareMedia: false);
+
+        Assert.Equal(
+            HardwareMediaValidationStatus.SkippedWithReason,
+            Assert.Single(report.Proofs, proof => proof.Id == MediaForgeCapabilityCatalog.HardwareEncodeProof).Status);
     }
 
     [Fact]

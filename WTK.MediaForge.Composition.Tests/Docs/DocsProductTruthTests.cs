@@ -21,30 +21,33 @@ public sealed class DocsProductTruthTests
     ];
 
     [Fact]
-    public void Normative_docs_define_v13_as_the_only_current_readiness_gate()
+    public void Normative_docs_define_v14_as_the_only_current_readiness_gate()
     {
         var root = FindRepositoryRoot();
         foreach (var relativePath in NormativeDocs)
         {
             var text = File.ReadAllText(Path.Combine(root, relativePath));
-            Assert.DoesNotContain("verify-engine-readiness-v12.ps1", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("verify-engine-readiness-v13.ps1", text, StringComparison.Ordinal);
         }
 
         var roadmap = Read(root, "docs", "ROADMAP_CURRENT.md");
         var context = Read(root, "docs", "AI_CONTEXT.md");
-        Assert.Contains("verify-engine-readiness-v13.ps1", roadmap, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v14.ps1", roadmap, StringComparison.Ordinal);
         Assert.Contains("only current engine readiness entrypoint", roadmap, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("verify-engine-readiness-v13.ps1", context, StringComparison.Ordinal);
+        Assert.Contains("verify-engine-readiness-v14.ps1", context, StringComparison.Ordinal);
         Assert.Contains("docs/history/readiness-scripts", context, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Readiness_v13_is_flat_and_runs_required_current_gates()
+    public void Readiness_v14_is_flat_and_runs_required_current_gates()
     {
         var root = FindRepositoryRoot();
-        var script = Read(root, "scripts", "verify-engine-readiness-v13.ps1");
+        var script = Read(root, "scripts", "verify-engine-readiness-v14.ps1");
 
+        Assert.Contains("dotnet restore", script, StringComparison.Ordinal);
+        Assert.Contains("--locked-mode", script, StringComparison.Ordinal);
         Assert.Contains("dotnet build", script, StringComparison.Ordinal);
+        Assert.Contains("dotnet test", script, StringComparison.Ordinal);
         Assert.Contains("-Tier Fast", script, StringComparison.Ordinal);
         Assert.Contains("-Tier Gpu", script, StringComparison.Ordinal);
         Assert.Contains("-Tier Performance", script, StringComparison.Ordinal);
@@ -52,7 +55,7 @@ public sealed class DocsProductTruthTests
         Assert.Contains("verify-license-policy.ps1", script, StringComparison.Ordinal);
         Assert.Contains("generate-media-proof-report.ps1", script, StringComparison.Ordinal);
         Assert.Contains("RequireHardwareMedia", script, StringComparison.Ordinal);
-        Assert.Contains("engine-readiness-v13.json", script, StringComparison.Ordinal);
+        Assert.Contains("engine-readiness-v14.json", script, StringComparison.Ordinal);
         Assert.DoesNotContain("verify-engine-readiness-v12.ps1", script, StringComparison.Ordinal);
         Assert.DoesNotContain("verify-engine-readiness-v11.ps1", script, StringComparison.Ordinal);
     }

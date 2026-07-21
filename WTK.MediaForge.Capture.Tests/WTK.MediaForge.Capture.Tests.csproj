@@ -22,6 +22,7 @@
     <ProjectReference Include="..\WTK.MediaForge.Composition\WTK.MediaForge.Composition.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Graphics.D3D11\WTK.MediaForge.Graphics.D3D11.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Testing\WTK.MediaForge.Testing.csproj" />
   </ItemGroup>
 
 </Project>
