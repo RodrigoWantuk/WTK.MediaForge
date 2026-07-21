@@ -71,6 +71,15 @@ public static class RenderOutputTypeRegistry
                 "Unavailable until the composite RTMP capability reports hardware encode, render-to-encode, and RTMP network proofs passed on this runtime.");
         }
 
+        if (typeId == RenderOutputTypes.RemoteScene)
+        {
+            return (
+                MediaForgeSupportStatus.Planned,
+                MediaForgeProductReadinessStatus.Contract,
+                MediaTransportKind.EncodedPacket,
+                "Contract complete; unavailable until the native libwebrtc GPU media route passes Direct and TURN proofs.");
+        }
+
         if (typeId == RenderOutputTypes.Ndi)
         {
             return (
@@ -134,6 +143,13 @@ public static class RenderOutputTypeRegistry
             DisplayName = "NDI output",
             RequiresWindowHandle = false,
             IsHeadless = false
+        };
+        yield return new RenderOutputTypeDescriptor
+        {
+            TypeId = RenderOutputTypes.RemoteScene,
+            DisplayName = "Remote Scene",
+            RequiresWindowHandle = false,
+            IsHeadless = true
         };
         yield return new RenderOutputTypeDescriptor
         {

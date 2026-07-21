@@ -268,6 +268,29 @@ internal sealed class GeneratedSourceDefinitionValidator : TypedSourceDefinition
     }
 }
 
+internal sealed class RemoteSceneSourceDefinitionValidator : TypedSourceDefinitionValidator<RemoteSceneSourceSettings>
+{
+    public override MediaSourceTypeId TypeId => MediaSourceTypes.RemoteScene;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeSourceDefinition source,
+        RemoteSceneSourceSettings settings)
+    {
+        foreach (var issue in SourceSettingsValidation.ValidateSchemaVersion(settings, source.Name))
+            yield return issue;
+        foreach (var issue in SourceSettingsValidation.ValidateNonEmptyString(settings.Provider, source.Name, "source.remote.provider", "Provider"))
+            yield return issue;
+        foreach (var issue in SourceSettingsValidation.ValidateNonEmptyString(settings.SignalingEndpoint, source.Name, "source.remote.signaling", "SignalingEndpoint"))
+            yield return issue;
+        foreach (var issue in SourceSettingsValidation.ValidateNonEmptyString(settings.StreamName, source.Name, "source.remote.stream", "StreamName"))
+            yield return issue;
+        if (settings.PreferredWidth <= 0 || settings.PreferredHeight <= 0)
+            yield return ValidationIssue.Error("source.remote.resolution", $"Source '{source.Name}' requires a positive preferred resolution.");
+        if (settings.ReconnectAttempts < 0 || settings.ReconnectDelayMs <= 0)
+            yield return ValidationIssue.Error("source.remote.reconnect", $"Source '{source.Name}' has an invalid reconnection policy.");
+    }
+}
+
 internal abstract class TypedSourceDefinitionValidator<TSettings> : ISourceDefinitionValidator
     where TSettings : class, IMediaSourceSettings
 {

@@ -266,6 +266,29 @@ internal sealed class VirtualCameraOutputDefinitionValidator : TypedRenderOutput
     }
 }
 
+internal sealed class RemoteSceneOutputDefinitionValidator : TypedRenderOutputDefinitionValidator<RemoteSceneOutputSettings>
+{
+    public override RenderOutputTypeId TypeId => RenderOutputTypes.RemoteScene;
+
+    protected override IEnumerable<ValidationIssue> ValidateSettings(
+        MediaForgeRenderOutput output,
+        RemoteSceneOutputSettings settings)
+    {
+        foreach (var issue in OutputSettingsValidation.ValidateSchemaVersion(settings, output.Name))
+            yield return issue;
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.Provider, output.Name, "output.remote.provider", "Provider"))
+            yield return issue;
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.SignalingEndpoint, output.Name, "output.remote.signaling", "SignalingEndpoint"))
+            yield return issue;
+        foreach (var issue in OutputSettingsValidation.ValidateNonEmptyString(settings.StreamName, output.Name, "output.remote.stream", "StreamName"))
+            yield return issue;
+        foreach (var issue in OutputSettingsValidation.ValidateEncodedVideoProfile(settings.Video, output.Name))
+            yield return issue;
+        if (settings.ReconnectAttempts < 0 || settings.ReconnectDelayMs <= 0)
+            yield return ValidationIssue.Error("output.remote.reconnect", $"Output '{output.Name}' has an invalid reconnection policy.");
+    }
+}
+
 internal abstract class TypedRenderOutputDefinitionValidator<TSettings> : IRenderOutputDefinitionValidator
     where TSettings : class, IRenderOutputSettings
 {

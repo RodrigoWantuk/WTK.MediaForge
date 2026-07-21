@@ -48,7 +48,8 @@ public sealed class SourceDefinitionValidatorRegistry
             new Sources.AnimatedImageSourceDefinitionValidator(),
             new Sources.LottieSourceDefinitionValidator(),
             new Sources.WindowCaptureSourceDefinitionValidator(),
-            new Sources.GeneratedSourceDefinitionValidator()
+            new Sources.GeneratedSourceDefinitionValidator(),
+            new Sources.RemoteSceneSourceDefinitionValidator()
         ];
 
         return new SourceDefinitionValidatorRegistry(builtIn);

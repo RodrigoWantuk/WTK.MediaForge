@@ -46,7 +46,8 @@ public sealed class RenderOutputDefinitionValidatorRegistry
             new Outputs.StreamingSrtOutputDefinitionValidator(),
             new Outputs.StreamingRtspOutputDefinitionValidator(),
             new Outputs.StreamingHlsOutputDefinitionValidator(),
-            new Outputs.VirtualCameraOutputDefinitionValidator()
+            new Outputs.VirtualCameraOutputDefinitionValidator(),
+            new Outputs.RemoteSceneOutputDefinitionValidator()
         ];
 
         return new RenderOutputDefinitionValidatorRegistry(builtIn);

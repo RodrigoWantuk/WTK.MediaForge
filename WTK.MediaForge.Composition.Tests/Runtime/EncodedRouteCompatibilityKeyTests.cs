@@ -56,6 +56,33 @@ public sealed class EncodedRouteCompatibilityKeyTests
         Assert.NotEqual(firstKey.Encoder, secondKey.Encoder);
     }
 
+    [Fact]
+    public void Remote_scene_participates_in_render_encoder_and_sink_compatibility_keys()
+    {
+        var canvasId = CanvasId.New();
+        var profile = new EncodedVideoProfile { BitrateBitsPerSecond = 6_000_000 };
+        var remote = CreateOutput(
+            RenderOutputTypes.RemoteScene,
+            RenderOutputSettingsSerializer.ToJson(new RemoteSceneOutputSettings
+            {
+                SignalingEndpoint = "wss://signal.example.test",
+                StreamName = "program",
+                Video = profile
+            }),
+            canvasId);
+        var streaming = CreateOutput(
+            RenderOutputTypes.StreamingRtmp,
+            RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.Rtmp("rtmp://localhost/live", "stream", profile)),
+            canvasId);
+
+        var remoteKey = EncodedRouteCompatibilityKey.Create(remote);
+        var streamingKey = EncodedRouteCompatibilityKey.Create(streaming);
+
+        Assert.Equal(streamingKey.RenderedOutput, remoteKey.RenderedOutput);
+        Assert.Equal(streamingKey.Encoder, remoteKey.Encoder);
+        Assert.NotEqual(SinkCompatibilityKey.Create(streaming), SinkCompatibilityKey.Create(remote));
+    }
+
     private static MediaForgeRenderOutput CreateOutput(
         RenderOutputTypeId typeId,
         System.Text.Json.Nodes.JsonObject settings,

@@ -100,4 +100,11 @@ public static class MediaForgeSources
         {
             GeneratorKind = generatorKind
         };
+
+    public static RemoteSceneSourceSettings RemoteScene(string signalingEndpoint, string streamName) =>
+        new()
+        {
+            SignalingEndpoint = signalingEndpoint,
+            StreamName = streamName
+        };
 }

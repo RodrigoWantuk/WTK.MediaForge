@@ -18,6 +18,7 @@ public class RenderOutputTypeCatalogTests
 
         Assert.Equal(
         [
+            "remote-scene",
             "wtk.output.file.encoded",
             "wtk.output.ndi",
             "wtk.output.offscreen",

@@ -24,7 +24,8 @@ public static class MediaSourceSettingsSerializer
             [MediaSourceTypes.AnimatedImage.Value] = typeof(AnimatedImageSourceSettings),
             [MediaSourceTypes.Lottie.Value] = typeof(LottieSourceSettings),
             [MediaSourceTypes.WindowCapture.Value] = typeof(WindowCaptureSourceSettings),
-            [MediaSourceTypes.Generated.Value] = typeof(GeneratedSourceSettings)
+            [MediaSourceTypes.Generated.Value] = typeof(GeneratedSourceSettings),
+            [MediaSourceTypes.RemoteScene.Value] = typeof(RemoteSceneSourceSettings)
         };
 
     public static JsonObject ToJson(IMediaSourceSettings settings)

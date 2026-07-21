@@ -104,6 +104,9 @@ internal readonly record struct SinkCompatibilityKey(
             var typeId when typeId == RenderOutputTypes.StreamingRtmp =>
                 CreateRtmpDestination(
                     (StreamingRtmpOutputSettings)RenderOutputSettingsSerializer.Deserialize(typeId, output.Settings)),
+            var typeId when typeId == RenderOutputTypes.RemoteScene =>
+                CreateRemoteSceneDestination(
+                    (RemoteSceneOutputSettings)RenderOutputSettingsSerializer.Deserialize(typeId, output.Settings)),
             _ => throw new ArgumentException(
                 $"Output type '{output.TypeId.Value}' is not an H.264 encoded output.",
                 nameof(output))
@@ -114,6 +117,9 @@ internal readonly record struct SinkCompatibilityKey(
 
     private static string CreateRtmpDestination(StreamingRtmpOutputSettings settings) =>
         $"{settings.Url.TrimEnd('/')}\0{settings.StreamKey}";
+
+    private static string CreateRemoteSceneDestination(RemoteSceneOutputSettings settings) =>
+        $"{settings.Provider}\0{settings.SignalingEndpoint.TrimEnd('/')}\0{settings.StreamName}\0{settings.SessionPolicy}";
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
@@ -138,6 +144,8 @@ internal static class EncodedOutputProfileResolver
                 ((RecordingMp4OutputSettings)RenderOutputSettingsSerializer.Deserialize(typeId, output.Settings)).Video,
             var typeId when typeId == RenderOutputTypes.StreamingRtmp =>
                 ((StreamingRtmpOutputSettings)RenderOutputSettingsSerializer.Deserialize(typeId, output.Settings)).Video,
+            var typeId when typeId == RenderOutputTypes.RemoteScene =>
+                ((RemoteSceneOutputSettings)RenderOutputSettingsSerializer.Deserialize(typeId, output.Settings)).Video,
             _ => throw new ArgumentException(
                 $"Output type '{output.TypeId.Value}' is not an H.264 encoded output.",
                 nameof(output))

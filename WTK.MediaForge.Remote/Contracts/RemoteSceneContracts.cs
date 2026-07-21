@@ -37,24 +37,17 @@ public sealed record WebRtcConnectionOptions
     }
 }
 
-// Persist only a profile reference; signaling/TURN credentials are injected at connection time.
-public sealed record RemoteSceneSinkSettings
-{
-    public required string StreamName { get; init; }
-    public required RenderOutputId OutputId { get; init; }
-    public required string ConnectionProfileId { get; init; }
-    public required EncodedVideoProfile VideoProfile { get; init; }
-    public bool IncludeAudio { get; init; }
-}
+// Runtime-only credentials. This type is deliberately outside canonical project settings.
+public sealed record RemoteSceneRuntimeCredentials(
+    string? AccessToken = null,
+    string? InvitationCode = null,
+    string? TurnUsername = null,
+    string? TurnCredential = null,
+    string? SessionToken = null);
 
-public sealed record RemoteSceneSourceSettings
-{
-    public required string StreamName { get; init; }
-    public required string ConnectionProfileId { get; init; }
-    public bool IncludeAudio { get; init; }
-}
-
-public sealed record RemoteSceneConnectionRequest(WebRtcConnectionOptions Connection, string InvitationCode);
+public sealed record RemoteSceneConnectionRequest(
+    WebRtcConnectionOptions Connection,
+    RemoteSceneRuntimeCredentials Credentials);
 public sealed record RemoteScenePublishRequest(string StreamName, RenderOutputId OutputId, EncodedVideoProfile VideoProfile, bool IncludeAudio = false);
 public sealed record RemoteSceneSubscribeRequest(string StreamName, bool IncludeAudio = false);
 
@@ -66,11 +59,6 @@ public sealed record RemoteSceneTelemetry(
     long FramesDropped,
     bool RelayActive,
     string? FailureReason = null);
-
-public sealed class EncodedVideoPacketReceivedEventArgs(EncodedVideoPacket packet) : EventArgs
-{
-    public EncodedVideoPacket Packet { get; } = packet ?? throw new ArgumentNullException(nameof(packet));
-}
 
 public sealed class RemoteSceneFormatChangedEventArgs(int width, int height, EncodedVideoProfile profile) : EventArgs
 {
@@ -94,15 +82,48 @@ public interface IRemoteSceneSession : IAsyncDisposable
 
 public interface IRemoteScenePublisher : IAsyncDisposable
 {
-    ValueTask SendVideoPacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken);
-    ValueTask RequestKeyFrameAsync(CancellationToken cancellationToken);
+    /// <summary>
+    /// Transfers one ownership reference to the publisher. The publisher must dispose the
+    /// lease after native send completion or rejection. Cancellation does not return ownership.
+    /// A bounded queue applies <see cref="QueuePolicy"/> and the call must complete within its timeout.
+    /// </summary>
+    ValueTask SendVideoPacketAsync(EncodedVideoPacketLease packet, CancellationToken cancellationToken);
+    RemoteScenePacketQueuePolicy QueuePolicy { get; }
+    event EventHandler? KeyFrameRequested;
 }
 
 public interface IRemoteSceneSubscriber : IAsyncDisposable
 {
-    event EventHandler<EncodedVideoPacketReceivedEventArgs>? VideoPacketReceived;
+    /// <summary>
+    /// Yields one owned lease at a time. The consumer must dispose every lease; undisposed
+    /// leases occupy bounded queue capacity and eventually invoke the slow-consumer policy.
+    /// </summary>
+    IAsyncEnumerable<EncodedVideoPacketLease> VideoPackets { get; }
+    RemoteScenePacketQueuePolicy QueuePolicy { get; }
     event EventHandler<RemoteSceneFormatChangedEventArgs>? FormatChanged;
     ValueTask RequestKeyFrameAsync(CancellationToken cancellationToken);
+}
+
+public enum RemoteSceneSlowConsumerPolicy
+{
+    DropDeltaFramesUntilKeyFrame,
+    FailSession
+}
+
+public sealed record RemoteScenePacketQueuePolicy
+{
+    public int Capacity { get; init; } = 8;
+    public TimeSpan OperationTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public RemoteSceneSlowConsumerPolicy SlowConsumerPolicy { get; init; } =
+        RemoteSceneSlowConsumerPolicy.DropDeltaFramesUntilKeyFrame;
+
+    public void Validate()
+    {
+        if (Capacity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(Capacity));
+        if (OperationTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(OperationTimeout));
+    }
 }
 
 public static class RemoteSceneRequestValidator

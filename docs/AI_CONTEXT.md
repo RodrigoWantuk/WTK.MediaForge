@@ -171,6 +171,11 @@ capability reports; it is never converted into a hosted-runner product pass.
   hashes of invitation/access secrets, relays bounded SDP/ICE messages, and can
   issue temporary coturn REST/HMAC credentials. It never transports media and
   does not promote `remote-scene.publish` or `remote-scene.subscribe`.
+- Remote Scene's canonical source/output settings persist only provider,
+  signaling endpoint, stream/session policy, codec/video/resolution, and
+  reconnection policy. Runtime credentials never enter project JSON. Encoded
+  packet APIs use explicit disposable leases, bounded timed queues, async
+  subscriber delivery, and publisher keyframe feedback.
 - Remote Scene media remains unavailable until the pinned native libwebrtc
   encoded-access-unit bridge, Windows hardware packet decoder integration, and
   direct/TURN GPU end-to-end proofs exist. Never route WebRTC `VideoFrame` CPU

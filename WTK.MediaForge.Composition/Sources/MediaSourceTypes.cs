@@ -15,4 +15,5 @@ public static class MediaSourceTypes
     public static readonly MediaSourceTypeId Lottie = new("wtk.source.lottie");
     public static readonly MediaSourceTypeId WindowCapture = new("wtk.source.window.capture");
     public static readonly MediaSourceTypeId Generated = new("wtk.source.generated");
+    public static readonly MediaSourceTypeId RemoteScene = new("remote-scene");
 }

@@ -25,7 +25,21 @@ The presence of the managed contracts does not promote Remote Scene. Publish and
 3. direct and TURN packet proofs preserve SRTP, ordering, keyframe request, and reconnection;
 4. end-to-end GPU decode-to-render proof has no continuous readback.
 
-`WebRtcConnectionOptions` is runtime-only. Project serialization stores a connection profile reference, never signaling bearer tokens, TURN credentials, invitation codes, or SDP/ICE material.
+Remote Scene is a canonical `remote-scene` output/source type. Project JSON may
+store provider, signaling endpoint, stream/session policy, codec preferences,
+resolution/video profile, and reconnection policy. `WebRtcConnectionOptions`
+and `RemoteSceneRuntimeCredentials` are runtime-only; bearer/session tokens,
+TURN usernames/credentials, invitation codes, and SDP/ICE material are never
+project settings.
+
+Encoded packet ownership always crosses the API as an
+`EncodedVideoPacketLease`. Sending transfers the lease to the publisher until
+native completion or rejection; receiving yields owned leases through an
+asynchronous stream and requires consumer disposal. Both directions declare a
+positive bounded capacity, operation timeout, and slow-consumer policy. Video
+defaults to dropping delta frames until the next keyframe; it never grows an
+unbounded queue. RTCP PLI/FIR is surfaced to the publisher through
+`KeyFrameRequested`, which is the hardware encoder's signal to emit an IDR.
 
 ## Signaling Service
 

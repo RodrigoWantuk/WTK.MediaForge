@@ -14,4 +14,5 @@ public static class RenderOutputTypes
     public static readonly RenderOutputTypeId StreamingRtsp = new("wtk.output.streaming.rtsp");
     public static readonly RenderOutputTypeId StreamingHls = new("wtk.output.streaming.hls");
     public static readonly RenderOutputTypeId VirtualCamera = new("wtk.output.virtual.camera");
+    public static readonly RenderOutputTypeId RemoteScene = new("remote-scene");
 }

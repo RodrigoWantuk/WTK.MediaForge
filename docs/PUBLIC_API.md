@@ -264,10 +264,15 @@ Capability and license status are queryable without starting the engine:
 
 Studio and host apps must use capability status to disable or label features that are `Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, or `Blocked`.
 
-Remote Scene connection and ICE options are runtime configuration, not project
-secrets. `MediaForgeProject` may persist only a safe connection-profile
-reference. Signaling bearer tokens, invitation codes, TURN credentials, SDP,
-and ICE candidates must remain outside project JSON. The separately deployed
+Remote Scene is represented canonically by `remote-scene` output and source
+settings. Provider, signaling endpoint, stream/session policy, codec
+preferences, video/resolution, and reconnection policy are persistable;
+connection and ICE options are runtime configuration, not project secrets.
+Signaling bearer/session tokens, invitation codes, TURN usernames/credentials,
+SDP, and ICE candidates must remain outside project JSON. Packet APIs transfer
+explicit `EncodedVideoPacketLease` ownership through bounded, timed queues;
+subscriber delivery is an async stream and PLI/FIR feedback raises the
+publisher's `KeyFrameRequested` callback. The separately deployed
 `WTK.MediaForge.Remote.Signaling` service coordinates authenticated peers but
 does not expose a media source or sink capability. Remote publish/subscribe APIs
 remain unavailable until the native encoded-access-unit bridge and composite

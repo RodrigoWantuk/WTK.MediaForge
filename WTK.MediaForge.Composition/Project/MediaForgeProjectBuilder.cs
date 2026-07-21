@@ -282,6 +282,17 @@ public sealed class MediaForgeProjectBuilder
         Action<MediaForgeRenderOutput>? configure = null) =>
         Output(name, scene, MediaForgeOutputs.VirtualCamera(deviceName), width, height, out output, configure);
 
+    public MediaForgeProjectBuilder RemoteSceneOutput(
+        string name,
+        MediaForgeCanvas scene,
+        string signalingEndpoint,
+        string streamName,
+        int width,
+        int height,
+        out MediaForgeRenderOutput output,
+        Action<MediaForgeRenderOutput>? configure = null) =>
+        Output(name, scene, MediaForgeOutputs.RemoteScene(signalingEndpoint, streamName), width, height, out output, configure);
+
     public MediaForgeProjectBuilder Route(
         MediaForgeCanvas scene,
         MediaForgeRenderOutput output)

@@ -77,4 +77,15 @@ public static class MediaForgeOutputs
         {
             DeviceName = deviceName
         };
+
+    public static RemoteSceneOutputSettings RemoteScene(
+        string signalingEndpoint,
+        string streamName,
+        EncodedVideoProfile? video = null) =>
+        new()
+        {
+            SignalingEndpoint = signalingEndpoint,
+            StreamName = streamName,
+            Video = video ?? EncodedVideoProfile.DefaultH264
+        };
 }

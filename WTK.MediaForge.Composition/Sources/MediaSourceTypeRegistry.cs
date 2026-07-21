@@ -126,6 +126,13 @@ public static class MediaSourceTypeRegistry
             AllowsRawCpuException = false,
             SupportStatus = MediaForgeSupportStatus.Experimental
         };
+        yield return TimelineEncoded(
+            "Remote Scene",
+            MediaSourceTypes.RemoteScene,
+            hasAudio: false,
+            MediaForgeSupportStatus.Planned,
+            MediaForgeProductReadinessStatus.Contract,
+            "Contract complete; unavailable until native libwebrtc encoded receive and hardware decode-to-render proofs pass.");
     }
 
     private static MediaSourceTypeDescriptor LiveGpu(

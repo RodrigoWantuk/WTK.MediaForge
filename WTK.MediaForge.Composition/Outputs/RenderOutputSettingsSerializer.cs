@@ -23,7 +23,8 @@ public static class RenderOutputSettingsSerializer
             [RenderOutputTypes.StreamingSrt.Value] = typeof(StreamingSrtOutputSettings),
             [RenderOutputTypes.StreamingRtsp.Value] = typeof(StreamingRtspOutputSettings),
             [RenderOutputTypes.StreamingHls.Value] = typeof(StreamingHlsOutputSettings),
-            [RenderOutputTypes.VirtualCamera.Value] = typeof(VirtualCameraOutputSettings)
+            [RenderOutputTypes.VirtualCamera.Value] = typeof(VirtualCameraOutputSettings),
+            [RenderOutputTypes.RemoteScene.Value] = typeof(RemoteSceneOutputSettings)
         };
 
     public static JsonObject ToJson(IRenderOutputSettings settings)

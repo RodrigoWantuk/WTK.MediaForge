@@ -66,7 +66,7 @@ internal sealed class EncodedOutputBackpressurePolicy
         if (typeId == RenderOutputTypes.RecordingMp4 || typeId == RenderOutputTypes.EncodedFile)
             return Recording();
 
-        if (typeId == RenderOutputTypes.StreamingRtmp)
+        if (typeId == RenderOutputTypes.StreamingRtmp || typeId == RenderOutputTypes.RemoteScene)
             return Streaming();
 
         return Diagnostics();

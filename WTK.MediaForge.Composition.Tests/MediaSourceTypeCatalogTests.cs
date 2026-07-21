@@ -16,6 +16,7 @@ public class MediaSourceTypeCatalogTests
 
         Assert.Equal(
         [
+            "remote-scene",
             "wtk.source.desktop",
             "wtk.source.generated",
             "wtk.source.image.animated",
