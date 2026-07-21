@@ -42,8 +42,10 @@ Implemented foundations:
   bindings. Deterministic resolved canvas keys identify physical content and
   nested-version graphs, allowing equivalent outputs to share work without
   aliasing different pixels. Scene history retains the latest 32 versions per
-  canvas plus pinned published, draft, and explicit bindings; retention
-  counters are exposed in runtime health.
+  canvas plus pinned published, draft, and explicit bindings and recursively
+  pins explicit dependencies found inside historical snapshots. Direct,
+  transitive, discarded, high-water, and resolution-failure counters are
+  exposed in runtime health.
 - Compatible MP4/RTMP routes share one rendered output, NV12 conversion, and
   hardware encoder; sinks retain independent bounded queues and status.
 - H.264 profile and level are validated public enum contracts with legacy JSON

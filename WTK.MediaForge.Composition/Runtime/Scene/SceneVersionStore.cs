@@ -16,6 +16,8 @@ internal sealed class SceneVersionStore
     private readonly Dictionary<CanvasId, LinkedList<SceneVersionId>> _versionsByCanvas = [];
     private readonly Dictionary<SceneVersionId, int> _ownedPins = [];
     private HashSet<SceneVersionId> _bindingPins = [];
+    private SceneVersionPinGraph _pinGraph = SceneVersionPinGraph.Empty;
+    private readonly HashSet<SceneVersionDependencyFailure> _resolutionFailures = [];
     private long _discardedVersions;
     private int _highWaterMark;
 
@@ -44,10 +46,13 @@ internal sealed class SceneVersionStore
             return new SceneVersionRetentionSnapshot
             {
                 RetainedVersionCount = _snapshotsByVersion.Count,
-                PinnedVersionCount = _snapshotsByVersion.Keys.Count(IsPinned),
+                PinnedVersionCount = _pinGraph.DirectVersionIds.Count + _pinGraph.TransitiveVersionIds.Count,
+                DirectPinnedVersionCount = _pinGraph.DirectVersionIds.Count,
+                TransitivePinnedVersionCount = _pinGraph.TransitiveVersionIds.Count,
                 DiscardedVersionCount = _discardedVersions,
                 HighWaterMark = _highWaterMark,
-                MaximumRecentVersionsPerCanvas = MaximumRetainedVersionsPerCanvas
+                MaximumRecentVersionsPerCanvas = MaximumRetainedVersionsPerCanvas,
+                ResolutionFailureCount = _resolutionFailures.Count
             };
         }
     }
@@ -90,6 +95,7 @@ internal sealed class SceneVersionStore
                 RegisterVersionCore(canvas, versionId);
             }
 
+            RefreshPinGraphCore();
             TrimAllCore();
         }
     }
@@ -110,6 +116,7 @@ internal sealed class SceneVersionStore
             RegisterVersionCore(canvas, versionId);
             _ownedPins.TryGetValue(versionId, out var count);
             _ownedPins[versionId] = checked(count + 1);
+            RefreshPinGraphCore();
         }
 
         return new PinHandle(this, versionId, owner);
@@ -138,6 +145,8 @@ internal sealed class SceneVersionStore
                 _ownedPins.TryGetValue(version, out var count);
                 _ownedPins[version] = checked(count + 1);
             }
+
+            RefreshPinGraphCore();
         }
 
         return new PinSetHandle(this, versions, owner);
@@ -198,6 +207,7 @@ internal sealed class SceneVersionStore
                     _ownedPins[versionId] = count - 1;
             }
 
+            RefreshPinGraphCore();
             TrimAllCore();
         }
     }
@@ -249,10 +259,20 @@ internal sealed class SceneVersionStore
         }
     }
 
-    private bool IsPinned(SceneVersionId versionId) =>
-        _published.Values.Any(entry => entry.VersionId == versionId) ||
-        _bindingPins.Contains(versionId) ||
-        _ownedPins.ContainsKey(versionId);
+    private bool IsPinned(SceneVersionId versionId) => _pinGraph.Contains(versionId);
+
+    private void RefreshPinGraphCore()
+    {
+        var candidates = _published.Values.Select(static entry => entry.VersionId)
+            .Concat(_bindingPins)
+            .Concat(_ownedPins.Keys)
+            .ToHashSet();
+        var resolution = SceneVersionDependencyResolver.Resolve(candidates, _snapshotsByVersion);
+        foreach (var failure in resolution.Failures)
+            _resolutionFailures.Add(failure);
+        var direct = candidates.Where(_snapshotsByVersion.ContainsKey).ToHashSet();
+        _pinGraph = new SceneVersionPinGraph(direct, resolution.Dependencies);
+    }
 
     private void RemoveVersionCore(
         CanvasId canvasId,
