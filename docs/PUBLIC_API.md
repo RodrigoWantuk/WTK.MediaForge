@@ -264,6 +264,15 @@ Capability and license status are queryable without starting the engine:
 
 Studio and host apps must use capability status to disable or label features that are `Unavailable`, `PrototypeOnly`, `InternalOnly`, `Planned`, `Deferred`, `Unsupported`, or `Blocked`.
 
+Remote Scene connection and ICE options are runtime configuration, not project
+secrets. `MediaForgeProject` may persist only a safe connection-profile
+reference. Signaling bearer tokens, invitation codes, TURN credentials, SDP,
+and ICE candidates must remain outside project JSON. The separately deployed
+`WTK.MediaForge.Remote.Signaling` service coordinates authenticated peers but
+does not expose a media source or sink capability. Remote publish/subscribe APIs
+remain unavailable until the native encoded-access-unit bridge and composite
+GPU proofs pass.
+
 Operational validation scripts use
 `./scripts/generate-media-proof-report.ps1` and
 `./scripts/verify-engine-readiness-v14.ps1` to write

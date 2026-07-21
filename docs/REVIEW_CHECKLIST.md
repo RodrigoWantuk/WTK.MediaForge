@@ -175,6 +175,16 @@ Before considering a change complete, verify:
 - [ ] Performance evidence executes real engine/GPU work; no `Task.Delay` scenario is accepted.
 - [ ] Readiness v14 runs a 1080p60 sustained-route smoke; release sign-off also runs `-RunLocalQualification` and `-ReleaseCandidateQualification` on each required adapter family.
 
+## Remote Scene signaling and media checklist
+
+- [ ] Signaling transports only authenticated SDP/ICE text messages, never video, audio, encoded packets, or persistent media secrets.
+- [ ] Invitation and access tokens are generated with a cryptographic RNG, stored only as hashes, expire, and invitation redemption is atomic and one-time.
+- [ ] HTTPS is mandatory outside an explicitly enabled localhost development environment; create, redeem, and signaling endpoints remain rate limited.
+- [ ] WebSocket messages and per-peer queues have enforced bounds; a slow or absent peer cannot create unbounded memory growth.
+- [ ] TURN credentials are temporary and no shared TURN secret, bearer token, invitation code, SDP, or ICE candidate enters `MediaForgeProject`.
+- [ ] Native libwebrtc revision, ABI, checksums, BSD-3-Clause/PATENTS/AUTHORS, and all transitive notices are pinned before packaging any native runtime.
+- [ ] `remote-scene.publish` and `remote-scene.subscribe` remain unavailable until direct and TURN hardware encode/decode GPU proofs pass without WebRTC CPU `VideoFrame` or software codec fallback.
+
 ## FFmpeg / external codec review checklist
 
 For any PR touching media container, codec, demux, mux, encode, decode, recording, streaming, or packetization:

@@ -127,6 +127,14 @@ and must not be executed as current gates.
   only after its HWND-to-Vulkan product proof passes.
 - Studio persists canonical projects and probes runtime capabilities, but native
   preview/output control stays gated by runtime readiness.
+- Remote Scene signaling is a separate HTTPS/WebSocket service. It stores only
+  hashes of invitation/access secrets, relays bounded SDP/ICE messages, and can
+  issue temporary coturn REST/HMAC credentials. It never transports media and
+  does not promote `remote-scene.publish` or `remote-scene.subscribe`.
+- Remote Scene media remains unavailable until the pinned native libwebrtc
+  encoded-access-unit bridge, Windows hardware packet decoder integration, and
+  direct/TURN GPU end-to-end proofs exist. Never route WebRTC `VideoFrame` CPU
+  data or a software codec around this requirement.
 - NDI product video remains blocked because Standard SDK CPU framebuffer APIs do
   not satisfy the GPU media law.
 - Audio, SRT, virtual camera, and FFmpeg are deferred.

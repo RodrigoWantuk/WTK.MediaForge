@@ -83,6 +83,12 @@ Experimental and not yet product-promoted:
 - Studio: production bootstrap now uses a real engine session, canonical
   `MediaForgeProject` persistence, and asynchronous capability probing. Native
   GPU preview and real output controls remain disabled until their runtime gates pass.
+- Remote Scene has platform-neutral contracts and a separately deployable
+  HTTPS/WebSocket signaling service with one-time hashed invitations, role-scoped
+  bearer access, bounded SDP/ICE relay, SQLite session storage, expiration, rate
+  limiting, and coturn-compatible temporary credentials. Signaling carries no
+  media. The libwebrtc encoded-access-unit bridge and GPU media path are not yet
+  implemented or capability-promoted.
 
 Unavailable/planned:
 
@@ -90,6 +96,9 @@ Unavailable/planned:
 - Linux VAAPI/DRM/DMABUF and macOS VideoToolbox/IOSurface adapters.
 - NDI discovery/runtime packaging exists, but Standard SDK raw CPU video buffers
   do not satisfy the GPU Media Transport Law.
+- Remote Scene publish/subscribe media remains unavailable until a pinned native
+  libwebrtc bridge and direct/TURN GPU end-to-end proofs pass. The signaling
+  service alone is not media capability evidence.
 
 ## v14 Execution Order
 
@@ -113,6 +122,9 @@ Unavailable/planned:
    overlays independent from the native presentation surface.
 9. Freeze Core adapter contracts, then implement Linux and macOS backends in
    their own projects.
+10. Build the pinned libwebrtc C ABI and hardware packet ingress/egress only
+    after shared encode/decode lifetimes are sustained; then qualify Remote
+    Scene direct and TURN routes without software codecs or raw CPU frames.
 
 Scene identity and bounded retention are complete. The store retains the latest
 32 versions per canvas in addition to older pinned versions. Drafts and output

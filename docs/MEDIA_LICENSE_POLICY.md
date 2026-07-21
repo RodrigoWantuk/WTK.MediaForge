@@ -112,6 +112,18 @@ Do not add arbitrary NuGet image decoders without updating this table first.
 
 Media Foundation hardware MFT is the primary Windows hardware encoder path.
 
+## Remote Scene Signaling Dependencies
+
+`WTK.MediaForge.Remote.Signaling` uses `Microsoft.Data.Sqlite` (MIT),
+`SQLitePCLRaw` (Apache-2.0), and SQLite (public domain) for coordination metadata.
+These libraries store session identifiers, hashes, roles, and expiration only;
+they are not codecs and never process media frames or encoded video packets.
+
+The future native libwebrtc distribution requires a pinned revision and a
+complete review of its BSD-3-Clause license, `PATENTS`, `AUTHORS`, build flags,
+and transitive native notices before binaries are packaged. Signaling readiness
+does not approve or distribute libwebrtc.
+
 ## FFmpeg Libraries Integration Review
 
 FFmpeg is not part of the first MP4/RTMP hardware product path.

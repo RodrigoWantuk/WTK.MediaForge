@@ -1,8 +1,21 @@
-Silk.NET - MIT
+# Third-Party Notices
 
-Vortice.Windows - MIT
+This file summarizes principal third-party components used by the repository.
+Release packaging must include the complete license texts required by each
+distributed binary and its transitive dependencies.
 
-FFmpeg - LGPL 2.1+ when distributed as LGPL build
+- Avalonia UI - MIT
+- CommunityToolkit.Mvvm - MIT
+- Dock - MIT
+- Microsoft.Data.Sqlite - MIT
+- SQLite - public domain
+- SQLitePCLRaw - Apache-2.0
+- Silk.NET - MIT
+- Vortice.Windows - MIT
+- XenoAtom.ShaderCompiler - MIT
 
-SkiaSharp - MIT, if used
+FFmpeg, libx264, libx265, and libwebrtc binaries are not distributed by the
+current product. A future pinned libwebrtc runtime requires its BSD-3-Clause
+license, `PATENTS`, `AUTHORS`, and complete transitive native notices before
+packaging.
 
