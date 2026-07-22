@@ -180,6 +180,35 @@ public sealed class StudioSceneEditRuntimeServiceTests
             service.TrackSceneDraftAsync(session, document, original, draft).AsTask());
     }
 
+    [Fact]
+    public async Task Closing_live_session_drains_inflight_batch_and_rejects_later_mutations()
+    {
+        var engine = new RecordingSceneEditEngine { BlockNextBatch = true };
+        var service = new StudioSceneEditRuntimeService(new StudioSceneEditBridge(engine));
+        var document = StudioMockDocumentFactory.Create();
+        var original = document.Scenes.Single(item => item.Id == "scene-main");
+        var draft = SceneEditSessionService.CloneScene(original);
+        draft.Layers.First().Transform.X += 25;
+        var session = await service.BeginLiveSessionAsync(document, original);
+
+        var mutation = service.TrackSceneDraftAsync(session, document, original, draft).AsTask();
+        await engine.BatchEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var close = service.DiscardSceneDraftAsync(session).AsTask();
+        await Task.Delay(25);
+
+        Assert.False(close.IsCompleted);
+        Assert.Equal(0, engine.DiscardCallCount);
+        engine.ReleaseBatch.TrySetResult();
+        await mutation;
+        await close;
+
+        var completedBatchCount = engine.BatchCallCount;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.TrackSceneDraftAsync(session, document, original, draft).AsTask());
+        Assert.Equal(completedBatchCount, engine.BatchCallCount);
+        Assert.Equal(1, engine.DiscardCallCount);
+    }
+
     private sealed class RecordingSceneEditEngine : IStudioSceneEditEngine
     {
         private CanvasId _canvasId;
@@ -199,6 +228,12 @@ public sealed class StudioSceneEditRuntimeServiceTests
         public SceneEditMode? LastBeginMode { get; private set; }
 
         public bool FailNextBatch { get; set; }
+
+        public bool BlockNextBatch { get; set; }
+
+        public TaskCompletionSource BatchEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ReleaseBatch { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task SynchronizeProjectAsync(
             WTK.MediaForge.Composition.Project.MediaForgeProject project,
@@ -236,19 +271,24 @@ public sealed class StudioSceneEditRuntimeServiceTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask ApplySceneMutationsAsync(
+        public async ValueTask ApplySceneMutationsAsync(
             SceneEditSessionId sessionId,
             IReadOnlyList<SceneMutationPatch> patches,
             CancellationToken cancellationToken = default)
         {
             BatchCallCount++;
+            if (BlockNextBatch)
+            {
+                BlockNextBatch = false;
+                BatchEntered.TrySetResult();
+                await ReleaseBatch.Task.WaitAsync(cancellationToken);
+            }
             if (FailNextBatch)
             {
                 FailNextBatch = false;
                 throw new InvalidOperationException("rejected mutation");
             }
             Patches.AddRange(patches);
-            return ValueTask.CompletedTask;
         }
 
         public ValueTask<SceneCommitResult> ApplySceneDraftAsync(
