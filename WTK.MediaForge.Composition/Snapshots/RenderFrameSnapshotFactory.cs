@@ -106,19 +106,27 @@ internal static class RenderFrameSnapshotFactory
         List<SnapshotDiagnostic> diagnostics,
         Dictionary<ResolvedCanvasKey, RenderCanvasSnapshot> canvasesByKey)
     {
+        OutputRouteTransitionRuntimeState transition = default;
+        var hasTransition = outputRouteTransitions is not null &&
+            outputRouteTransitions.TryGetTransition(output.Id, out transition);
+        var currentProjectState = transition.DestinationProjectState ?? projectState;
+        var currentOutput = transition.DestinationProjectState?.Outputs
+            .FirstOrDefault(candidate => candidate.Id == output.Id) ?? output;
+        var currentPublishedContext = ReferenceEquals(currentProjectState, projectState)
+            ? publishedContext
+            : CanvasResolutionContext.From(currentProjectState);
         var currentCanvas = BuildOutputCanvas(
-            output,
-            projectState,
-            publishedContext,
+            currentOutput,
+            currentProjectState,
+            currentPublishedContext,
             runtime,
             context,
             leasesBySource,
             diagnostics);
         canvasesByKey.TryAdd(currentCanvas.ResolvedKey, currentCanvas);
-        var resolvedOutput = CloneOutputWithResolvedCanvas(output, currentCanvas.ResolvedKey);
+        var resolvedOutput = CloneOutputWithResolvedCanvas(currentOutput, currentCanvas.ResolvedKey);
 
-        if (outputRouteTransitions is null ||
-            !outputRouteTransitions.TryGetTransition(output.Id, out var transition) ||
+        if (!hasTransition ||
             transition.Transition.Kind != OutputRouteTransitionKind.Fade ||
             transition.PreviousProjectState is null ||
             transition.Progress >= 1f)

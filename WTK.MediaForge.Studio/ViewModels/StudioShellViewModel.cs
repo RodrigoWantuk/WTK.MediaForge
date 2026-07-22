@@ -138,7 +138,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         ToggleEffectEnabledCommand = new RelayCommand<EffectItemViewModel>(ToggleEffectEnabled, effect => effect is not null);
         AddSelectedSourceToCurrentSceneCommand = new RelayCommand(AddSelectedSourceToCurrentScene, () => _selectedSource is not null && CurrentScene is not null);
         ReconnectSourceCommand = new RelayCommand(() => SetStatus("Reconexão de fonte agendada."));
-        ConfirmDialogCommand = new RelayCommand(ConfirmDialog);
+        ConfirmDialogCommand = new AsyncRelayCommand(ConfirmDialogAsync);
         CancelDialogCommand = new RelayCommand(CloseDialog);
         ProjectExplorer.AddSceneCommand = AddSceneCommand;
         ProjectExplorer.AddSourceCommand = AddSourceCommand;
@@ -499,9 +499,38 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
     public void SendSceneToOutput(string outputId, string sceneId, string transitionId, int durationMs)
     {
+        SendSceneToOutputAsync(outputId, sceneId, transitionId, durationMs, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+    }
+
+    private async Task SendSceneToOutputAsync(
+        string outputId,
+        string sceneId,
+        string transitionId,
+        int durationMs,
+        CancellationToken cancellationToken)
+    {
         var output = _document.Outputs.First(item => item.Id == outputId);
         var scene = _document.Scenes.First(item => item.Id == sceneId);
         var wasLive = output.IsLive || output.State == StudioOutputState.Live;
+        var transition = _document.Transitions.FirstOrDefault(item => item.Id == transitionId)
+            ?? throw new InvalidOperationException($"Transition '{transitionId}' was not found.");
+        var runtimeTransition = new StudioTransition
+        {
+            Id = transition.Id,
+            DisplayName = transition.DisplayName,
+            Kind = transition.Kind,
+            DurationMs = durationMs
+        };
+
+        if (wasLive)
+        {
+            await _sceneEditRuntimeService
+                .TransitionOutputToSceneAsync(outputId, sceneId, runtimeTransition, cancellationToken)
+                .ConfigureAwait(true);
+        }
+
         output.AssignedSceneId = scene.Id;
         output.AppliedSceneSnapshot = SceneEditSessionService.CloneScene(scene);
         output.HasPendingSceneUpdate = false;
@@ -515,6 +544,12 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         }
 
         _document.HasUnsavedChanges = true;
+        if (!wasLive)
+        {
+            await _sceneEditRuntimeService
+                .SynchronizeProjectAsync(_document, cancellationToken)
+                .ConfigureAwait(true);
+        }
         RebuildAll();
         SelectOutput(output);
         ApplyProjectDocument();
@@ -883,7 +918,7 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
         CloseDialog();
     }
 
-    private void ConfirmDialog()
+    private async Task ConfirmDialogAsync()
     {
         switch (Dialog.Kind)
         {
@@ -900,11 +935,12 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
             case "route-output":
                 if (Dialog.HasSelectedScene)
                 {
-                    SendSceneToOutput(
+                    await SendSceneToOutputAsync(
                         Dialog.TargetOutputId,
                         Dialog.SelectedSceneId,
                         Dialog.SelectedTransitionId,
-                        Dialog.TransitionDurationMs);
+                        Dialog.TransitionDurationMs,
+                        CancellationToken.None).ConfigureAwait(true);
                 }
 
                 CloseDialog();

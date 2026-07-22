@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Engine;
+using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Identifiers;
@@ -36,6 +37,15 @@ public interface IStudioSceneEditEngine
     ValueTask DiscardSceneDraftAsync(
         SceneEditSessionId sessionId,
         CancellationToken cancellationToken = default);
+
+    Task<OutputSceneTransitionResult> TransitionOutputToSceneAsync(
+        RenderOutputId outputId,
+        CanvasId destinationCanvasId,
+        SceneVersionBinding destinationBinding,
+        OutputRouteTransition transition,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<OutputSceneTransitionResult>(
+            new NotSupportedException("The scene edit engine does not implement output scene routing."));
 }
 
 public sealed class MediaForgeStudioSceneEditEngine(MediaForgeEngine engine) : IStudioSceneEditEngine
@@ -85,6 +95,19 @@ public sealed class MediaForgeStudioSceneEditEngine(MediaForgeEngine engine) : I
         CancellationToken cancellationToken = default) =>
         _engine.DiscardSceneDraftAsync(sessionId, cancellationToken);
 
+    public Task<OutputSceneTransitionResult> TransitionOutputToSceneAsync(
+        RenderOutputId outputId,
+        CanvasId destinationCanvasId,
+        SceneVersionBinding destinationBinding,
+        OutputRouteTransition transition,
+        CancellationToken cancellationToken = default) =>
+        _engine.TransitionOutputToSceneAsync(
+            outputId,
+            destinationCanvasId,
+            destinationBinding,
+            transition,
+            cancellationToken);
+
     private static void ReplaceProject(MediaForgeProject target, MediaForgeProject source)
     {
         var clone = MediaForgeProjectSerializer.Deserialize(MediaForgeProjectSerializer.Serialize(source));
@@ -125,6 +148,26 @@ public sealed class StudioSceneEditBridge(IStudioSceneEditEngine engine)
     {
         ArgumentNullException.ThrowIfNull(project);
         return new ValueTask(_engine.SynchronizeProjectAsync(project, cancellationToken));
+    }
+
+    public ValueTask<OutputSceneTransitionResult> TransitionOutputToSceneAsync(
+        string outputId,
+        string destinationSceneId,
+        StudioTransition transition,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationSceneId);
+        ArgumentNullException.ThrowIfNull(transition);
+        var routeTransition = transition.Kind == StudioTransitionKind.Cut || transition.DurationMs <= 0
+            ? OutputRouteTransition.Cut(transition.Id, transition.DisplayName)
+            : OutputRouteTransition.Fade(transition.Id, transition.DurationMs, transition.DisplayName);
+        return new ValueTask<OutputSceneTransitionResult>(_engine.TransitionOutputToSceneAsync(
+            StudioEngineIdMap.RenderOutputId(outputId),
+            StudioEngineIdMap.CanvasId(destinationSceneId),
+            SceneVersionBinding.Published,
+            routeTransition,
+            cancellationToken));
     }
 
     public async ValueTask<StudioSceneEditBridgeSession> BeginAsync(

@@ -404,6 +404,87 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Transition_output_to_scene_switches_canonical_route_at_switch_point()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateSceneRouteProject();
+        var output = project.Outputs.Single();
+        var sourceCanvas = project.Canvases.Single(canvas => canvas.Name == "Program");
+        var destinationCanvas = project.Canvases.Single(canvas => canvas.Name == "BRB");
+        var events = new List<OutputSceneTransitionStatus>();
+        engine.OutputSceneTransitionStateChanged += (_, args) =>
+        {
+            lock (events)
+                events.Add(args.Status);
+        };
+
+        await engine.LoadProjectAsync(project);
+        var baselinePins = engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount;
+        var result = await engine.TransitionOutputToSceneAsync(
+            output.Id,
+            destinationCanvas.Id,
+            SceneVersionBinding.Published,
+            OutputRouteTransition.Fade("route-fade", 200));
+
+        Assert.Equal(sourceCanvas.Id, GetCurrentProject(engine).Outputs.Single().CanvasId);
+        Assert.True(engine.OutputRouteTransitionRuntimeForTests.TryGetTransition(output.Id, out var transition));
+        Assert.Equal(destinationCanvas.Id, transition.ToCanvasId);
+        Assert.NotNull(transition.DestinationProjectState);
+        Assert.True(engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount >= baselinePins);
+
+        engine.OutputRouteTransitionRuntimeForTests.Advance(output.Id, TimeSpan.FromMilliseconds(100));
+        await WaitUntilAsync(
+            () => GetCurrentProject(engine).Outputs.Single().CanvasId == destinationCanvas.Id,
+            TimeSpan.FromSeconds(2));
+
+        engine.OutputRouteTransitionRuntimeForTests.Advance(output.Id, TimeSpan.FromMilliseconds(100));
+        await WaitUntilAsync(
+            () =>
+            {
+                lock (events)
+                    return events.Contains(OutputSceneTransitionStatus.Completed);
+            },
+            TimeSpan.FromSeconds(2));
+
+        Assert.NotEqual(Guid.Empty, result.OperationId);
+        Assert.Equal(destinationCanvas.Id, result.DestinationCanvasId);
+        Assert.False(engine.OutputRouteTransitionRuntimeForTests.TryGetTransition(output.Id, out _));
+        Assert.Equal(baselinePins, engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount);
+        lock (events)
+        {
+            Assert.Equal(
+                [
+                    OutputSceneTransitionStatus.Started,
+                    OutputSceneTransitionStatus.SwitchPointReached,
+                    OutputSceneTransitionStatus.Completed
+                ],
+                events);
+        }
+    }
+
+    [Fact]
+    public async Task Transition_output_to_scene_cut_switches_route_and_releases_pins()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateSceneRouteProject();
+        var output = project.Outputs.Single();
+        var destinationCanvas = project.Canvases.Single(canvas => canvas.Name == "BRB");
+
+        await engine.LoadProjectAsync(project);
+        var baselinePins = engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount;
+        await engine.TransitionOutputToSceneAsync(
+            output.Id,
+            destinationCanvas.Id,
+            SceneVersionBinding.Published,
+            OutputRouteTransition.Cut("route-cut"));
+
+        await WaitUntilAsync(
+            () => GetCurrentProject(engine).Outputs.Single().CanvasId == destinationCanvas.Id,
+            TimeSpan.FromSeconds(2));
+        Assert.Equal(baselinePins, engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount);
+    }
+
+    [Fact]
     public async Task Discard_scene_draft_does_not_mutate_published_scene()
     {
         await using var engine = CreateEngine();
@@ -2331,6 +2412,20 @@ public class MediaForgeEngineTests
         editor.CreateOutput(
             "Program",
             parent.Id,
+            new PreviewWindowOutputSettings(),
+            new FrameSize(1920, 1080));
+        editor.ValidateOrThrow();
+        return editor.Project;
+    }
+
+    private static MediaForgeProject CreateSceneRouteProject()
+    {
+        var editor = new MediaForgeProjectEditor(new());
+        var program = editor.CreateCanvas("Program", new FrameSize(1920, 1080));
+        var brb = editor.CreateCanvas("BRB", new FrameSize(1920, 1080));
+        editor.CreateOutput(
+            "Program",
+            program.Id,
             new PreviewWindowOutputSettings(),
             new FrameSize(1920, 1080));
         editor.ValidateOrThrow();

@@ -173,6 +173,24 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
+    public void Live_output_routing_invokes_engine_transition_before_updating_document()
+    {
+        var runtime = new RecordingSceneEditRuntimeService();
+        var shell = CreateShell(runtime);
+        var output = shell.Document.Outputs.Single(item => item.Id == "output-rtmp-twitch");
+        output.IsLive = true;
+
+        shell.SendSceneToOutput(output.Id, "scene-brb", "transition-fade", 420);
+
+        var request = Assert.Single(runtime.OutputTransitions);
+        Assert.Equal(output.Id, request.OutputId);
+        Assert.Equal("scene-brb", request.SceneId);
+        Assert.Equal(StudioTransitionKind.Fade, request.Transition.Kind);
+        Assert.Equal(420, request.Transition.DurationMs);
+        Assert.Equal("scene-brb", output.AssignedSceneId);
+    }
+
+    [Fact]
     public void RouteOutputDialog_UsesAlterarOrTransicionar_NotEnviar()
     {
         var shell = CreateShell();
@@ -458,6 +476,18 @@ public sealed class StudioShellViewModelTests
 
         public List<string[]> TrackedSceneLayerIds { get; } = [];
 
+        public List<TrackedOutputTransition> OutputTransitions { get; } = [];
+
+        public ValueTask TransitionOutputToSceneAsync(
+            string outputId,
+            string destinationSceneId,
+            StudioTransition transition,
+            CancellationToken cancellationToken = default)
+        {
+            OutputTransitions.Add(new TrackedOutputTransition(outputId, destinationSceneId, transition));
+            return ValueTask.CompletedTask;
+        }
+
         public ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
             StudioDocument document,
             StudioScene scene,
@@ -522,6 +552,8 @@ public sealed class StudioShellViewModelTests
     }
 
     private sealed record TrackedLayerState(string Id, double X, double Y, double Width, double Height);
+
+    private sealed record TrackedOutputTransition(string OutputId, string SceneId, StudioTransition Transition);
 }
 
 public sealed class SceneEditorTransformTests

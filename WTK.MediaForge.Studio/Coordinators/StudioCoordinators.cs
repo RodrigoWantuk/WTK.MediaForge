@@ -74,6 +74,7 @@ internal sealed class StudioSceneEditCoordinator(IStudioSceneEditRuntimeService 
 {
     public bool IsEngineBacked => inner.IsEngineBacked;
     public ValueTask SynchronizeProjectAsync(StudioDocument document, CancellationToken token = default) => inner.SynchronizeProjectAsync(document, token);
+    public ValueTask TransitionOutputToSceneAsync(string outputId, string destinationSceneId, StudioTransition transition, CancellationToken token = default) => inner.TransitionOutputToSceneAsync(outputId, destinationSceneId, transition, token);
     public ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(StudioDocument document, StudioScene scene, CancellationToken token = default) => inner.BeginApplySessionAsync(document, scene, token);
     public ValueTask<StudioSceneEditRuntimeSession> BeginLiveSessionAsync(StudioDocument document, StudioScene scene, CancellationToken token = default) => inner.BeginLiveSessionAsync(document, scene, token);
     public ValueTask TrackLayerVisualStateAsync(StudioSceneEditRuntimeSession session, StudioLayer layer, CancellationToken token = default) => inner.TrackLayerVisualStateAsync(session, layer, token);

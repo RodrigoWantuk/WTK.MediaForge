@@ -22,6 +22,17 @@ public sealed class StudioSceneEditRuntimeService(
 
     public bool IsEngineBacked => true;
 
+    public ValueTask TransitionOutputToSceneAsync(
+        string outputId,
+        string destinationSceneId,
+        StudioTransition transition,
+        CancellationToken cancellationToken = default) =>
+        new(_bridge.TransitionOutputToSceneAsync(
+            outputId,
+            destinationSceneId,
+            transition,
+            cancellationToken).AsTask());
+
     public async ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
         StudioDocument document,
         StudioScene scene,

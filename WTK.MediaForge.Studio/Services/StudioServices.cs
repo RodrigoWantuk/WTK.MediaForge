@@ -120,6 +120,12 @@ public interface IStudioSceneEditRuntimeService
         StudioDocument document,
         CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
+    ValueTask TransitionOutputToSceneAsync(
+        string outputId,
+        string destinationSceneId,
+        StudioTransition transition,
+        CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
     ValueTask<StudioSceneEditRuntimeSession> BeginApplySessionAsync(
         StudioDocument document,
         StudioScene scene,

@@ -278,7 +278,7 @@ internal sealed class SceneRuntime
             diagnostics);
     }
 
-    private ProjectStateSnapshot ResolveOutputVersionBindings(ProjectStateSnapshot publishedProjectState)
+    internal ProjectStateSnapshot ResolveOutputVersionBindings(ProjectStateSnapshot publishedProjectState)
     {
         var resolvedOutputs = new Dictionary<RenderOutputId, ResolvedOutputCanvasStateSnapshot>();
 

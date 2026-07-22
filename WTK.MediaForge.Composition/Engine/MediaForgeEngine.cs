@@ -40,6 +40,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private Dictionary<SceneEditSessionId, ActiveSceneEditSession> _sceneEditSessions => _sceneEditSessionCoordinator.Sessions;
     private readonly RenderOutputSinkDispatcher _sinkDispatcher;
     private readonly OutputRouteTransitionRuntime _outputRouteTransitions = new();
+    private readonly object _sceneRouteTransitionGate = new();
+    private readonly Dictionary<Guid, ActiveOutputSceneTransition> _sceneRouteTransitions = [];
 
     private SourceRuntimeManager? _sourceRuntimeManager;
     private CompositionRuntime? _runtime;
@@ -111,6 +113,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         _externalDiagnostics = diagnostics;
         _diagnostics = new EngineDiagnosticsSink(diagnostics, RaiseDiagnosticReported);
         _sinkDispatcher = new RenderOutputSinkDispatcher(_diagnostics, _sinkStopTimeout);
+        _outputRouteTransitions.PhaseChanged += OnOutputRouteTransitionPhaseChanged;
     }
 
     public bool HasProject => _currentProject is not null;
@@ -128,6 +131,8 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     public event EventHandler<MediaForgeFrameDroppedEventArgs>? FrameDropped;
 
     public event EventHandler<MediaForgeRecoveryEventArgs>? RecoveryStateChanged;
+
+    public event EventHandler<OutputSceneTransitionEventArgs>? OutputSceneTransitionStateChanged;
 
     public MediaForgeRuntimeHealthSnapshot GetRuntimeHealthSnapshot()
     {
@@ -824,6 +829,111 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         }
     }
 
+    public async Task<OutputSceneTransitionResult> TransitionOutputToSceneAsync(
+        RenderOutputId outputId,
+        CanvasId destinationCanvasId,
+        SceneVersionBinding destinationBinding,
+        OutputRouteTransition transition,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(transition);
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+        destinationBinding.Validate();
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureCanMutateProject();
+            EnsureSceneRuntimeCurrent();
+            EnsureCanvasExists(_currentProject!, destinationCanvasId);
+
+            var sourceOutput = _currentProject!.Outputs.FirstOrDefault(candidate => candidate.Id == outputId)
+                ?? throw CreateEngineException($"Output {outputId} was not found in the current project.");
+            ValidateRouteTransition(transition);
+
+            var previousProjectState = _sceneRuntime!.CreateSnapshot().ProjectState;
+            var destinationProject = MediaForgeProjectCloner.DeepClone(_currentProject);
+            var destinationOutput = destinationProject.Outputs.Single(candidate => candidate.Id == outputId);
+            destinationOutput.CanvasId = destinationCanvasId;
+            destinationOutput.SceneVersionBinding = destinationBinding;
+            MediaForgeProjectValidator.Validate(destinationProject).ThrowIfInvalid();
+
+            var destinationProjectState = ProjectStateSnapshotFactory.CreateImmutableSnapshot(destinationProject) with
+            {
+                CanvasVersionIds = previousProjectState.CanvasVersionIds,
+                CanvasVersionSnapshots = previousProjectState.CanvasVersionSnapshots
+            };
+            destinationProjectState = _sceneRuntime.ResolveOutputVersionBindings(destinationProjectState);
+
+            var graph = SceneDependencyGraphBuilder.Build(_currentProject);
+            SceneDependencyGraphValidator.Validate(graph).ThrowIfInvalid();
+            var previousGraph = CreateSceneVersionGraph(
+                sourceOutput.CanvasId,
+                ResolveOutputVersionMap(previousProjectState, outputId),
+                graph);
+            var currentGraph = CreateSceneVersionGraph(
+                destinationCanvasId,
+                ResolveOutputVersionMap(destinationProjectState, outputId),
+                graph);
+            var versionOwnership = _sceneRuntime.PinVersionGraphs(
+                previousGraph,
+                currentGraph,
+                $"route-transition:{outputId}");
+            var operationId = Guid.NewGuid();
+            var active = new ActiveOutputSceneTransition(
+                operationId,
+                outputId,
+                sourceOutput.CanvasId,
+                destinationCanvasId,
+                destinationBinding);
+
+            lock (_sceneRouteTransitionGate)
+                _sceneRouteTransitions.Add(operationId, active);
+
+            try
+            {
+                _outputRouteTransitions.BeginSceneRouteTransition(
+                    operationId,
+                    outputId,
+                    transition,
+                    previousGraph,
+                    currentGraph,
+                    previousProjectState,
+                    destinationProjectState,
+                    versionOwnership);
+                active.CancellationRegistration = cancellationToken.Register(
+                    static state =>
+                    {
+                        var cancellation = (OutputSceneTransitionCancellation)state!;
+                        cancellation.Runtime.Cancel(cancellation.OutputId, cancellation.OperationId);
+                    },
+                    new OutputSceneTransitionCancellation(_outputRouteTransitions, outputId, operationId));
+            }
+            catch
+            {
+                lock (_sceneRouteTransitionGate)
+                    _sceneRouteTransitions.Remove(operationId);
+                versionOwnership.Dispose();
+                active.Dispose();
+                throw;
+            }
+
+            _renderPump?.RequestFrame();
+            return new OutputSceneTransitionResult(
+                operationId,
+                outputId,
+                sourceOutput.CanvasId,
+                destinationCanvasId,
+                destinationBinding,
+                transition);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task BindOutputAsync(
         RenderOutputId outputId,
         RenderOutputTarget target,
@@ -1364,6 +1474,124 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
         if (requestFrame && State == MediaForgeEngineState.Running)
             _renderPump?.RequestFrame();
+    }
+
+    private void OnOutputRouteTransitionPhaseChanged(
+        object? sender,
+        OutputRouteTransitionPhaseChangedEventArgs args)
+    {
+        ActiveOutputSceneTransition? active;
+        lock (_sceneRouteTransitionGate)
+            _sceneRouteTransitions.TryGetValue(args.OperationId, out active);
+        if (active is null)
+            return;
+
+        lock (active.SyncRoot)
+        {
+            active.PhaseTail = active.PhaseTail
+                .ContinueWith(
+                    _ => HandleOutputSceneTransitionPhaseAsync(active, args),
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default)
+                .Unwrap();
+        }
+    }
+
+    private async Task HandleOutputSceneTransitionPhaseAsync(
+        ActiveOutputSceneTransition active,
+        OutputRouteTransitionPhaseChangedEventArgs args)
+    {
+        if (args.Phase == OutputRouteTransitionPhase.SwitchPointReached)
+        {
+            try
+            {
+                await _gate.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    if (State == MediaForgeEngineState.Disposed || _currentProject is null)
+                        throw CreateEngineException("The engine stopped before the scene route reached its switch point.");
+
+                    var output = _currentProject.Outputs.FirstOrDefault(candidate => candidate.Id == active.OutputId)
+                        ?? throw CreateEngineException($"Output {active.OutputId} was removed during its scene transition.");
+                    output.CanvasId = active.DestinationCanvasId;
+                    output.SceneVersionBinding = active.DestinationBinding;
+                    RefreshPublishedRuntimeAfterProjectMutation();
+                }
+                finally
+                {
+                    _gate.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                active.TerminalFailure = ex;
+                RaiseOutputSceneTransitionStateChanged(active, OutputSceneTransitionStatus.Failed, args.Progress, ex);
+                RemoveOutputSceneTransition(active);
+                return;
+            }
+        }
+
+        if (active.TerminalFailure is not null)
+            return;
+
+        var status = args.Phase switch
+        {
+            OutputRouteTransitionPhase.Started => OutputSceneTransitionStatus.Started,
+            OutputRouteTransitionPhase.SwitchPointReached => OutputSceneTransitionStatus.SwitchPointReached,
+            OutputRouteTransitionPhase.Completed => OutputSceneTransitionStatus.Completed,
+            OutputRouteTransitionPhase.Cancelled => OutputSceneTransitionStatus.Cancelled,
+            OutputRouteTransitionPhase.Failed => OutputSceneTransitionStatus.Failed,
+            _ => throw new ArgumentOutOfRangeException(nameof(args))
+        };
+        RaiseOutputSceneTransitionStateChanged(active, status, args.Progress, args.Failure);
+
+        if (status is OutputSceneTransitionStatus.Completed or OutputSceneTransitionStatus.Cancelled or OutputSceneTransitionStatus.Failed)
+            RemoveOutputSceneTransition(active);
+    }
+
+    private void RaiseOutputSceneTransitionStateChanged(
+        ActiveOutputSceneTransition active,
+        OutputSceneTransitionStatus status,
+        float progress,
+        Exception? failure) =>
+        SafeRaiseEvent(
+            nameof(OutputSceneTransitionStateChanged),
+            () => OutputSceneTransitionStateChanged?.Invoke(
+                this,
+                new OutputSceneTransitionEventArgs
+                {
+                    OperationId = active.OperationId,
+                    OutputId = active.OutputId,
+                    SourceCanvasId = active.SourceCanvasId,
+                    DestinationCanvasId = active.DestinationCanvasId,
+                    Status = status,
+                    Progress = progress,
+                    Failure = failure
+                }));
+
+    private void RemoveOutputSceneTransition(ActiveOutputSceneTransition active)
+    {
+        lock (_sceneRouteTransitionGate)
+            _sceneRouteTransitions.Remove(active.OperationId);
+        active.Dispose();
+    }
+
+    private static IReadOnlyDictionary<CanvasId, SceneVersionId> ResolveOutputVersionMap(
+        ProjectStateSnapshot projectState,
+        RenderOutputId outputId) =>
+        projectState.ResolvedOutputCanvases.TryGetValue(outputId, out var resolved)
+            ? resolved.CanvasVersionIds
+            : projectState.CanvasVersionIds;
+
+    private static void ValidateRouteTransition(OutputRouteTransition transition)
+    {
+        if (string.IsNullOrWhiteSpace(transition.Id))
+            throw new ArgumentException("A scene route transition id is required.", nameof(transition));
+        if (transition.Kind == OutputRouteTransitionKind.Cut && transition.DurationMs != 0)
+            throw new ArgumentException("A cut transition must have zero duration.", nameof(transition));
+        if (transition.Kind == OutputRouteTransitionKind.Fade && transition.DurationMs <= 0)
+            throw new ArgumentException("A fade transition must have a positive duration.", nameof(transition));
     }
 
     private void UpsertDraftRuntimeState(
@@ -2449,6 +2677,52 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         SceneEditSessionDescriptor Descriptor,
         MediaForgeProject? DraftProject,
         bool HasChanges);
+
+    private sealed class ActiveOutputSceneTransition(
+        Guid operationId,
+        RenderOutputId outputId,
+        CanvasId sourceCanvasId,
+        CanvasId destinationCanvasId,
+        SceneVersionBinding destinationBinding) : IDisposable
+    {
+        private CancellationTokenRegistration _cancellationRegistration;
+        private int _disposed;
+
+        public object SyncRoot { get; } = new();
+        public Guid OperationId { get; } = operationId;
+        public RenderOutputId OutputId { get; } = outputId;
+        public CanvasId SourceCanvasId { get; } = sourceCanvasId;
+        public CanvasId DestinationCanvasId { get; } = destinationCanvasId;
+        public SceneVersionBinding DestinationBinding { get; } = destinationBinding;
+        public Task PhaseTail { get; set; } = Task.CompletedTask;
+        public Exception? TerminalFailure { get; set; }
+        public CancellationTokenRegistration CancellationRegistration
+        {
+            set
+            {
+                if (Volatile.Read(ref _disposed) != 0)
+                {
+                    value.Dispose();
+                    return;
+                }
+
+                _cancellationRegistration = value;
+                if (Volatile.Read(ref _disposed) != 0)
+                    _cancellationRegistration.Dispose();
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                _cancellationRegistration.Dispose();
+        }
+    }
+
+    private sealed record OutputSceneTransitionCancellation(
+        OutputRouteTransitionRuntime Runtime,
+        RenderOutputId OutputId,
+        Guid OperationId);
 
     private sealed class OutputSinkEntry(
         RuntimeRenderOutputSink sink,
