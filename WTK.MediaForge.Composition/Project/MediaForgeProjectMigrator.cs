@@ -17,6 +17,7 @@ public static class MediaForgeProjectMigrator
 
         MigrateSourceDefinitions(project);
         MigrateOutputs(project);
+        project.SchemaVersion = MediaForgeProject.CurrentSchemaVersion;
         return ProjectMigrateResult.Succeeded(project);
     }
 

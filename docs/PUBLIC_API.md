@@ -344,7 +344,12 @@ Current public effects:
 - `ChromaKeyEffect`
 - `ColorCorrectionEffect`
 - `BlurEffect`
-- `TransitionEffect`
+
+Transitions are scene/output routing definitions and never derive from
+`MediaForgeEffect`. Schema-v1 projects containing the retired
+`effect.transition` discriminator are migrated by removing that ineffective
+layer entry. Schema-v2 and newer documents using the retired discriminator are
+rejected as invalid.
 
 Effects may exist as project model contracts before the renderer implements every effect. Public API must not imply that an effect is rendered unless renderer support and tests exist.
 

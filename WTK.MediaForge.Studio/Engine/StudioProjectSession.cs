@@ -221,15 +221,6 @@ public sealed class StudioProjectSession
                     color.Saturation = ToPositiveSingle(studioEffect.Saturation, nameof(studioEffect.Saturation));
                     color.HueDegrees = ToFiniteSingle(studioEffect.HueDegrees, nameof(studioEffect.HueDegrees));
                     break;
-                case TransitionEffect transition:
-                    transition.Kind = Enum.IsDefined(typeof(TransitionKind), studioEffect.TransitionKind)
-                        ? (TransitionKind)studioEffect.TransitionKind
-                        : throw new ArgumentOutOfRangeException(nameof(studioEffect.TransitionKind));
-                    transition.Progress = ToUnitSingle(studioEffect.TransitionProgress, nameof(studioEffect.TransitionProgress));
-                    transition.DurationSeconds = ToPositiveSingle(
-                        studioEffect.TransitionDurationSeconds,
-                        nameof(studioEffect.TransitionDurationSeconds));
-                    break;
             }
             result.Add(effect);
         }

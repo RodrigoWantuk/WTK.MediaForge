@@ -83,12 +83,6 @@ internal static class EffectValidation
                     yield return issue;
                 break;
 
-            case TransitionEffect transition:
-                foreach (var issue in ValidateUnitRange(transition.Progress, drawObjectName, canvasName, effect.Name, "effect.transition.progress", "Progress"))
-                    yield return issue;
-                foreach (var issue in ValidatePositiveFinite(transition.DurationSeconds, drawObjectName, canvasName, effect.Name, "effect.transition.duration", "DurationSeconds"))
-                    yield return issue;
-                break;
         }
     }
 

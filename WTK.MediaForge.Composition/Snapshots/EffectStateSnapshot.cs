@@ -10,7 +10,6 @@ namespace WTK.MediaForge.Composition.Snapshots;
 [JsonDerivedType(typeof(ChromaKeyEffectSnapshot), "effect.chroma")]
 [JsonDerivedType(typeof(ColorCorrectionEffectSnapshot), "effect.color")]
 [JsonDerivedType(typeof(BlurEffectSnapshot), "effect.blur")]
-[JsonDerivedType(typeof(TransitionEffectSnapshot), "effect.transition")]
 internal abstract class EffectStateSnapshot
 {
     public EffectId Id { get; init; }
@@ -49,15 +48,6 @@ internal sealed class ColorCorrectionEffectSnapshot : EffectStateSnapshot
 internal sealed class BlurEffectSnapshot : EffectStateSnapshot
 {
     public float Radius { get; init; } = 4f;
-}
-
-internal sealed class TransitionEffectSnapshot : EffectStateSnapshot
-{
-    public TransitionKind Kind { get; init; } = TransitionKind.Fade;
-
-    public float Progress { get; init; }
-
-    public float DurationSeconds { get; init; } = 1f;
 }
 
 internal static class EffectSnapshotFactory
@@ -100,17 +90,6 @@ internal static class EffectSnapshotFactory
                 Order = blur.Order,
                 SchemaVersion = blur.SchemaVersion,
                 Radius = blur.Radius
-            },
-            TransitionEffect transition => new TransitionEffectSnapshot
-            {
-                Id = transition.Id,
-                Name = transition.Name,
-                Enabled = transition.Enabled,
-                Order = transition.Order,
-                SchemaVersion = transition.SchemaVersion,
-                Kind = transition.Kind,
-                Progress = transition.Progress,
-                DurationSeconds = transition.DurationSeconds
             },
             _ => throw new NotSupportedException($"Unsupported effect type: {effect.GetType().Name}.")
         };

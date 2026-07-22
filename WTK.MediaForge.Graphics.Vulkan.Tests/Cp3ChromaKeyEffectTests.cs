@@ -41,53 +41,6 @@ public class Cp3ChromaKeyEffectTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "render.drawobject_not_supported");
     }
     [Fact]
-    public async Task Source_layer_unsupported_effect_reports_render_effect_not_supported()
-    {
-        var diagnostics = new InMemoryDiagnosticsSink();
-        if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context, diagnostics: diagnostics))
-            return;
-
-        using (context)
-        {
-            VulkanCompositionTestHarness.FillSharedTexture(context!.Device, context.SharedHandle, ColorRgba.From(1, 0, 0, 1));
-
-            var guard = context.Guard;
-            var backend = context.Backend;
-            guard.BindToCurrentThread();
-
-            try
-            {
-                var outputId = RenderOutputId.New();
-                var canvasId = CanvasId.New();
-                var size = new FrameSize(64, 64);
-
-                backend.BindOutput(VulkanCompositionTestHarness.CreateOffscreenBinding(outputId, size.Width, size.Height));
-
-                using var snapshot = VulkanCompositionTestHarness.CreateCp2Snapshot(
-                    canvasId,
-                    outputId,
-                    size,
-                    size,
-                    [
-                        new VulkanCompositionTestHarness.Cp2LayerSpec(
-                            context.SharedHandle,
-                            SourceId.New(),
-                            new Transform2D { Size = new CanvasSize(64, 64) },
-                            effects: [new TransitionEffectSnapshot { Id = EffectId.New(), Name = "Transition" }])
-                    ]);
-
-                var submission = backend.Submit(snapshot);
-                await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
-
-                Assert.Contains(diagnostics.Diagnostics, diagnostic => diagnostic.Code == "render.effect_not_supported");
-            }
-            finally
-            {
-                guard.Clear();
-            }
-        }
-    }
-    [Fact]
     public async Task Chroma_key_removes_key_color()
     {
         if (!VulkanCompositionTestHarness.TryCreateCompositionContext(out var context))
@@ -387,11 +340,12 @@ public class Cp3ChromaKeyEffectTests
                             new Transform2D { Size = new CanvasSize(64, 64) },
                             effects:
                             [
-                                new TransitionEffectSnapshot
+                                new BlurEffectSnapshot
                                 {
                                     Id = EffectId.New(),
                                     Name = "Second",
-                                    Order = 2
+                                    Order = 2,
+                                    Radius = 2f
                                 },
                                 new ColorCorrectionEffectSnapshot
                                 {
@@ -405,12 +359,9 @@ public class Cp3ChromaKeyEffectTests
                 var submission = backend.Submit(snapshot);
                 await VulkanCompositionTestHarness.ReleaseSubmissionAsync(submission);
 
-                var unsupported = diagnostics.Diagnostics
-                    .Where(diagnostic => diagnostic.Code == "render.effect_not_supported")
-                    .ToArray();
-
-                var diagnostic = Assert.Single(unsupported);
-                Assert.Contains(nameof(TransitionEffectSnapshot), diagnostic.Message, StringComparison.Ordinal);
+                Assert.DoesNotContain(
+                    diagnostics.Diagnostics,
+                    diagnostic => diagnostic.Code == "render.effect_not_supported");
             }
             finally
             {

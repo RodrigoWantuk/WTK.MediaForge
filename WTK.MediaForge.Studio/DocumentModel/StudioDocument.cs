@@ -16,8 +16,7 @@ public enum StudioEffectKind
 {
     ChromaKey = 0,
     Blur = 1,
-    ColorCorrection = 2,
-    Transition = 3
+    ColorCorrection = 2
 }
 
 public sealed partial class StudioDocument : ObservableObject
@@ -252,8 +251,6 @@ public sealed partial class StudioEffect : ObservableObject
     private double _contrast = 1;
     private double _saturation = 1;
     private double _hueDegrees;
-    private double _transitionProgress;
-    private double _transitionDurationSeconds = 1;
 
     public StudioEffectKind Kind { get; set; }
 
@@ -341,19 +338,6 @@ public sealed partial class StudioEffect : ObservableObject
         set => SetProperty(ref _hueDegrees, value);
     }
 
-    public int TransitionKind { get; set; }
-
-    public double TransitionProgress
-    {
-        get => _transitionProgress;
-        set => SetProperty(ref _transitionProgress, value);
-    }
-
-    public double TransitionDurationSeconds
-    {
-        get => _transitionDurationSeconds;
-        set => SetProperty(ref _transitionDurationSeconds, value);
-    }
 }
 
 public sealed partial class StudioOutput : ObservableObject

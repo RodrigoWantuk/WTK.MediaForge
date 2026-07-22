@@ -61,13 +61,6 @@ internal static class EffectStateFingerprint
                 builder.Append("radius", blur.Radius);
                 break;
 
-            case TransitionEffectSnapshot transition:
-                builder.Append("type", "effect.transition");
-                builder.Append("kind", transition.Kind);
-                builder.Append("progress", transition.Progress);
-                builder.Append("duration", transition.DurationSeconds);
-                break;
-
             default:
                 builder.Append("type", effect.GetType().FullName ?? effect.GetType().Name);
                 break;

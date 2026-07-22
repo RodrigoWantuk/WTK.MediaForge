@@ -52,6 +52,31 @@ public class EffectModelTests
     }
 
     [Fact]
+    public void Schema_v1_transition_effect_is_removed_by_explicit_project_migration()
+    {
+        var json = MediaForgeProjectSerializer.Serialize(ProjectWithChromaEffect())
+            .Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1", StringComparison.Ordinal)
+            .Replace("effect.chroma", "effect.transition", StringComparison.Ordinal);
+
+        var restored = MediaForgeProjectSerializer.Deserialize(json);
+
+        Assert.Equal(MediaForgeProject.CurrentSchemaVersion, restored.SchemaVersion);
+        var layer = Assert.IsType<SourceLayerDrawObject>(restored.Canvases[0].Objects[0]);
+        Assert.Empty(layer.Effects);
+    }
+
+    [Fact]
+    public void Current_project_rejects_retired_transition_effect_discriminator()
+    {
+        var json = MediaForgeProjectSerializer.Serialize(ProjectWithChromaEffect())
+            .Replace("effect.chroma", "effect.transition", StringComparison.Ordinal);
+
+        var error = Assert.Throws<System.Text.Json.JsonException>(() => MediaForgeProjectSerializer.Deserialize(json));
+
+        Assert.Contains("not an effect type", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Validator_rejects_invalid_chroma_similarity()
     {
         var project = new MediaForgeProject
@@ -123,4 +148,22 @@ public class EffectModelTests
         Assert.Equal(effectId, blur.Id);
         Assert.Equal(8f, blur.Radius);
     }
+
+    private static MediaForgeProject ProjectWithChromaEffect() => new()
+    {
+        Canvases =
+        [
+            new MediaForgeCanvas
+            {
+                Objects =
+                [
+                    new SourceLayerDrawObject
+                    {
+                        Transform = new Transform2D { Size = new CanvasSize(100, 100) },
+                        Effects = [new ChromaKeyEffect { Name = "Legacy transition placeholder" }]
+                    }
+                ]
+            }
+        ]
+    };
 }

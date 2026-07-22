@@ -159,9 +159,6 @@ public sealed class SceneEditSessionService
             Contrast = source.Contrast,
             Saturation = source.Saturation,
             HueDegrees = source.HueDegrees,
-            TransitionKind = source.TransitionKind,
-            TransitionProgress = source.TransitionProgress,
-            TransitionDurationSeconds = source.TransitionDurationSeconds,
             Kind = source.Kind
         };
     }

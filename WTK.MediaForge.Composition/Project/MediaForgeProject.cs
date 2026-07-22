@@ -2,7 +2,7 @@ namespace WTK.MediaForge.Composition.Project;
 
 public sealed class MediaForgeProject
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 

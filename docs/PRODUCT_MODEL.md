@@ -173,7 +173,10 @@ Effects are ordered product-model objects on draw objects:
 - `ChromaKeyEffect`
 - `ColorCorrectionEffect`
 - `BlurEffect`
-- `TransitionEffect`
+
+Transitions are not effects. They are owned by scene/output routing. The loader
+migrates the obsolete schema-v1 `effect.transition` layer entry away and rejects
+the discriminator in current project documents.
 
 `ChromaKeyEffect` is the first renderer-supported source-layer effect. Other
 effect contracts may exist before renderer support, but public docs and samples

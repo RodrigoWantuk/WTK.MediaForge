@@ -249,8 +249,6 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Effects.ChromaKeyEffect",
                 "WTK.MediaForge.Composition.Effects.ColorCorrectionEffect",
                 "WTK.MediaForge.Composition.Effects.MediaForgeEffect",
-                "WTK.MediaForge.Composition.Effects.TransitionEffect",
-                "WTK.MediaForge.Composition.Effects.TransitionKind",
                 "WTK.MediaForge.Composition.Engine.MediaForgeDiagnosticEventArgs",
                 "WTK.MediaForge.Composition.Engine.MediaForgeEngine",
                 "WTK.MediaForge.Composition.Engine.MediaForgeEngineException",

@@ -447,14 +447,6 @@ public sealed class StudioProjectEngineMapper
             studio.Saturation = color.Saturation;
             studio.HueDegrees = color.HueDegrees;
         }
-        else if (effect is TransitionEffect transition)
-        {
-            studio.Kind = StudioEffectKind.Transition;
-            studio.TransitionKind = (int)transition.Kind;
-            studio.TransitionProgress = transition.Progress;
-            studio.TransitionDurationSeconds = transition.DurationSeconds;
-        }
-
         return studio;
     }
 

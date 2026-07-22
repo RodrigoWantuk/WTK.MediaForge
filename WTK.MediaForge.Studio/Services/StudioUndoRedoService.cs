@@ -183,9 +183,6 @@ public sealed class StudioUndoRedoService : IStudioUndoRedoService
         Append(builder, effect.Contrast);
         Append(builder, effect.Saturation);
         Append(builder, effect.HueDegrees);
-        Append(builder, effect.TransitionKind);
-        Append(builder, effect.TransitionProgress);
-        Append(builder, effect.TransitionDurationSeconds);
     }
 
     private static void Append<T>(StringBuilder builder, T value)

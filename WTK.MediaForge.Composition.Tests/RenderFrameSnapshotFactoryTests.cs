@@ -107,7 +107,7 @@ public class RenderFrameSnapshotFactoryTests
                             Name = "PiP",
                             NestedCanvasId = nestedCanvasId,
                             Transform = new Transform2D { Size = new CanvasSize(320, 240) },
-                            Effects = [new TransitionEffectSnapshot { Id = effectId, Name = "Fade", Progress = 0.5f }]
+                            Effects = [new BlurEffectSnapshot { Id = effectId, Name = "Blur", Radius = 5f }]
                         }
                     ]
                 },
@@ -135,9 +135,9 @@ public class RenderFrameSnapshotFactoryTests
 
         using var result = RenderFrameSnapshotFactory.Build(projectState, runtime);
         var pip = Assert.IsType<RenderCanvasDrawObjectSnapshot>(result.TakeSnapshot()!.Canvases[0].Objects[0]);
-        var effect = Assert.IsType<TransitionEffectSnapshot>(Assert.Single(pip.Effects));
+        var effect = Assert.IsType<BlurEffectSnapshot>(Assert.Single(pip.Effects));
         Assert.Equal(effectId, effect.Id);
-        Assert.Equal(0.5f, effect.Progress);
+        Assert.Equal(5f, effect.Radius);
     }
 
     [Fact]

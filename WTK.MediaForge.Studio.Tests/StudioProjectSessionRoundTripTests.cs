@@ -73,14 +73,6 @@ public sealed class StudioProjectSessionRoundTripTests
                 Saturation = 0.76f,
                 HueDegrees = 23.5f,
                 Order = 2
-            },
-            new TransitionEffect
-            {
-                Name = "Transition",
-                Kind = TransitionKind.Wipe,
-                Progress = 0.37f,
-                DurationSeconds = 2.25f,
-                Order = 3
             }
         ];
         canvas.Objects.Add(new SolidDrawObject

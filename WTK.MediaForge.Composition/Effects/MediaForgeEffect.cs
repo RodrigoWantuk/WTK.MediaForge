@@ -8,7 +8,6 @@ namespace WTK.MediaForge.Composition.Effects;
 [JsonDerivedType(typeof(ChromaKeyEffect), "effect.chroma")]
 [JsonDerivedType(typeof(ColorCorrectionEffect), "effect.color")]
 [JsonDerivedType(typeof(BlurEffect), "effect.blur")]
-[JsonDerivedType(typeof(TransitionEffect), "effect.transition")]
 public abstract class MediaForgeEffect
 {
     public EffectId Id { get; set; } = EffectId.New();
@@ -47,20 +46,4 @@ public sealed class ColorCorrectionEffect : MediaForgeEffect
 public sealed class BlurEffect : MediaForgeEffect
 {
     public float Radius { get; set; } = 4f;
-}
-
-public enum TransitionKind
-{
-    Fade = 0,
-    Slide = 1,
-    Wipe = 2
-}
-
-public sealed class TransitionEffect : MediaForgeEffect
-{
-    public TransitionKind Kind { get; set; } = TransitionKind.Fade;
-
-    public float Progress { get; set; }
-
-    public float DurationSeconds { get; set; } = 1f;
 }

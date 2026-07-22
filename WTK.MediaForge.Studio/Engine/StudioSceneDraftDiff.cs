@@ -112,9 +112,7 @@ public sealed record StudioSceneDraftDiff(
                 a.KeyColor != b.KeyColor || a.Tolerance != b.Tolerance || a.Spill != b.Spill ||
                 a.EdgeSmooth != b.EdgeSmooth || a.BlurRadius != b.BlurRadius ||
                 a.Brightness != b.Brightness || a.Contrast != b.Contrast ||
-                a.Saturation != b.Saturation || a.HueDegrees != b.HueDegrees ||
-                a.TransitionKind != b.TransitionKind || a.TransitionProgress != b.TransitionProgress ||
-                a.TransitionDurationSeconds != b.TransitionDurationSeconds)
+                a.Saturation != b.Saturation || a.HueDegrees != b.HueDegrees)
             {
                 return false;
             }
