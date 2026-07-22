@@ -52,6 +52,19 @@ public sealed class RemoteSceneMediaRuntimeTests
     }
 
     [Fact]
+    public void Clearing_jitter_for_format_change_disposes_all_old_generation_packets()
+    {
+        var releases = 0;
+        using var jitter = new RemoteSceneJitterBuffer(capacity: 4, targetDepth: 2);
+        jitter.Enqueue(Lease(1, true, () => releases++));
+        jitter.Enqueue(Lease(2, false, () => releases++));
+
+        Assert.Equal(2, jitter.Clear());
+        Assert.Equal(2, releases);
+        Assert.False(jitter.TryDequeue(draining: true, out _));
+    }
+
+    [Fact]
     public async Task Packet_sink_rejects_unproved_packets_and_forwards_keyframe_feedback()
     {
         var publisher = new RecordingPublisher();
@@ -86,6 +99,36 @@ public sealed class RemoteSceneMediaRuntimeTests
         Assert.True(publisher.Disposed);
     }
 
+    [Fact]
+    public async Task Packet_sink_start_is_idempotent_and_stop_resets_state_after_dispose_failure()
+    {
+        var failing = new RecordingPublisher { FailDispose = true };
+        var factory = new RecordingPublisherFactory(failing);
+        var sink = new RemoteScenePacketSink(
+            new RemoteSceneOutputSettings
+            {
+                SignalingEndpoint = "wss://signal.example.test",
+                StreamName = "program"
+            },
+            factory);
+        var context = new EncodedPacketSinkContext
+        {
+            Codec = EncodedVideoCodec.H264,
+            Size = new FrameSize(1920, 1080),
+            FramesPerSecond = 60
+        };
+
+        await sink.StartAsync(context, CancellationToken.None);
+        await sink.StartAsync(context, CancellationToken.None);
+        Assert.Equal(1, factory.CreateCount);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sink.StopAsync(CancellationToken.None).AsTask());
+
+        failing.FailDispose = false;
+        await sink.StartAsync(context, CancellationToken.None);
+        Assert.Equal(2, factory.CreateCount);
+        await sink.StopAsync(CancellationToken.None);
+    }
+
     private static EncodedVideoPacketLease Lease(long ticks, bool keyframe, Action release) =>
         EncodedVideoPacketLease.Create(new EncodedVideoPacket
         {
@@ -97,10 +140,16 @@ public sealed class RemoteSceneMediaRuntimeTests
 
     private sealed class RecordingPublisherFactory(IRemoteScenePublisher publisher) : IRemoteScenePublisherFactory
     {
+        public int CreateCount { get; private set; }
+
         public ValueTask<IRemoteScenePublisher> CreateAsync(
             RemoteSceneOutputSettings settings,
             EncodedPacketSinkContext context,
-            CancellationToken cancellationToken) => ValueTask.FromResult(publisher);
+            CancellationToken cancellationToken)
+        {
+            CreateCount++;
+            return ValueTask.FromResult(publisher);
+        }
     }
 
     private sealed class RecordingPublisher : IRemoteScenePublisher
@@ -108,6 +157,7 @@ public sealed class RemoteSceneMediaRuntimeTests
         public RemoteScenePacketQueuePolicy QueuePolicy { get; } = new();
         public event EventHandler? KeyFrameRequested;
         public bool Disposed { get; private set; }
+        public bool FailDispose { get; set; }
 
         public ValueTask SendVideoPacketAsync(EncodedVideoPacketLease packet, CancellationToken cancellationToken)
         {
@@ -120,8 +170,9 @@ public sealed class RemoteSceneMediaRuntimeTests
         public ValueTask DisposeAsync()
         {
             Disposed = true;
-            return ValueTask.CompletedTask;
+            return FailDispose
+                ? ValueTask.FromException(new InvalidOperationException("publisher dispose"))
+                : ValueTask.CompletedTask;
         }
     }
 }
-

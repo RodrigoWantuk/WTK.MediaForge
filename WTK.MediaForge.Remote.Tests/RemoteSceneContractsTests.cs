@@ -36,6 +36,11 @@ public sealed class RemoteSceneContractsTests
         Assert.Equal(
             typeof(IAsyncEnumerable<EncodedVideoPacketLease>),
             typeof(IRemoteSceneSubscriber).GetProperty(nameof(IRemoteSceneSubscriber.VideoPackets))!.PropertyType);
+        Assert.Equal(
+            typeof(RemoteSceneFormatChangedEventArgs),
+            typeof(IRemoteSceneSubscriber).GetProperty(nameof(IRemoteSceneSubscriber.CurrentFormat))!.PropertyType);
+        var format = new RemoteSceneFormatChangedEventArgs(1920, 1080, EncodedVideoProfile.DefaultH264, generation: 4);
+        Assert.Equal(4, format.Generation);
     }
 
     [Fact]

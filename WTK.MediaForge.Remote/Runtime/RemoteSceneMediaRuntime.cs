@@ -29,15 +29,28 @@ public sealed class RemoteScenePacketSink(
     {
         ArgumentNullException.ThrowIfNull(context);
         if (Interlocked.CompareExchange(ref _started, 1, 0) != 0)
-            throw new InvalidOperationException("Remote Scene packet sink is already started.");
+            return;
+        IRemoteScenePublisher? candidate = null;
         try
         {
-            _publisher = await _publisherFactory.CreateAsync(_settings, context, cancellationToken).ConfigureAwait(false);
-            _publisher.KeyFrameRequested += OnKeyFrameRequested;
+            candidate = await _publisherFactory.CreateAsync(_settings, context, cancellationToken).ConfigureAwait(false);
+            candidate.KeyFrameRequested += OnKeyFrameRequested;
+            _publisher = candidate;
         }
-        catch
+        catch (Exception startFailure)
         {
+            Exception? cleanupFailure = null;
+            if (candidate is not null)
+            {
+                candidate.KeyFrameRequested -= OnKeyFrameRequested;
+                try { await candidate.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception exception) { cleanupFailure = exception; }
+            }
+            _publisher = null;
             Volatile.Write(ref _started, 0);
+            if (cleanupFailure is not null)
+                throw new AggregateException("Remote Scene publisher start and rollback both failed.", startFailure, cleanupFailure);
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(startFailure).Throw();
             throw;
         }
     }
@@ -65,10 +78,19 @@ public sealed class RemoteScenePacketSink(
     {
         var publisher = Interlocked.Exchange(ref _publisher, null);
         if (publisher is null)
+        {
+            Volatile.Write(ref _started, 0);
             return;
+        }
         publisher.KeyFrameRequested -= OnKeyFrameRequested;
-        await publisher.DisposeAsync().ConfigureAwait(false);
-        Volatile.Write(ref _started, 0);
+        try
+        {
+            await publisher.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _started, 0);
+        }
     }
 
     public async ValueTask DisposeAsync() => await StopAsync(CancellationToken.None).ConfigureAwait(false);
@@ -156,6 +178,19 @@ public sealed class RemoteSceneJitterBuffer : IDisposable
         }
     }
 
+    public int Clear()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        lock (_gate)
+        {
+            var count = _packets.Count;
+            foreach (var lease in _packets.Values)
+                lease.Dispose();
+            _packets.Clear();
+            return count;
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -177,8 +212,8 @@ public sealed class RemoteSceneHardwareDecodePump(
     private readonly IRemoteSceneSubscriber _subscriber = subscriber ?? throw new ArgumentNullException(nameof(subscriber));
     private readonly Func<IHardwareVideoDecoder> _decoderFactory = decoderFactory ?? throw new ArgumentNullException(nameof(decoderFactory));
     private readonly RemoteSceneDecodeOptions _options = options ?? new RemoteSceneDecodeOptions();
-    private RemoteSceneFormatChangedEventArgs? _format;
-    private long _formatGeneration;
+    private RemoteSceneFormatChangedEventArgs? _format = subscriber.CurrentFormat;
+    private long _formatGeneration = subscriber.CurrentFormat?.Generation ?? 0;
 
     public RemoteSceneInterruptionPolicy InterruptionPolicy => _options.InterruptionPolicy;
 
@@ -190,12 +225,26 @@ public sealed class RemoteSceneHardwareDecodePump(
         using var jitter = new RemoteSceneJitterBuffer(_options.JitterCapacity, _options.TargetBufferedPackets);
         IHardwareVideoDecoder? decoder = null;
         long openedGeneration = -1;
+        long observedGeneration = Volatile.Read(ref _formatGeneration);
+        long observedDrops = 0;
         _subscriber.FormatChanged += OnFormatChanged;
         try
         {
             await foreach (var incoming in _subscriber.VideoPackets.WithCancellation(cancellationToken).ConfigureAwait(false))
             {
+                var incomingGeneration = Volatile.Read(ref _formatGeneration);
+                if (incomingGeneration != observedGeneration)
+                {
+                    jitter.Clear();
+                    observedGeneration = incomingGeneration;
+                    await _subscriber.RequestKeyFrameAsync(cancellationToken).ConfigureAwait(false);
+                }
                 jitter.Enqueue(incoming);
+                if (jitter.DroppedPackets != observedDrops)
+                {
+                    observedDrops = jitter.DroppedPackets;
+                    await _subscriber.RequestKeyFrameAsync(cancellationToken).ConfigureAwait(false);
+                }
                 while (jitter.TryDequeue(draining: false, out var lease))
                 {
                     using (var ownedLease = lease!)
@@ -270,7 +319,10 @@ public sealed class RemoteSceneHardwareDecodePump(
 
     private void OnFormatChanged(object? sender, RemoteSceneFormatChangedEventArgs args)
     {
+        var currentGeneration = Volatile.Read(ref _formatGeneration);
+        if (args.Generation <= currentGeneration)
+            return;
         Volatile.Write(ref _format, args);
-        Interlocked.Increment(ref _formatGeneration);
+        Volatile.Write(ref _formatGeneration, args.Generation);
     }
 }

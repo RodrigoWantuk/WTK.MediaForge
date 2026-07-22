@@ -6,6 +6,8 @@ public sealed class RemoteSceneSignalingOptions
 
     public string DatabasePath { get; set; } = "remote-scene-signaling.db";
 
+    public string InstanceId { get; set; } = string.Empty;
+
     public string AdminBearerToken { get; set; } = string.Empty;
 
     public TimeSpan DefaultInvitationTtl { get; set; } = TimeSpan.FromMinutes(10);
@@ -48,6 +50,8 @@ public sealed class RemoteSceneSignalingOptions
     {
         if (string.IsNullOrWhiteSpace(DatabasePath))
             throw new InvalidOperationException("Remote Scene signaling requires a SQLite database path.");
+        if (string.IsNullOrWhiteSpace(InstanceId) || InstanceId.Length > 128)
+            throw new InvalidOperationException("Remote Scene signaling requires an instance id of at most 128 characters.");
         if (AdminBearerToken.Length < 32)
             throw new InvalidOperationException("Remote Scene signaling admin bearer token must contain at least 32 characters.");
         if (DefaultInvitationTtl <= TimeSpan.Zero || DefaultInvitationTtl > MaximumInvitationTtl)

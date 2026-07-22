@@ -66,11 +66,16 @@ public sealed record RemoteSceneTelemetry(
     long KeyFrames = 0,
     long ReconnectCount = 0);
 
-public sealed class RemoteSceneFormatChangedEventArgs(int width, int height, EncodedVideoProfile profile) : EventArgs
+public sealed class RemoteSceneFormatChangedEventArgs(
+    int width,
+    int height,
+    EncodedVideoProfile profile,
+    long generation) : EventArgs
 {
     public int Width { get; } = width > 0 ? width : throw new ArgumentOutOfRangeException(nameof(width));
     public int Height { get; } = height > 0 ? height : throw new ArgumentOutOfRangeException(nameof(height));
     public EncodedVideoProfile Profile { get; } = profile ?? throw new ArgumentNullException(nameof(profile));
+    public long Generation { get; } = generation > 0 ? generation : throw new ArgumentOutOfRangeException(nameof(generation));
 }
 
 public interface IRemoteSceneTransport : IAsyncDisposable
@@ -106,6 +111,7 @@ public interface IRemoteSceneSubscriber : IAsyncDisposable
     /// </summary>
     IAsyncEnumerable<EncodedVideoPacketLease> VideoPackets { get; }
     RemoteScenePacketQueuePolicy QueuePolicy { get; }
+    RemoteSceneFormatChangedEventArgs? CurrentFormat { get; }
     event EventHandler<RemoteSceneFormatChangedEventArgs>? FormatChanged;
     ValueTask RequestKeyFrameAsync(CancellationToken cancellationToken);
 }

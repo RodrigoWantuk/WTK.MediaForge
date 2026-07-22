@@ -158,6 +158,10 @@ public sealed class RemoteSceneSignalingTests
         options = CreateOptions();
         options.TurnUrls = ["turn:turn.example.test"];
         Assert.Throws<InvalidOperationException>(options.Validate);
+
+        options = CreateOptions();
+        options.InstanceId = string.Empty;
+        Assert.Throws<InvalidOperationException>(options.Validate);
     }
 
     [Fact]
@@ -445,6 +449,7 @@ public sealed class RemoteSceneSignalingTests
         new()
         {
             DatabasePath = "unused.db",
+            InstanceId = "test-instance",
             AdminBearerToken = "01234567890123456789012345678901"
         };
 

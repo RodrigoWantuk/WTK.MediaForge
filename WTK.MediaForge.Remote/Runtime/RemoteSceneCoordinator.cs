@@ -34,7 +34,7 @@ public sealed class RemoteSceneCoordinator(IRemoteSceneTransport transport) : IA
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_publisher is not null) throw new InvalidOperationException("Remote Scene publishing is already active.");
+            if (_publisher is not null) return _publisher;
             RemoteSceneRequestValidator.Validate(request);
             _publisher = await RequireSession().PublishAsync(request, cancellationToken).ConfigureAwait(false);
             return _publisher;
@@ -51,10 +51,86 @@ public sealed class RemoteSceneCoordinator(IRemoteSceneTransport transport) : IA
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_subscriber is not null) throw new InvalidOperationException("Remote Scene subscription is already active.");
+            if (_subscriber is not null) return _subscriber;
             RemoteSceneRequestValidator.Validate(request);
             _subscriber = await RequireSession().SubscribeAsync(request, cancellationToken).ConfigureAwait(false);
             return _subscriber;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    public async Task<IRemoteScenePublisher> RestartPublishingAsync(
+        RemoteScenePublishRequest request,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            RemoteSceneRequestValidator.Validate(request);
+            var candidate = await RequireSession().PublishAsync(request, cancellationToken).ConfigureAwait(false);
+            var previous = _publisher;
+            try
+            {
+                if (previous is not null)
+                    await previous.DisposeAsync().ConfigureAwait(false);
+                _publisher = candidate;
+                return candidate;
+            }
+            catch (Exception replacementFailure)
+            {
+                _publisher = null;
+                try { await candidate.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception cleanupFailure)
+                {
+                    throw new AggregateException(
+                        "Remote Scene publisher restart and candidate cleanup both failed.",
+                        replacementFailure,
+                        cleanupFailure);
+                }
+                throw;
+            }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    public async Task<IRemoteSceneSubscriber> RestartSubscribingAsync(
+        RemoteSceneSubscribeRequest request,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            RemoteSceneRequestValidator.Validate(request);
+            var candidate = await RequireSession().SubscribeAsync(request, cancellationToken).ConfigureAwait(false);
+            var previous = _subscriber;
+            try
+            {
+                if (previous is not null)
+                    await previous.DisposeAsync().ConfigureAwait(false);
+                _subscriber = candidate;
+                return candidate;
+            }
+            catch (Exception replacementFailure)
+            {
+                _subscriber = null;
+                try { await candidate.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception cleanupFailure)
+                {
+                    throw new AggregateException(
+                        "Remote Scene subscriber restart and candidate cleanup both failed.",
+                        replacementFailure,
+                        cleanupFailure);
+                }
+                throw;
+            }
         }
         finally
         {

@@ -90,7 +90,9 @@ public static class RemoteSceneSignalingHost
     {
         if (!IsSecureTransport(context, options))
             return Results.Problem("HTTPS is required.", statusCode: StatusCodes.Status426UpgradeRequired);
-        if (!TryReadBearerToken(context.Request, out var bearer) ||
+        if (!context.Request.Headers.TryGetValue("X-MediaForge-Instance", out var instanceId) ||
+            !string.Equals(instanceId.ToString(), options.InstanceId, StringComparison.Ordinal) ||
+            !TryReadBearerToken(context.Request, out var bearer) ||
             !RemoteSceneSecret.FixedTimeEquals(options.AdminBearerToken, bearer))
         {
             return Results.Unauthorized();

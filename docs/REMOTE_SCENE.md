@@ -68,7 +68,8 @@ unbounded queue. RTCP PLI/FIR is surfaced to the publisher through
 
 The signaling service is implemented with the following product boundaries:
 
-- an administrator bearer token is required to create an invitation;
+- an administrator bearer token scoped to one configured signaling instance,
+  plus the matching `X-MediaForge-Instance` id, is required to create an invitation;
 - invitation codes are one-time, expire by default after ten minutes, and are stored only as SHA-256 hashes;
 - owner and participant access tokens are random 256-bit values and are also stored only as hashes;
 - SQLite stores session coordination state with transactional redemption, WAL journaling, expiration cleanup, and no media payloads;
@@ -90,10 +91,15 @@ The signaling service is implemented with the following product boundaries:
   rate, and TTL quotas are enforced. Structured logs and metrics contain only
   session correlation, role, kind, and rejection category—not tokens or SDP.
 
+Quota counters are process-local. A multi-replica deployment must provide a
+shared/distributed quota implementation or use sticky single-owner routing;
+the checked-in in-memory tracker is not a cluster-wide limit.
+
 The service refuses to start with the empty token in `appsettings.json`. Supply secrets through protected deployment configuration, for example:
 
 ```powershell
 $env:RemoteSceneSignaling__AdminBearerToken = '<at-least-32-random-characters>'
+$env:RemoteSceneSignaling__InstanceId = 'signaling-sa-east-1-a'
 $env:RemoteSceneSignaling__TurnUrls__0 = 'turns://turn.example.com:5349'
 $env:RemoteSceneSignaling__TurnSharedSecret = '<coturn-shared-secret>'
 $env:RemoteSceneSignaling__TrustedProxies__0 = '10.0.0.5'
