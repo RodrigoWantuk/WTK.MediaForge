@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Avalonia.Threading;
+using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Studio.DesignData;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
@@ -150,6 +151,7 @@ public sealed class FakeStudioSceneEditRuntimeService : IStudioSceneEditRuntimeS
 public sealed class FakeStudioOutputService : IStudioOutputService
 {
     private readonly IStudioClock _clock;
+    private readonly Dictionary<RenderOutputId, StudioOutputStatus> _outputStatuses = [];
 
     public FakeStudioOutputService(IStudioClock clock)
     {
@@ -196,12 +198,48 @@ public sealed class FakeStudioOutputService : IStudioOutputService
         Publish();
     }
 
+    public Task StartOutputAsync(RenderOutputId outputId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _outputStatuses[outputId] = new StudioOutputStatus(outputId, StudioOutputUiState.Running, null, _clock.Now, TimeSpan.Zero);
+        return Task.CompletedTask;
+    }
+
+    public Task StopOutputAsync(RenderOutputId outputId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _outputStatuses[outputId] = new StudioOutputStatus(outputId, StudioOutputUiState.Ready, null, null, TimeSpan.Zero);
+        return Task.CompletedTask;
+    }
+
+    public async Task RestartOutputAsync(RenderOutputId outputId, CancellationToken cancellationToken)
+    {
+        await StopOutputAsync(outputId, cancellationToken).ConfigureAwait(false);
+        await StartOutputAsync(outputId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public StudioOutputStatus GetOutputStatus(RenderOutputId outputId)
+    {
+        if (!_outputStatuses.TryGetValue(outputId, out var status))
+            return new StudioOutputStatus(outputId, StudioOutputUiState.Ready, null, null, TimeSpan.Zero);
+        return status.State == StudioOutputUiState.Running && status.StartedAt is not null
+            ? status with { Elapsed = _clock.Now - status.StartedAt.Value }
+            : status;
+    }
+
+    public StudioOutputMetrics? GetMetrics(RenderOutputId outputId) =>
+        _outputStatuses.ContainsKey(outputId)
+            ? new StudioOutputMetrics(1, 1, 1, 0, TimeSpan.Zero)
+            : null;
+
     public Task StopAllAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         StreamingState = StudioOutputUiState.Ready;
         RecordingState = StudioOutputUiState.Ready;
         RecordingStartedAt = null;
+        foreach (var outputId in _outputStatuses.Keys.ToArray())
+            _outputStatuses[outputId] = new StudioOutputStatus(outputId, StudioOutputUiState.Ready, null, null, TimeSpan.Zero);
         Publish();
         return Task.CompletedTask;
     }

@@ -57,6 +57,49 @@ public sealed class RuntimeStudioOutputServiceTests
         Assert.Single(engine.GetSnapshots());
     }
 
+    [Fact]
+    public async Task Four_encoded_outputs_can_start_stop_and_restart_independently_by_id()
+    {
+        var project = CreateProject();
+        var canvasId = project.Canvases.Single().Id;
+        var recording2 = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(), Name = "Recording 2", CanvasId = canvasId,
+            TypeId = RenderOutputTypes.RecordingMp4, OutputSize = new FrameSize(1920, 1080),
+            Settings = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.RecordMp4("capture-2.mp4"))
+        };
+        var streaming2 = new MediaForgeRenderOutput
+        {
+            Id = RenderOutputId.New(), Name = "Streaming 2", CanvasId = canvasId,
+            TypeId = RenderOutputTypes.StreamingRtmp, OutputSize = new FrameSize(1920, 1080),
+            Settings = RenderOutputSettingsSerializer.ToJson(MediaForgeOutputs.Rtmp("rtmp://localhost/live", "key-2"))
+        };
+        project.Outputs.Add(recording2);
+        project.Outputs.Add(streaming2);
+        var engine = new RecordingOutputEngine(project);
+        var service = new RuntimeStudioOutputService(engine, new OutputCapabilities(supported: true));
+
+        foreach (var output in project.Outputs)
+            await service.StartOutputAsync(output.Id, CancellationToken.None);
+
+        Assert.Equal(4, engine.GetSnapshots().Count);
+        Assert.All(project.Outputs, output => Assert.Equal(StudioOutputUiState.Running, service.GetOutputStatus(output.Id).State));
+        Assert.All(project.Outputs, output => Assert.NotNull(service.GetMetrics(output.Id)));
+
+        var recording1 = project.Outputs.First(output => output.TypeId == RenderOutputTypes.RecordingMp4);
+        await service.StopOutputAsync(recording1.Id, CancellationToken.None);
+
+        Assert.Equal(StudioOutputUiState.Ready, service.GetOutputStatus(recording1.Id).State);
+        Assert.Equal(StudioOutputUiState.Running, service.GetOutputStatus(recording2.Id).State);
+        Assert.Equal(StudioOutputUiState.Running, service.GetOutputStatus(streaming2.Id).State);
+
+        await service.RestartOutputAsync(streaming2.Id, CancellationToken.None);
+
+        Assert.Equal(5, engine.StartCount);
+        Assert.Equal(3, engine.GetSnapshots().Count);
+        Assert.Equal(StudioOutputUiState.Running, service.GetOutputStatus(streaming2.Id).State);
+    }
+
     private static MediaForgeProject CreateProject()
     {
         var canvasId = CanvasId.New();

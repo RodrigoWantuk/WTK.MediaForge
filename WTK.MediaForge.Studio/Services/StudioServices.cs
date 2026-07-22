@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.ViewModels;
@@ -198,6 +199,13 @@ public sealed record StudioOutputMetrics(
     long FramesDropped,
     TimeSpan LastPacketLatency);
 
+public sealed record StudioOutputStatus(
+    RenderOutputId OutputId,
+    StudioOutputUiState State,
+    string? Detail,
+    DateTimeOffset? StartedAt,
+    TimeSpan Elapsed);
+
 public interface IStudioOutputService
 {
     StudioOutputUiState StreamingState { get; }
@@ -225,6 +233,20 @@ public interface IStudioOutputService
     Task ToggleStreamingAsync(CancellationToken cancellationToken);
 
     Task ToggleRecordingAsync(CancellationToken cancellationToken);
+
+    Task StartOutputAsync(RenderOutputId outputId, CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException("This Studio output service does not support per-output start."));
+
+    Task StopOutputAsync(RenderOutputId outputId, CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException("This Studio output service does not support per-output stop."));
+
+    Task RestartOutputAsync(RenderOutputId outputId, CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException("This Studio output service does not support per-output restart."));
+
+    StudioOutputStatus GetOutputStatus(RenderOutputId outputId) =>
+        new(outputId, StudioOutputUiState.NotConfigured, "Output status is unavailable.", null, TimeSpan.Zero);
+
+    StudioOutputMetrics? GetMetrics(RenderOutputId outputId) => null;
 
     Task StopAllAsync(CancellationToken cancellationToken);
 

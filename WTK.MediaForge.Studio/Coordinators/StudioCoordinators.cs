@@ -1,4 +1,5 @@
 using WTK.MediaForge.Studio.DocumentModel;
+using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Studio.Models;
 using WTK.MediaForge.Studio.Services;
 
@@ -49,6 +50,11 @@ internal sealed class StudioOutputCoordinator(IStudioOutputService inner) : IStu
     }
     public Task ToggleStreamingAsync(CancellationToken token) => inner.ToggleStreamingAsync(token);
     public Task ToggleRecordingAsync(CancellationToken token) => inner.ToggleRecordingAsync(token);
+    public Task StartOutputAsync(RenderOutputId outputId, CancellationToken token) => inner.StartOutputAsync(outputId, token);
+    public Task StopOutputAsync(RenderOutputId outputId, CancellationToken token) => inner.StopOutputAsync(outputId, token);
+    public Task RestartOutputAsync(RenderOutputId outputId, CancellationToken token) => inner.RestartOutputAsync(outputId, token);
+    public StudioOutputStatus GetOutputStatus(RenderOutputId outputId) => inner.GetOutputStatus(outputId);
+    public StudioOutputMetrics? GetMetrics(RenderOutputId outputId) => inner.GetMetrics(outputId);
     public Task StopAllAsync(CancellationToken token) => inner.StopAllAsync(token);
     public void RefreshStatus() => inner.RefreshStatus();
 }
