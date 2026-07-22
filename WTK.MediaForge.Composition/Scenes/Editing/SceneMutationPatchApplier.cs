@@ -171,11 +171,11 @@ internal static class SceneMutationPatchApplier
             MediaForgeProjectJsonOptions.Create())
         ?? throw new InvalidOperationException("Failed to clone scene layer mutation payload.");
 
-    private static List<MediaForgeEffect> CloneEffects(IReadOnlyList<MediaForgeEffect> effects)
+    private static LayerEffectStack CloneEffects(IReadOnlyList<MediaForgeEffect> effects)
     {
         ArgumentNullException.ThrowIfNull(effects);
 
-        return JsonSerializer.Deserialize<List<MediaForgeEffect>>(
+        return JsonSerializer.Deserialize<LayerEffectStack>(
             JsonSerializer.Serialize(effects, MediaForgeProjectJsonOptions.Create()),
             MediaForgeProjectJsonOptions.Create())
         ?? throw new InvalidOperationException("Failed to clone scene effect mutation payload.");

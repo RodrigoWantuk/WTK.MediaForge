@@ -113,6 +113,39 @@ public class EffectModelTests
     }
 
     [Fact]
+    public void Capability_registry_describes_execution_contracts_for_every_effect()
+    {
+        var registry = EffectCapabilityRegistry.Default;
+
+        var chroma = registry.GetRequired(new ChromaKeyEffect());
+        Assert.True(chroma.AcceptsScope(EffectScope.Source));
+        Assert.True(chroma.AcceptsScope(EffectScope.Layer));
+        Assert.Equal(EffectAlphaBehavior.Modifies, chroma.AlphaBehavior);
+        Assert.False(chroma.IsTemporal);
+        Assert.True(chroma.SupportsMask);
+
+        var blur = registry.GetRequired(new BlurEffect());
+        Assert.False(blur.AcceptsScope(EffectScope.Source));
+        Assert.Equal(EffectPassClass.Spatial, blur.PassClass);
+    }
+
+    [Fact]
+    public void Validator_rejects_invalid_effect_scope_before_rendering()
+    {
+        var project = ProjectWithChromaEffect();
+        project.SourceDefinitions.Add(new MediaForgeSourceDefinition
+        {
+            Name = "Camera",
+            Effects = [new BlurEffect { Name = "Invalid source blur" }]
+        });
+        project.Canvases[0].Effects.Add(new ChromaKeyEffect { Name = "Invalid canvas key" });
+
+        var validation = MediaForgeProjectValidator.Validate(project);
+
+        Assert.Equal(2, validation.Issues.Count(issue => issue.Code == "effect.scope.invalid"));
+    }
+
+    [Fact]
     public void Snapshot_factory_deep_clones_effects()
     {
         var effectId = EffectId.New();

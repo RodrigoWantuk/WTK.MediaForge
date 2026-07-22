@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.DrawObjects;
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Validation.Effects;
 using WTK.MediaForge.Core.Geometry;
@@ -74,6 +75,12 @@ public static class MediaForgeProjectValidator
             if (!canvas.BackgroundColor.IsInRange())
                 issues.Add(ValidationIssue.Error("canvas.background.invalid", $"Canvas '{canvas.Name}' background color out of range."));
 
+            issues.AddRange(EffectValidation.ValidateStack(
+                canvas.Effects,
+                EffectScope.Canvas,
+                canvas.Name,
+                "project canvas"));
+
             foreach (var drawObject in canvas.Objects)
                 ValidateDrawObject(drawObject, canvas.Name, sourceIds, canvasIds, issues);
         }
@@ -94,6 +101,12 @@ public static class MediaForgeProjectValidator
 
             if (source.SchemaVersion <= 0)
                 issues.Add(ValidationIssue.Error("source.schema.invalid", $"Source '{source.Name}' has invalid SchemaVersion."));
+
+            issues.AddRange(EffectValidation.ValidateStack(
+                source.Effects,
+                EffectScope.Source,
+                source.Name,
+                "project source"));
 
             issues.AddRange(SourceRegistry.Validate(source));
         }

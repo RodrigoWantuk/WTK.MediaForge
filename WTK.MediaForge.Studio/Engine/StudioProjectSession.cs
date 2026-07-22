@@ -183,12 +183,12 @@ public sealed class StudioProjectSession
         return result;
     }
 
-    private static List<MediaForgeEffect> MergeEffects(
+    private static LayerEffectStack MergeEffects(
         IEnumerable<MediaForgeEffect> canonicalEffects,
         IEnumerable<StudioEffect> studioEffects)
     {
         var existing = canonicalEffects.ToDictionary(static effect => effect.Id);
-        var result = new List<MediaForgeEffect>();
+        var result = new LayerEffectStack();
         var order = 0;
         foreach (var studioEffect in studioEffects)
         {

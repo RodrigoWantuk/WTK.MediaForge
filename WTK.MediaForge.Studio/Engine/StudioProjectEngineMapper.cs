@@ -248,9 +248,8 @@ public sealed class StudioProjectEngineMapper
         drawObject.Opacity = StudioSceneMutationFactory.ToOpacity(layer.Transform.Opacity);
         drawObject.BlendMode = ToBlendMode(layer.BlendMode);
         drawObject.Crop = ToNormalizedCrop(layer);
-        drawObject.Effects = layer.Effects
-            .Select((effect, order) => StudioSceneMutationFactory.ToEffect(effect, order))
-            .ToList();
+        drawObject.Effects = new LayerEffectStack(layer.Effects
+            .Select((effect, order) => StudioSceneMutationFactory.ToEffect(effect, order)));
     }
 
     private static IMediaSourceSettings? CreateSourceSettings(StudioSource source)

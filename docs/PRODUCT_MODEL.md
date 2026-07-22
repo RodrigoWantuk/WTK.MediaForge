@@ -178,6 +178,12 @@ Transitions are not effects. They are owned by scene/output routing. The loader
 migrates the obsolete schema-v1 `effect.transition` layer entry away and rejects
 the discriminator in current project documents.
 
+Effects are held by explicit `SourceEffectStack`, `LayerEffectStack`, and
+`CanvasEffectStack` collections. `EffectCapabilityRegistry` is the source of
+truth for accepted scopes and formats, alpha and color-space behavior, pass
+class, temporal state, mask support, and hardware requirements. The validator
+rejects invalid placement before a render plan is created.
+
 `ChromaKeyEffect` is the first renderer-supported source-layer effect. Other
 effect contracts may exist before renderer support, but public docs and samples
 must not imply rendering support until pixel/diagnostic tests prove it.

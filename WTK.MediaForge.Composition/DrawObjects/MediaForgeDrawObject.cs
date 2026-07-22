@@ -28,5 +28,5 @@ public abstract class MediaForgeDrawObject
 
     public BlendMode BlendMode { get; set; } = BlendMode.Normal;
 
-    public List<MediaForgeEffect> Effects { get; set; } = [];
+    public LayerEffectStack Effects { get; set; } = [];
 }

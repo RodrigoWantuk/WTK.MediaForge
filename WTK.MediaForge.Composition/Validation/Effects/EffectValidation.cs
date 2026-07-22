@@ -5,42 +5,64 @@ namespace WTK.MediaForge.Composition.Validation.Effects;
 
 internal static class EffectValidation
 {
+    private static readonly EffectCapabilityRegistry Capabilities = EffectCapabilityRegistry.Default;
+
     public static IEnumerable<ValidationIssue> ValidateDrawObjectEffects(
         MediaForgeDrawObject drawObject,
-        string canvasName)
+        string canvasName) =>
+        ValidateStack(drawObject.Effects, EffectScope.Layer, drawObject.Name, canvasName);
+
+    public static IEnumerable<ValidationIssue> ValidateStack(
+        IEnumerable<MediaForgeEffect> effects,
+        EffectScope scope,
+        string ownerName,
+        string ownerContainer)
     {
         var seenIds = new HashSet<Guid>();
 
-        foreach (var effect in drawObject.Effects)
+        foreach (var effect in effects)
         {
             if (effect.Id.IsEmpty)
             {
                 yield return ValidationIssue.Error(
                     "effect.id.empty",
-                    $"Draw object '{drawObject.Name}' in canvas '{canvasName}' has an effect with empty id.");
+                    $"'{ownerName}' in '{ownerContainer}' has an effect with empty id.");
             }
             else if (!seenIds.Add(effect.Id.Value))
             {
                 yield return ValidationIssue.Error(
                     "effect.id.duplicate",
-                    $"Draw object '{drawObject.Name}' in canvas '{canvasName}' has duplicate effect id {effect.Id}.");
+                    $"'{ownerName}' in '{ownerContainer}' has duplicate effect id {effect.Id}.");
             }
 
             if (effect.SchemaVersion <= 0)
             {
                 yield return ValidationIssue.Error(
                     "effect.schema.invalid",
-                    $"Effect '{effect.Name}' on draw object '{drawObject.Name}' has invalid SchemaVersion.");
+                    $"Effect '{effect.Name}' on '{ownerName}' has invalid SchemaVersion.");
             }
 
             if (effect.Order < 0)
             {
                 yield return ValidationIssue.Error(
                     "effect.order.invalid",
-                    $"Effect '{effect.Name}' on draw object '{drawObject.Name}' has negative Order.");
+                    $"Effect '{effect.Name}' on '{ownerName}' has negative Order.");
             }
 
-            foreach (var issue in ValidateEffect(effect, drawObject.Name, canvasName))
+            if (!Capabilities.TryGet(effect.GetType(), out var descriptor))
+            {
+                yield return ValidationIssue.Error(
+                    "effect.capability.missing",
+                    $"Effect '{effect.Name}' has no registered capability descriptor.");
+            }
+            else if (!descriptor.AcceptsScope(scope))
+            {
+                yield return ValidationIssue.Error(
+                    "effect.scope.invalid",
+                    $"Effect '{effect.Name}' does not support the {scope} scope.");
+            }
+
+            foreach (var issue in ValidateEffect(effect, ownerName, ownerContainer))
                 yield return issue;
         }
     }

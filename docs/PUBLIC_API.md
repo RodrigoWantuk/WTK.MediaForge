@@ -344,6 +344,8 @@ Current public effects:
 - `ChromaKeyEffect`
 - `ColorCorrectionEffect`
 - `BlurEffect`
+- `SourceEffectStack`, `LayerEffectStack`, `CanvasEffectStack`
+- `EffectCapabilityRegistry` and `EffectCapabilityDescriptor`
 
 Transitions are scene/output routing definitions and never derive from
 `MediaForgeEffect`. Schema-v1 projects containing the retired
