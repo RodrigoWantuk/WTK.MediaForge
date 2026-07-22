@@ -378,7 +378,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                     if (!blurredSourceTargets.TryGetValue(sourceLayer.Id, out var blurredTarget))
                         continue;
 
-                    var blurredComposite = CreateBlurredSourceCompositeLayer(sourceLayer, canvas.Size);
+                    var blurredComposite = CreateBlurredSourceCompositeLayer(sourceLayer);
                     var blurredPushConstants = CompositionPushConstantsBuilder.BuildCanvasComposite(blurredComposite);
                     var blurredDescriptorSet = AllocateAndWriteDescriptorSet(blurredTarget.ImageView);
                     submissionResources.RetainDescriptorSet(blurredDescriptorSet);
@@ -474,15 +474,16 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             if (!importsByHandle.TryGetValue(VulkanExternalTextureKey.From(sharedHandle), out var import))
                 continue;
 
-            var sourceTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 1, canvas.Size, submissionResources);
-            var horizontalTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 2, canvas.Size, submissionResources);
-            var verticalTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 3, canvas.Size, submissionResources);
+            var localSize = ResolveLayerEffectTargetSize(sourceLayer);
+            var sourceTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 1, localSize, submissionResources);
+            var horizontalTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 2, localSize, submissionResources);
+            var verticalTarget = RentIntermediateTarget(canvas.PhysicalKey, sourceLayer.Id, salt: 3, localSize, submissionResources);
 
             TransitionForShaderRead(commandBuffer, import);
 
             RenderSourceLayerToIntermediate(
                 commandBuffer,
-                canvas.Size,
+                localSize,
                 sourceLayer,
                 sourceLayer.BoundFrame.Value,
                 import,
@@ -551,7 +552,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 
         try
         {
-            var preBlurLayer = CreatePreBlurSourceLayer(sourceLayer);
+            var preBlurLayer = CreatePreBlurSourceLayer(sourceLayer, canvasSize);
             var pushConstants = CompositionPushConstantsBuilder.BuildSourceLayer(
                 preBlurLayer,
                 frame,
@@ -621,14 +622,27 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         IsFiniteTransform(sourceLayer.Transform) &&
         sourceLayer.Transform.HasPositiveSize;
 
+    internal static FrameSize ResolveLayerEffectTargetSize(
+        RenderSourceLayerDrawObjectSnapshot sourceLayer)
+    {
+        ArgumentNullException.ThrowIfNull(sourceLayer);
+        return new FrameSize(
+            Math.Max(1, (uint)Math.Ceiling(sourceLayer.Transform.Size.Width)),
+            Math.Max(1, (uint)Math.Ceiling(sourceLayer.Transform.Size.Height)));
+    }
+
     private static RenderSourceLayerDrawObjectSnapshot CreatePreBlurSourceLayer(
-        RenderSourceLayerDrawObjectSnapshot sourceLayer) =>
+        RenderSourceLayerDrawObjectSnapshot sourceLayer,
+        FrameSize localSize) =>
         new()
         {
             Id = sourceLayer.Id,
             Name = sourceLayer.Name,
             Enabled = sourceLayer.Enabled,
-            Transform = sourceLayer.Transform,
+            Transform = new Transform2D
+            {
+                Size = new CanvasSize(localSize.Width, localSize.Height)
+            },
             EffectiveCrop = sourceLayer.EffectiveCrop,
             Opacity = 1f,
             BlendMode = sourceLayer.BlendMode,
@@ -642,18 +656,13 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         };
 
     private static RenderCanvasDrawObjectSnapshot CreateBlurredSourceCompositeLayer(
-        RenderSourceLayerDrawObjectSnapshot sourceLayer,
-        FrameSize canvasSize) =>
+        RenderSourceLayerDrawObjectSnapshot sourceLayer) =>
         new()
         {
             Id = sourceLayer.Id,
             Name = sourceLayer.Name,
             Enabled = sourceLayer.Enabled,
-            Transform = new Transform2D
-            {
-                Position = new CanvasPoint(0, 0),
-                Size = new CanvasSize(canvasSize.Width, canvasSize.Height)
-            },
+            Transform = sourceLayer.Transform,
             EffectiveCrop = NormalizedRect.Full,
             Opacity = sourceLayer.Opacity,
             BlendMode = sourceLayer.BlendMode,

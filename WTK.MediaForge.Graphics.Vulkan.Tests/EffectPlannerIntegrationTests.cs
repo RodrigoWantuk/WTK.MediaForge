@@ -1,5 +1,6 @@
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Graphics.Vulkan.Rendering;
 using Xunit;
 
@@ -30,5 +31,21 @@ public sealed class EffectPlannerIntegrationTests
             plan.Passes,
             pass => Assert.Equal(EffectPassClass.InlineFragment, pass.PassClass),
             pass => Assert.Equal(EffectPassClass.Spatial, pass.PassClass));
+    }
+
+    [Fact]
+    public void Layer_effect_target_uses_local_layer_resolution()
+    {
+        var layer = new RenderSourceLayerDrawObjectSnapshot
+        {
+            Transform = new Transform2D { Size = new CanvasSize(321.2f, 180.1f) },
+            Effects = [new BlurEffectSnapshot { Radius = 6f }]
+        };
+
+        var size = VulkanCompositionShaderPipelines.ResolveLayerEffectTargetSize(layer);
+
+        Assert.Equal((uint)322, size.Width);
+        Assert.Equal((uint)181, size.Height);
+        Assert.NotEqual((uint)1920, size.Width);
     }
 }

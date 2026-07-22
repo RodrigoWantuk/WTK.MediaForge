@@ -119,13 +119,13 @@ internal static class MediaForgeRenderGraphCompiler
                         if (enabledEffects.Count > 0)
                         {
                             dependencies.Add(AddNode(
-                                MediaForgeRenderGraphNodeKind.SourceEffectChain,
-                                CreateSourceEffectKey(canvas, sourceLayer, enabledEffects),
+                                MediaForgeRenderGraphNodeKind.LayerEffectChain,
+                                CreateLayerEffectKey(canvas, sourceLayer, enabledEffects),
                                 sourceLayer.Name,
                                 [dependency],
-                                canvasId: HasPlacementDependentEffects(enabledEffects) ? canvas.Id : null,
+                                canvasId: canvas.Id,
                                 sourceId: sourceLayer.SourceId,
-                                drawObjectId: HasPlacementDependentEffects(enabledEffects) ? sourceLayer.Id : null));
+                                drawObjectId: sourceLayer.Id));
                         }
                         else
                         {
@@ -289,14 +289,14 @@ internal static class MediaForgeRenderGraphCompiler
                         var enabledEffects = GetEnabledEffects(sourceLayer);
                         dependencies.Add(enabledEffects.Count > 0
                             ? AddNode(
-                                MediaForgeRenderGraphNodeKind.SourceEffectChain,
-                                $"{CreateSourceEffectKey(canvas, sourceLayer, enabledEffects)}:input:{sourceKey}",
+                                MediaForgeRenderGraphNodeKind.LayerEffectChain,
+                                $"{CreateLayerEffectKey(canvas, sourceLayer, enabledEffects)}:input:{dependency}",
                                 sourceLayer.Name,
                                 [dependency],
-                                canvasId: HasPlacementDependentEffects(enabledEffects) ? canvas.Id : null,
-                                resolvedCanvasKey: HasPlacementDependentEffects(enabledEffects) ? canvas.PhysicalKey : null,
+                                canvasId: canvas.Id,
+                                resolvedCanvasKey: canvas.PhysicalKey,
                                 sourceId: sourceLayer.SourceId,
-                                drawObjectId: HasPlacementDependentEffects(enabledEffects) ? sourceLayer.Id : null)
+                                drawObjectId: sourceLayer.Id)
                             : dependency);
                         break;
 
@@ -427,32 +427,26 @@ internal static class MediaForgeRenderGraphCompiler
         EffectStackFingerprint fingerprint) =>
         $"source-effect:{sourceId}:frame:{frameNumber}:stack:{fingerprint.Value}:format:{pixelFormat}:resolution:{resolution.Width}x{resolution.Height}:color-space:{colorSpace}";
 
-    private static string CreateSourceEffectKey(
+    private static string CreateLayerEffectKey(
         CanvasStateSnapshot canvas,
         SourceLayerDrawObjectSnapshot sourceLayer,
         IReadOnlyList<EffectStateSnapshot> effects)
     {
         var effectHash = HashEffects(effects);
-        if (!HasPlacementDependentEffects(effects))
-            return $"source-effect:{sourceLayer.SourceId}:{effectHash}";
-
-        return $"source-effect:{sourceLayer.SourceId}:canvas:{canvas.Id}:draw:{sourceLayer.Id}:size:{canvas.Size.Width}x{canvas.Size.Height}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
+        return $"layer-effect:{sourceLayer.SourceId}:canvas:{canvas.Id}:draw:{sourceLayer.Id}:local-size:{ResolveLocalLayerSize(sourceLayer.Transform)}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
     }
 
-    private static string CreateSourceEffectKey(
+    private static string CreateLayerEffectKey(
         RenderCanvasSnapshot canvas,
         RenderSourceLayerDrawObjectSnapshot sourceLayer,
         IReadOnlyList<EffectStateSnapshot> effects)
     {
         var effectHash = HashEffects(effects);
-        if (!HasPlacementDependentEffects(effects))
-            return $"source-effect:{sourceLayer.SourceId}:{effectHash}";
-
-        return $"source-effect:{sourceLayer.SourceId}:canvas:{canvas.PhysicalKey.StableValue}:draw:{sourceLayer.Id}:size:{canvas.Size.Width}x{canvas.Size.Height}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
+        return $"layer-effect:{sourceLayer.SourceId}:canvas:{canvas.PhysicalKey.StableValue}:draw:{sourceLayer.Id}:local-size:{ResolveLocalLayerSize(sourceLayer.Transform)}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
     }
 
-    private static bool HasPlacementDependentEffects(IReadOnlyList<EffectStateSnapshot> effects) =>
-        effects.Any(static effect => effect is BlurEffectSnapshot);
+    private static string ResolveLocalLayerSize(WTK.MediaForge.Core.Geometry.Transform2D transform) =>
+        $"{Math.Max(1, (uint)Math.Ceiling(transform.Size.Width))}x{Math.Max(1, (uint)Math.Ceiling(transform.Size.Height))}";
 
     private static string HashEffects(IReadOnlyList<EffectStateSnapshot> effects)
     {

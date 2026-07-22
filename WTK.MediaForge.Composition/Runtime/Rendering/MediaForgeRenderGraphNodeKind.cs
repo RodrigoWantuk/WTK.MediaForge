@@ -4,8 +4,9 @@ internal enum MediaForgeRenderGraphNodeKind
 {
     SourceFrame = 0,
     SourceEffectChain = 1,
-    PrimitiveLayer = 2,
-    CanvasRender = 3,
-    OutputTransition = 4,
-    OutputPass = 5
+    LayerEffectChain = 2,
+    PrimitiveLayer = 3,
+    CanvasRender = 4,
+    OutputTransition = 5,
+    OutputPass = 6
 }

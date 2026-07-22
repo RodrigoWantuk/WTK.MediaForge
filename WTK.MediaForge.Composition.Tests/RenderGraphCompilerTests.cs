@@ -56,7 +56,7 @@ public class RenderGraphCompilerTests
     }
 
     [Fact]
-    public void Same_source_and_effect_chain_across_scenes_reuses_effect_node()
+    public void Same_layer_effect_chain_across_scenes_keeps_local_effect_nodes()
     {
         var project = MediaForgeProjectBuilder.Create()
             .Scene("Preview", 1280, 720, out var preview)
@@ -81,7 +81,7 @@ public class RenderGraphCompilerTests
         var graph = MediaForgeRenderGraphCompiler.Compile(project);
 
         Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceFrame));
-        Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
+        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.LayerEffectChain));
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.OutputPass));
     }
@@ -112,7 +112,7 @@ public class RenderGraphCompilerTests
         var graph = MediaForgeRenderGraphCompiler.Compile(project);
 
         Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceFrame));
-        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
+        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.LayerEffectChain));
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.OutputPass));
     }
@@ -143,7 +143,7 @@ public class RenderGraphCompilerTests
         var graph = MediaForgeRenderGraphCompiler.Compile(project);
 
         Assert.Equal(1, graph.Count(MediaForgeRenderGraphNodeKind.SourceFrame));
-        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
+        Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.LayerEffectChain));
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public class RenderGraphCompilerTests
 
         var graph = MediaForgeRenderGraphCompiler.Compile(project);
         var sourceNode = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.SourceFrame);
-        var effectNode = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.SourceEffectChain);
+        var effectNode = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.LayerEffectChain);
         var canvasNode = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender);
 
         Assert.Contains(sourceNode.Key, effectNode.Dependencies);

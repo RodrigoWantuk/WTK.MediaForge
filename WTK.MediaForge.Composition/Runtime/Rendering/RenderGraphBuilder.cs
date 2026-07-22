@@ -79,6 +79,7 @@ internal static class RenderGraphBuilder
         {
             MediaForgeRenderGraphNodeKind.SourceFrame => RenderGraphNodeKind.Source,
             MediaForgeRenderGraphNodeKind.SourceEffectChain => RenderGraphNodeKind.Transform,
+            MediaForgeRenderGraphNodeKind.LayerEffectChain => RenderGraphNodeKind.Transform,
             MediaForgeRenderGraphNodeKind.PrimitiveLayer => RenderGraphNodeKind.Primitive,
             MediaForgeRenderGraphNodeKind.CanvasRender => RenderGraphNodeKind.Blend,
             MediaForgeRenderGraphNodeKind.OutputTransition => RenderGraphNodeKind.Transition,

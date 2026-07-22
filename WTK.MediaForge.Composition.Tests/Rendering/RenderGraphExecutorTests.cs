@@ -329,7 +329,7 @@ public sealed class RenderGraphExecutorTests
 
         var plan = MediaForgeRenderGraphCompiler.Compile(snapshot);
 
-        Assert.Equal(1, plan.Count(MediaForgeRenderGraphNodeKind.SourceEffectChain));
+        Assert.Equal(1, plan.Count(MediaForgeRenderGraphNodeKind.LayerEffectChain));
         Assert.Equal(1, plan.PhysicalPlan.Count(PhysicalRenderGraphOperationKind.RenderEffectIntermediate));
     }
 
@@ -386,7 +386,7 @@ public sealed class RenderGraphExecutorTests
         var plan = MediaForgeRenderGraphCompiler.Compile(snapshot);
         var effectNode = Assert.Single(
             plan.Nodes,
-            node => node.Kind == MediaForgeRenderGraphNodeKind.SourceEffectChain);
+            node => node.Kind == MediaForgeRenderGraphNodeKind.LayerEffectChain);
         var effectOperation = Assert.Single(
             plan.PhysicalPlan.Operations,
             operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate);

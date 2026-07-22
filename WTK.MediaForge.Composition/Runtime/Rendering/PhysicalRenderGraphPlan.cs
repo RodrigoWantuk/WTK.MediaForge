@@ -365,6 +365,7 @@ internal static class PhysicalRenderGraphPlanner
         {
             MediaForgeRenderGraphNodeKind.SourceFrame => PhysicalRenderGraphOperationKind.AcquireSourceFrame,
             MediaForgeRenderGraphNodeKind.SourceEffectChain => PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
+            MediaForgeRenderGraphNodeKind.LayerEffectChain => PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
             MediaForgeRenderGraphNodeKind.PrimitiveLayer => PhysicalRenderGraphOperationKind.RenderPrimitiveLayer,
             MediaForgeRenderGraphNodeKind.CanvasRender => PhysicalRenderGraphOperationKind.RenderCanvas,
             MediaForgeRenderGraphNodeKind.OutputTransition => PhysicalRenderGraphOperationKind.RenderOutputTransition,
