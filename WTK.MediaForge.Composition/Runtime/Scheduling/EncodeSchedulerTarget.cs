@@ -44,7 +44,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
     private readonly IHardwareVideoEncoder _encoder;
     private readonly IGpuFrameExporter _frameExporter;
     private readonly IMediaTransportAuditSink _auditSink;
-    private readonly Action<EncodedVideoPacket> _onPacketProduced;
+    private readonly Func<EncodedVideoPacket, CancellationToken, ValueTask> _onPacketProduced;
     private readonly IMediaForgeDiagnosticsSink? _diagnostics;
     private readonly Queue<ScheduledRenderedFrame> _pendingFrames = new();
     private readonly object _queueGate = new();
@@ -72,7 +72,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
         IHardwareVideoEncoder encoder,
         IGpuFrameExporter frameExporter,
         IMediaTransportAuditSink auditSink,
-        Action<EncodedVideoPacket> onPacketProduced,
+        Func<EncodedVideoPacket, CancellationToken, ValueTask> onPacketProduced,
         IMediaForgeDiagnosticsSink? diagnostics = null,
         int queueCapacity = 2,
         EncodeSchedulerBackpressurePolicy backpressurePolicy = EncodeSchedulerBackpressurePolicy.KeepLatest,
@@ -93,6 +93,34 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
         _encodeTimeout = encodeTimeout ?? TimeSpan.FromSeconds(2);
         _encodeLoop = Task.Run(ProcessEncodeQueueAsync);
         _status = EncodedOutputRuntimeStatus.Running;
+    }
+
+    internal EncodeSchedulerTarget(
+        IHardwareVideoEncoder encoder,
+        IGpuFrameExporter frameExporter,
+        IMediaTransportAuditSink auditSink,
+        Action<EncodedVideoPacket> onPacketProduced,
+        IMediaForgeDiagnosticsSink? diagnostics = null,
+        int queueCapacity = 2,
+        EncodeSchedulerBackpressurePolicy backpressurePolicy = EncodeSchedulerBackpressurePolicy.KeepLatest,
+        TimeSpan? encodeTimeout = null,
+        RenderOutputId outputId = default)
+        : this(
+            encoder,
+            frameExporter,
+            auditSink,
+            (packet, _) =>
+            {
+                onPacketProduced(packet);
+                return ValueTask.CompletedTask;
+            },
+            diagnostics,
+            queueCapacity,
+            backpressurePolicy,
+            encodeTimeout,
+            outputId)
+    {
+        ArgumentNullException.ThrowIfNull(onPacketProduced);
     }
 
     public int PendingFrameCount
@@ -347,7 +375,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
 
                 if (packet is not null)
                 {
-                    _onPacketProduced(packet);
+                    await _onPacketProduced(packet, _abort.Token).ConfigureAwait(false);
                     ReportPacketProduced(frameContext.FrameId, Stopwatch.GetElapsedTime(started));
                 }
             }
@@ -408,7 +436,7 @@ internal sealed class EncodeSchedulerTarget : IAsyncDisposable
                     .ConfigureAwait(false);
                 foreach (var packet in drainedPackets)
                 {
-                    _onPacketProduced(packet);
+                    await _onPacketProduced(packet, _abort.Token).ConfigureAwait(false);
                     ReportPacketProduced(0, TimeSpan.Zero);
                 }
             }

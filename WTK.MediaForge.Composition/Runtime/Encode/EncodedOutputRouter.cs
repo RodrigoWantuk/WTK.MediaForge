@@ -10,7 +10,7 @@ internal enum EncodedPacketConsumerBackpressurePolicy
 {
     DropOutput,
     FailOutput,
-    KeepLatest,
+    DropOldest,
     Backpressure
 }
 
@@ -120,38 +120,17 @@ internal sealed class EncodedOutputRouter : IAsyncDisposable
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(flushFailure).Throw();
     }
 
-    public void RoutePacket(EncodedVideoPacket packet)
+    public async ValueTask RoutePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(packet);
+        cancellationToken.ThrowIfCancellationRequested();
 
         EncodedPacketConsumerWorker[] consumers;
         lock (_gate)
             consumers = _consumers.ToArray();
-        foreach (var consumer in consumers)
-        {
-            try
-            {
-                consumer.Enqueue(packet);
-            }
-            catch (Exception ex)
-            {
-                MediaForgeDiagnostics.Report(
-                    _diagnostics,
-                    MediaForgeDiagnosticSeverity.Error,
-                    "engine.encoded_router_consumer_enqueue_failed",
-                    $"Encoded packet consumer '{consumer.DisplayName}' failed while accepting a packet.",
-                    nameof(EncodedOutputRouter),
-                    ex);
-            }
-        }
-    }
-
-    public ValueTask RoutePacketAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        RoutePacket(packet);
-        return ValueTask.CompletedTask;
+        var writes = consumers.Select(consumer => consumer.EnqueueAsync(packet, cancellationToken).AsTask()).ToArray();
+        await Task.WhenAll(writes).ConfigureAwait(false);
     }
 
     public async ValueTask FlushAsync(CancellationToken cancellationToken)
@@ -212,6 +191,8 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
     private static readonly TimeSpan DisposeTimeout = TimeSpan.FromSeconds(5);
 
     private readonly Channel<EncodedPacketConsumerWorkItem> _queue;
+    private readonly SemaphoreSlim _enqueueGate = new(1, 1);
+    private readonly SemaphoreSlim _flushGate = new(1, 1);
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _worker;
     private readonly EncodedPacketConsumerOptions _options;
@@ -223,6 +204,7 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
     private long _droppedPackets;
     private long _failedWrites;
     private long _timedOutWrites;
+    private int _flushPending;
 
     public EncodedPacketConsumerWorker(
         IEncodedPacketConsumer consumer,
@@ -238,7 +220,7 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
         if (_options.RequiresLosslessDelivery &&
             _options.BackpressurePolicy is
                 EncodedPacketConsumerBackpressurePolicy.DropOutput or
-                EncodedPacketConsumerBackpressurePolicy.KeepLatest)
+                EncodedPacketConsumerBackpressurePolicy.DropOldest)
         {
             throw new ArgumentException(
                 "Lossless encoded outputs cannot use dropping backpressure policies.",
@@ -250,7 +232,7 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
         {
             SingleReader = true,
             SingleWriter = false,
-            FullMode = ToChannelFullMode(_options.BackpressurePolicy),
+            FullMode = BoundedChannelFullMode.Wait,
             AllowSynchronousContinuations = false
         });
         _worker = Task.Run(ProcessAsync);
@@ -276,40 +258,70 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
             Volatile.Read(ref _timedOutWrites),
             Volatile.Read(ref _lastError));
 
-    public void Enqueue(EncodedVideoPacket packet)
+    public async ValueTask EnqueueAsync(EncodedVideoPacket packet, CancellationToken cancellationToken)
     {
-        if (_failure is not null)
-            throw new InvalidOperationException("Encoded output consumer has failed.", _failure);
-
-        if (_queue.Writer.TryWrite(EncodedPacketConsumerWorkItem.FromPacket(packet)))
+        ArgumentNullException.ThrowIfNull(packet);
+        cancellationToken.ThrowIfCancellationRequested();
+        await _enqueueGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            Interlocked.Increment(ref _enqueuedPackets);
-            return;
-        }
+            if (_failure is not null)
+            {
+                if (_options.BackpressurePolicy == EncodedPacketConsumerBackpressurePolicy.DropOutput)
+                {
+                    Interlocked.Increment(ref _droppedPackets);
+                    return;
+                }
+                throw new InvalidOperationException("Encoded output consumer has failed.", _failure);
+            }
 
-        if (_options.BackpressurePolicy is
-            EncodedPacketConsumerBackpressurePolicy.DropOutput or
-            EncodedPacketConsumerBackpressurePolicy.KeepLatest)
+            var item = EncodedPacketConsumerWorkItem.FromPacket(packet);
+            switch (_options.BackpressurePolicy)
+            {
+                case EncodedPacketConsumerBackpressurePolicy.Backpressure:
+                    await WriteAsync(item, cancellationToken).ConfigureAwait(false);
+                    return;
+                case EncodedPacketConsumerBackpressurePolicy.FailOutput:
+                    if (TryWrite(item))
+                        return;
+                    var failure = new InvalidOperationException("Encoded output consumer queue is full.");
+                    _failure = failure;
+                    Volatile.Write(ref _lastError, failure.Message);
+                    _queue.Writer.TryComplete(failure);
+                    throw failure;
+                case EncodedPacketConsumerBackpressurePolicy.DropOutput:
+                    if (TryWrite(item))
+                        return;
+                    Interlocked.Increment(ref _droppedPackets);
+                    var isolation = new InvalidOperationException("Encoded output consumer was isolated because its queue is full.");
+                    _failure = isolation;
+                    Volatile.Write(ref _lastError, isolation.Message);
+                    _queue.Writer.TryComplete();
+                    ReportDroppedPacket("isolated");
+                    return;
+                case EncodedPacketConsumerBackpressurePolicy.DropOldest:
+                    if (Volatile.Read(ref _flushPending) != 0)
+                    {
+                        await WriteAsync(item, cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+                    if (TryWrite(item))
+                        return;
+                    if (!_queue.Reader.TryRead(out var dropped) || dropped.FlushCompletion is not null)
+                        throw new InvalidOperationException("Encoded output queue could not evict its oldest packet safely.");
+                    Interlocked.Increment(ref _droppedPackets);
+                    ReportDroppedPacket("dropped its oldest packet");
+                    if (!TryWrite(item))
+                        throw new InvalidOperationException("Encoded output queue rejected a packet after evicting its oldest packet.");
+                    return;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
+        finally
         {
-            Interlocked.Increment(ref _droppedPackets);
-            MediaForgeDiagnostics.Report(
-                _diagnostics,
-                MediaForgeDiagnosticSeverity.Warning,
-                "engine.encoded_router_consumer_packet_dropped",
-                $"Encoded packet consumer '{DisplayName}' dropped a packet because its queue is full.",
-                nameof(EncodedPacketConsumerWorker));
-            return;
+            _enqueueGate.Release();
         }
-
-        var exception = new InvalidOperationException(
-            "Encoded output consumer queue is full; sink backpressure must be handled explicitly.");
-        if (_options.BackpressurePolicy == EncodedPacketConsumerBackpressurePolicy.FailOutput)
-        {
-            _failure = exception;
-            Volatile.Write(ref _lastError, exception.Message);
-        }
-
-        throw exception;
     }
 
     public async ValueTask FlushAsync(CancellationToken cancellationToken)
@@ -317,14 +329,30 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
         if (_failure is not null)
             throw new InvalidOperationException("Encoded output consumer has failed.", _failure);
 
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!_queue.Writer.TryWrite(EncodedPacketConsumerWorkItem.Flush(completion)))
+        await _flushGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            throw new InvalidOperationException(
-                "Encoded output consumer queue is full; cannot flush until backpressure is handled.");
-        }
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref _flushPending, 1);
+            await _enqueueGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_failure is not null)
+                    throw new InvalidOperationException("Encoded output consumer has failed.", _failure);
+                await WriteAsync(EncodedPacketConsumerWorkItem.Flush(completion), cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _enqueueGate.Release();
+            }
 
-        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _flushPending, 0);
+            _flushGate.Release();
+        }
     }
 
     public void Complete() => _queue.Writer.TryComplete();
@@ -399,15 +427,29 @@ internal sealed class EncodedPacketConsumerWorker : IAsyncDisposable
         }
     }
 
-    private static BoundedChannelFullMode ToChannelFullMode(EncodedPacketConsumerBackpressurePolicy policy) =>
-        policy switch
-        {
-            EncodedPacketConsumerBackpressurePolicy.DropOutput => BoundedChannelFullMode.Wait,
-            EncodedPacketConsumerBackpressurePolicy.KeepLatest => BoundedChannelFullMode.DropOldest,
-            EncodedPacketConsumerBackpressurePolicy.Backpressure => BoundedChannelFullMode.Wait,
-            EncodedPacketConsumerBackpressurePolicy.FailOutput => BoundedChannelFullMode.Wait,
-            _ => throw new ArgumentOutOfRangeException(nameof(policy), policy, "Unsupported encoded consumer policy.")
-        };
+    private bool TryWrite(EncodedPacketConsumerWorkItem item)
+    {
+        if (!_queue.Writer.TryWrite(item))
+            return false;
+        if (item.Packet is not null)
+            Interlocked.Increment(ref _enqueuedPackets);
+        return true;
+    }
+
+    private async ValueTask WriteAsync(EncodedPacketConsumerWorkItem item, CancellationToken cancellationToken)
+    {
+        await _queue.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+        if (item.Packet is not null)
+            Interlocked.Increment(ref _enqueuedPackets);
+    }
+
+    private void ReportDroppedPacket(string action) =>
+        MediaForgeDiagnostics.Report(
+            _diagnostics,
+            MediaForgeDiagnosticSeverity.Warning,
+            "engine.encoded_router_consumer_packet_dropped",
+            $"Encoded packet consumer '{DisplayName}' {action} because its queue is full.",
+            nameof(EncodedPacketConsumerWorker));
 }
 
 internal readonly record struct EncodedPacketConsumerWorkItem(

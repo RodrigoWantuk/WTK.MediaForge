@@ -244,7 +244,7 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
                 encoder,
                 frameExporter,
                 auditSink,
-                router.RoutePacket,
+                router.RoutePacketAsync,
                 _diagnostics,
                 encodeQueueCapacity,
                 policy.EncodeQueuePolicy,

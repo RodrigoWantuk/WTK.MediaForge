@@ -513,32 +513,88 @@ public sealed class EncodedOutputPipelineTests
     }
 
     [Fact]
-    public async Task Encoded_output_router_reports_backpressure_when_consumer_queue_is_full()
+    public async Task Encoded_output_router_waits_asynchronously_when_lossless_consumer_queue_is_full()
     {
         var encoder = new TestHardwareVideoEncoder();
         await using var router = new EncodedOutputRouter(encoder, consumerQueueCapacity: 1);
         var slow = new BlockingPacketConsumer();
-        router.RegisterConsumer(slow);
+        router.RegisterConsumer(slow, new EncodedPacketConsumerOptions
+        {
+            BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.Backpressure,
+            RequiresLosslessDelivery = true
+        });
         try
         {
             await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
             await WaitForConditionAsync(() => slow.StartedCount == 1, TimeSpan.FromSeconds(2));
             await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
 
-            await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
-            var exception = await Assert.ThrowsAsync<AggregateException>(async () =>
-                await router.FlushAsync(CancellationToken.None));
+            var backpressured = router.RoutePacketAsync(
+                CreateSyntheticH264Packets(1).Single(),
+                CancellationToken.None).AsTask();
+            await Task.Delay(50);
+            Assert.False(backpressured.IsCompleted);
 
-            Assert.Contains(
-                exception.InnerExceptions,
-                inner => inner.GetBaseException().Message.Contains(
-                    "backpressure",
-                    StringComparison.OrdinalIgnoreCase));
+            slow.Release();
+            await backpressured.WaitAsync(TimeSpan.FromSeconds(2));
+            await router.FlushAsync(CancellationToken.None);
+            Assert.Equal(3, slow.StartedCount);
         }
         finally
         {
             slow.Release();
         }
+    }
+
+    [Fact]
+    public async Task Encoded_output_router_fail_policy_fails_immediately_when_queue_is_full()
+    {
+        await using var router = new EncodedOutputRouter(new TestHardwareVideoEncoder(), consumerQueueCapacity: 1);
+        var slow = new BlockingPacketConsumer();
+        router.RegisterConsumer(slow, new EncodedPacketConsumerOptions
+        {
+            BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.FailOutput
+        });
+        try
+        {
+            await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+            await WaitForConditionAsync(() => slow.StartedCount == 1, TimeSpan.FromSeconds(2));
+            await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None));
+        }
+        finally
+        {
+            slow.Release();
+        }
+    }
+
+    [Fact]
+    public async Task Encoded_output_router_drop_oldest_counts_eviction_and_preserves_flush()
+    {
+        await using var router = new EncodedOutputRouter(new TestHardwareVideoEncoder(), consumerQueueCapacity: 1);
+        var slow = new BlockingPacketConsumer();
+        router.RegisterConsumer(slow, new EncodedPacketConsumerOptions
+        {
+            BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.DropOldest
+        });
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        await WaitForConditionAsync(() => slow.StartedCount == 1, TimeSpan.FromSeconds(2));
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+        await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
+
+        Assert.Equal(1, Assert.Single(router.GetConsumerStatistics()).DroppedPackets);
+        var flush = router.FlushAsync(CancellationToken.None).AsTask();
+        var packetAfterFlush = router.RoutePacketAsync(
+            CreateSyntheticH264Packets(1).Single(),
+            CancellationToken.None).AsTask();
+        slow.Release();
+
+        await flush.WaitAsync(TimeSpan.FromSeconds(2));
+        await packetAfterFlush.WaitAsync(TimeSpan.FromSeconds(2));
+        await router.FlushAsync(CancellationToken.None);
+        Assert.Equal(3, slow.StartedCount);
     }
 
     [Fact]
@@ -584,7 +640,7 @@ public sealed class EncodedOutputPipelineTests
             router.RegisterConsumer(new RecordingPacketConsumer(), new EncodedPacketConsumerOptions
             {
                 RequiresLosslessDelivery = true,
-                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.KeepLatest,
+                BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.DropOldest,
                 DisplayName = "stream"
             }));
 
