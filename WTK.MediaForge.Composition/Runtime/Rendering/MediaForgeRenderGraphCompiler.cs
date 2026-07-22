@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Outputs;
@@ -368,16 +366,10 @@ internal static class MediaForgeRenderGraphCompiler
     }
 
     private static IReadOnlyList<EffectStateSnapshot> GetEnabledEffects(DrawObjectStateSnapshot drawObject) =>
-        drawObject.Effects
-            .Where(static effect => effect.Enabled)
-            .OrderBy(static effect => effect.Order)
-            .ToArray();
+        EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, drawObject.Effects).OrderedEffects;
 
     private static IReadOnlyList<EffectStateSnapshot> GetEnabledEffects(RenderDrawObjectSnapshot drawObject) =>
-        drawObject.Effects
-            .Where(static effect => effect.Enabled)
-            .OrderBy(static effect => effect.Order)
-            .ToArray();
+        EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, drawObject.Effects).OrderedEffects;
 
     private static string CreateSourceEffectKey(
         CanvasStateSnapshot canvas,
@@ -408,14 +400,7 @@ internal static class MediaForgeRenderGraphCompiler
 
     private static string HashEffects(IReadOnlyList<EffectStateSnapshot> effects)
     {
-        var fingerprints = effects
-            .Where(static effect => effect.Enabled)
-            .OrderBy(static effect => effect.Order)
-            .Select(CreateEffectFingerprint)
-            .ToArray();
-
-        var canonical = string.Join('\u001F', fingerprints);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        return EffectStackFingerprint.Create(effects).Value;
     }
 
     private static string HashPrimitive(DrawObjectStateSnapshot drawObject)
@@ -444,6 +429,4 @@ internal static class MediaForgeRenderGraphCompiler
         return $"{canvas.Size.Width}x{canvas.Size.Height}:{DrawObjectVisualStateFingerprint.Create(sourceLayer)}";
     }
 
-    private static string CreateEffectFingerprint(EffectStateSnapshot effect) =>
-        EffectStateFingerprint.CreateSemanticConfiguration(effect);
 }

@@ -2,6 +2,8 @@ using System.Runtime.InteropServices;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using WTK.MediaForge.Composition.Effects;
+using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
@@ -785,12 +787,8 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         ColorCorrectionEffectSnapshot? colorCorrection = null;
         BlurEffectSnapshot? blur = null;
 
-        foreach (var effect in drawObject.Effects
-            .Select((Effect, Index) => (Effect, Index))
-            .Where(item => item.Effect.Enabled)
-            .OrderBy(item => item.Effect.Order)
-            .ThenBy(item => item.Index)
-            .Select(item => item.Effect))
+        var executionPlan = CreateEffectExecutionPlan(drawObject);
+        foreach (var effect in executionPlan.OrderedEffects)
         {
             if (allowSourceLayerEffects && effect is ChromaKeyEffectSnapshot chroma)
             {
@@ -894,6 +892,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 
         sourceLayerEffects = new SourceLayerEffectSelection(chromaKey, colorCorrection, blur);
         return supported;
+    }
+
+    internal static EffectExecutionPlan CreateEffectExecutionPlan(RenderDrawObjectSnapshot drawObject)
+    {
+        ArgumentNullException.ThrowIfNull(drawObject);
+        return EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, drawObject.Effects);
     }
 
     private static bool HasEnabledEffects(RenderDrawObjectSnapshot drawObject) =>
