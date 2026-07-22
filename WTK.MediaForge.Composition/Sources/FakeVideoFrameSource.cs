@@ -69,6 +69,7 @@ internal sealed class FakeVideoFrameSource : IVideoFrameProvider, IDisposable
             Handle = new FakeGpuFrameHandle { Token = frameNumber },
             TextureSize = _frameSize,
             LogicalSize = _frameSize,
+            PixelFormat = "FAKE_RGBA8",
             FrameNumber = frameNumber,
             Timestamp = timestamp
         };

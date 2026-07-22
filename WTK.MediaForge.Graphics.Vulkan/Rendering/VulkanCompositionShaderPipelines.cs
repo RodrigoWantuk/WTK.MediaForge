@@ -633,6 +633,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             Opacity = 1f,
             BlendMode = sourceLayer.BlendMode,
             Effects = sourceLayer.Effects,
+            SourceEffects = sourceLayer.SourceEffects,
             SourceId = sourceLayer.SourceId,
             LayoutMode = sourceLayer.LayoutMode,
             LetterboxColor = sourceLayer.LetterboxColor,
@@ -787,8 +788,11 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         ColorCorrectionEffectSnapshot? colorCorrection = null;
         BlurEffectSnapshot? blur = null;
 
-        var executionPlan = CreateEffectExecutionPlan(drawObject);
-        foreach (var effect in executionPlan.OrderedEffects)
+        var sourcePlan = drawObject is RenderSourceLayerDrawObjectSnapshot sourceLayer
+            ? CreateSourceEffectExecutionPlan(sourceLayer)
+            : null;
+        var layerPlan = CreateEffectExecutionPlan(drawObject);
+        foreach (var effect in (sourcePlan?.OrderedEffects ?? []).Concat(layerPlan.OrderedEffects))
         {
             if (allowSourceLayerEffects && effect is ChromaKeyEffectSnapshot chroma)
             {
@@ -898,6 +902,13 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     {
         ArgumentNullException.ThrowIfNull(drawObject);
         return EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, drawObject.Effects);
+    }
+
+    internal static EffectExecutionPlan CreateSourceEffectExecutionPlan(
+        RenderSourceLayerDrawObjectSnapshot drawObject)
+    {
+        ArgumentNullException.ThrowIfNull(drawObject);
+        return EffectExecutionPlanner.Default.CreatePlan(EffectScope.Source, drawObject.SourceEffects);
     }
 
     private static bool HasEnabledEffects(RenderDrawObjectSnapshot drawObject) =>

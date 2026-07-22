@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Core.Color;
@@ -9,6 +10,33 @@ namespace WTK.MediaForge.Composition.Tests;
 
 public class RenderGraphCompilerTests
 {
+    [Fact]
+    public void Compatible_layers_share_source_effect_result_before_fanout()
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source);
+        source.Effects.Add(new ColorCorrectionEffect { Name = "Shared grade", Contrast = 1.1f });
+        var project = builder
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 960, 540))
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(960, 540, 960, 540))
+            .OffscreenOutput("Program", scene, 1920, 1080, out _)
+            .BuildValidated();
+
+        var graph = MediaForgeRenderGraphCompiler.Compile(project);
+
+        var sourceEffect = Assert.Single(
+            graph.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.SourceEffectChain);
+        Assert.Contains("frame:-1", sourceEffect.Key, StringComparison.Ordinal);
+        Assert.Contains("stack:", sourceEffect.Key, StringComparison.Ordinal);
+        Assert.Contains("format:PROJECT_SOURCE", sourceEffect.Key, StringComparison.Ordinal);
+        Assert.Contains("resolution:1920x1080", sourceEffect.Key, StringComparison.Ordinal);
+        Assert.Contains("color-space:Srgb", sourceEffect.Key, StringComparison.Ordinal);
+        var canvas = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender);
+        Assert.Equal(2, canvas.Dependencies.Count(key => key == sourceEffect.Key));
+    }
+
     [Fact]
     public void Same_scene_to_multiple_outputs_renders_canvas_once()
     {

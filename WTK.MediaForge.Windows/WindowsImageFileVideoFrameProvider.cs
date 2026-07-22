@@ -173,6 +173,7 @@ internal sealed class ImageFileVideoFrameProvider : IVideoFrameProvider, IDispos
             Handle = sharedTexture,
             TextureSize = textureSize,
             LogicalSize = textureSize,
+            PixelFormat = sharedTexture.Format.ToString(),
             FrameNumber = frameNumber,
             Timestamp = MediaTime.FromStopwatchTicks(Stopwatch.GetTimestamp())
         };

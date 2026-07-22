@@ -7,6 +7,11 @@ namespace WTK.MediaForge.Core.Gpu;
 
 public readonly record struct GpuFrameReference
 {
+    public GpuFrameReference()
+    {
+        PixelFormat = "UNKNOWN";
+    }
+
     public SourceId SourceId { get; init; }
 
     public GpuFrameBackend Backend { get; init; }
@@ -16,6 +21,8 @@ public readonly record struct GpuFrameReference
     public FrameSize TextureSize { get; init; }
 
     public FrameSize LogicalSize { get; init; }
+
+    public string PixelFormat { get; init; } = "UNKNOWN";
 
     public DisplayRotation Rotation { get; init; }
 

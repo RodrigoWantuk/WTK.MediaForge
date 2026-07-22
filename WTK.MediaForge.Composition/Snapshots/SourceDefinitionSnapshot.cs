@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Collections.Immutable;
 using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Composition.Snapshots;
@@ -14,4 +15,6 @@ internal sealed class SourceDefinitionSnapshot
     public int SchemaVersion { get; init; } = 1;
 
     public JsonObject Settings { get; init; } = new();
+
+    public ImmutableArray<EffectStateSnapshot> Effects { get; init; } = [];
 }

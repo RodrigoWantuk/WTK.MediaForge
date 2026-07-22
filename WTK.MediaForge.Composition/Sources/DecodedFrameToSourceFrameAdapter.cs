@@ -54,6 +54,7 @@ internal sealed class DecodedFrameToSourceFrameAdapter : IDecodedFrameToSourceFr
                 Handle = handle,
                 TextureSize = size,
                 LogicalSize = size,
+                PixelFormat = textureLease.Format,
                 FrameNumber = frameNumber,
                 Timestamp = ToMediaTime(decodedFrame.PresentationTime)
             };

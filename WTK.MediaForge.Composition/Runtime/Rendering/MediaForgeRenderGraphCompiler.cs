@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Frames;
 
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
@@ -45,12 +46,12 @@ internal static class MediaForgeRenderGraphCompiler
 
         public string AddOutput(RenderOutputStateSnapshot output)
         {
-            var canvasKey = AddCanvas(output.CanvasId, output.SceneVersionBinding);
+            var canvasKey = AddCanvas(output.CanvasId, output.SceneVersionBinding, output.ColorSpace);
             var dependency = canvasKey;
             if (output.RouteTransitionKind != OutputRouteTransitionKind.Cut &&
                 output.PreviousCanvasId is { } previousCanvasId)
             {
-                var previousCanvasKey = AddCanvas(previousCanvasId, SceneVersionBinding.Published);
+                var previousCanvasKey = AddCanvas(previousCanvasId, SceneVersionBinding.Published, output.ColorSpace);
                 dependency = AddNode(
                     MediaForgeRenderGraphNodeKind.OutputTransition,
                     $"transition:{output.Id}:previous:{previousCanvasId}:current:{output.CanvasId}:progress:{output.RouteTransitionProgress:0.####}",
@@ -70,7 +71,10 @@ internal static class MediaForgeRenderGraphCompiler
                 canvasId: output.CanvasId);
         }
 
-        private string AddCanvas(Core.Identifiers.CanvasId canvasId, SceneVersionBinding binding)
+        private string AddCanvas(
+            Core.Identifiers.CanvasId canvasId,
+            SceneVersionBinding binding,
+            RenderColorSpace colorSpace)
         {
             var canvas = projectState.Canvases.FirstOrDefault(candidate => candidate.Id == canvasId);
             if (canvas is null)
@@ -89,6 +93,28 @@ internal static class MediaForgeRenderGraphCompiler
                             sourceLayer.Name,
                             sourceId: sourceLayer.SourceId);
 
+                        var dependency = sourceKey;
+                        var sourceDefinition = projectState.Sources.FirstOrDefault(
+                            candidate => candidate.Id == sourceLayer.SourceId);
+                        var sourcePlan = EffectExecutionPlanner.Default.CreatePlan(
+                            EffectScope.Source,
+                            sourceDefinition?.Effects ?? []);
+                        if (!sourcePlan.IsEmpty)
+                        {
+                            dependency = AddNode(
+                                MediaForgeRenderGraphNodeKind.SourceEffectChain,
+                                CreateSourceEffectKey(
+                                    sourceLayer.SourceId,
+                                    frameNumber: -1,
+                                    pixelFormat: "PROJECT_SOURCE",
+                                    resolution: canvas.Size,
+                                    colorSpace,
+                                    sourcePlan.Fingerprint),
+                                sourceLayer.Name,
+                                [sourceKey],
+                                sourceId: sourceLayer.SourceId);
+                        }
+
                         var enabledEffects = GetEnabledEffects(sourceLayer);
                         if (enabledEffects.Count > 0)
                         {
@@ -96,20 +122,20 @@ internal static class MediaForgeRenderGraphCompiler
                                 MediaForgeRenderGraphNodeKind.SourceEffectChain,
                                 CreateSourceEffectKey(canvas, sourceLayer, enabledEffects),
                                 sourceLayer.Name,
-                                [sourceKey],
+                                [dependency],
                                 canvasId: HasPlacementDependentEffects(enabledEffects) ? canvas.Id : null,
                                 sourceId: sourceLayer.SourceId,
                                 drawObjectId: HasPlacementDependentEffects(enabledEffects) ? sourceLayer.Id : null));
                         }
                         else
                         {
-                            dependencies.Add(sourceKey);
+                            dependencies.Add(dependency);
                         }
 
                         break;
 
                     case CanvasDrawObjectSnapshot nested:
-                        dependencies.Add(AddCanvas(nested.NestedCanvasId, nested.VersionBinding));
+                        dependencies.Add(AddCanvas(nested.NestedCanvasId, nested.VersionBinding, colorSpace));
                         break;
 
                     case TextDrawObjectSnapshot:
@@ -124,7 +150,7 @@ internal static class MediaForgeRenderGraphCompiler
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.CanvasRender,
-                $"canvas:{canvas.Id}:version:{versionKey}:size:{canvas.Size.Width}x{canvas.Size.Height}:content:{HashCanvas(canvas)}",
+                $"canvas:{canvas.Id}:version:{versionKey}:size:{canvas.Size.Width}x{canvas.Size.Height}:color-space:{colorSpace}:content:{HashCanvas(canvas)}",
                 canvas.Name,
                 dependencies,
                 canvasId: canvas.Id);
@@ -187,14 +213,14 @@ internal static class MediaForgeRenderGraphCompiler
         public string AddOutput(RenderOutputStateSnapshot output)
         {
             var currentResolvedKey = ResolveOutputCanvasKey(output);
-            var canvasKey = AddCanvas(currentResolvedKey);
+            var canvasKey = AddCanvas(currentResolvedKey, output.ColorSpace);
             var dependency = canvasKey;
 
             if (output.RouteTransitionKind != OutputRouteTransitionKind.Cut &&
                 output.PreviousCanvasId is { } previousCanvasId)
             {
                 var previousResolvedCanvasKey = ResolvePreviousCanvasKey(output, previousCanvasId);
-                var previousCanvasKey = AddCanvas(previousResolvedCanvasKey);
+                var previousCanvasKey = AddCanvas(previousResolvedCanvasKey, output.ColorSpace);
                 dependency = AddNode(
                     MediaForgeRenderGraphNodeKind.OutputTransition,
                     $"transition:{output.Id}:previous:{previousResolvedCanvasKey.StableValue}:current:{currentResolvedKey.StableValue}:progress:{output.RouteTransitionProgress:0.####}",
@@ -217,15 +243,15 @@ internal static class MediaForgeRenderGraphCompiler
                 resolvedCanvasKey: currentResolvedKey);
         }
 
-        private string AddCanvas(ResolvedCanvasKey resolvedCanvasKey)
+        private string AddCanvas(ResolvedCanvasKey resolvedCanvasKey, RenderColorSpace colorSpace)
         {
             if (!_canvasLookup.TryGetValue(resolvedCanvasKey, out var canvas))
                 return $"missing-canvas:{resolvedCanvasKey.StableValue}";
 
-            return AddCanvas(canvas);
+            return AddCanvas(canvas, colorSpace);
         }
 
-        private string AddCanvas(RenderCanvasSnapshot canvas)
+        private string AddCanvas(RenderCanvasSnapshot canvas, RenderColorSpace colorSpace)
         {
             var dependencies = new List<string>();
             foreach (var drawObject in canvas.Objects.Where(static item => item.Enabled))
@@ -239,26 +265,47 @@ internal static class MediaForgeRenderGraphCompiler
                             sourceLayer.Name,
                             sourceId: sourceLayer.SourceId);
 
+                        var dependency = sourceKey;
+                        var sourcePlan = EffectExecutionPlanner.Default.CreatePlan(
+                            EffectScope.Source,
+                            sourceLayer.SourceEffects);
+                        if (!sourcePlan.IsEmpty)
+                        {
+                            var frame = sourceLayer.BoundFrame;
+                            dependency = AddNode(
+                                MediaForgeRenderGraphNodeKind.SourceEffectChain,
+                                CreateSourceEffectKey(
+                                    sourceLayer.SourceId,
+                                    frame?.FrameNumber ?? -1,
+                                    frame?.PixelFormat ?? "UNKNOWN",
+                                    frame?.TextureSize ?? canvas.Size,
+                                    colorSpace,
+                                    sourcePlan.Fingerprint),
+                                sourceLayer.Name,
+                                [sourceKey],
+                                sourceId: sourceLayer.SourceId);
+                        }
+
                         var enabledEffects = GetEnabledEffects(sourceLayer);
                         dependencies.Add(enabledEffects.Count > 0
                             ? AddNode(
                                 MediaForgeRenderGraphNodeKind.SourceEffectChain,
                                 $"{CreateSourceEffectKey(canvas, sourceLayer, enabledEffects)}:input:{sourceKey}",
                                 sourceLayer.Name,
-                                [sourceKey],
+                                [dependency],
                                 canvasId: HasPlacementDependentEffects(enabledEffects) ? canvas.Id : null,
                                 resolvedCanvasKey: HasPlacementDependentEffects(enabledEffects) ? canvas.PhysicalKey : null,
                                 sourceId: sourceLayer.SourceId,
                                 drawObjectId: HasPlacementDependentEffects(enabledEffects) ? sourceLayer.Id : null)
-                            : sourceKey);
+                            : dependency);
                         break;
 
                     case RenderCanvasDrawObjectSnapshot nested when nested.NestedCanvas is not null:
-                        dependencies.Add(AddCanvas(nested.NestedCanvas));
+                        dependencies.Add(AddCanvas(nested.NestedCanvas, colorSpace));
                         break;
 
                     case RenderCanvasDrawObjectSnapshot nested when nested.NestedResolvedCanvasKey is { } nestedKey:
-                        dependencies.Add(AddCanvas(nestedKey));
+                        dependencies.Add(AddCanvas(nestedKey, colorSpace));
                         break;
 
                     case RenderTextDrawObjectSnapshot:
@@ -273,7 +320,7 @@ internal static class MediaForgeRenderGraphCompiler
 
             return AddNode(
                 MediaForgeRenderGraphNodeKind.CanvasRender,
-                $"canvas:{canvas.PhysicalKey.StableValue}:size:{canvas.Size.Width}x{canvas.Size.Height}:content:{HashCanvas(canvas)}",
+                $"canvas:{canvas.PhysicalKey.StableValue}:size:{canvas.Size.Width}x{canvas.Size.Height}:color-space:{colorSpace}:content:{HashCanvas(canvas)}",
                 canvas.Name,
                 dependencies,
                 canvasId: canvas.Id,
@@ -370,6 +417,15 @@ internal static class MediaForgeRenderGraphCompiler
 
     private static IReadOnlyList<EffectStateSnapshot> GetEnabledEffects(RenderDrawObjectSnapshot drawObject) =>
         EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, drawObject.Effects).OrderedEffects;
+
+    private static string CreateSourceEffectKey(
+        Core.Identifiers.SourceId sourceId,
+        long frameNumber,
+        string pixelFormat,
+        FrameSize resolution,
+        RenderColorSpace colorSpace,
+        EffectStackFingerprint fingerprint) =>
+        $"source-effect:{sourceId}:frame:{frameNumber}:stack:{fingerprint.Value}:format:{pixelFormat}:resolution:{resolution.Width}x{resolution.Height}:color-space:{colorSpace}";
 
     private static string CreateSourceEffectKey(
         CanvasStateSnapshot canvas,

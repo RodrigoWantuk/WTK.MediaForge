@@ -12,6 +12,7 @@ public sealed class EffectPlannerIntegrationTests
     {
         var drawObject = new RenderSourceLayerDrawObjectSnapshot
         {
+            SourceEffects = [new ColorCorrectionEffectSnapshot { Name = "Source color" }],
             Effects =
             [
                 new BlurEffectSnapshot { Name = "Blur", Order = 2, Radius = 3f },
@@ -20,8 +21,11 @@ public sealed class EffectPlannerIntegrationTests
         };
 
         var plan = VulkanCompositionShaderPipelines.CreateEffectExecutionPlan(drawObject);
+        var sourcePlan = VulkanCompositionShaderPipelines.CreateSourceEffectExecutionPlan(drawObject);
 
         Assert.Equal(EffectScope.Layer, plan.Scope);
+        Assert.Equal(EffectScope.Source, sourcePlan.Scope);
+        Assert.Single(sourcePlan.OrderedEffects);
         Assert.Collection(
             plan.Passes,
             pass => Assert.Equal(EffectPassClass.InlineFragment, pass.PassClass),

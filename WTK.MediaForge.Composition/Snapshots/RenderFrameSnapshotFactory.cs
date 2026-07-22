@@ -178,7 +178,7 @@ internal static class RenderFrameSnapshotFactory
         {
             return BuildCanvas(
                 resolved.RootCanvas,
-                CanvasResolutionContext.From(resolved),
+                CanvasResolutionContext.From(resolved, projectState.Sources),
                 resolved.Binding,
                 runtime,
                 context,
@@ -341,6 +341,9 @@ internal static class RenderFrameSnapshotFactory
                 Opacity = sourceLayer.Opacity,
                 BlendMode = sourceLayer.BlendMode,
                 Effects = sourceLayer.Effects,
+                SourceEffects = resolutionContext.SourceLookup.TryGetValue(sourceLayer.SourceId, out var source)
+                    ? source.Effects
+                    : [],
                 SourceId = sourceLayer.SourceId,
                 LayoutMode = sourceLayer.LayoutMode,
                 LetterboxColor = sourceLayer.LetterboxColor,
@@ -599,18 +602,23 @@ internal static class RenderFrameSnapshotFactory
     private sealed record CanvasResolutionContext(
         IReadOnlyDictionary<CanvasId, CanvasStateSnapshot> CanvasLookup,
         IReadOnlyDictionary<CanvasId, SceneVersionId> CanvasVersionIds,
-        IReadOnlyDictionary<SceneVersionId, CanvasStateSnapshot> CanvasVersionSnapshots)
+        IReadOnlyDictionary<SceneVersionId, CanvasStateSnapshot> CanvasVersionSnapshots,
+        IReadOnlyDictionary<SourceId, SourceDefinitionSnapshot> SourceLookup)
     {
         public static CanvasResolutionContext From(ProjectStateSnapshot projectState) =>
             new(
                 projectState.Canvases.ToDictionary(static canvas => canvas.Id),
                 projectState.CanvasVersionIds,
-                projectState.CanvasVersionSnapshots);
+                projectState.CanvasVersionSnapshots,
+                projectState.Sources.ToDictionary(static source => source.Id));
 
-        public static CanvasResolutionContext From(ResolvedOutputCanvasStateSnapshot resolved) =>
+        public static CanvasResolutionContext From(
+            ResolvedOutputCanvasStateSnapshot resolved,
+            IEnumerable<SourceDefinitionSnapshot> sources) =>
             new(
                 resolved.Canvases.ToDictionary(static canvas => canvas.Id),
                 resolved.CanvasVersionIds,
-                resolved.CanvasVersionSnapshots);
+                resolved.CanvasVersionSnapshots,
+                sources.ToDictionary(static source => source.Id));
     }
 }

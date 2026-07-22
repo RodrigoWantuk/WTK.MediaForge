@@ -31,7 +31,8 @@ internal static class ProjectStateSnapshotFactory
             Name = source.Name,
             TypeId = source.TypeId,
             SchemaVersion = source.SchemaVersion,
-            Settings = JsonObjectCloneHelper.DeepClone(source.Settings)
+            Settings = JsonObjectCloneHelper.DeepClone(source.Settings),
+            Effects = EffectSnapshotFactory.CloneEffects(source.Effects)
         };
 
     private static CanvasStateSnapshot CloneCanvas(MediaForgeCanvas canvas) =>

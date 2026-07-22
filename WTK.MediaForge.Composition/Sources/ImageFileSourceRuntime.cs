@@ -93,7 +93,8 @@ internal sealed class ImageFileSourceRuntime : IDisposable
             FrameNumber = context.FrameNumber,
             Timestamp = new MediaTime((long)(context.PresentationTime.TotalSeconds * 1_000_000_000)),
             LogicalSize = _uploadedSize ?? default,
-            TextureSize = _uploadedSize ?? default
+            TextureSize = _uploadedSize ?? default,
+            PixelFormat = _uploadedFormat?.ToString() ?? "UNKNOWN"
         };
 
         return true;

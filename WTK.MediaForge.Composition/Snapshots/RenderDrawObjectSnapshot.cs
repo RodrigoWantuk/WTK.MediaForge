@@ -30,6 +30,8 @@ internal abstract class RenderDrawObjectSnapshot
 
 internal sealed class RenderSourceLayerDrawObjectSnapshot : RenderDrawObjectSnapshot
 {
+    public ImmutableArray<EffectStateSnapshot> SourceEffects { get; init; } = [];
+
     public SourceId SourceId { get; init; }
 
     public LayoutMode LayoutMode { get; init; } = LayoutMode.Fit;
