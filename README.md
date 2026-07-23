@@ -44,29 +44,6 @@ The current technical direction is:
 * **Vortice.Direct3D11 / Vortice.DXGI** for D3D11/DXGI interop
 * **Desktop Duplication API** for the first Windows desktop capture implementation
 
-FFmpeg is not part of the first hardware MP4/RTMP product path. Any future FFmpeg/libav usage must pass the dedicated license and GPU media transport review, and may only operate on encoded packets, containers, metadata, or bitstream data.
-
-Product media availability is proof-gated. Continuous decode/encode and real
-media I/O features must pass the v14 hardware media proofs (`HardwareMediaProof`
-entries for render-to-encode, hardware encode, MP4 recording, hardware decode,
-decode-to-render, MP4 input/output, webcam input, RTMP network output, and NDI
-input/output) before they can be advertised as supported. The current official
-gate is `./scripts/verify-engine-readiness-v14.ps1`; release hardware
-validation uses `./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia`.
-Real Windows implementations exist for MP4 recording, RTMP, MP4 input, webcam,
-desktop capture, and preview, but runtime availability remains adapter/proof
-dependent. Preview is temporarily experimental until hosted resize and
-fence-timeout recovery pass. NDI Standard SDK runtime detection and source discovery
-exist on Windows, and licensed runtime DLLs can be packed as native assets, but
-NDI video input/output remain blocked until GPU-safe product proofs pass.
-
-Remote Scene signaling and platform-neutral contracts are implemented, but
-Remote Scene media is not available. The checked-in native WebRTC target is an
-ABI contract test with an unavailable backend; Direct and TURN physical GPU
-proofs have not been produced. Signaling coordinates SDP/ICE, TURN relays
-encrypted packets, and neither component is the media compositor/transport proof.
-
-
 ## Studio UI Direction
 
 WTK MediaForge Studio is the desktop product shell for users who do not want to consume the engine through APIs directly.
