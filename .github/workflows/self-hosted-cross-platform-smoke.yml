@@ -1,0 +1,223 @@
+name: self-hosted-cross-platform-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Self-hosted runner to validate
+        required: true
+        default: windows
+        type: choice
+        options:
+          - windows
+          - linux
+      run_tests:
+        description: Run portable tests after a successful build
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-cross-platform-smoke-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows RX580 restore and build
+    if: inputs.target == 'windows'
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Environment diagnostics
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "OS: $env:RUNNER_OS"
+          dotnet --info
+          try {
+            Get-CimInstance Win32_VideoController -ErrorAction Stop |
+              Select-Object Name, DriverVersion |
+              Format-Table
+          }
+          catch {
+            Write-Warning "GPU diagnostics unavailable: $($_.Exception.Message)"
+          }
+
+      - name: Restore locked dependencies
+        shell: pwsh
+        run: dotnet restore .\WTK.MediaForge.sln --locked-mode
+
+      - name: Build solution
+        shell: pwsh
+        run: >-
+          dotnet build .\WTK.MediaForge.sln
+          --no-restore
+          --configuration Release
+          --verbosity minimal
+
+      - name: Portable tests
+        if: inputs.run_tests
+        shell: pwsh
+        run: >-
+          dotnet test .\WTK.MediaForge.sln
+          --no-restore
+          --no-build
+          --configuration Release
+          --filter "Category!=GPU&Category!=Stress&Category!=Performance"
+          --logger "trx;LogFilePrefix=self-hosted-windows"
+          --results-directory .\test-reports\windows
+          --verbosity minimal
+
+      - name: Publish Windows reports
+        if: always() && inputs.run_tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-hosted-windows-reports-${{ github.run_id }}
+          path: test-reports/windows
+          if-no-files-found: ignore
+
+  linux:
+    name: Linux restore and cross-platform build
+    if: inputs.target == 'linux'
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Environment diagnostics
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          uname -a
+          dotnet --info
+          if command -v vulkaninfo >/dev/null 2>&1; then
+            vulkaninfo --summary
+          else
+            echo "vulkaninfo is not installed; continuing without GPU diagnostics."
+          fi
+          if [ -d /dev/dri ]; then
+            ls -la /dev/dri
+          else
+            echo "/dev/dri is not available; continuing with compile-only validation."
+          fi
+
+      - name: Restore Linux project set
+        shell: bash
+        run: |
+          set -euo pipefail
+          projects=(
+            WTK.MediaForge.Core/WTK.MediaForge.Core.csproj
+            WTK.MediaForge.Diagnostics/WTK.MediaForge.Diagnostics.csproj
+            WTK.MediaForge.Capture/WTK.MediaForge.Capture.csproj
+            WTK.MediaForge.Graphics.Interop/WTK.MediaForge.Graphics.Interop.csproj
+            WTK.MediaForge.Graphics.Vulkan/WTK.MediaForge.Graphics.Vulkan.csproj
+            WTK.MediaForge.Composition/WTK.MediaForge.Composition.csproj
+            WTK.MediaForge.Linux/WTK.MediaForge.Linux.csproj
+            WTK.MediaForge.Remote/WTK.MediaForge.Remote.csproj
+            WTK.MediaForge.Remote.WebRtc/WTK.MediaForge.Remote.WebRtc.csproj
+            WTK.MediaForge.Remote.Signaling/WTK.MediaForge.Remote.Signaling.csproj
+            WTK.MediaForge.Testing/WTK.MediaForge.Testing.csproj
+          )
+          for project in "${projects[@]}"; do
+            echo "Restoring $project"
+            dotnet restore "$project" --locked-mode
+          done
+
+      - name: Build Linux project set
+        shell: bash
+        run: |
+          set -euo pipefail
+          projects=(
+            WTK.MediaForge.Core/WTK.MediaForge.Core.csproj
+            WTK.MediaForge.Diagnostics/WTK.MediaForge.Diagnostics.csproj
+            WTK.MediaForge.Capture/WTK.MediaForge.Capture.csproj
+            WTK.MediaForge.Graphics.Interop/WTK.MediaForge.Graphics.Interop.csproj
+            WTK.MediaForge.Graphics.Vulkan/WTK.MediaForge.Graphics.Vulkan.csproj
+            WTK.MediaForge.Composition/WTK.MediaForge.Composition.csproj
+            WTK.MediaForge.Linux/WTK.MediaForge.Linux.csproj
+            WTK.MediaForge.Remote/WTK.MediaForge.Remote.csproj
+            WTK.MediaForge.Remote.WebRtc/WTK.MediaForge.Remote.WebRtc.csproj
+            WTK.MediaForge.Remote.Signaling/WTK.MediaForge.Remote.Signaling.csproj
+            WTK.MediaForge.Testing/WTK.MediaForge.Testing.csproj
+          )
+          for project in "${projects[@]}"; do
+            echo "Building $project"
+            dotnet build "$project" \
+              --no-restore \
+              --configuration Release \
+              --verbosity minimal
+          done
+
+      - name: Restore Linux portable test set
+        if: inputs.run_tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests=(
+            WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
+            WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
+            WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj
+            WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
+            WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
+            WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
+          )
+          for project in "${tests[@]}"; do
+            echo "Restoring $project"
+            dotnet restore "$project" --locked-mode
+          done
+
+      - name: Run Linux portable tests
+        if: inputs.run_tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests=(
+            WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
+            WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
+            WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj
+            WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
+            WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
+            WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
+          )
+          mkdir -p test-reports/linux
+          for project in "${tests[@]}"; do
+            name="$(basename "${project%.csproj}")"
+            dotnet test "$project" \
+              --no-restore \
+              --configuration Release \
+              --filter "Category!=GPU&Category!=Stress&Category!=Performance" \
+              --logger "trx;LogFileName=${name}.trx" \
+              --results-directory test-reports/linux \
+              --verbosity minimal
+          done
+
+      - name: Publish Linux reports
+        if: always() && inputs.run_tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-hosted-linux-reports-${{ github.run_id }}
+          path: test-reports/linux
+          if-no-files-found: ignore
