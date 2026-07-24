@@ -4,6 +4,14 @@
 * text=auto
 
 ###############################################################################
+# Preserve canonical bytes for supply-chain-hashed native WebRTC wrappers.
+# These files are hashed by WebRtcNativeAbiTests and must remain LF on every OS.
+###############################################################################
+WTK.MediaForge.Remote.WebRtc.Native/include/wtk_mediaforge_webrtc.h text eol=lf
+WTK.MediaForge.Remote.WebRtc.Native/src/wtk_mediaforge_webrtc.cpp text eol=lf
+WTK.MediaForge.Remote.WebRtc.Native/native-supply-chain.json text eol=lf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by
@@ -30,7 +38,7 @@
 #*.dbproj    merge=binary
 #*.fsproj    merge=binary
 #*.lsproj    merge=binary
-#*.wixproj   merge=binary
+#*.wixproj    merge=binary
 #*.modelproj merge=binary
 #*.sqlproj   merge=binary
 #*.wwaproj   merge=binary
