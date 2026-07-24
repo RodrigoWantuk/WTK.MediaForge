@@ -1,0 +1,53 @@
+name: validate-vulkan-platform-boundary
+
+on:
+  push:
+    branches:
+      - fix/vulkan-platform-boundaries
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux portable Vulkan tests
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Regenerate Vulkan test lock
+        shell: bash
+        run: >-
+          dotnet restore
+          WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
+          --force-evaluate
+
+      - name: Run portable Vulkan tests
+        shell: bash
+        run: >-
+          dotnet test
+          WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
+          --no-restore
+          --configuration Release
+          --filter "Category!=GPU&Category!=Stress&Category!=Performance"
+          --logger "trx;LogFileName=WTK.MediaForge.Graphics.Vulkan.Tests.trx"
+          --results-directory test-reports/linux
+          --verbosity minimal
+
+      - name: Publish lock and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulkan-platform-boundary-${{ github.run_id }}
+          path: |
+            WTK.MediaForge.Graphics.Vulkan.Tests/packages.lock.json
+            test-reports/linux
+          if-no-files-found: error
