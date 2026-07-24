@@ -40,6 +40,37 @@ MediaForgeEngine facade
 lifecycle, scene editing, source orchestration, output routing, scheduling, and
 recovery; none of those services expose platform GPU objects publicly.
 
+## Cross-platform Contract
+
+Windows and Linux are mandatory development targets. New product behavior is
+portable by default and is divided into platform-neutral contracts plus native
+adapters.
+
+Portable projects:
+
+- target portable .NET frameworks;
+- contain product model, orchestration, validation, capability contracts, and
+  runtime behavior that is independent of native operating-system APIs;
+- never reference `WTK.MediaForge.Windows` or another platform implementation
+  project;
+- include tests that compile and run on both Windows and Linux.
+
+Platform projects:
+
+- implement portable contracts for the native operating system;
+- own native handles, API bindings, device discovery, interop, and capability
+  probes;
+- may have dedicated platform-only tests, but cannot replace portable coverage.
+
+A feature that currently has only a Windows adapter must still expose a portable
+contract and explicit capability-unavailable behavior on Linux. A Linux build is
+not made green by cross-targeting a Windows project, excluding relevant portable
+code, or silently skipping required behavior.
+
+The automatic `cross-platform-ci` workflow is an architecture gate. Every commit
+must pass the complete Windows solution build/test job and the maintained Linux
+portable build/test job before it reaches `master`.
+
 ## Frame Path
 
 ```text
@@ -151,11 +182,16 @@ published as an engine lease.
 ## Platform Projects
 
 - Core/Composition: portable contracts and product/runtime logic.
-- Windows: D3D11/DXGI, D3D11VA, Media Foundation, Vulkan interop.
-- Linux: future VAAPI/DRM PRIME/DMABUF/Vulkan Video adapter.
+- Vulkan/Remote: portable implementations and contracts unless a source file is
+  explicitly isolated behind a platform adapter.
+- Windows: D3D11/DXGI, D3D11VA, Media Foundation, Win32, and Windows Vulkan interop.
+- Linux: Linux-native integration, including future VAAPI/DRM PRIME/DMABUF/Vulkan
+  Video adapters.
 - macOS: future VideoToolbox/CVPixelBuffer/IOSurface/Metal adapter.
 
 No platform fallback is added to Core. Hardware absence is capability truth.
+Dependencies must point from platform projects toward portable projects, never
+from portable projects toward a platform implementation.
 
 ## Studio Boundary
 
