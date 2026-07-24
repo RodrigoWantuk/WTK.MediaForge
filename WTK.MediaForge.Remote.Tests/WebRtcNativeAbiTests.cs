@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using WTK.MediaForge.Remote.WebRtc;
 using Xunit;
@@ -73,7 +74,7 @@ public sealed class WebRtcNativeAbiTests
         foreach (var wrapper in document.RootElement.GetProperty("wrapperFiles").EnumerateArray())
         {
             var path = Path.Combine(native, wrapper.GetProperty("path").GetString()!);
-            var actual = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+            var actual = ComputeCanonicalTextSha256(path);
             Assert.Equal(wrapper.GetProperty("sha256").GetString(), actual);
         }
     }
@@ -86,6 +87,22 @@ public sealed class WebRtcNativeAbiTests
             Assert.False(string.IsNullOrWhiteSpace(reason));
     }
 
+    private static string ComputeCanonicalTextSha256(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+        var text = utf8.GetString(bytes);
+
+        if (text.Length > 0 && text[0] == '\uFEFF')
+            throw new InvalidDataException($"Wrapper file '{path}' must be UTF-8 without BOM.");
+
+        var canonical = text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+    }
+
     private static DirectoryInfo FindRepositoryRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);
@@ -94,4 +111,3 @@ public sealed class WebRtcNativeAbiTests
         return current ?? throw new DirectoryNotFoundException("Repository root was not found.");
     }
 }
-
