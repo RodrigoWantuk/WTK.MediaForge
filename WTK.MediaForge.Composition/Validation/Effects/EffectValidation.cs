@@ -64,6 +64,60 @@ internal static class EffectValidation
 
             foreach (var issue in ValidateEffect(effect, ownerName, ownerContainer))
                 yield return issue;
+
+            foreach (var issue in ValidateMask(effect.Mask, effect.Name, ownerName, ownerContainer))
+                yield return issue;
+        }
+    }
+
+    private static IEnumerable<ValidationIssue> ValidateMask(
+        EffectMask? mask,
+        string effectName,
+        string ownerName,
+        string ownerContainer)
+    {
+        if (mask is null)
+            yield break;
+
+        if (!float.IsFinite(mask.Feather) || mask.Feather < 0f || mask.Feather > 1f)
+        {
+            yield return ValidationIssue.Error(
+                "effect.mask.feather",
+                $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' has invalid mask feather; expected [0,1].");
+        }
+
+        if (!mask.Bounds.IsValid)
+        {
+            yield return ValidationIssue.Error(
+                "effect.mask.bounds",
+                $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' has invalid normalized mask bounds.");
+        }
+
+        var transform = mask.Transform;
+        if (!transform.HasPositiveSize ||
+            !float.IsFinite(transform.Position.X) || !float.IsFinite(transform.Position.Y) ||
+            !float.IsFinite(transform.Size.Width) || !float.IsFinite(transform.Size.Height) ||
+            !float.IsFinite(transform.RotationDegrees) ||
+            !float.IsFinite(transform.Pivot.X) || !float.IsFinite(transform.Pivot.Y))
+        {
+            yield return ValidationIssue.Error(
+                "effect.mask.transform",
+                $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' has an invalid mask transform.");
+        }
+
+        switch (mask)
+        {
+            case RoundedRectangleEffectMask rounded when
+                !float.IsFinite(rounded.CornerRadius) || rounded.CornerRadius < 0f || rounded.CornerRadius > 0.5f:
+                yield return ValidationIssue.Error(
+                    "effect.mask.corner_radius",
+                    $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' has invalid rounded-mask corner radius; expected [0,0.5].");
+                break;
+            case ImageAlphaEffectMask image when string.IsNullOrWhiteSpace(image.AssetPath):
+                yield return ValidationIssue.Error(
+                    "effect.mask.asset_path",
+                    $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' uses an image-alpha mask without an asset path.");
+                break;
         }
     }
 

@@ -182,6 +182,53 @@ public class EffectModelTests
         Assert.Equal(8f, blur.Radius);
     }
 
+    [Fact]
+    public void Json_round_trip_and_snapshot_preserve_image_alpha_mask_configuration()
+    {
+        var project = ProjectWithChromaEffect();
+        var effect = Assert.IsType<ChromaKeyEffect>(project.Canvases[0].Objects[0].Effects[0]);
+        effect.Mask = new ImageAlphaEffectMask
+        {
+            AssetPath = "assets/masks/soft-edge.png",
+            Feather = 0.25f,
+            Invert = true,
+            Bounds = new NormalizedRect(0.1f, 0.2f, 0.8f, 0.9f),
+            Transform = new Transform2D { Size = new CanvasSize(320, 180) }
+        };
+
+        var restored = MediaForgeProjectSerializer.Deserialize(MediaForgeProjectSerializer.Serialize(project));
+        var restoredEffect = Assert.IsType<ChromaKeyEffect>(restored.Canvases[0].Objects[0].Effects[0]);
+        var restoredMask = Assert.IsType<ImageAlphaEffectMask>(restoredEffect.Mask);
+        Assert.Equal("assets/masks/soft-edge.png", restoredMask.AssetPath);
+        Assert.True(restoredMask.Invert);
+        Assert.Equal(0.25f, restoredMask.Feather);
+
+        var snapshot = ProjectStateSnapshotFactory.CreateImmutableSnapshot(restored);
+        var snapshotEffect = Assert.IsType<ChromaKeyEffectSnapshot>(snapshot.Canvases[0].Objects[0].Effects[0]);
+        var snapshotMask = Assert.IsType<ImageAlphaEffectMaskStateSnapshot>(snapshotEffect.Mask);
+        Assert.Equal(restoredMask.AssetPath, snapshotMask.AssetPath);
+    }
+
+    [Fact]
+    public void Validator_rejects_invalid_mask_geometry_and_missing_image_asset()
+    {
+        var project = ProjectWithChromaEffect();
+        var effect = Assert.IsType<ChromaKeyEffect>(project.Canvases[0].Objects[0].Effects[0]);
+        effect.Mask = new ImageAlphaEffectMask
+        {
+            Feather = 2f,
+            Bounds = new NormalizedRect(0.8f, 0.2f, 0.1f, 0.9f),
+            Transform = new Transform2D { Size = CanvasSize.Empty }
+        };
+
+        var validation = MediaForgeProjectValidator.Validate(project);
+
+        Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.feather");
+        Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.bounds");
+        Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.transform");
+        Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.asset_path");
+    }
+
     private static MediaForgeProject ProjectWithChromaEffect() => new()
     {
         Canvases =

@@ -15,6 +15,7 @@ internal static class EffectStateFingerprint
         builder.Append("enabled", effect.Enabled);
         builder.Append("order", effect.Order);
         builder.Append("schema", effect.SchemaVersion);
+        AppendMask(builder, effect.Mask);
         AppendTypedParameters(builder, effect);
 
         return builder.ToString();
@@ -28,6 +29,7 @@ internal static class EffectStateFingerprint
         builder.Append("enabled", effect.Enabled);
         builder.Append("order", effect.Order);
         builder.Append("schema", effect.SchemaVersion);
+        AppendMask(builder, effect.Mask);
         AppendTypedParameters(builder, effect);
 
         return builder.ToString();
@@ -63,6 +65,44 @@ internal static class EffectStateFingerprint
 
             default:
                 builder.Append("type", effect.GetType().FullName ?? effect.GetType().Name);
+                break;
+        }
+    }
+
+    private static void AppendMask(FingerprintBuilder builder, EffectMaskStateSnapshot? mask)
+    {
+        if (mask is null)
+        {
+            builder.Append("mask", "none");
+            return;
+        }
+
+        builder.Append("mask.enabled", mask.Enabled);
+        builder.Append("mask.invert", mask.Invert);
+        builder.Append("mask.feather", mask.Feather);
+        builder.Append("mask.bounds", mask.Bounds);
+        builder.Append("mask.position", mask.Transform.Position);
+        builder.Append("mask.size", mask.Transform.Size);
+        builder.Append("mask.rotation", mask.Transform.RotationDegrees);
+        builder.Append("mask.pivot", mask.Transform.Pivot);
+        switch (mask)
+        {
+            case RectangleEffectMaskStateSnapshot:
+                builder.Append("mask.type", "rectangle");
+                break;
+            case RoundedRectangleEffectMaskStateSnapshot rounded:
+                builder.Append("mask.type", "rounded-rectangle");
+                builder.Append("mask.radius", rounded.CornerRadius);
+                break;
+            case EllipseEffectMaskStateSnapshot:
+                builder.Append("mask.type", "ellipse");
+                break;
+            case ImageAlphaEffectMaskStateSnapshot image:
+                builder.Append("mask.type", "image-alpha");
+                builder.Append("mask.asset", image.AssetPath);
+                break;
+            default:
+                builder.Append("mask.type", mask.GetType().FullName ?? mask.GetType().Name);
                 break;
         }
     }

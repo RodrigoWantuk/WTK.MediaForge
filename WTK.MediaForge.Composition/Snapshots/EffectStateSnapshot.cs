@@ -21,6 +21,8 @@ internal abstract class EffectStateSnapshot
     public int Order { get; init; }
 
     public int SchemaVersion { get; init; } = 1;
+
+    public EffectMaskStateSnapshot? Mask { get; init; }
 }
 
 internal sealed class ChromaKeyEffectSnapshot : EffectStateSnapshot
@@ -65,6 +67,7 @@ internal static class EffectSnapshotFactory
                 Enabled = chroma.Enabled,
                 Order = chroma.Order,
                 SchemaVersion = chroma.SchemaVersion,
+                Mask = EffectMaskSnapshotFactory.Clone(chroma.Mask),
                 KeyColor = chroma.KeyColor,
                 Similarity = chroma.Similarity,
                 Smoothness = chroma.Smoothness,
@@ -77,6 +80,7 @@ internal static class EffectSnapshotFactory
                 Enabled = color.Enabled,
                 Order = color.Order,
                 SchemaVersion = color.SchemaVersion,
+                Mask = EffectMaskSnapshotFactory.Clone(color.Mask),
                 Brightness = color.Brightness,
                 Contrast = color.Contrast,
                 Saturation = color.Saturation,
@@ -89,6 +93,7 @@ internal static class EffectSnapshotFactory
                 Enabled = blur.Enabled,
                 Order = blur.Order,
                 SchemaVersion = blur.SchemaVersion,
+                Mask = EffectMaskSnapshotFactory.Clone(blur.Mask),
                 Radius = blur.Radius
             },
             _ => throw new NotSupportedException($"Unsupported effect type: {effect.GetType().Name}.")

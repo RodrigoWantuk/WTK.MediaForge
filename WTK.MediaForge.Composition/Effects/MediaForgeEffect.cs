@@ -19,6 +19,8 @@ public abstract class MediaForgeEffect
     public int Order { get; set; }
 
     public int SchemaVersion { get; set; } = 1;
+
+    public EffectMask? Mask { get; set; }
 }
 
 public sealed class ChromaKeyEffect : MediaForgeEffect
