@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -22,10 +22,8 @@
     <ProjectReference Include="..\WTK.MediaForge.Capture\WTK.MediaForge.Capture.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Composition\WTK.MediaForge.Composition.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Graphics.D3D11\WTK.MediaForge.Graphics.D3D11.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Graphics.Vulkan\WTK.MediaForge.Graphics.Vulkan.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Testing\WTK.MediaForge.Testing.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Windows\WTK.MediaForge.Windows.csproj" />
   </ItemGroup>
 
 </Project>
