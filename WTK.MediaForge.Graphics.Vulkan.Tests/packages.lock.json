@@ -1,7 +1,7 @@
 {
   "version": 2,
   "dependencies": {
-    "net8.0-windows10.0.19041": {
+    "net8.0": {
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
         "requested": "[17.12.0, )",
@@ -69,11 +69,6 @@
           "Microsoft.TestPlatform.ObjectModel": "17.12.0",
           "Newtonsoft.Json": "13.0.1"
         }
-      },
-      "Microsoft.Win32.SystemEvents": {
-        "type": "Transitive",
-        "resolved": "8.0.0",
-        "contentHash": "9opKRyOKMCi2xJ7Bj7kxtZ1r9vbzosMvRrdEhVhDz8j8MoBGgB+WmC94yH839NPH+BclAjtQ/pyagvi/8gDLkw=="
       },
       "Newtonsoft.Json": {
         "type": "Transitive",
@@ -247,21 +242,6 @@
       "wtk.mediaforge.testing": {
         "type": "Project"
       },
-      "wtk.mediaforge.windows": {
-        "type": "Project",
-        "dependencies": {
-          "System.Drawing.Common": "[8.0.11, )",
-          "Vortice.DXGI": "[3.8.3, )",
-          "Vortice.Direct3D11": "[3.8.3, )",
-          "Vortice.MediaFoundation": "[3.8.3, )",
-          "WTK.MediaForge.Capture": "[1.0.0, )",
-          "WTK.MediaForge.Composition": "[1.0.0, )",
-          "WTK.MediaForge.Core": "[1.0.0, )",
-          "WTK.MediaForge.Diagnostics": "[1.0.0, )",
-          "WTK.MediaForge.Graphics.D3D11": "[1.0.0, )",
-          "WTK.MediaForge.Graphics.Vulkan": "[1.0.0, )"
-        }
-      },
       "Silk.NET.Vulkan": {
         "type": "CentralTransitive",
         "requested": "[2.23.0, )",
@@ -291,15 +271,6 @@
           "Silk.NET.Vulkan": "2.23.0"
         }
       },
-      "System.Drawing.Common": {
-        "type": "CentralTransitive",
-        "requested": "[8.0.11, )",
-        "resolved": "8.0.11",
-        "contentHash": "AVyutHHKrX0Mt9C9T8W3Ccat3cVauUwvN+EqnVpSQi92nwBqoQ+2ZRvGP1S+rKK+6TGXmRflSYNShVjl2mMBlw==",
-        "dependencies": {
-          "Microsoft.Win32.SystemEvents": "8.0.0"
-        }
-      },
       "Vortice.Direct3D11": {
         "type": "CentralTransitive",
         "requested": "[3.8.3, )",
@@ -325,16 +296,6 @@
         "requested": "[2.1.1, )",
         "resolved": "2.1.1",
         "contentHash": "5hQRSeg4MnVwxVAPuvW49NbCmpJL1CD9q+OLoIPHzOlduQXQrqhdQ8L+RhFdgg1ifIUVjWyhNF2LhyyvAtivkQ=="
-      },
-      "Vortice.MediaFoundation": {
-        "type": "CentralTransitive",
-        "requested": "[3.8.3, )",
-        "resolved": "3.8.3",
-        "contentHash": "TeAN7tKrf1XfUxXe1+fukRvPCTW53DQUxuPR0pZLivuhmLlFCgpvb+EQWfCKENnEwbJnL+OdrHxWn2qUZiYMuA==",
-        "dependencies": {
-          "SharpGen.Runtime": "2.4.2-beta",
-          "Vortice.DirectX": "3.8.3"
-        }
       }
     }
   }
