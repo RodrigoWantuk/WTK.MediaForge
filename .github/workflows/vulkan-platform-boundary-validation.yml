@@ -1,4 +1,4 @@
-name: validate-vulkan-platform-boundary
+name: validate-linux-portable-suite
 
 on:
   push:
@@ -8,9 +8,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: validate-linux-portable-suite
+  cancel-in-progress: false
+
 jobs:
   linux:
-    name: Linux portable Vulkan tests
+    name: Linux portable test suite
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 60
 
@@ -23,30 +27,64 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Regenerate Vulkan test lock
+      - name: Restore portable test suite
         shell: bash
-        run: >-
-          dotnet restore
-          WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
-          --force-evaluate
+        run: |
+          set -euo pipefail
 
-      - name: Run portable Vulkan tests
+          tests=(
+            WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
+            WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
+            WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj
+            WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
+            WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
+            WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
+          )
+
+          for project in "${tests[@]}"; do
+            echo "Restoring $project"
+
+            if [ "$project" = "WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj" ]; then
+              dotnet restore "$project" --force-evaluate
+            else
+              dotnet restore "$project" --locked-mode
+            fi
+          done
+
+      - name: Run portable test suite
         shell: bash
-        run: >-
-          dotnet test
-          WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
-          --no-restore
-          --configuration Release
-          --filter "Category!=GPU&Category!=Stress&Category!=Performance"
-          --logger "trx;LogFileName=WTK.MediaForge.Graphics.Vulkan.Tests.trx"
-          --results-directory test-reports/linux
-          --verbosity minimal
+        run: |
+          set -euo pipefail
+
+          tests=(
+            WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
+            WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
+            WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj
+            WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
+            WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
+            WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
+          )
+
+          mkdir -p test-reports/linux
+
+          for project in "${tests[@]}"; do
+            name="$(basename "${project%.csproj}")"
+            echo "Testing $project"
+
+            dotnet test "$project" \
+              --no-restore \
+              --configuration Release \
+              --filter "Category!=GPU&Category!=Stress&Category!=Performance" \
+              --logger "trx;LogFileName=${name}.trx" \
+              --results-directory test-reports/linux \
+              --verbosity minimal
+          done
 
       - name: Publish lock and reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vulkan-platform-boundary-${{ github.run_id }}
+          name: linux-portable-suite-${{ github.run_id }}
           path: |
             WTK.MediaForge.Graphics.Vulkan.Tests/packages.lock.json
             test-reports/linux
