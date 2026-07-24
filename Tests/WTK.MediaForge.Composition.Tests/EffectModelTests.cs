@@ -1,6 +1,8 @@
 using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Runtime.Rendering;
+using WTK.MediaForge.Composition.Scenes.Editing;
 using WTK.MediaForge.Composition.Serialization;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Composition.Validation;
@@ -227,6 +229,120 @@ public class EffectModelTests
         Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.bounds");
         Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.transform");
         Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.asset_path");
+    }
+
+    [Fact]
+    public void Gradient_and_luma_masks_round_trip_snapshot_and_fingerprint_with_all_coverage_properties()
+    {
+        var project = ProjectWithChromaEffect();
+        var effect = Assert.IsType<ChromaKeyEffect>(project.Canvases[0].Objects[0].Effects[0]);
+        effect.Mask = new GradientEffectMask
+        {
+            CoordinateSpace = EffectMaskCoordinateSpace.Canvas,
+            Opacity = 0.65f,
+            Feather = 0.15f,
+            Start = new NormalizedPoint(0.1f, 0.2f),
+            End = new NormalizedPoint(0.8f, 0.9f),
+            StartOpacity = 0.9f,
+            EndOpacity = 0.2f
+        };
+
+        var restored = MediaForgeProjectSerializer.Deserialize(MediaForgeProjectSerializer.Serialize(project));
+        var restoredMask = Assert.IsType<GradientEffectMask>(
+            Assert.IsType<ChromaKeyEffect>(restored.Canvases[0].Objects[0].Effects[0]).Mask);
+        Assert.Equal(EffectMaskCoordinateSpace.Canvas, restoredMask.CoordinateSpace);
+        Assert.Equal(0.65f, restoredMask.Opacity);
+
+        var snapshot = ProjectStateSnapshotFactory.CreateImmutableSnapshot(restored);
+        var snapshotMask = Assert.IsType<GradientEffectMaskStateSnapshot>(
+            Assert.IsType<ChromaKeyEffectSnapshot>(snapshot.Canvases[0].Objects[0].Effects[0]).Mask);
+        Assert.Equal(0.9f, snapshotMask.StartOpacity);
+        Assert.Contains("mask.type=gradient", EffectStateFingerprint.CreateSemanticConfiguration(
+            Assert.IsType<ChromaKeyEffectSnapshot>(snapshot.Canvases[0].Objects[0].Effects[0])));
+
+        effect.Mask = new LumaEffectMask { AssetPath = "assets/masks/luma.png" };
+        var luma = Assert.IsType<LumaEffectMask>(
+            Assert.IsType<ChromaKeyEffect>(MediaForgeProjectSerializer.Deserialize(MediaForgeProjectSerializer.Serialize(project))
+                .Canvases[0].Objects[0].Effects[0]).Mask);
+        Assert.Equal("assets/masks/luma.png", luma.AssetPath);
+    }
+
+    [Fact]
+    public void Validator_rejects_invalid_gradient_mask_configuration()
+    {
+        var project = ProjectWithChromaEffect();
+        Assert.IsType<ChromaKeyEffect>(project.Canvases[0].Objects[0].Effects[0]).Mask = new GradientEffectMask
+        {
+            Opacity = 2f,
+            Start = new NormalizedPoint(-0.1f, 0f),
+            EndOpacity = -1f
+        };
+
+        var validation = MediaForgeProjectValidator.Validate(project);
+
+        Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.opacity");
+        Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.gradient");
+    }
+
+    [Fact]
+    public void Adjustment_layer_is_serialized_snapshotted_and_compiled_as_a_layers_below_checkpoint()
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var canvas)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(canvas, source)
+            .AddAdjustmentLayer(canvas, layer =>
+            {
+                layer.Effects.Add(new BlurEffect { Radius = 8f });
+                layer.Mask = new RoundedRectangleEffectMask { CornerRadius = 0.2f, Feather = 0.1f };
+            })
+            .AddText(canvas, "Above adjustment")
+            .OffscreenOutput("Program", canvas, 1920, 1080, out _);
+        var project = builder.BuildValidated();
+
+        var restored = MediaForgeProjectSerializer.Deserialize(MediaForgeProjectSerializer.Serialize(project));
+        var adjustment = Assert.IsType<AdjustmentLayerDrawObject>(restored.Canvases[0].Objects[1]);
+        Assert.IsType<RoundedRectangleEffectMask>(adjustment.Mask);
+
+        var snapshot = ProjectStateSnapshotFactory.CreateImmutableSnapshot(restored);
+        var adjustmentSnapshot = Assert.IsType<AdjustmentLayerDrawObjectSnapshot>(snapshot.Canvases[0].Objects[1]);
+        Assert.Equal(AdjustmentLayerTargetMode.LayersBelow, adjustmentSnapshot.TargetMode);
+        Assert.IsType<RoundedRectangleEffectMaskStateSnapshot>(adjustmentSnapshot.Mask);
+
+        var graph = MediaForgeRenderGraphCompiler.Compile(restored);
+        var checkpoint = Assert.Single(graph.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.AdjustmentLayerCheckpoint);
+        var canvasRender = Assert.Single(graph.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender);
+        Assert.Single(checkpoint.Dependencies);
+        Assert.Contains(checkpoint.Key, canvasRender.Dependencies);
+        Assert.Contains(canvasRender.Dependencies, key => key.StartsWith("primitive:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Adjustment_layer_mask_patch_clones_payload_and_only_targets_adjustment_layers()
+    {
+        var project = new MediaForgeProject
+        {
+            Canvases =
+            [
+                new MediaForgeCanvas
+                {
+                    Objects = [new AdjustmentLayerDrawObject { Transform = new Transform2D { Size = new CanvasSize(100, 100) } }]
+                }
+            ]
+        };
+        var layer = Assert.IsType<AdjustmentLayerDrawObject>(project.Canvases[0].Objects[0]);
+        var mask = new RectangleEffectMask { Opacity = 0.4f };
+
+        SceneMutationPatchApplier.Apply(
+            project,
+            project.Canvases[0].Id,
+            new SceneMutationPatch.SetAdjustmentLayerMask(layer.Id, mask));
+
+        var stored = Assert.IsType<RectangleEffectMask>(layer.Mask);
+        Assert.NotSame(mask, stored);
+        Assert.Equal(0.4f, stored.Opacity);
     }
 
     private static MediaForgeProject ProjectWithChromaEffect() => new()

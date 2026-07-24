@@ -205,6 +205,21 @@ public static class MediaForgeProjectValidator
                         $"Canvas object '{drawObject.Name}' has invalid scene version binding: {ex.Message}"));
                 }
                 break;
+
+            case AdjustmentLayerDrawObject adjustment:
+                if (!Enum.IsDefined(adjustment.TargetMode))
+                {
+                    issues.Add(ValidationIssue.Error(
+                        "drawobject.adjustment.target_mode",
+                        $"Adjustment layer '{drawObject.Name}' has an invalid target mode."));
+                }
+
+                issues.AddRange(EffectValidation.ValidateMask(
+                    adjustment.Mask,
+                    "Adjustment layer",
+                    drawObject.Name,
+                    canvasName));
+                break;
         }
     }
 

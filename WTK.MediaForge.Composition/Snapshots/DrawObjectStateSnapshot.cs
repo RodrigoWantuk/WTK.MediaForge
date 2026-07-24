@@ -4,6 +4,7 @@ using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
+using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Scenes.Editing;
 
 namespace WTK.MediaForge.Composition.Snapshots;
@@ -59,4 +60,11 @@ internal sealed class CanvasDrawObjectSnapshot : DrawObjectStateSnapshot
     public CanvasId NestedCanvasId { get; init; }
 
     public SceneVersionBinding VersionBinding { get; init; } = SceneVersionBinding.Published;
+}
+
+internal sealed class AdjustmentLayerDrawObjectSnapshot : DrawObjectStateSnapshot
+{
+    public AdjustmentLayerTargetMode TargetMode { get; init; } = AdjustmentLayerTargetMode.LayersBelow;
+
+    public EffectMaskStateSnapshot? Mask { get; init; }
 }

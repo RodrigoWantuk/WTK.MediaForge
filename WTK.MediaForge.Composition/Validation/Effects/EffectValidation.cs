@@ -70,7 +70,7 @@ internal static class EffectValidation
         }
     }
 
-    private static IEnumerable<ValidationIssue> ValidateMask(
+    internal static IEnumerable<ValidationIssue> ValidateMask(
         EffectMask? mask,
         string effectName,
         string ownerName,
@@ -84,6 +84,20 @@ internal static class EffectValidation
             yield return ValidationIssue.Error(
                 "effect.mask.feather",
                 $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' has invalid mask feather; expected [0,1].");
+        }
+
+        if (!float.IsFinite(mask.Opacity) || mask.Opacity < 0f || mask.Opacity > 1f)
+        {
+            yield return ValidationIssue.Error(
+                "effect.mask.opacity",
+                $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' has invalid mask opacity; expected [0,1].");
+        }
+
+        if (!Enum.IsDefined(mask.CoordinateSpace))
+        {
+            yield return ValidationIssue.Error(
+                "effect.mask.coordinate_space",
+                $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' has an invalid mask coordinate space.");
         }
 
         if (!mask.Bounds.IsValid)
@@ -118,8 +132,25 @@ internal static class EffectValidation
                     "effect.mask.asset_path",
                     $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' uses an image-alpha mask without an asset path.");
                 break;
+            case LumaEffectMask luma when string.IsNullOrWhiteSpace(luma.AssetPath):
+                yield return ValidationIssue.Error(
+                    "effect.mask.asset_path",
+                    $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' uses a luma mask without an asset path.");
+                break;
+            case GradientEffectMask gradient when
+                !IsNormalizedPoint(gradient.Start) || !IsNormalizedPoint(gradient.End) ||
+                !float.IsFinite(gradient.StartOpacity) || gradient.StartOpacity < 0f || gradient.StartOpacity > 1f ||
+                !float.IsFinite(gradient.EndOpacity) || gradient.EndOpacity < 0f || gradient.EndOpacity > 1f:
+                yield return ValidationIssue.Error(
+                    "effect.mask.gradient",
+                    $"Effect '{effectName}' on '{ownerName}' in '{ownerContainer}' has an invalid gradient mask configuration.");
+                break;
         }
     }
+
+    private static bool IsNormalizedPoint(Core.Geometry.NormalizedPoint point) =>
+        float.IsFinite(point.X) && float.IsFinite(point.Y) &&
+        point.X >= 0f && point.X <= 1f && point.Y >= 0f && point.Y <= 1f;
 
     private static IEnumerable<ValidationIssue> ValidateEffect(
         MediaForgeEffect effect,

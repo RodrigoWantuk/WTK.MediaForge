@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using WTK.MediaForge.Composition;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
@@ -378,6 +379,16 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         int depth,
         IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null)
     {
+        var adjustment = canvas.Objects
+            .OfType<RenderAdjustmentLayerDrawObjectSnapshot>()
+            .FirstOrDefault(static drawObject => drawObject.Enabled);
+        if (adjustment is not null)
+        {
+            throw new MediaForgeUnsupportedFeatureException(
+                "render.adjustment_layer",
+                $"Adjustment layer '{adjustment.Name}' requires Vulkan checkpoint composition, which is not available on this backend.");
+        }
+
         var nestedTargets = RenderNestedCanvasTargets(
             commandBuffer,
             canvas,
@@ -929,6 +940,16 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         var layerPlan = CreateEffectExecutionPlan(drawObject);
         foreach (var effect in (sourcePlan?.OrderedEffects ?? []).Concat(layerPlan.OrderedEffects))
         {
+            if (effect.Mask is not null)
+            {
+                ReportUnsupportedEffect(
+                    drawObject,
+                    effect,
+                    "Masked effect composition requires the Vulkan mask-composite pipeline.");
+                supported = false;
+                continue;
+            }
+
             if (allowSourceLayerEffects && effect is ChromaKeyEffectSnapshot chroma)
             {
                 if (blur is not null)

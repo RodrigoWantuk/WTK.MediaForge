@@ -212,6 +212,25 @@ public sealed class MediaForgeProjectBuilder
         }
     }
 
+    public MediaForgeProjectBuilder AddAdjustmentLayer(
+        MediaForgeCanvas canvas,
+        Action<AdjustmentLayerDrawObject>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(canvas);
+
+        var layer = _editor.AddAdjustmentLayer(canvas.Id, Transform2D.Default);
+        try
+        {
+            configure?.Invoke(layer);
+            return this;
+        }
+        catch
+        {
+            canvas.Objects.Remove(layer);
+            throw;
+        }
+    }
+
     public MediaForgeProjectBuilder OffscreenOutput(
         string name,
         MediaForgeCanvas canvas,

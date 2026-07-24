@@ -239,6 +239,8 @@ public class PublicApiSurfaceTests
             ["WTK.MediaForge.Composition"] =
             [
                 "WTK.MediaForge.Composition.DrawObjects.CanvasDrawObject",
+                "WTK.MediaForge.Composition.DrawObjects.AdjustmentLayerDrawObject",
+                "WTK.MediaForge.Composition.DrawObjects.AdjustmentLayerTargetMode",
                 "WTK.MediaForge.Composition.DrawObjects.MediaForgeDrawObject",
                 "WTK.MediaForge.Composition.DrawObjects.SolidDrawObject",
                 "WTK.MediaForge.Composition.DrawObjects.SourceLayerDrawObject",
@@ -255,6 +257,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Effects.EffectColorSpaceRequirement",
                 "WTK.MediaForge.Composition.Effects.EffectHardwareRequirement",
                 "WTK.MediaForge.Composition.Effects.EffectMask",
+                "WTK.MediaForge.Composition.Effects.EffectMaskCoordinateSpace",
                 "WTK.MediaForge.Composition.Effects.EffectPassClass",
                 "WTK.MediaForge.Composition.Effects.EffectScope",
                 "WTK.MediaForge.Composition.Effects.EffectStack",
@@ -264,6 +267,8 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Effects.RoundedRectangleEffectMask",
                 "WTK.MediaForge.Composition.Effects.EllipseEffectMask",
                 "WTK.MediaForge.Composition.Effects.ImageAlphaEffectMask",
+                "WTK.MediaForge.Composition.Effects.LumaEffectMask",
+                "WTK.MediaForge.Composition.Effects.GradientEffectMask",
                 "WTK.MediaForge.Composition.Effects.SourceEffectStack",
                 "WTK.MediaForge.Composition.Engine.MediaForgeDiagnosticEventArgs",
                 "WTK.MediaForge.Composition.Engine.MediaForgeEngine",
@@ -379,6 +384,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Scenes.Editing.SceneMutationPatch+SetLayerBlendMode",
                 "WTK.MediaForge.Composition.Scenes.Editing.SceneMutationPatch+SetLayerCrop",
                 "WTK.MediaForge.Composition.Scenes.Editing.SceneMutationPatch+SetLayerEffects",
+                "WTK.MediaForge.Composition.Scenes.Editing.SceneMutationPatch+SetAdjustmentLayerMask",
                 "WTK.MediaForge.Composition.Scenes.Editing.SceneMutationPatch+SetLayerOpacity",
                 "WTK.MediaForge.Composition.Scenes.Editing.SceneMutationPatch+SetLayerOrder",
                 "WTK.MediaForge.Composition.Scenes.Editing.SceneMutationPatch+SetLayerSource",

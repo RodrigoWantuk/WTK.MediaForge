@@ -6,6 +6,7 @@ using WTK.MediaForge.Core.Gpu;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Composition.Scenes.Editing;
+using WTK.MediaForge.Composition.DrawObjects;
 
 namespace WTK.MediaForge.Composition.Snapshots;
 
@@ -70,4 +71,11 @@ internal sealed class RenderCanvasDrawObjectSnapshot : RenderDrawObjectSnapshot
     public ResolvedCanvasKey? NestedResolvedCanvasKey { get; init; }
 
     public RenderCanvasSnapshot? NestedCanvas { get; init; }
+}
+
+internal sealed class RenderAdjustmentLayerDrawObjectSnapshot : RenderDrawObjectSnapshot
+{
+    public AdjustmentLayerTargetMode TargetMode { get; init; } = AdjustmentLayerTargetMode.LayersBelow;
+
+    public EffectMaskStateSnapshot? Mask { get; init; }
 }

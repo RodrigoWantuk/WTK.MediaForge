@@ -34,6 +34,8 @@ public abstract record SceneMutationPatch
 
     public sealed record SetLayerEffects(DrawObjectId LayerId, IReadOnlyList<MediaForgeEffect> Effects) : SceneMutationPatch;
 
+    public sealed record SetAdjustmentLayerMask(DrawObjectId LayerId, EffectMask? Mask) : SceneMutationPatch;
+
     public sealed record AddLayer(MediaForgeDrawObject Layer, int? Index = null) : SceneMutationPatch;
 
     public sealed record RemoveLayer(DrawObjectId LayerId) : SceneMutationPatch;

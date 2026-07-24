@@ -12,6 +12,7 @@ namespace WTK.MediaForge.Composition.DrawObjects;
 [JsonDerivedType(typeof(TextDrawObject), "text")]
 [JsonDerivedType(typeof(SolidDrawObject), "solid")]
 [JsonDerivedType(typeof(CanvasDrawObject), "canvas")]
+[JsonDerivedType(typeof(AdjustmentLayerDrawObject), "adjustment.layer")]
 public abstract class MediaForgeDrawObject
 {
     public DrawObjectId Id { get; set; } = DrawObjectId.New();

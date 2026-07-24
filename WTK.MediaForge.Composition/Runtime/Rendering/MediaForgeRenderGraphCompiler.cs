@@ -138,6 +138,10 @@ internal static class MediaForgeRenderGraphCompiler
                         dependencies.Add(AddCanvas(nested.NestedCanvasId, nested.VersionBinding, colorSpace));
                         break;
 
+                    case AdjustmentLayerDrawObjectSnapshot adjustment:
+                        AddAdjustmentLayerCheckpoint(canvas, adjustment, colorSpace, dependencies);
+                        break;
+
                     case TextDrawObjectSnapshot:
                     case SolidDrawObjectSnapshot:
                         dependencies.Add(AddNode(
@@ -217,6 +221,27 @@ internal static class MediaForgeRenderGraphCompiler
                     DrawObjectId = drawObjectId
                 });
             return key;
+        }
+
+        private void AddAdjustmentLayerCheckpoint(
+            CanvasStateSnapshot canvas,
+            AdjustmentLayerDrawObjectSnapshot adjustment,
+            RenderColorSpace colorSpace,
+            List<string> dependencies)
+        {
+            var plan = EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, adjustment.Effects);
+            if (plan.IsEmpty)
+                return;
+
+            var checkpoint = AddNode(
+                MediaForgeRenderGraphNodeKind.AdjustmentLayerCheckpoint,
+                $"adjustment:{canvas.Id}:draw:{adjustment.Id}:color-space:{colorSpace}:state:{DrawObjectVisualStateFingerprint.Create(adjustment)}:effects:{plan.Fingerprint.Value}",
+                adjustment.Name,
+                dependencies.ToArray(),
+                canvasId: canvas.Id,
+                drawObjectId: adjustment.Id);
+            dependencies.Clear();
+            dependencies.Add(checkpoint);
         }
     }
 
@@ -324,6 +349,10 @@ internal static class MediaForgeRenderGraphCompiler
 
                     case RenderCanvasDrawObjectSnapshot nested when nested.NestedResolvedCanvasKey is { } nestedKey:
                         dependencies.Add(AddCanvas(nestedKey, colorSpace));
+                        break;
+
+                    case RenderAdjustmentLayerDrawObjectSnapshot adjustment:
+                        AddAdjustmentLayerCheckpoint(canvas, adjustment, colorSpace, dependencies);
                         break;
 
                     case RenderTextDrawObjectSnapshot:
@@ -446,6 +475,28 @@ internal static class MediaForgeRenderGraphCompiler
                     DrawObjectId = drawObjectId
                 });
             return key;
+        }
+
+        private void AddAdjustmentLayerCheckpoint(
+            RenderCanvasSnapshot canvas,
+            RenderAdjustmentLayerDrawObjectSnapshot adjustment,
+            RenderColorSpace colorSpace,
+            List<string> dependencies)
+        {
+            var plan = EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, adjustment.Effects);
+            if (plan.IsEmpty)
+                return;
+
+            var checkpoint = AddNode(
+                MediaForgeRenderGraphNodeKind.AdjustmentLayerCheckpoint,
+                $"adjustment:{canvas.PhysicalKey.StableValue}:draw:{adjustment.Id}:color-space:{colorSpace}:state:{DrawObjectVisualStateFingerprint.Create(adjustment)}:effects:{plan.Fingerprint.Value}",
+                adjustment.Name,
+                dependencies.ToArray(),
+                canvasId: canvas.Id,
+                resolvedCanvasKey: canvas.PhysicalKey,
+                drawObjectId: adjustment.Id);
+            dependencies.Clear();
+            dependencies.Add(checkpoint);
         }
     }
 

@@ -124,6 +124,19 @@ internal static class ProjectStateSnapshotFactory
                 NestedCanvasId = nested.NestedCanvasId,
                 VersionBinding = nested.VersionBinding
             },
+            AdjustmentLayerDrawObject adjustment => new AdjustmentLayerDrawObjectSnapshot
+            {
+                Id = adjustment.Id,
+                Name = adjustment.Name,
+                Enabled = adjustment.Enabled,
+                Transform = adjustment.Transform,
+                Crop = adjustment.Crop,
+                Opacity = adjustment.Opacity,
+                BlendMode = adjustment.BlendMode,
+                Effects = effects,
+                TargetMode = adjustment.TargetMode,
+                Mask = EffectMaskSnapshotFactory.Clone(adjustment.Mask)
+            },
             _ => throw new NotSupportedException($"Unsupported draw object type: {drawObject.GetType().Name}.")
         };
     }

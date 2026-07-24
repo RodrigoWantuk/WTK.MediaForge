@@ -81,6 +81,12 @@ internal static class SceneMutationPatchApplier
                 effectsLayer.Effects = CloneEffects(set.Effects);
                 break;
 
+            case SceneMutationPatch.SetAdjustmentLayerMask set:
+                if (RequireLayer(canvas, set.LayerId) is not AdjustmentLayerDrawObject adjustmentLayer)
+                    throw new InvalidOperationException($"Layer {set.LayerId} is not an adjustment layer.");
+                adjustmentLayer.Mask = CloneMask(set.Mask);
+                break;
+
             case SceneMutationPatch.AddLayer add:
                 ArgumentNullException.ThrowIfNull(add.Layer);
                 var layer = CloneLayer(add.Layer);
@@ -178,6 +184,14 @@ internal static class SceneMutationPatchApplier
         return JsonSerializer.Deserialize<LayerEffectStack>(
             JsonSerializer.Serialize(effects, MediaForgeProjectJsonOptions.Create()),
             MediaForgeProjectJsonOptions.Create())
-        ?? throw new InvalidOperationException("Failed to clone scene effect mutation payload.");
+            ?? throw new InvalidOperationException("Failed to clone scene effect mutation payload.");
     }
+
+    private static EffectMask? CloneMask(EffectMask? mask) =>
+        mask is null
+            ? null
+            : JsonSerializer.Deserialize<EffectMask>(
+                JsonSerializer.Serialize(mask, MediaForgeProjectJsonOptions.Create()),
+                MediaForgeProjectJsonOptions.Create())
+                ?? throw new InvalidOperationException("Failed to clone adjustment layer mask mutation payload.");
 }

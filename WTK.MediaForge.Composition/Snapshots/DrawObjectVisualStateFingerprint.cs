@@ -48,6 +48,11 @@ internal static class DrawObjectVisualStateFingerprint
                 writer.WriteString("nestedCanvasId", nested.NestedCanvasId.Value);
                 WriteBinding(writer, nested.VersionBinding);
                 break;
+            case AdjustmentLayerDrawObjectSnapshot adjustment:
+                writer.WriteString("type", "adjustment-layer");
+                writer.WriteNumber("targetMode", (int)adjustment.TargetMode);
+                writer.WriteString("mask", EffectStateFingerprint.CreateMaskSemanticConfiguration(adjustment.Mask));
+                break;
             default:
                 throw new NotSupportedException(
                     $"Draw object type '{drawObject.GetType().FullName}' must define an explicit visual fingerprint.");
@@ -83,6 +88,11 @@ internal static class DrawObjectVisualStateFingerprint
                 writer.WriteString("type", "nested-canvas");
                 writer.WriteString("nestedCanvasId", nested.NestedCanvasId.Value);
                 WriteBinding(writer, nested.VersionBinding);
+                break;
+            case RenderAdjustmentLayerDrawObjectSnapshot adjustment:
+                writer.WriteString("type", "adjustment-layer");
+                writer.WriteNumber("targetMode", (int)adjustment.TargetMode);
+                writer.WriteString("mask", EffectStateFingerprint.CreateMaskSemanticConfiguration(adjustment.Mask));
                 break;
             default:
                 throw new NotSupportedException(

@@ -79,7 +79,9 @@ internal static class EffectStateFingerprint
 
         builder.Append("mask.enabled", mask.Enabled);
         builder.Append("mask.invert", mask.Invert);
+        builder.Append("mask.opacity", mask.Opacity);
         builder.Append("mask.feather", mask.Feather);
+        builder.Append("mask.coordinateSpace", (int)mask.CoordinateSpace);
         builder.Append("mask.bounds", mask.Bounds);
         builder.Append("mask.position", mask.Transform.Position);
         builder.Append("mask.size", mask.Transform.Size);
@@ -101,10 +103,28 @@ internal static class EffectStateFingerprint
                 builder.Append("mask.type", "image-alpha");
                 builder.Append("mask.asset", image.AssetPath);
                 break;
+            case LumaEffectMaskStateSnapshot luma:
+                builder.Append("mask.type", "luma");
+                builder.Append("mask.asset", luma.AssetPath);
+                break;
+            case GradientEffectMaskStateSnapshot gradient:
+                builder.Append("mask.type", "gradient");
+                builder.Append("mask.start", gradient.Start);
+                builder.Append("mask.end", gradient.End);
+                builder.Append("mask.startOpacity", gradient.StartOpacity);
+                builder.Append("mask.endOpacity", gradient.EndOpacity);
+                break;
             default:
                 builder.Append("mask.type", mask.GetType().FullName ?? mask.GetType().Name);
                 break;
         }
+    }
+
+    internal static string CreateMaskSemanticConfiguration(EffectMaskStateSnapshot? mask)
+    {
+        var builder = new FingerprintBuilder();
+        AppendMask(builder, mask);
+        return builder.ToString();
     }
 
     public static ImmutableArray<string> CreateSequence(IEnumerable<EffectStateSnapshot> effects)

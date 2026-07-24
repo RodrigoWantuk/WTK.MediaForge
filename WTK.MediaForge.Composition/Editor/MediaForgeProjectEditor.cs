@@ -119,6 +119,20 @@ public sealed class MediaForgeProjectEditor
         return layer;
     }
 
+    public AdjustmentLayerDrawObject AddAdjustmentLayer(CanvasId canvasId, Transform2D transform)
+    {
+        var canvas = RequireCanvas(canvasId);
+        var layer = new AdjustmentLayerDrawObject
+        {
+            Id = DrawObjectId.New(),
+            Name = "Adjustment Layer",
+            Transform = transform
+        };
+
+        canvas.Objects.Add(layer);
+        return layer;
+    }
+
     public MediaForgeRenderOutput CreateOutput(
         string name,
         CanvasId canvasId,

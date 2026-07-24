@@ -397,6 +397,19 @@ internal static class RenderFrameSnapshotFactory
                     diagnostics,
                     nestingDepth)
                 : CreateDisabledCanvasDrawObjectSnapshot(nested, resolutionContext, effectiveCrop),
+            AdjustmentLayerDrawObjectSnapshot adjustment => new RenderAdjustmentLayerDrawObjectSnapshot
+            {
+                Id = adjustment.Id,
+                Name = adjustment.Name,
+                Enabled = adjustment.Enabled,
+                Transform = adjustment.Transform,
+                EffectiveCrop = effectiveCrop,
+                Opacity = adjustment.Opacity,
+                BlendMode = adjustment.BlendMode,
+                Effects = adjustment.Effects,
+                TargetMode = adjustment.TargetMode,
+                Mask = adjustment.Mask
+            },
             _ => throw new NotSupportedException($"Unsupported draw object snapshot type: {drawObject.GetType().Name}.")
         };
     }

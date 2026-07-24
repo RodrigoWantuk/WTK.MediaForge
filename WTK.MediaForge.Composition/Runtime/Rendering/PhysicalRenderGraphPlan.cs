@@ -9,6 +9,7 @@ internal enum PhysicalRenderGraphOperationKind
     RenderPrimitiveLayer,
     RenderCanvas,
     RenderCanvasEffect,
+    RenderAdjustmentLayer,
     RenderOutputTransition,
     RenderOutput,
     FanOutRenderedOutput
@@ -193,6 +194,18 @@ internal sealed class PhysicalRenderGraphPlan
 
                 break;
 
+            case PhysicalRenderGraphOperationKind.RenderAdjustmentLayer:
+                if (operation.CanvasId is not { } adjustmentCanvasId || !canvasIds.Contains(adjustmentCanvasId) ||
+                    operation.ResolvedCanvasKey is not { } adjustmentResolvedCanvasKey ||
+                    !resolvedCanvasKeys.Contains(adjustmentResolvedCanvasKey) ||
+                    operation.DrawObjectId is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Physical adjustment pass '{operation.Key}' must identify its canvas, resolved canvas and adjustment layer.");
+                }
+
+                break;
+
             case PhysicalRenderGraphOperationKind.RenderOutputTransition:
                 if (operation.OutputId is not { } transitionOutputId || !outputIds.Contains(transitionOutputId))
                 {
@@ -243,6 +256,7 @@ internal sealed record PhysicalRenderGraphStatistics(
     int PrimitiveLayerPasses,
     int CanvasPasses,
     int CanvasEffectPasses,
+    int AdjustmentLayerPasses,
     int OutputTransitionPasses,
     int OutputPasses,
     int FanOutGroups,
@@ -268,6 +282,7 @@ internal sealed record PhysicalRenderGraphStatistics(
             PrimitiveLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderPrimitiveLayer),
             CanvasPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas),
             CanvasEffectPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasEffect),
+            AdjustmentLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderAdjustmentLayer),
             OutputTransitionPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition),
             OutputPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput),
             FanOutGroups: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.FanOutRenderedOutput),
@@ -374,6 +389,7 @@ internal static class PhysicalRenderGraphPlanner
             MediaForgeRenderGraphNodeKind.PrimitiveLayer => PhysicalRenderGraphOperationKind.RenderPrimitiveLayer,
             MediaForgeRenderGraphNodeKind.CanvasRender => PhysicalRenderGraphOperationKind.RenderCanvas,
             MediaForgeRenderGraphNodeKind.CanvasEffectChain => PhysicalRenderGraphOperationKind.RenderCanvasEffect,
+            MediaForgeRenderGraphNodeKind.AdjustmentLayerCheckpoint => PhysicalRenderGraphOperationKind.RenderAdjustmentLayer,
             MediaForgeRenderGraphNodeKind.OutputTransition => PhysicalRenderGraphOperationKind.RenderOutputTransition,
             MediaForgeRenderGraphNodeKind.OutputPass => PhysicalRenderGraphOperationKind.RenderOutput,
             _ => throw new NotSupportedException($"Unsupported render graph node kind '{kind}'.")
