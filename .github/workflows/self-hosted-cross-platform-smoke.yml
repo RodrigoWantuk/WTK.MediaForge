@@ -1,0 +1,144 @@
+name: self-hosted-cross-platform-smoke
+
+on:
+  push:
+    branches:
+      - ci/self-hosted-cross-platform-smoke
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-cross-platform-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows RX580 build and fast tests
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Environment
+        shell: pwsh
+        run: |
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "OS: $env:RUNNER_OS"
+          dotnet --info
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, DriverVersion |
+            Format-Table
+
+      - name: Restore locked dependencies
+        shell: pwsh
+        run: dotnet restore .\WTK.MediaForge.sln --locked-mode
+
+      - name: Build solution
+        shell: pwsh
+        run: >-
+          dotnet build .\WTK.MediaForge.sln
+          --no-restore
+          --configuration Release
+          --verbosity minimal
+
+      - name: Fast tests
+        shell: pwsh
+        run: .\scripts\test.ps1 -Tier Fast
+
+      - name: Publish Windows reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-hosted-windows-smoke-reports
+          path: test-reports
+          if-no-files-found: ignore
+
+  linux:
+    name: Linux cross-platform build and tests
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Environment
+        shell: bash
+        run: |
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          uname -a
+          dotnet --info
+          if command -v vulkaninfo >/dev/null 2>&1; then
+            vulkaninfo --summary || true
+          fi
+
+      - name: Restore Linux and cross-platform projects
+        shell: bash
+        run: |
+          set -euo pipefail
+          projects=(
+            WTK.MediaForge.Linux/WTK.MediaForge.Linux.csproj
+            WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
+            WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
+            WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
+            WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
+            WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet restore "$project" --locked-mode
+          done
+
+      - name: Build Linux boundary
+        shell: bash
+        run: >-
+          dotnet build
+          ./WTK.MediaForge.Linux/WTK.MediaForge.Linux.csproj
+          --no-restore
+          --configuration Release
+          --verbosity minimal
+
+      - name: Run cross-platform tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests=(
+            WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
+            WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
+            WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
+            WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
+            WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
+          )
+          mkdir -p test-reports/linux
+          for project in "${tests[@]}"; do
+            name="$(basename "${project%.csproj}")"
+            dotnet test "$project" \
+              --no-restore \
+              --configuration Release \
+              --filter "Category!=GPU&Category!=Stress&Category!=Performance" \
+              --logger "trx;LogFileName=${name}.trx" \
+              --results-directory test-reports/linux \
+              --verbosity minimal
+          done
+
+      - name: Publish Linux reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-hosted-linux-smoke-reports
+          path: test-reports
+          if-no-files-found: ignore
