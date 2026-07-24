@@ -128,7 +128,7 @@ internal static class VulkanOffscreenCompositor
         Dictionary<string, RenderedCanvasTarget> canvasCache,
         PhysicalCompositionStatsBuilder stats)
     {
-        var canvasOperation = dependency?.Kind == PhysicalRenderGraphOperationKind.RenderCanvas
+        var canvasOperation = dependency?.Kind is PhysicalRenderGraphOperationKind.RenderCanvas or PhysicalRenderGraphOperationKind.RenderCanvasEffect
             ? dependency
             : ResolveCanvasOperation(dependency, canvasKey, operationsByKey);
 
@@ -330,16 +330,13 @@ internal static class VulkanOffscreenCompositor
         if (canvasOperation is null)
             return null;
 
-        var drawObjectIds = canvasOperation.Dependencies
-            .Select(dependencyKey => operationsByKey.TryGetValue(dependencyKey, out var dependency)
-                ? dependency
-                : null)
+        var drawObjectIds = CollectEffectDependencies(canvasOperation, operationsByKey)
             .Where(static dependency =>
-                dependency?.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
+                dependency.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
                 dependency.ResolvedCanvasKey is not null &&
                 dependency.DrawObjectId is not null)
-            .Where(dependency => dependency!.ResolvedCanvasKey == canvas.PhysicalKey)
-            .Select(dependency => dependency!.DrawObjectId!.Value)
+            .Where(dependency => dependency.ResolvedCanvasKey == canvas.PhysicalKey)
+            .Select(dependency => dependency.DrawObjectId!.Value)
             .Distinct()
             .ToArray();
 
@@ -356,12 +353,29 @@ internal static class VulkanOffscreenCompositor
         return targets;
     }
 
+    private static IEnumerable<PhysicalRenderGraphOperation> CollectEffectDependencies(
+        PhysicalRenderGraphOperation operation,
+        IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey)
+    {
+        var pending = new Stack<string>(operation.Dependencies.Reverse());
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (pending.TryPop(out var key))
+        {
+            if (!visited.Add(key) || !operationsByKey.TryGetValue(key, out var dependency))
+                continue;
+
+            yield return dependency;
+            foreach (var nestedDependency in dependency.Dependencies.Reverse())
+                pending.Push(nestedDependency);
+        }
+    }
+
     private static PhysicalRenderGraphOperation? ResolveCanvasOperation(
         PhysicalRenderGraphOperation? operation,
         ResolvedCanvasKey canvasKey,
         IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey)
     {
-        if (operation?.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
+        if ((operation?.Kind is PhysicalRenderGraphOperationKind.RenderCanvas or PhysicalRenderGraphOperationKind.RenderCanvasEffect) &&
             operation.ResolvedCanvasKey == canvasKey)
         {
             return operation;
@@ -375,14 +389,13 @@ internal static class VulkanOffscreenCompositor
             if (!operationsByKey.TryGetValue(dependencyKey, out var dependency))
                 continue;
 
-            if (dependency.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
+            if ((dependency.Kind is PhysicalRenderGraphOperationKind.RenderCanvas or PhysicalRenderGraphOperationKind.RenderCanvasEffect) &&
                 dependency.ResolvedCanvasKey == canvasKey)
             {
                 return dependency;
             }
 
-            if (dependency.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition &&
-                ResolveCanvasOperation(dependency, canvasKey, operationsByKey) is { } nestedCanvasOperation)
+            if (ResolveCanvasOperation(dependency, canvasKey, operationsByKey) is { } nestedCanvasOperation)
             {
                 return nestedCanvasOperation;
             }

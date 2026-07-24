@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Runtime.Scene;
@@ -197,6 +198,28 @@ public sealed class RenderGraphExecutorTests
         Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.FanOutRenderedOutput));
         Assert.True(physical.Statistics.ReusedSourceConsumers >= 1);
         Assert.Equal(1, physical.Statistics.ReusedCanvasOutputs);
+    }
+
+    [Fact]
+    public void Canvas_effect_chain_has_a_distinct_physical_operation()
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source);
+        scene.Effects.Add(new ColorCorrectionEffect { Brightness = 0.1f });
+        var project = builder
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
+            .OffscreenOutput("Program", scene, 1920, 1080, out _)
+            .BuildValidated();
+
+        var physical = MediaForgeRenderGraphCompiler.Compile(project).PhysicalPlan;
+
+        var canvas = Assert.Single(physical.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas);
+        var canvasEffect = Assert.Single(physical.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasEffect);
+        Assert.Equal([canvas.Key], canvasEffect.Dependencies);
+        Assert.Equal(1, physical.Statistics.CanvasEffectPasses);
     }
 
     [Fact]

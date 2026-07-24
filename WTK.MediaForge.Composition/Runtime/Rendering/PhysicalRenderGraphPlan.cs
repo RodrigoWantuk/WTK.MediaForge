@@ -8,6 +8,7 @@ internal enum PhysicalRenderGraphOperationKind
     RenderEffectIntermediate,
     RenderPrimitiveLayer,
     RenderCanvas,
+    RenderCanvasEffect,
     RenderOutputTransition,
     RenderOutput,
     FanOutRenderedOutput
@@ -176,6 +177,7 @@ internal sealed class PhysicalRenderGraphPlan
                     $"Physical source acquisition '{operation.Key}' does not identify a source.");
 
             case PhysicalRenderGraphOperationKind.RenderCanvas:
+            case PhysicalRenderGraphOperationKind.RenderCanvasEffect:
                 if (operation.CanvasId is not { } canvasId || !canvasIds.Contains(canvasId))
                 {
                     throw new InvalidOperationException(
@@ -240,6 +242,7 @@ internal sealed record PhysicalRenderGraphStatistics(
     int EffectIntermediatePasses,
     int PrimitiveLayerPasses,
     int CanvasPasses,
+    int CanvasEffectPasses,
     int OutputTransitionPasses,
     int OutputPasses,
     int FanOutGroups,
@@ -264,6 +267,7 @@ internal sealed record PhysicalRenderGraphStatistics(
             EffectIntermediatePasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate),
             PrimitiveLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderPrimitiveLayer),
             CanvasPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas),
+            CanvasEffectPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasEffect),
             OutputTransitionPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition),
             OutputPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput),
             FanOutGroups: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.FanOutRenderedOutput),
@@ -336,7 +340,8 @@ internal static class PhysicalRenderGraphPlanner
         MediaForgeRenderGraphPlan plan,
         IReadOnlyDictionary<string, IReadOnlyList<string>> consumers)
     {
-        foreach (var canvas in plan.Nodes.Where(static node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender))
+        foreach (var canvas in plan.Nodes.Where(static node =>
+                     node.Kind is MediaForgeRenderGraphNodeKind.CanvasRender or MediaForgeRenderGraphNodeKind.CanvasEffectChain))
         {
             if (!consumers.TryGetValue(canvas.Key, out var nodeConsumers))
                 continue;
@@ -368,7 +373,7 @@ internal static class PhysicalRenderGraphPlanner
             MediaForgeRenderGraphNodeKind.LayerEffectChain => PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
             MediaForgeRenderGraphNodeKind.PrimitiveLayer => PhysicalRenderGraphOperationKind.RenderPrimitiveLayer,
             MediaForgeRenderGraphNodeKind.CanvasRender => PhysicalRenderGraphOperationKind.RenderCanvas,
-            MediaForgeRenderGraphNodeKind.CanvasEffectChain => PhysicalRenderGraphOperationKind.RenderCanvas,
+            MediaForgeRenderGraphNodeKind.CanvasEffectChain => PhysicalRenderGraphOperationKind.RenderCanvasEffect,
             MediaForgeRenderGraphNodeKind.OutputTransition => PhysicalRenderGraphOperationKind.RenderOutputTransition,
             MediaForgeRenderGraphNodeKind.OutputPass => PhysicalRenderGraphOperationKind.RenderOutput,
             _ => throw new NotSupportedException($"Unsupported render graph node kind '{kind}'.")
