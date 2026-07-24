@@ -4,9 +4,9 @@
 $ErrorActionPreference = "Stop"
 
 $gpuProjects = @(
-    "WTK.MediaForge.Graphics.D3D11.Tests",
-    "WTK.MediaForge.Graphics.Vulkan.Tests",
-    "WTK.MediaForge.Capture.Tests"
+    "Tests\WTK.MediaForge.Graphics.D3D11.Tests",
+    "Tests\WTK.MediaForge.Graphics.Vulkan.Tests",
+    "Tests\WTK.MediaForge.Capture.Tests"
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot

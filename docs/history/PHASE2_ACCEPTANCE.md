@@ -35,21 +35,21 @@ The current engine entry point is:
 
 | Area | Historical evidence |
 |---|---|
-| GPU resource lifetime | `WTK.MediaForge.Core.Tests/Gpu/GpuResourcePoolTests.cs` |
-| GPU frame scheduler | `WTK.MediaForge.Composition.Tests/Scheduling/FrameSchedulerTests.cs` |
-| Asset manager | `WTK.MediaForge.Composition.Tests/Assets/AssetManagerTests.cs` |
-| GPU surface export | `WTK.MediaForge.Windows.Tests/Media/WindowsGpuExportProofTests.cs` |
-| Hardware decode foundation | `WTK.MediaForge.Core.Tests/Media/DecodedGpuFrameTests.cs` |
-| Video source runtime contracts | `WTK.MediaForge.Composition.Tests/Sources/VideoSourceRuntimeTests.cs` |
-| Texture streaming | `WTK.MediaForge.Composition.Tests/Streaming/TextureLeaseQueueTests.cs` |
-| Renderer video integration | `WTK.MediaForge.Graphics.Vulkan.Tests/VideoPreviewIntegrationTests.cs` |
-| Scene runtime | `WTK.MediaForge.Composition.Tests/Scene/SceneRuntimeTests.cs` |
-| Render graph contracts | `WTK.MediaForge.Composition.Tests/Rendering/RenderGraphExecutorTests.cs` |
-| GPU effects framework | `WTK.MediaForge.Graphics.Vulkan.Tests/Effects/EffectGraphFrameworkTests.cs` |
-| Text rendering | `WTK.MediaForge.Graphics.Vulkan.Tests/Text/TextRenderingTests.cs` |
-| Hardware encode foundation | `WTK.MediaForge.Windows.Tests/Media/HardwareEncodeFoundationTests.cs` |
-| Packet MP4/RTMP boundaries | `WTK.MediaForge.Composition.Tests/Media/EncodedOutputPipelineTests.cs` |
-| Fault recovery | `WTK.MediaForge.Composition.Tests/Recovery/FaultRecoveryCoordinatorTests.cs` |
+| GPU resource lifetime | `Tests/WTK.MediaForge.Core.Tests/Gpu/GpuResourcePoolTests.cs` |
+| GPU frame scheduler | `Tests/WTK.MediaForge.Composition.Tests/Scheduling/FrameSchedulerTests.cs` |
+| Asset manager | `Tests/WTK.MediaForge.Composition.Tests/Assets/AssetManagerTests.cs` |
+| GPU surface export | `Tests/WTK.MediaForge.Windows.Tests/Media/WindowsGpuExportProofTests.cs` |
+| Hardware decode foundation | `Tests/WTK.MediaForge.Core.Tests/Media/DecodedGpuFrameTests.cs` |
+| Video source runtime contracts | `Tests/WTK.MediaForge.Composition.Tests/Sources/VideoSourceRuntimeTests.cs` |
+| Texture streaming | `Tests/WTK.MediaForge.Composition.Tests/Streaming/TextureLeaseQueueTests.cs` |
+| Renderer video integration | `Tests/WTK.MediaForge.Graphics.Vulkan.Tests/VideoPreviewIntegrationTests.cs` |
+| Scene runtime | `Tests/WTK.MediaForge.Composition.Tests/Scene/SceneRuntimeTests.cs` |
+| Render graph contracts | `Tests/WTK.MediaForge.Composition.Tests/Rendering/RenderGraphExecutorTests.cs` |
+| GPU effects framework | `Tests/WTK.MediaForge.Graphics.Vulkan.Tests/Effects/EffectGraphFrameworkTests.cs` |
+| Text rendering | `Tests/WTK.MediaForge.Graphics.Vulkan.Tests/Text/TextRenderingTests.cs` |
+| Hardware encode foundation | `Tests/WTK.MediaForge.Windows.Tests/Media/HardwareEncodeFoundationTests.cs` |
+| Packet MP4/RTMP boundaries | `Tests/WTK.MediaForge.Composition.Tests/Media/EncodedOutputPipelineTests.cs` |
+| Fault recovery | `Tests/WTK.MediaForge.Composition.Tests/Recovery/FaultRecoveryCoordinatorTests.cs` |
 
 ## Current Product Interpretation
 

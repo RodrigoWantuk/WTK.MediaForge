@@ -1,6 +1,6 @@
 # Raw CPU Frame Allowlist
 
-Source of truth for guard rails: `WTK.MediaForge.Composition.Tests/GuardRails/RawCpuFrameAllowlist.cs`
+Source of truth for guard rails: `Tests/WTK.MediaForge.Composition.Tests/GuardRails/RawCpuFrameAllowlist.cs`
 
 ## Allowed namespace prefixes
 

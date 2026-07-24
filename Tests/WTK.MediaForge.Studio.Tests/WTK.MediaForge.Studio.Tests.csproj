@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
@@ -18,10 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\WTK.MediaForge.Composition\WTK.MediaForge.Composition.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Diagnostics\WTK.MediaForge.Diagnostics.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Studio\WTK.MediaForge.Studio.csproj" />
   </ItemGroup>
 
 </Project>

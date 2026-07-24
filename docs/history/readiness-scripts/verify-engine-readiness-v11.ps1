@@ -57,15 +57,15 @@ Invoke-Step "hardware media proof set" {
 }
 
 Invoke-Step "capability proof aggregation tests" {
-    dotnet test .\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj --no-build --filter "FullyQualifiedName~CapabilityReportTests|FullyQualifiedName~HardwareMediaValidationReportTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests"
+    dotnet test .\Tests\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj --no-build --filter "FullyQualifiedName~CapabilityReportTests|FullyQualifiedName~HardwareMediaValidationReportTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests"
 }
 
 Invoke-Step "encoded output route and runtime status tests" {
-    dotnet test .\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj --no-build --filter "FullyQualifiedName~MediaPipelineRuntimeTests|FullyQualifiedName~EncodeSchedulerTargetTests|FullyQualifiedName~RenderedOutputEncodingPipelineTests"
+    dotnet test .\Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj --no-build --filter "FullyQualifiedName~MediaPipelineRuntimeTests|FullyQualifiedName~EncodeSchedulerTargetTests|FullyQualifiedName~RenderedOutputEncodingPipelineTests"
 }
 
 Invoke-Step "Windows media proof truth tests" {
-    dotnet test .\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj --no-build --filter "FullyQualifiedName~WindowsMediaCapabilityTruthTests|FullyQualifiedName~MediaProofReportToolTests|FullyQualifiedName~HardwareEncodeFoundationTests"
+    dotnet test .\Tests\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj --no-build --filter "FullyQualifiedName~WindowsMediaCapabilityTruthTests|FullyQualifiedName~MediaProofReportToolTests|FullyQualifiedName~HardwareEncodeFoundationTests"
 }
 
 Write-Host "Engine readiness v11 checks passed. Reports: test-reports/media-proof-report.json, test-reports/media-proof-report.md"

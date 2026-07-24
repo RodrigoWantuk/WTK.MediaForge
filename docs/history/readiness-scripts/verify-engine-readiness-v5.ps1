@@ -27,7 +27,7 @@ Invoke-Step "verify-license-policy" { & "$PSScriptRoot/verify-license-policy.ps1
 
 Invoke-Step "hardware capability truth tests" {
     dotnet test `
-        WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
+        Tests\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
         --filter "FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~CapabilityReportTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -35,7 +35,7 @@ Invoke-Step "hardware capability truth tests" {
 
 Invoke-Step "documentation and source guard rails" {
     dotnet test `
-        WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
+        Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
         --filter "FullyQualifiedName~DocsProductTruthTests|FullyQualifiedName~RawCpuFrameGuardRailTests|FullyQualifiedName~NoDecodedCpuFrameGuardRailTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -43,7 +43,7 @@ Invoke-Step "documentation and source guard rails" {
 
 Invoke-Step "source lifetime and playback failure tests" {
     dotnet test `
-        WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
+        Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
         --filter "FullyQualifiedName~ImageFileSourceRuntimeTests|FullyQualifiedName~VideoSourceRuntimeTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -51,7 +51,7 @@ Invoke-Step "source lifetime and playback failure tests" {
 
 Invoke-Step "rendered output encode bridge tests" {
     dotnet test `
-        WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
+        Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
         --filter "FullyQualifiedName~EncodeSchedulerTargetTests|FullyQualifiedName~RenderedOutputEncodeFrameAdapterTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -59,7 +59,7 @@ Invoke-Step "rendered output encode bridge tests" {
 
 Invoke-Step "Windows hardware media truth tests" {
     dotnet test `
-        WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj `
+        Tests\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj `
         --filter "FullyQualifiedName~HardwareEncodeFoundationTests|FullyQualifiedName~WindowsGpuExportEndToEndProofTests|FullyQualifiedName~WindowsMediaCapabilityTruthTests|FullyQualifiedName~WindowsSystemDrawingFontAtlasRasterizerTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -67,7 +67,7 @@ Invoke-Step "Windows hardware media truth tests" {
 
 Invoke-Step "Vulkan text and public API tests" {
     dotnet test `
-        WTK.MediaForge.Graphics.Vulkan.Tests\WTK.MediaForge.Graphics.Vulkan.Tests.csproj `
+        Tests\WTK.MediaForge.Graphics.Vulkan.Tests\WTK.MediaForge.Graphics.Vulkan.Tests.csproj `
         --filter "FullyQualifiedName~TextRenderingTests|FullyQualifiedName~PublicApiSurfaceTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1

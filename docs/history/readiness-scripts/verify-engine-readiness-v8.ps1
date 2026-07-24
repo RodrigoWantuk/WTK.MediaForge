@@ -40,7 +40,7 @@ Invoke-Step "v7 baseline readiness gate" {
 
 Invoke-Step "v8 media I/O capability truth tests" {
     dotnet test `
-        WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
+        Tests\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
         --filter "FullyQualifiedName~CapabilityReportTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -48,7 +48,7 @@ Invoke-Step "v8 media I/O capability truth tests" {
 
 Invoke-Step "v8 source/output product boundary tests" {
     dotnet test `
-        WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
+        Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
         --filter "FullyQualifiedName~DocsProductTruthTests|FullyQualifiedName~MediaSourceTypeCatalogTests|FullyQualifiedName~SourceCapabilityReadinessTests|FullyQualifiedName~RenderOutputTypeCatalogTests|FullyQualifiedName~RenderOutputSinkComplianceRegistryTests|FullyQualifiedName~EncodedOutputPipelineTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -56,7 +56,7 @@ Invoke-Step "v8 source/output product boundary tests" {
 
 Invoke-Step "v8 Windows media I/O boundary tests" {
     dotnet test `
-        WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj `
+        Tests\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj `
         --filter "FullyQualifiedName~WindowsMediaCapabilityTruthTests|FullyQualifiedName~WindowsUnavailableLiveSourceProviderFactoryTests|FullyQualifiedName~WindowsVideoFileSourceProviderFactoryTests|FullyQualifiedName~WindowsHardwareDecodeBoundaryTests|FullyQualifiedName~WindowsGpuExportEndToEndProofTests|FullyQualifiedName~HardwareEncodeFoundationTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1

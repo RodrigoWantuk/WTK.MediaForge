@@ -3,7 +3,7 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$testProject = Join-Path $repoRoot "WTK.MediaForge.Composition.Tests"
+$testProject = Join-Path $repoRoot "Tests\WTK.MediaForge.Composition.Tests"
 
 Write-Host "Running media transport guard rail tests..."
 $testArgs = @(

@@ -23,7 +23,7 @@ Validation date: 2026-06-22
 
 ## Pixel Correctness Tests
 
-File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp3ChromaKeyEffectTests.cs`
+File: `Tests/WTK.MediaForge.Graphics.Vulkan.Tests/Cp3ChromaKeyEffectTests.cs`
 
 | Test | Validates |
 |------|-----------|

@@ -8,10 +8,7 @@ public sealed class FrameSchedulerGuardRailTests
     [Fact]
     public void Sink_source_files_do_not_invoke_render_publish()
     {
-        var compositionRoot = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..",
-            "WTK.MediaForge.Composition"));
+        var compositionRoot = Path.Combine(FindRepositoryRoot(), "WTK.MediaForge.Composition");
 
         var outputsDir = Path.Combine(compositionRoot, "Outputs");
         Assert.True(Directory.Exists(outputsDir), $"Outputs directory not found: {outputsDir}");
@@ -35,5 +32,19 @@ public sealed class FrameSchedulerGuardRailTests
                     StringComparison.Ordinal);
             }
         }
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "WTK.MediaForge.sln")))
+                return directory.FullName;
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate WTK.MediaForge.sln from the test output directory.");
     }
 }

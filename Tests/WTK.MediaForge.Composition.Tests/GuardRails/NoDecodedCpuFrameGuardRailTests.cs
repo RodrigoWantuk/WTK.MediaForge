@@ -7,7 +7,7 @@ public sealed class NoDecodedCpuFrameGuardRailTests
     [Fact]
     public void No_DecodedCpuFrame_type_in_solution()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = FindRepositoryRoot();
         var violations = new List<string>();
 
         foreach (var file in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
@@ -26,5 +26,19 @@ public sealed class NoDecodedCpuFrameGuardRailTests
         }
 
         Assert.Empty(violations);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "WTK.MediaForge.sln")))
+                return directory.FullName;
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate WTK.MediaForge.sln from the test output directory.");
     }
 }

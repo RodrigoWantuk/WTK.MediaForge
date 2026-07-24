@@ -19,7 +19,7 @@ public sealed class CiWorkflowContractTests
         Assert.Contains("Category!=GPU&Category!=Stress&Category!=Performance", hostedJob, StringComparison.Ordinal);
         Assert.Contains("--no-build", hostedJob, StringComparison.Ordinal);
         Assert.DoesNotContain("-RequireHardwareMedia", hostedJob, StringComparison.Ordinal);
-        Assert.Contains("runs-on: [self-hosted, windows, mediaforge-rx580]", hardwareJob, StringComparison.Ordinal);
+        Assert.Contains("runs-on: [self-hosted, Windows, mediaforge-rx580]", hardwareJob, StringComparison.Ordinal);
         Assert.Contains("verify-engine-readiness-v14.ps1 -RequireHardwareMedia", hardwareJob, StringComparison.Ordinal);
     }
 

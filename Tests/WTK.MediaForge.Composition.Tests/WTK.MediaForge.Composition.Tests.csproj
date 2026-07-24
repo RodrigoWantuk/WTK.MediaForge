@@ -18,8 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\WTK.MediaForge.Graphics.D3D11\WTK.MediaForge.Graphics.D3D11.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Testing\WTK.MediaForge.Testing.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Composition\WTK.MediaForge.Composition.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Diagnostics\WTK.MediaForge.Diagnostics.csproj" />
   </ItemGroup>
 
 </Project>

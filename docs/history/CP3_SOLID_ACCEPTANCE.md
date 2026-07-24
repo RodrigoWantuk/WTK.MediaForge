@@ -26,7 +26,7 @@ Vulkan rendering of `SolidDrawObject` layers:
 
 ## Pixel Correctness Tests
 
-File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp3SolidLayerTests.cs`
+File: `Tests/WTK.MediaForge.Graphics.Vulkan.Tests/Cp3SolidLayerTests.cs`
 
 | Test | Validates |
 |------|-----------|

@@ -47,7 +47,7 @@ The following are explicitly not part of CP2:
 
 ## Pixel Correctness Tests
 
-File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp2MultiLayerCompositionTests.cs`
+File: `Tests/WTK.MediaForge.Graphics.Vulkan.Tests/Cp2MultiLayerCompositionTests.cs`
 
 | Test | Validates |
 |------|-----------|
@@ -62,7 +62,7 @@ File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp2MultiLayerCompositionTests.cs`
 
 ## Lifetime and Stress Tests
 
-File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp2MultiLayerStressTests.cs`
+File: `Tests/WTK.MediaForge.Graphics.Vulkan.Tests/Cp2MultiLayerStressTests.cs`
 
 | Test | Validates |
 |------|-----------|

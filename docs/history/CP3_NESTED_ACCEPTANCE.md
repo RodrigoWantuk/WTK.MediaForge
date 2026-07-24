@@ -26,7 +26,7 @@ Vulkan rendering of `CanvasDrawObject` nested canvases:
 
 ## Pixel Correctness Tests
 
-File: `WTK.MediaForge.Graphics.Vulkan.Tests/Cp3NestedCanvasTests.cs`
+File: `Tests/WTK.MediaForge.Graphics.Vulkan.Tests/Cp3NestedCanvasTests.cs`
 
 | Test | Validates |
 |------|-----------|

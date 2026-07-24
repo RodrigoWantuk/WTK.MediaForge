@@ -18,7 +18,7 @@ function Invoke-Step {
 
 Invoke-Step "capability and hardware proof truth" {
     dotnet test `
-        WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
+        Tests\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
         --no-build `
         --filter "FullyQualifiedName~CapabilityReportTests|FullyQualifiedName~ProductReadinessStatusTests|FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests" `
         --verbosity minimal `
@@ -27,7 +27,7 @@ Invoke-Step "capability and hardware proof truth" {
 
 Invoke-Step "encoded output product boundary" {
     dotnet test `
-        WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
+        Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
         --no-build `
         --filter "FullyQualifiedName~EncodedOutputPipelineTests|FullyQualifiedName~MediaPipelineRuntimeTests|FullyQualifiedName~RenderedOutputEncodeFrameAdapterTests|FullyQualifiedName~RenderedOutputEncodingPipelineTests" `
         --verbosity minimal `
@@ -36,7 +36,7 @@ Invoke-Step "encoded output product boundary" {
 
 Invoke-Step "docs and media surface guard rails" {
     dotnet test `
-        WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
+        Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
         --no-build `
         --filter "FullyQualifiedName~DocsProductTruthTests|FullyQualifiedName~SourceCapabilityReadinessTests|FullyQualifiedName~RenderOutputTypeCatalogTests|FullyQualifiedName~RenderOutputSinkComplianceRegistryTests|FullyQualifiedName~GuardRails" `
         --verbosity minimal `
@@ -45,7 +45,7 @@ Invoke-Step "docs and media surface guard rails" {
 
 Invoke-Step "Windows media boundary truth" {
     dotnet test `
-        WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj `
+        Tests\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj `
         --no-build `
         --filter "FullyQualifiedName~WindowsMediaCapabilityTruthTests|FullyQualifiedName~WindowsHardwareDecodeBoundaryTests|FullyQualifiedName~WindowsGpuExportEndToEndProofTests|FullyQualifiedName~HardwareEncodeFoundationTests" `
         --verbosity minimal `

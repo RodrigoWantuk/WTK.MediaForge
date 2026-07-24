@@ -19,11 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\WTK.MediaForge.Capture\WTK.MediaForge.Capture.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Composition\WTK.MediaForge.Composition.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Graphics.Vulkan\WTK.MediaForge.Graphics.Vulkan.csproj" />
-    <ProjectReference Include="..\WTK.MediaForge.Testing\WTK.MediaForge.Testing.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Capture\WTK.MediaForge.Capture.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Composition\WTK.MediaForge.Composition.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Graphics.Vulkan\WTK.MediaForge.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="..\..\WTK.MediaForge.Testing\WTK.MediaForge.Testing.csproj" />
   </ItemGroup>
 
 </Project>

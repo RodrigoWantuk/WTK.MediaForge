@@ -33,12 +33,12 @@ Invoke-Step "v11 readiness baseline" {
 }
 
 Invoke-Step "v12 encoded output profile and encoder ownership tests" {
-    dotnet test .\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj --no-build --filter "FullyQualifiedName~RenderOutputTypeCatalogTests"
+    dotnet test .\Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj --no-build --filter "FullyQualifiedName~RenderOutputTypeCatalogTests"
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
 
-    dotnet test .\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj --no-build --filter "FullyQualifiedName~HardwareEncodeFoundationTests|FullyQualifiedName~WindowsMediaCapabilityTruthTests"
+    dotnet test .\Tests\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj --no-build --filter "FullyQualifiedName~HardwareEncodeFoundationTests|FullyQualifiedName~WindowsMediaCapabilityTruthTests"
 }
 
 Invoke-Step "v12 proof report refresh" {

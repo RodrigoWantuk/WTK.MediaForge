@@ -10,8 +10,8 @@ Set-Location $repoRoot
 $reportDirectory = Join-Path $repoRoot $OutputDirectory
 New-Item -ItemType Directory -Force -Path $reportDirectory | Out-Null
 
-Write-Host ">> dotnet test WTK.MediaForge.Studio.Tests -- Studio visual QA"
-dotnet test .\WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj `
+Write-Host ">> dotnet test Tests\WTK.MediaForge.Studio.Tests -- Studio visual QA"
+dotnet test .\Tests\WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj `
     --filter "FullyQualifiedName~StudioVisualQaTests" `
     --verbosity minimal
 

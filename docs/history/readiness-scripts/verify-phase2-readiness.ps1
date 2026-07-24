@@ -25,22 +25,22 @@ Invoke-Step "verify-license-policy" { & "$PSScriptRoot/verify-license-policy.ps1
 
 Invoke-Step "prototype media product gates" {
     dotnet test `
-        WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
+        Tests\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
         --filter FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests `
         --verbosity minimal
 }
 
 Invoke-Step "dotnet test fast-safe projects" {
-    dotnet test WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
+    dotnet test Tests\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    dotnet test WTK.MediaForge.Diagnostics.Tests\WTK.MediaForge.Diagnostics.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
+    dotnet test Tests\WTK.MediaForge.Diagnostics.Tests\WTK.MediaForge.Diagnostics.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    dotnet test WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
+    dotnet test Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    dotnet test WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
+    dotnet test Tests\WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj --filter "Category!=GPU&Category!=Stress" --verbosity minimal -- RunConfiguration.MaxCpuCount=1
 }
 
 Invoke-Step "Fast tier" { & "$PSScriptRoot/test.ps1" -Tier Fast }

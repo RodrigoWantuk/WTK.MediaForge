@@ -40,7 +40,7 @@ Invoke-Step "v6 baseline readiness gate" {
 
 Invoke-Step "v7 hardware-first capability truth tests" {
     dotnet test `
-        WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
+        Tests\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj `
         --filter "FullyQualifiedName~CapabilityReportTests|FullyQualifiedName~EncodedVideoPacketEvidenceTests|FullyQualifiedName~ProductMediaPathsDoNotUsePrototypeEvidenceTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -48,7 +48,7 @@ Invoke-Step "v7 hardware-first capability truth tests" {
 
 Invoke-Step "v7 product packet sink and mux boundary tests" {
     dotnet test `
-        WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
+        Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj `
         --filter "FullyQualifiedName~EncodedOutputPipelineTests|FullyQualifiedName~DocsProductTruthTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
@@ -56,7 +56,7 @@ Invoke-Step "v7 product packet sink and mux boundary tests" {
 
 Invoke-Step "v7 Windows hardware media boundary tests" {
     dotnet test `
-        WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj `
+        Tests\WTK.MediaForge.Windows.Tests\WTK.MediaForge.Windows.Tests.csproj `
         --filter "FullyQualifiedName~HardwareEncodeFoundationTests|FullyQualifiedName~WindowsGpuExportEndToEndProofTests|FullyQualifiedName~WindowsMediaCapabilityTruthTests|FullyQualifiedName~WindowsHardwareDecodeBoundaryTests" `
         --verbosity minimal `
         -- RunConfiguration.MaxCpuCount=1
