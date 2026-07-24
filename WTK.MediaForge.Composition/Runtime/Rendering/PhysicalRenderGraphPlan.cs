@@ -368,6 +368,7 @@ internal static class PhysicalRenderGraphPlanner
             MediaForgeRenderGraphNodeKind.LayerEffectChain => PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
             MediaForgeRenderGraphNodeKind.PrimitiveLayer => PhysicalRenderGraphOperationKind.RenderPrimitiveLayer,
             MediaForgeRenderGraphNodeKind.CanvasRender => PhysicalRenderGraphOperationKind.RenderCanvas,
+            MediaForgeRenderGraphNodeKind.CanvasEffectChain => PhysicalRenderGraphOperationKind.RenderCanvas,
             MediaForgeRenderGraphNodeKind.OutputTransition => PhysicalRenderGraphOperationKind.RenderOutputTransition,
             MediaForgeRenderGraphNodeKind.OutputPass => PhysicalRenderGraphOperationKind.RenderOutput,
             _ => throw new NotSupportedException($"Unsupported render graph node kind '{kind}'.")

@@ -23,6 +23,13 @@ internal sealed class RenderCanvasSnapshot
     public ResolvedCanvasKey PhysicalKey =>
         ResolvedKey.IsEmpty ? ResolvedCanvasKey.Unversioned(Id) : ResolvedKey;
 
+    /// <summary>
+    /// Canvas-wide effects, executed only after all source, primitive and
+    /// nested-canvas layers have been composed into this canvas target.
+    /// </summary>
+    public ImmutableArray<EffectStateSnapshot> Effects { get; init; } =
+        ImmutableArray<EffectStateSnapshot>.Empty;
+
     public ImmutableArray<RenderDrawObjectSnapshot> Objects { get; init; } =
         ImmutableArray<RenderDrawObjectSnapshot>.Empty;
 }

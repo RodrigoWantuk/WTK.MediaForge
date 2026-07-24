@@ -146,8 +146,134 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             submissionResources,
             depth: 0,
             physicalBlurTargets);
-        return canvasTarget;
+        return RenderCanvasEffects(
+            commandBuffer,
+            canvas,
+            canvasTarget,
+            submissionResources);
     }
+
+    private VulkanOffscreenRenderTarget RenderCanvasEffects(
+        CommandBuffer commandBuffer,
+        RenderCanvasSnapshot canvas,
+        VulkanOffscreenRenderTarget canvasTarget,
+        VulkanSubmissionResourceScope submissionResources)
+    {
+        var plan = EffectExecutionPlanner.Default.CreatePlan(EffectScope.Canvas, canvas.Effects);
+        if (plan.IsEmpty)
+            return canvasTarget;
+
+        var current = canvasTarget;
+        byte salt = 32;
+        foreach (var effect in plan.OrderedEffects)
+        {
+            switch (effect)
+            {
+                case ColorCorrectionEffectSnapshot colorCorrection:
+                {
+                    var output = RentCanvasEffectTarget(canvas, salt++, submissionResources);
+                    RenderCanvasColorCorrectionPass(
+                        commandBuffer,
+                        current,
+                        output,
+                        colorCorrection,
+                        submissionResources);
+                    current = output;
+                    break;
+                }
+
+                case BlurEffectSnapshot blur:
+                {
+                    var horizontal = RentCanvasEffectTarget(canvas, salt++, submissionResources);
+                    var output = RentCanvasEffectTarget(canvas, salt++, submissionResources);
+                    RenderBlurPass(commandBuffer, current, horizontal, blur.Radius, horizontal: true, submissionResources);
+                    RenderBlurPass(commandBuffer, horizontal, output, blur.Radius, horizontal: false, submissionResources);
+                    current = output;
+                    break;
+                }
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Effect '{effect.Name}' is not supported in the canvas execution path.");
+            }
+        }
+
+        return current;
+    }
+
+    private VulkanOffscreenRenderTarget RentCanvasEffectTarget(
+        RenderCanvasSnapshot canvas,
+        byte salt,
+        VulkanSubmissionResourceScope submissionResources)
+    {
+        var handle = _intermediateTargetPool.Rent(
+            canvas.PhysicalKey.Derive($"canvas-effect:{salt}"),
+            canvas.Size);
+        submissionResources.RetainOffscreenTarget(handle);
+        var target = (VulkanOffscreenRenderTarget)handle.Target;
+        handle.Retire();
+        return target;
+    }
+
+    private void RenderCanvasColorCorrectionPass(
+        CommandBuffer commandBuffer,
+        VulkanOffscreenRenderTarget input,
+        VulkanOffscreenRenderTarget output,
+        ColorCorrectionEffectSnapshot colorCorrection,
+        VulkanSubmissionResourceScope submissionResources)
+    {
+        TransitionForColorAttachment(_vk, commandBuffer, output, output.CurrentLayout);
+        output.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
+
+        var framebuffer = BeginRenderPass(
+            commandBuffer,
+            output,
+            output.Size,
+            new ClearValue { Color = new ClearColorValue(0f, 0f, 0f, 0f) });
+        submissionResources.RetainFramebuffer(framebuffer);
+
+        try
+        {
+            var layer = CreateCanvasEffectLayer(input.Size);
+            var frame = new GpuFrameReference
+            {
+                LogicalSize = input.Size,
+                TextureSize = input.Size,
+                PixelFormat = "RGBA8"
+            };
+            var pushConstants = CompositionPushConstantsBuilder.BuildSourceLayer(
+                layer,
+                frame,
+                chromaKey: null,
+                colorCorrection);
+            var descriptorSet = AllocateAndWriteDescriptorSet(input.ImageView);
+            submissionResources.RetainDescriptorSet(descriptorSet);
+            DrawTexturedLayer(
+                commandBuffer,
+                _sourceLayerPipeline,
+                descriptorSet,
+                pushConstants,
+                output.Size,
+                layer.Transform);
+        }
+        finally
+        {
+            EndRenderPassInstance(commandBuffer);
+        }
+
+        TransitionToShaderRead(_vk, commandBuffer, output);
+    }
+
+    private static RenderSourceLayerDrawObjectSnapshot CreateCanvasEffectLayer(FrameSize size) =>
+        new()
+        {
+            Name = "Canvas effect input",
+            Transform = new Transform2D { Size = new CanvasSize(size.Width, size.Height) },
+            EffectiveCrop = NormalizedRect.Full,
+            Opacity = 1f,
+            LayoutMode = LayoutMode.Stretch,
+            LetterboxColor = Core.Color.ColorRgba.Transparent
+        };
 
     internal IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget> RenderBlurEffectIntermediateTargets(
         CommandBuffer commandBuffer,

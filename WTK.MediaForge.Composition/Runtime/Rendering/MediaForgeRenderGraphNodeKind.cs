@@ -7,6 +7,7 @@ internal enum MediaForgeRenderGraphNodeKind
     LayerEffectChain = 2,
     PrimitiveLayer = 3,
     CanvasRender = 4,
-    OutputTransition = 5,
-    OutputPass = 6
+    CanvasEffectChain = 5,
+    OutputTransition = 6,
+    OutputPass = 7
 }

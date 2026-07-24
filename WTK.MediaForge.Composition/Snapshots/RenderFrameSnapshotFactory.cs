@@ -314,6 +314,7 @@ internal static class RenderFrameSnapshotFactory
             BackgroundColor = canvas.BackgroundColor,
             VersionId = versionId,
             ResolvedKey = resolvedKey,
+            Effects = canvas.Effects,
             Objects = objects
         };
     }

@@ -15,6 +15,7 @@ internal static class CanvasVisualStateFingerprint
             writer.WriteNumber("width", canvas.Size.Width);
             writer.WriteNumber("height", canvas.Size.Height);
             WriteColor(writer, canvas.BackgroundColor);
+            WriteEffects(writer, canvas.Effects);
             writer.WriteStartArray("layers");
             for (var index = 0; index < canvas.Objects.Length; index++)
             {
@@ -38,6 +39,7 @@ internal static class CanvasVisualStateFingerprint
             writer.WriteNumber("width", canvas.Size.Width);
             writer.WriteNumber("height", canvas.Size.Height);
             WriteColor(writer, canvas.BackgroundColor);
+            WriteEffects(writer, canvas.Effects);
             writer.WriteStartArray("layers");
             for (var index = 0; index < canvas.Objects.Length; index++)
             {
@@ -59,6 +61,14 @@ internal static class CanvasVisualStateFingerprint
         writer.WriteNumber("b", color.B);
         writer.WriteNumber("a", color.A);
         writer.WriteEndObject();
+    }
+
+    private static void WriteEffects(Utf8JsonWriter writer, IEnumerable<EffectStateSnapshot> effects)
+    {
+        writer.WriteStartArray("effects");
+        foreach (var effect in EffectStateFingerprint.CreateSequence(effects))
+            writer.WriteStringValue(effect);
+        writer.WriteEndArray();
     }
 
     private static string Hash(Action<Utf8JsonWriter> write)

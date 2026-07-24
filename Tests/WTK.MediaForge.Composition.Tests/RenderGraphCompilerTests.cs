@@ -11,6 +11,35 @@ namespace WTK.MediaForge.Composition.Tests;
 public class RenderGraphCompilerTests
 {
     [Fact]
+    public void Canvas_effects_run_after_the_fully_composed_canvas()
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source);
+        scene.Effects.Add(new ColorCorrectionEffect
+        {
+            Name = "Program grade",
+            Brightness = 0.1f,
+            Contrast = 1.1f
+        });
+
+        var project = builder
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
+            .AddText(scene, "Program")
+            .OffscreenOutput("Program", scene, 1920, 1080, out _)
+            .BuildValidated();
+
+        var graph = MediaForgeRenderGraphCompiler.Compile(project);
+
+        var canvas = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender);
+        var effect = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasEffectChain);
+        var output = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.OutputPass);
+
+        Assert.Equal([canvas.Key], effect.Dependencies);
+        Assert.Equal([effect.Key], output.Dependencies);
+    }
+
+    [Fact]
     public void Compatible_layers_share_source_effect_result_before_fanout()
     {
         var builder = MediaForgeProjectBuilder.Create()

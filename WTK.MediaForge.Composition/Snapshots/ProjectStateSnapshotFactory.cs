@@ -42,6 +42,7 @@ internal static class ProjectStateSnapshotFactory
             Name = canvas.Name,
             Size = canvas.Size,
             BackgroundColor = canvas.BackgroundColor,
+            Effects = EffectSnapshotFactory.CloneEffects(canvas.Effects),
             Objects = canvas.Objects.Select(CloneDrawObject).ToImmutableArray()
         };
 

@@ -148,12 +148,30 @@ internal static class MediaForgeRenderGraphCompiler
                 }
             }
 
-            return AddNode(
+            var canvasNode = AddNode(
                 MediaForgeRenderGraphNodeKind.CanvasRender,
                 $"canvas:{canvas.Id}:version:{versionKey}:size:{canvas.Size.Width}x{canvas.Size.Height}:color-space:{colorSpace}:content:{HashCanvas(canvas)}",
                 canvas.Name,
                 dependencies,
                 canvasId: canvas.Id);
+
+            return AddCanvasEffectChain(canvas, colorSpace, canvasNode);
+        }
+
+        private string AddCanvasEffectChain(
+            CanvasStateSnapshot canvas,
+            RenderColorSpace colorSpace,
+            string canvasNode)
+        {
+            var plan = EffectExecutionPlanner.Default.CreatePlan(EffectScope.Canvas, canvas.Effects);
+            return plan.IsEmpty
+                ? canvasNode
+                : AddNode(
+                    MediaForgeRenderGraphNodeKind.CanvasEffectChain,
+                    $"canvas-effect:{canvas.Id}:size:{canvas.Size.Width}x{canvas.Size.Height}:color-space:{colorSpace}:stack:{plan.Fingerprint.Value}",
+                    canvas.Name,
+                    [canvasNode],
+                    canvasId: canvas.Id);
         }
 
         private string ResolveCanvasVersionKey(Core.Identifiers.CanvasId canvasId, SceneVersionBinding binding)
@@ -318,13 +336,32 @@ internal static class MediaForgeRenderGraphCompiler
                 }
             }
 
-            return AddNode(
+            var canvasNode = AddNode(
                 MediaForgeRenderGraphNodeKind.CanvasRender,
                 $"canvas:{canvas.PhysicalKey.StableValue}:size:{canvas.Size.Width}x{canvas.Size.Height}:color-space:{colorSpace}:content:{HashCanvas(canvas)}",
                 canvas.Name,
                 dependencies,
                 canvasId: canvas.Id,
                 resolvedCanvasKey: canvas.PhysicalKey);
+
+            return AddCanvasEffectChain(canvas, colorSpace, canvasNode);
+        }
+
+        private string AddCanvasEffectChain(
+            RenderCanvasSnapshot canvas,
+            RenderColorSpace colorSpace,
+            string canvasNode)
+        {
+            var plan = EffectExecutionPlanner.Default.CreatePlan(EffectScope.Canvas, canvas.Effects);
+            return plan.IsEmpty
+                ? canvasNode
+                : AddNode(
+                    MediaForgeRenderGraphNodeKind.CanvasEffectChain,
+                    $"canvas-effect:{canvas.PhysicalKey.StableValue}:size:{canvas.Size.Width}x{canvas.Size.Height}:color-space:{colorSpace}:stack:{plan.Fingerprint.Value}",
+                    canvas.Name,
+                    [canvasNode],
+                    canvasId: canvas.Id,
+                    resolvedCanvasKey: canvas.PhysicalKey);
         }
 
         private ResolvedCanvasKey ResolveOutputCanvasKey(RenderOutputStateSnapshot output)
