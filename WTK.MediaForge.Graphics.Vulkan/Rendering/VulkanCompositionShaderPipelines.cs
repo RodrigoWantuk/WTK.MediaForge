@@ -3,6 +3,7 @@ using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using WTK.MediaForge.Composition;
+using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
@@ -138,7 +139,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         var canvasTarget = (VulkanOffscreenRenderTarget)canvasHandle.Target;
         canvasHandle.Retire();
 
-        RenderCanvasPass(
+        var composedCanvasTarget = RenderCanvasPass(
             commandBuffer,
             canvas,
             output,
@@ -150,7 +151,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         return RenderCanvasEffects(
             commandBuffer,
             canvas,
-            canvasTarget,
+            composedCanvasTarget,
             submissionResources);
     }
 
@@ -168,6 +169,13 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         byte salt = 32;
         foreach (var effect in plan.OrderedEffects)
         {
+            if (effect.Mask is not null)
+            {
+                throw new MediaForgeUnsupportedFeatureException(
+                    "render.effect.mask",
+                    $"Canvas effect '{effect.Name}' requires the Vulkan mask-composite pipeline.");
+            }
+
             switch (effect)
             {
                 case ColorCorrectionEffectSnapshot colorCorrection:
@@ -209,6 +217,84 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     {
         var handle = _intermediateTargetPool.Rent(
             canvas.PhysicalKey.Derive($"canvas-effect:{salt}"),
+            canvas.Size);
+        submissionResources.RetainOffscreenTarget(handle);
+        var target = (VulkanOffscreenRenderTarget)handle.Target;
+        handle.Retire();
+        return target;
+    }
+
+    private VulkanOffscreenRenderTarget RenderAdjustmentEffects(
+        CommandBuffer commandBuffer,
+        RenderCanvasSnapshot canvas,
+        RenderAdjustmentLayerDrawObjectSnapshot adjustment,
+        VulkanOffscreenRenderTarget input,
+        VulkanSubmissionResourceScope submissionResources)
+    {
+        if (adjustment.TargetMode != AdjustmentLayerTargetMode.LayersBelow)
+        {
+            throw new MediaForgeUnsupportedFeatureException(
+                "render.adjustment_layer.target_mode",
+                $"Adjustment layer '{adjustment.Name}' has unsupported target mode '{adjustment.TargetMode}'.");
+        }
+
+        if (adjustment.Mask is not null)
+        {
+            throw new MediaForgeUnsupportedFeatureException(
+                "render.adjustment_layer.mask",
+                $"Adjustment layer '{adjustment.Name}' requires the Vulkan mask-composite pipeline.");
+        }
+
+        var plan = EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, adjustment.Effects);
+        var current = input;
+        byte salt = 1;
+        foreach (var effect in plan.OrderedEffects)
+        {
+            if (effect.Mask is not null)
+            {
+                throw new MediaForgeUnsupportedFeatureException(
+                    "render.effect.mask",
+                    $"Effect '{effect.Name}' on adjustment layer '{adjustment.Name}' requires the Vulkan mask-composite pipeline.");
+            }
+
+            switch (effect)
+            {
+                case ColorCorrectionEffectSnapshot colorCorrection:
+                {
+                    var output = RentAdjustmentEffectTarget(canvas, adjustment.Id, salt++, submissionResources);
+                    RenderCanvasColorCorrectionPass(commandBuffer, current, output, colorCorrection, submissionResources);
+                    current = output;
+                    break;
+                }
+
+                case BlurEffectSnapshot blur:
+                {
+                    var horizontal = RentAdjustmentEffectTarget(canvas, adjustment.Id, salt++, submissionResources);
+                    var output = RentAdjustmentEffectTarget(canvas, adjustment.Id, salt++, submissionResources);
+                    RenderBlurPass(commandBuffer, current, horizontal, blur.Radius, horizontal: true, submissionResources);
+                    RenderBlurPass(commandBuffer, horizontal, output, blur.Radius, horizontal: false, submissionResources);
+                    current = output;
+                    break;
+                }
+
+                default:
+                    throw new MediaForgeUnsupportedFeatureException(
+                        "render.adjustment_layer.effect",
+                        $"Effect '{effect.Name}' is not supported by the Vulkan adjustment-layer execution path.");
+            }
+        }
+
+        return current;
+    }
+
+    private VulkanOffscreenRenderTarget RentAdjustmentEffectTarget(
+        RenderCanvasSnapshot canvas,
+        DrawObjectId adjustmentId,
+        byte salt,
+        VulkanSubmissionResourceScope submissionResources)
+    {
+        var handle = _intermediateTargetPool.Rent(
+            canvas.PhysicalKey.Derive($"adjustment-effect:{adjustmentId.Value:N}:{salt}"),
             canvas.Size);
         submissionResources.RetainOffscreenTarget(handle);
         var target = (VulkanOffscreenRenderTarget)handle.Target;
@@ -363,13 +449,13 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         var currentTarget = (VulkanOffscreenRenderTarget)currentHandle.Target;
         currentHandle.Retire();
 
-        RenderCanvasPass(commandBuffer, previousCanvas, output, importsByHandle, previousTarget, submissionResources, depth: 0);
-        RenderCanvasPass(commandBuffer, currentCanvas, output, importsByHandle, currentTarget, submissionResources, depth: 0);
+        previousTarget = RenderCanvasPass(commandBuffer, previousCanvas, output, importsByHandle, previousTarget, submissionResources, depth: 0);
+        currentTarget = RenderCanvasPass(commandBuffer, currentCanvas, output, importsByHandle, currentTarget, submissionResources, depth: 0);
         RenderOutputPass(commandBuffer, output, previousCanvas.Size, previousTarget, outputTarget, submissionResources);
         RenderOutputOverlayPass(commandBuffer, output, currentCanvas.Size, currentTarget, outputTarget, progress, submissionResources);
     }
 
-    private void RenderCanvasPass(
+    private VulkanOffscreenRenderTarget RenderCanvasPass(
         CommandBuffer commandBuffer,
         RenderCanvasSnapshot canvas,
         RenderOutputStateSnapshot output,
@@ -379,16 +465,6 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         int depth,
         IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null)
     {
-        var adjustment = canvas.Objects
-            .OfType<RenderAdjustmentLayerDrawObjectSnapshot>()
-            .FirstOrDefault(static drawObject => drawObject.Enabled);
-        if (adjustment is not null)
-        {
-            throw new MediaForgeUnsupportedFeatureException(
-                "render.adjustment_layer",
-                $"Adjustment layer '{adjustment.Name}' requires Vulkan checkpoint composition, which is not available on this backend.");
-        }
-
         var nestedTargets = RenderNestedCanvasTargets(
             commandBuffer,
             canvas,
@@ -404,8 +480,9 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                 submissionResources,
                 effectResolutions);
 
-        TransitionForColorAttachment(_vk, commandBuffer, canvasTarget, canvasTarget.CurrentLayout);
-        canvasTarget.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
+        var currentTarget = canvasTarget;
+        TransitionForColorAttachment(_vk, commandBuffer, currentTarget, currentTarget.CurrentLayout);
+        currentTarget.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
 
         var background = canvas.BackgroundColor;
         var clearColor = new ClearValue
@@ -415,17 +492,43 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 
         var framebuffer = BeginRenderPass(
             commandBuffer,
-            canvasTarget,
+            currentTarget,
             canvas.Size,
             clearColor);
         submissionResources.RetainFramebuffer(framebuffer);
 
+        var renderPassActive = true;
         try
         {
             foreach (var drawObject in canvas.Objects)
             {
                 if (!drawObject.Enabled)
                 {
+                    continue;
+                }
+
+                if (drawObject is RenderAdjustmentLayerDrawObjectSnapshot adjustment)
+                {
+                    EndRenderPassInstance(commandBuffer);
+                    renderPassActive = false;
+                    TransitionToShaderRead(_vk, commandBuffer, currentTarget);
+                    currentTarget = RenderAdjustmentEffects(
+                        commandBuffer,
+                        canvas,
+                        adjustment,
+                        currentTarget,
+                        submissionResources);
+
+                    TransitionForColorAttachment(_vk, commandBuffer, currentTarget, currentTarget.CurrentLayout);
+                    currentTarget.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
+                    framebuffer = BeginRenderPass(
+                        commandBuffer,
+                        currentTarget,
+                        canvas.Size,
+                        clearColor,
+                        _loadRenderPass);
+                    submissionResources.RetainFramebuffer(framebuffer);
+                    renderPassActive = true;
                     continue;
                 }
 
@@ -560,10 +663,12 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         }
         finally
         {
-            EndRenderPassInstance(commandBuffer);
+            if (renderPassActive)
+                EndRenderPassInstance(commandBuffer);
         }
 
-        TransitionToShaderRead(_vk, commandBuffer, canvasTarget);
+        TransitionToShaderRead(_vk, commandBuffer, currentTarget);
+        return currentTarget;
     }
 
     private Dictionary<DrawObjectId, EffectResolution> ResolveEffectsForCanvas(RenderCanvasSnapshot canvas)
@@ -572,10 +677,21 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 
         foreach (var drawObject in canvas.Objects)
         {
-            var supported = TryResolveEffects(
-                drawObject,
-                allowSourceLayerEffects: drawObject is RenderSourceLayerDrawObjectSnapshot,
-                out var sourceLayerEffects);
+            SourceLayerEffectSelection sourceLayerEffects;
+            bool supported;
+            if (drawObject is RenderAdjustmentLayerDrawObjectSnapshot)
+            {
+                supported = true;
+                sourceLayerEffects = default;
+            }
+            else
+            {
+                supported = TryResolveEffects(
+                    drawObject,
+                    allowSourceLayerEffects: drawObject is RenderSourceLayerDrawObjectSnapshot,
+                    out sourceLayerEffects);
+            }
+
             resolutions[drawObject.Id] = new EffectResolution(supported, sourceLayerEffects);
         }
 
@@ -843,7 +959,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             var nestedTarget = (VulkanOffscreenRenderTarget)nestedHandle.Target;
             nestedHandle.Retire();
 
-            RenderCanvasPass(
+            nestedTarget = RenderCanvasPass(
                 commandBuffer,
                 nested.NestedCanvas,
                 output,
