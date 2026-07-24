@@ -15,4 +15,6 @@ internal static class VulkanShaderBytecode
     public static ReadOnlySpan<byte> TextFragment => CompiledShaders.Shaders.Catalog.mf_text_frag;
 
     public static ReadOnlySpan<byte> BlurFragment => CompiledShaders.Shaders.Catalog.mf_blur_frag;
+
+    public static ReadOnlySpan<byte> MaskCompositeFragment => CompiledShaders.Shaders.Catalog.mf_mask_composite_frag;
 }

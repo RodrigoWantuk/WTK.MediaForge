@@ -41,6 +41,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     private readonly Pipeline _outputLetterboxBlendPipeline;
     private readonly Pipeline _textPipeline;
     private readonly Pipeline _blurPipeline;
+    private readonly Pipeline _maskCompositePipeline;
     private readonly ShaderModule _vertexModule;
     private readonly ShaderModule _sourceLayerFragmentModule;
     private readonly ShaderModule _solidFragmentModule;
@@ -48,6 +49,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
     private readonly ShaderModule _outputLetterboxFragmentModule;
     private readonly ShaderModule _textFragmentModule;
     private readonly ShaderModule _blurFragmentModule;
+    private readonly ShaderModule _maskCompositeFragmentModule;
     private readonly VulkanIntermediateTargetPool _intermediateTargetPool;
     private readonly VulkanSubmissionResourceMetrics _submissionMetrics = new();
     private VulkanFontAtlasBridge? _fontAtlasBridge;
@@ -79,6 +81,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         _outputLetterboxFragmentModule = CreateShaderModule(VulkanShaderBytecode.OutputLetterboxFragment);
         _textFragmentModule = CreateShaderModule(VulkanShaderBytecode.TextFragment);
         _blurFragmentModule = CreateShaderModule(VulkanShaderBytecode.BlurFragment);
+        _maskCompositeFragmentModule = CreateShaderModule(VulkanShaderBytecode.MaskCompositeFragment);
 
         _sourceLayerPipeline = CreateGraphicsPipeline(_vertexModule, _sourceLayerFragmentModule, enableAlphaBlend: true);
         _solidPipeline = CreateGraphicsPipeline(_vertexModule, _solidFragmentModule, enableAlphaBlend: true);
@@ -87,6 +90,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         _outputLetterboxBlendPipeline = CreateGraphicsPipeline(_vertexModule, _outputLetterboxFragmentModule, enableAlphaBlend: true);
         _textPipeline = CreateGraphicsPipeline(_vertexModule, _textFragmentModule, enableAlphaBlend: true);
         _blurPipeline = CreateGraphicsPipeline(_vertexModule, _blurFragmentModule, enableAlphaBlend: false);
+        _maskCompositePipeline = CreateGraphicsPipeline(_vertexModule, _maskCompositeFragmentModule, enableAlphaBlend: false);
     }
 
     internal void SetFontAtlasBridge(VulkanFontAtlasBridge fontAtlasBridge) =>
@@ -238,13 +242,6 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                 $"Adjustment layer '{adjustment.Name}' has unsupported target mode '{adjustment.TargetMode}'.");
         }
 
-        if (adjustment.Mask is not null)
-        {
-            throw new MediaForgeUnsupportedFeatureException(
-                "render.adjustment_layer.mask",
-                $"Adjustment layer '{adjustment.Name}' requires the Vulkan mask-composite pipeline.");
-        }
-
         var plan = EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, adjustment.Effects);
         var current = input;
         byte salt = 1;
@@ -284,7 +281,32 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             }
         }
 
-        return current;
+        if (adjustment.Mask is not { Enabled: true } mask)
+            return current;
+
+        EnsureSupportedAdjustmentMask(adjustment, mask);
+        var composited = RentAdjustmentEffectTarget(canvas, adjustment.Id, 250, submissionResources);
+        RenderMaskCompositePass(commandBuffer, input, current, composited, mask, submissionResources);
+        return composited;
+    }
+
+    private static void EnsureSupportedAdjustmentMask(
+        RenderAdjustmentLayerDrawObjectSnapshot adjustment,
+        EffectMaskStateSnapshot mask)
+    {
+        if (!mask.Transform.Equals(Transform2D.Default))
+        {
+            throw new MediaForgeUnsupportedFeatureException(
+                "render.adjustment_layer.mask.transform",
+                $"Adjustment layer '{adjustment.Name}' uses a mask transform, which is not yet supported by the Vulkan mask-composite pipeline.");
+        }
+
+        if (mask is RectangleEffectMaskStateSnapshot or RoundedRectangleEffectMaskStateSnapshot or EllipseEffectMaskStateSnapshot)
+            return;
+
+        throw new MediaForgeUnsupportedFeatureException(
+            "render.adjustment_layer.mask",
+            $"Adjustment layer '{adjustment.Name}' uses mask '{mask.GetType().Name}', which requires GPU mask-asset support.");
     }
 
     private VulkanOffscreenRenderTarget RentAdjustmentEffectTarget(
@@ -342,6 +364,44 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                 pushConstants,
                 output.Size,
                 layer.Transform);
+        }
+        finally
+        {
+            EndRenderPassInstance(commandBuffer);
+        }
+
+        TransitionToShaderRead(_vk, commandBuffer, output);
+    }
+
+    private void RenderMaskCompositePass(
+        CommandBuffer commandBuffer,
+        VulkanOffscreenRenderTarget original,
+        VulkanOffscreenRenderTarget effectResult,
+        VulkanOffscreenRenderTarget output,
+        EffectMaskStateSnapshot mask,
+        VulkanSubmissionResourceScope submissionResources)
+    {
+        TransitionForColorAttachment(_vk, commandBuffer, output, output.CurrentLayout);
+        output.CurrentLayout = ImageLayout.ColorAttachmentOptimal;
+
+        var framebuffer = BeginRenderPass(
+            commandBuffer,
+            output,
+            output.Size,
+            new ClearValue { Color = new ClearColorValue(0f, 0f, 0f, 0f) });
+        submissionResources.RetainFramebuffer(framebuffer);
+
+        try
+        {
+            var pushConstants = CompositionPushConstantsBuilder.BuildMaskComposite(mask);
+            var descriptorSet = AllocateAndWriteDescriptorSet(original.ImageView, effectResult.ImageView);
+            submissionResources.RetainDescriptorSet(descriptorSet);
+            DrawFullscreen(
+                commandBuffer,
+                _maskCompositePipeline,
+                descriptorSet,
+                MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref pushConstants, 1)),
+                output.Size);
         }
         finally
         {
@@ -1696,6 +1756,61 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         return descriptorSet;
     }
 
+    private DescriptorSet AllocateAndWriteDescriptorSet(ImageView originalImageView, ImageView effectImageView)
+    {
+        var layout = _descriptorSetLayout;
+        var allocateInfo = new DescriptorSetAllocateInfo
+        {
+            SType = StructureType.DescriptorSetAllocateInfo,
+            DescriptorPool = _descriptorPool,
+            DescriptorSetCount = 1,
+            PSetLayouts = &layout
+        };
+
+        if (_vk.AllocateDescriptorSets(_deviceHandle, &allocateInfo, out var descriptorSet) != Result.Success)
+            throw new InvalidOperationException("vkAllocateDescriptorSets failed.");
+
+        var imageInfos = stackalloc DescriptorImageInfo[2]
+        {
+            new DescriptorImageInfo
+            {
+                Sampler = _sampler,
+                ImageView = originalImageView,
+                ImageLayout = ImageLayout.ShaderReadOnlyOptimal
+            },
+            new DescriptorImageInfo
+            {
+                Sampler = _sampler,
+                ImageView = effectImageView,
+                ImageLayout = ImageLayout.ShaderReadOnlyOptimal
+            }
+        };
+        var writes = stackalloc WriteDescriptorSet[2]
+        {
+            new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = descriptorSet,
+                DstBinding = 0,
+                DescriptorCount = 1,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                PImageInfo = &imageInfos[0]
+            },
+            new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = descriptorSet,
+                DstBinding = 1,
+                DescriptorCount = 1,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                PImageInfo = &imageInfos[1]
+            }
+        };
+
+        _vk.UpdateDescriptorSets(_deviceHandle, 2, writes, 0, null);
+        return descriptorSet;
+    }
+
     private void TransitionForShaderRead(CommandBuffer commandBuffer, VulkanD3D11TextureImport import)
     {
         var oldLayout = import.CurrentLayout;
@@ -1768,6 +1883,9 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         if (_blurPipeline.Handle != 0)
             _vk.DestroyPipeline(_deviceHandle, _blurPipeline, null);
 
+        if (_maskCompositePipeline.Handle != 0)
+            _vk.DestroyPipeline(_deviceHandle, _maskCompositePipeline, null);
+
         if (_pipelineLayout.Handle != 0)
             _vk.DestroyPipelineLayout(_deviceHandle, _pipelineLayout, null);
 
@@ -1792,6 +1910,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         DestroyShaderModule(_outputLetterboxFragmentModule);
         DestroyShaderModule(_textFragmentModule);
         DestroyShaderModule(_blurFragmentModule);
+        DestroyShaderModule(_maskCompositeFragmentModule);
         DestroyShaderModule(_vertexModule);
     }
 
@@ -1830,19 +1949,29 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
 
     private DescriptorSetLayout CreateDescriptorSetLayout()
     {
-        var samplerBinding = new DescriptorSetLayoutBinding
+        var samplerBindings = stackalloc DescriptorSetLayoutBinding[2]
         {
-            Binding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit
+            new DescriptorSetLayoutBinding
+            {
+                Binding = 0,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit
+            },
+            new DescriptorSetLayoutBinding
+            {
+                Binding = 1,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit
+            }
         };
 
         var layoutInfo = new DescriptorSetLayoutCreateInfo
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 1,
-            PBindings = &samplerBinding
+            BindingCount = 2,
+            PBindings = samplerBindings
         };
 
         if (_vk.CreateDescriptorSetLayout(_deviceHandle, &layoutInfo, null, out var layout) != Result.Success)
@@ -1856,7 +1985,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         var poolSize = new DescriptorPoolSize
         {
             Type = DescriptorType.CombinedImageSampler,
-            DescriptorCount = MaxDescriptorSetsPerSubmit
+            DescriptorCount = MaxDescriptorSetsPerSubmit * 2
         };
 
         var poolInfo = new DescriptorPoolCreateInfo
