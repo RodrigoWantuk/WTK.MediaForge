@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - ci/self-hosted-cross-platform-smoke
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
