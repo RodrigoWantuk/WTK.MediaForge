@@ -9,6 +9,11 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
 ## Mandatory Rules
 
 - Follow the product roadmap in `docs/ROADMAP_CURRENT.md`; do not follow historical gate language from older acceptance notes when it conflicts with the current roadmap.
+- **Windows and Linux are mandatory development targets.** Every new implementation must be designed for both platforms unless it is an explicitly isolated OS adapter.
+- Portable projects must target portable TFMs and must not reference `WTK.MediaForge.Windows`, Win32-only APIs, D3D11-only implementation types, or Windows-specific packages.
+- OS-specific behavior belongs in the corresponding platform project behind portable contracts. Do not place a Windows fallback, Linux fallback, or runtime OS switch in Core merely to make a build pass.
+- Every implementation unit must include tests designed for the Windows and Linux execution model. Portable behavior must be covered by tests that compile and run on both CI runners; platform-specific behavior must have dedicated tests in the matching platform test project.
+- A change is not complete while either the `Windows build and tests` or `Linux build and tests` CI job is failing, skipped unexpectedly, or not applicable because the project graph was incorrectly classified.
 - Advance media features only when the implementation preserves GPU lifetime, hardware media transport, capability truth, and explicit failure diagnostics.
 - Do not keep dangerous APIs for compatibility.
 - Do not introduce new `Simulate*` properties in production classes.
@@ -30,7 +35,6 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
   version binding, detect cycles/depth, and propagate Apply commits to affected
   output routes.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; never block the UI thread.
-
 
 ## Studio UI Exception
 
@@ -54,7 +58,12 @@ It does not permit real capture adapters, real media adapters, real recording/st
 
 ## Required Validation
 
-Run after each implementation unit:
+The automatic `cross-platform-ci` workflow runs for every push and for pull requests targeting `master`. It is the required baseline gate and always launches both:
+
+- `Windows build and tests`: full solution Release restore/build, portable tests, Fast gate, transport rules, and license policy;
+- `Linux build and tests`: locked restore/build of the portable project set and the complete portable test set.
+
+Run after each implementation unit before pushing:
 
 ```powershell
 git diff --stat
@@ -62,11 +71,15 @@ dotnet test
 ./scripts/test.ps1 -Tier Fast
 ```
 
-If the change touches Capture, D3D11, Vulkan, GPU lifecycle, keyed mutex, registry, render thread, provider, or submission, also run:
+When developing on Linux, restore/build/test the portable projects affected by the change using `--locked-mode`; the authoritative project list is maintained in `.github/workflows/ci.yml`.
+
+If the change touches Capture, D3D11, Vulkan, GPU lifecycle, keyed mutex, registry, render thread, provider, or submission, also run on the appropriate hardware host:
 
 ```powershell
 ./scripts/test.ps1 -Tier Gpu
 ```
+
+Do not merge or move work to `master` until both automatic OS jobs pass. Hardware-specific qualification remains an additional gate and never substitutes for the Windows/Linux baseline.
 
 ## FFmpeg and codec policy
 
