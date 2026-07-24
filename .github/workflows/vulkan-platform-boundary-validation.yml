@@ -1,4 +1,4 @@
-name: validate-linux-portable-suite
+name: finalize-portable-vulkan-lock
 
 on:
   push:
@@ -6,86 +6,61 @@ on:
       - fix/vulkan-platform-boundaries
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: validate-linux-portable-suite
+  group: finalize-portable-vulkan-lock
   cancel-in-progress: false
 
 jobs:
-  linux:
-    name: Linux portable test suite
+  finalize:
+    name: Finalize portable Vulkan lock
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 60
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: fix/vulkan-platform-boundaries
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
 
-      - name: Restore portable test suite
+      - name: Regenerate and verify locked dependencies
         shell: bash
         run: |
           set -euo pipefail
 
-          tests=(
-            WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
-            WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
-            WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj
-            WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
-            WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
-            WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
-          )
+          project="WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj"
+          lock="WTK.MediaForge.Graphics.Vulkan.Tests/packages.lock.json"
 
-          for project in "${tests[@]}"; do
-            echo "Restoring $project"
+          dotnet restore "$project" --force-evaluate
+          grep -q '"net8.0"' "$lock"
+          if grep -q 'net8.0-windows' "$lock"; then
+            echo "Windows target remains in portable Vulkan lock."
+            exit 1
+          fi
+          dotnet restore "$project" --locked-mode
 
-            if [ "$project" = "WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj" ]; then
-              dotnet restore "$project" --force-evaluate
-            else
-              dotnet restore "$project" --locked-mode
-            fi
-          done
-
-      - name: Run portable test suite
+      - name: Commit final lock and remove temporary workflow
         shell: bash
         run: |
           set -euo pipefail
 
-          tests=(
-            WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
-            WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
-            WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj
-            WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
-            WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
-            WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
-          )
+          rm .github/workflows/vulkan-platform-boundary-validation.yml
 
-          mkdir -p test-reports/linux
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add WTK.MediaForge.Graphics.Vulkan.Tests/packages.lock.json
+          git add .github/workflows/vulkan-platform-boundary-validation.yml
 
-          for project in "${tests[@]}"; do
-            name="$(basename "${project%.csproj}")"
-            echo "Testing $project"
+          if git diff --cached --quiet; then
+            echo "No finalization changes were produced."
+            exit 1
+          fi
 
-            dotnet test "$project" \
-              --no-restore \
-              --configuration Release \
-              --filter "Category!=GPU&Category!=Stress&Category!=Performance" \
-              --logger "trx;LogFileName=${name}.trx" \
-              --results-directory test-reports/linux \
-              --verbosity minimal
-          done
-
-      - name: Publish lock and reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-portable-suite-${{ github.run_id }}
-          path: |
-            WTK.MediaForge.Graphics.Vulkan.Tests/packages.lock.json
-            test-reports/linux
-          if-no-files-found: error
+          git commit -m "Finalize portable Vulkan test lock"
+          git push origin HEAD:fix/vulkan-platform-boundaries
