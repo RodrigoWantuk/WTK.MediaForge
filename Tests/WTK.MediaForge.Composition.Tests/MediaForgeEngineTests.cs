@@ -523,6 +523,51 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Repeated_nested_apply_fades_return_scene_version_pins_to_baseline()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateNestedSceneProject();
+        var childCanvas = project.Canvases.Single(canvas => canvas.Name == "Child");
+        var childLayerId = childCanvas.Objects[0].Id;
+        var parentCanvas = project.Canvases.Single(canvas => canvas.Name == "Parent");
+        var parentOutput = project.Outputs.Single(output => output.CanvasId == parentCanvas.Id);
+
+        await engine.LoadProjectAsync(project);
+        var baselinePins = engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount;
+
+        for (var iteration = 0; iteration < 12; iteration++)
+        {
+            var session = await engine.BeginSceneEditSessionAsync(childCanvas.Id, SceneEditMode.Apply);
+            await engine.ApplySceneMutationAsync(
+                session.SessionId,
+                new SceneMutationPatch.SetLayerOpacity(
+                    childLayerId,
+                    iteration % 2 == 0 ? 0.5f : 1f));
+
+            var result = await engine.ApplySceneDraftAsync(
+                session.SessionId,
+                new SceneCommitRequest
+                {
+                    TransitionPolicy = SceneApplyTransitionPolicy.Fade(TimeSpan.FromMilliseconds(20))
+                });
+
+            Assert.True(result.TransitionRequested);
+            Assert.True(engine.OutputRouteTransitionRuntimeForTests.TryGetTransition(parentOutput.Id, out _));
+
+            engine.OutputRouteTransitionRuntimeForTests.Advance(
+                parentOutput.Id,
+                TimeSpan.FromMilliseconds(20));
+            await WaitUntilAsync(
+                () => !engine.OutputRouteTransitionRuntimeForTests.TryGetTransition(parentOutput.Id, out _),
+                TimeSpan.FromSeconds(2));
+
+            var retention = engine.GetRuntimeHealthSnapshot().SceneVersions;
+            Assert.Equal(baselinePins, retention.PinnedVersionCount);
+            Assert.Equal(0, retention.TransitivePinnedVersionCount);
+        }
+    }
+
+    [Fact]
     public async Task Discard_scene_draft_does_not_mutate_published_scene()
     {
         await using var engine = CreateEngine();
