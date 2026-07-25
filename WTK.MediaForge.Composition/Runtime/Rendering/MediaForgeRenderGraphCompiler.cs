@@ -147,7 +147,9 @@ internal static class MediaForgeRenderGraphCompiler
                         dependencies.Add(AddNode(
                             MediaForgeRenderGraphNodeKind.PrimitiveLayer,
                             $"primitive:{drawObject.Id}:{HashPrimitive(drawObject)}",
-                            drawObject.Name));
+                            drawObject.Name,
+                            canvasId: canvas.Id,
+                            drawObjectId: drawObject.Id));
                         break;
                 }
             }
@@ -360,7 +362,10 @@ internal static class MediaForgeRenderGraphCompiler
                         dependencies.Add(AddNode(
                             MediaForgeRenderGraphNodeKind.PrimitiveLayer,
                             $"primitive:{drawObject.Id}:{HashPrimitive(drawObject)}",
-                            drawObject.Name));
+                            drawObject.Name,
+                            canvasId: canvas.Id,
+                            resolvedCanvasKey: canvas.PhysicalKey,
+                            drawObjectId: drawObject.Id));
                         break;
                 }
             }
