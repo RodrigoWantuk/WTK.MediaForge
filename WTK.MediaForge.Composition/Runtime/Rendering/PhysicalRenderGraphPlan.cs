@@ -77,7 +77,7 @@ internal sealed class PhysicalRenderGraphPlan
 
         var canvasIds = CollectCanvasIds(snapshot.Canvases);
         var resolvedCanvasKeys = CollectResolvedCanvasKeys(snapshot.Canvases);
-        var drawObjectIds = CollectDrawObjectIds(snapshot.Canvases);
+        var drawObjects = CollectDrawObjects(snapshot.Canvases);
         var sourceIds = CollectSourceIds(snapshot.Canvases);
         var expectedOutputIds = snapshot.Outputs.Select(static output => output.Id).ToHashSet();
         var plannedOutputIds = new HashSet<WTK.MediaForge.Core.Identifiers.RenderOutputId>();
@@ -124,7 +124,7 @@ internal sealed class PhysicalRenderGraphPlan
                 }
             }
 
-            ValidateOperationIdentity(operation, canvasIds, resolvedCanvasKeys, drawObjectIds, sourceIds, expectedOutputIds, plannedOutputIds);
+            ValidateOperationIdentity(operation, canvasIds, resolvedCanvasKeys, drawObjects, sourceIds, expectedOutputIds, plannedOutputIds);
         }
 
         if (!plannedOutputIds.SetEquals(expectedOutputIds))
@@ -181,16 +181,16 @@ internal sealed class PhysicalRenderGraphPlan
         return result;
     }
 
-    private static HashSet<WTK.MediaForge.Core.Identifiers.DrawObjectId> CollectDrawObjectIds(
+    private static Dictionary<(ResolvedCanvasKey CanvasKey, WTK.MediaForge.Core.Identifiers.DrawObjectId DrawObjectId), RenderDrawObjectSnapshot> CollectDrawObjects(
         IEnumerable<RenderCanvasSnapshot> rootCanvases)
     {
-        var result = new HashSet<WTK.MediaForge.Core.Identifiers.DrawObjectId>();
+        var result = new Dictionary<(ResolvedCanvasKey, WTK.MediaForge.Core.Identifiers.DrawObjectId), RenderDrawObjectSnapshot>();
         var pending = new Stack<RenderCanvasSnapshot>(rootCanvases.Reverse());
         while (pending.TryPop(out var canvas))
         {
             foreach (var drawObject in canvas.Objects)
             {
-                result.Add(drawObject.Id);
+                result[(canvas.PhysicalKey, drawObject.Id)] = drawObject;
                 if (drawObject is RenderCanvasDrawObjectSnapshot { NestedCanvas: { } nested })
                     pending.Push(nested);
             }
@@ -222,7 +222,7 @@ internal sealed class PhysicalRenderGraphPlan
         PhysicalRenderGraphOperation operation,
         IReadOnlySet<WTK.MediaForge.Core.Identifiers.CanvasId> canvasIds,
         IReadOnlySet<ResolvedCanvasKey> resolvedCanvasKeys,
-        IReadOnlySet<WTK.MediaForge.Core.Identifiers.DrawObjectId> drawObjectIds,
+        IReadOnlyDictionary<(ResolvedCanvasKey CanvasKey, WTK.MediaForge.Core.Identifiers.DrawObjectId DrawObjectId), RenderDrawObjectSnapshot> drawObjects,
         IReadOnlySet<WTK.MediaForge.Core.Identifiers.SourceId> sourceIds,
         IReadOnlySet<WTK.MediaForge.Core.Identifiers.RenderOutputId> outputIds,
         ISet<WTK.MediaForge.Core.Identifiers.RenderOutputId> plannedOutputIds)
@@ -259,7 +259,9 @@ internal sealed class PhysicalRenderGraphPlan
                 if (operation.CanvasId is not { } adjustmentCanvasId || !canvasIds.Contains(adjustmentCanvasId) ||
                     operation.ResolvedCanvasKey is not { } adjustmentResolvedCanvasKey ||
                     !resolvedCanvasKeys.Contains(adjustmentResolvedCanvasKey) ||
-                    operation.DrawObjectId is null)
+                    operation.DrawObjectId is not { } adjustmentDrawObjectId ||
+                    !drawObjects.TryGetValue((adjustmentResolvedCanvasKey, adjustmentDrawObjectId), out var adjustmentDrawObject) ||
+                    adjustmentDrawObject is not RenderAdjustmentLayerDrawObjectSnapshot)
                 {
                     throw new InvalidOperationException(
                         $"Physical adjustment pass '{operation.Key}' must identify its canvas, resolved canvas and adjustment layer.");
@@ -270,7 +272,9 @@ internal sealed class PhysicalRenderGraphPlan
             case PhysicalRenderGraphOperationKind.RenderPrimitiveLayer:
                 if (operation.CanvasId is not { } primitiveCanvasId || !canvasIds.Contains(primitiveCanvasId) ||
                     operation.ResolvedCanvasKey is not { } primitiveResolvedCanvasKey || !resolvedCanvasKeys.Contains(primitiveResolvedCanvasKey) ||
-                    operation.DrawObjectId is not { } primitiveDrawObjectId || !drawObjectIds.Contains(primitiveDrawObjectId))
+                    operation.DrawObjectId is not { } primitiveDrawObjectId ||
+                    !drawObjects.TryGetValue((primitiveResolvedCanvasKey, primitiveDrawObjectId), out var primitiveDrawObject) ||
+                    primitiveDrawObject is not RenderTextDrawObjectSnapshot and not RenderSolidDrawObjectSnapshot)
                 {
                     throw new InvalidOperationException(
                         $"Physical primitive pass '{operation.Key}' must identify its canvas, resolved canvas and draw object.");
@@ -280,7 +284,10 @@ internal sealed class PhysicalRenderGraphPlan
 
             case PhysicalRenderGraphOperationKind.RenderEffectIntermediate:
                 if (operation.SourceId is not { } effectSourceId || !sourceIds.Contains(effectSourceId) ||
-                    operation.DrawObjectId is { } effectDrawObjectId && !drawObjectIds.Contains(effectDrawObjectId))
+                    operation.DrawObjectId is { } effectDrawObjectId &&
+                    (operation.ResolvedCanvasKey is not { } effectCanvasKey ||
+                     !drawObjects.TryGetValue((effectCanvasKey, effectDrawObjectId), out var effectDrawObject) ||
+                     effectDrawObject is not RenderSourceLayerDrawObjectSnapshot sourceLayer || sourceLayer.SourceId != effectSourceId))
                 {
                     throw new InvalidOperationException(
                         $"Physical effect pass '{operation.Key}' references a source or draw object absent from the render snapshot.");
