@@ -173,12 +173,7 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         byte salt = 32;
         foreach (var effect in plan.OrderedEffects)
         {
-            if (effect.Mask is not null)
-            {
-                throw new MediaForgeUnsupportedFeatureException(
-                    "render.effect.mask",
-                    $"Canvas effect '{effect.Name}' requires the Vulkan mask-composite pipeline.");
-            }
+            var input = current;
 
             switch (effect)
             {
@@ -209,6 +204,14 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
                     throw new InvalidOperationException(
                         $"Effect '{effect.Name}' is not supported in the canvas execution path.");
             }
+
+            if (effect.Mask is not { Enabled: true } mask)
+                continue;
+
+            EnsureSupportedGeometricMask($"Canvas effect '{effect.Name}'", mask);
+            var composited = RentCanvasEffectTarget(canvas, salt++, submissionResources);
+            RenderMaskCompositePass(commandBuffer, input, current, composited, mask, submissionResources);
+            current = composited;
         }
 
         return current;
@@ -284,29 +287,27 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         if (adjustment.Mask is not { Enabled: true } mask)
             return current;
 
-        EnsureSupportedAdjustmentMask(adjustment, mask);
+        EnsureSupportedGeometricMask($"Adjustment layer '{adjustment.Name}'", mask);
         var composited = RentAdjustmentEffectTarget(canvas, adjustment.Id, 250, submissionResources);
         RenderMaskCompositePass(commandBuffer, input, current, composited, mask, submissionResources);
         return composited;
     }
 
-    private static void EnsureSupportedAdjustmentMask(
-        RenderAdjustmentLayerDrawObjectSnapshot adjustment,
-        EffectMaskStateSnapshot mask)
+    private static void EnsureSupportedGeometricMask(string owner, EffectMaskStateSnapshot mask)
     {
         if (!mask.Transform.Equals(Transform2D.Default))
         {
             throw new MediaForgeUnsupportedFeatureException(
-                "render.adjustment_layer.mask.transform",
-                $"Adjustment layer '{adjustment.Name}' uses a mask transform, which is not yet supported by the Vulkan mask-composite pipeline.");
+                "render.effect.mask.transform",
+                $"{owner} uses a mask transform, which is not yet supported by the Vulkan mask-composite pipeline.");
         }
 
         if (mask is RectangleEffectMaskStateSnapshot or RoundedRectangleEffectMaskStateSnapshot or EllipseEffectMaskStateSnapshot)
             return;
 
         throw new MediaForgeUnsupportedFeatureException(
-            "render.adjustment_layer.mask",
-            $"Adjustment layer '{adjustment.Name}' uses mask '{mask.GetType().Name}', which requires GPU mask-asset support.");
+            "render.effect.mask",
+            $"{owner} uses mask '{mask.GetType().Name}', which requires GPU mask-asset support.");
     }
 
     private VulkanOffscreenRenderTarget RentAdjustmentEffectTarget(
