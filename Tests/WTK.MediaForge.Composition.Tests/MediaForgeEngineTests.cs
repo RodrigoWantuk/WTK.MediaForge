@@ -485,6 +485,44 @@ public class MediaForgeEngineTests
     }
 
     [Fact]
+    public async Task Repeated_fade_route_transitions_return_scene_version_pins_to_baseline()
+    {
+        await using var engine = CreateEngine();
+        var project = CreateSceneRouteProject();
+        var output = project.Outputs.Single();
+        var program = project.Canvases.Single(canvas => canvas.Name == "Program");
+        var brb = project.Canvases.Single(canvas => canvas.Name == "BRB");
+
+        await engine.LoadProjectAsync(project);
+        var baselinePins = engine.GetRuntimeHealthSnapshot().SceneVersions.PinnedVersionCount;
+        var destination = brb;
+
+        for (var iteration = 0; iteration < 12; iteration++)
+        {
+            await engine.TransitionOutputToSceneAsync(
+                output.Id,
+                destination.Id,
+                SceneVersionBinding.Published,
+                OutputRouteTransition.Fade($"sustained-fade-{iteration}", 20));
+
+            engine.OutputRouteTransitionRuntimeForTests.Advance(output.Id, TimeSpan.FromMilliseconds(20));
+            await WaitUntilAsync(
+                () => GetCurrentProject(engine).Outputs.Single().CanvasId == destination.Id,
+                TimeSpan.FromSeconds(2));
+
+            engine.OutputRouteTransitionRuntimeForTests.Advance(output.Id, TimeSpan.FromMilliseconds(20));
+            await WaitUntilAsync(
+                () => !engine.OutputRouteTransitionRuntimeForTests.TryGetTransition(output.Id, out _),
+                TimeSpan.FromSeconds(2));
+
+            var retention = engine.GetRuntimeHealthSnapshot().SceneVersions;
+            Assert.Equal(baselinePins, retention.PinnedVersionCount);
+            Assert.Equal(0, retention.TransitivePinnedVersionCount);
+            destination = destination.Id == brb.Id ? program : brb;
+        }
+    }
+
+    [Fact]
     public async Task Discard_scene_draft_does_not_mutate_published_scene()
     {
         await using var engine = CreateEngine();
