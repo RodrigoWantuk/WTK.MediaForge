@@ -154,6 +154,34 @@ public sealed class PhysicalRenderGraphPlanValidationTests
         Assert.Contains("must identify its canvas", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Plan_rejects_source_acquisition_for_a_source_absent_from_the_snapshot()
+    {
+        using var snapshot = CreateSnapshot();
+        var output = snapshot.Outputs.Single();
+        var plan = new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                Key = "source:missing",
+                SourceId = SourceId.New(),
+                Consumers = ["output:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "output:program",
+                OutputId = output.Id,
+                CanvasId = output.CanvasId,
+                Dependencies = ["source:missing"]
+            }
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+        Assert.Contains("source absent", exception.Message, StringComparison.Ordinal);
+    }
+
     private static RenderFrameSnapshot CreateSnapshot()
     {
         var canvasId = CanvasId.New();

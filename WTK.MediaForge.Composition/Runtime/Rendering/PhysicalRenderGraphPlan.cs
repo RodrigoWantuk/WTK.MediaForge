@@ -78,6 +78,7 @@ internal sealed class PhysicalRenderGraphPlan
         var canvasIds = CollectCanvasIds(snapshot.Canvases);
         var resolvedCanvasKeys = CollectResolvedCanvasKeys(snapshot.Canvases);
         var drawObjectIds = CollectDrawObjectIds(snapshot.Canvases);
+        var sourceIds = CollectSourceIds(snapshot.Canvases);
         var expectedOutputIds = snapshot.Outputs.Select(static output => output.Id).ToHashSet();
         var plannedOutputIds = new HashSet<WTK.MediaForge.Core.Identifiers.RenderOutputId>();
 
@@ -99,7 +100,8 @@ internal sealed class PhysicalRenderGraphPlan
                 }
 
                 var producer = Operations[dependencyIndex];
-                if (!producer.Consumers.Contains(operation.Key, StringComparer.Ordinal))
+                if (operation.Kind != PhysicalRenderGraphOperationKind.FanOutRenderedOutput &&
+                    !producer.Consumers.Contains(operation.Key, StringComparer.Ordinal))
                 {
                     throw new InvalidOperationException(
                         $"Physical RenderGraph dependency '{dependency}' does not declare '{operation.Key}' as a consumer.");
@@ -122,7 +124,7 @@ internal sealed class PhysicalRenderGraphPlan
                 }
             }
 
-            ValidateOperationIdentity(operation, canvasIds, resolvedCanvasKeys, drawObjectIds, expectedOutputIds, plannedOutputIds);
+            ValidateOperationIdentity(operation, canvasIds, resolvedCanvasKeys, drawObjectIds, sourceIds, expectedOutputIds, plannedOutputIds);
         }
 
         if (!plannedOutputIds.SetEquals(expectedOutputIds))
@@ -197,19 +199,44 @@ internal sealed class PhysicalRenderGraphPlan
         return result;
     }
 
+    private static HashSet<WTK.MediaForge.Core.Identifiers.SourceId> CollectSourceIds(
+        IEnumerable<RenderCanvasSnapshot> rootCanvases)
+    {
+        var result = new HashSet<WTK.MediaForge.Core.Identifiers.SourceId>();
+        var pending = new Stack<RenderCanvasSnapshot>(rootCanvases.Reverse());
+        while (pending.TryPop(out var canvas))
+        {
+            foreach (var drawObject in canvas.Objects)
+            {
+                if (drawObject is RenderSourceLayerDrawObjectSnapshot sourceLayer)
+                    result.Add(sourceLayer.SourceId);
+                else if (drawObject is RenderCanvasDrawObjectSnapshot { NestedCanvas: { } nested })
+                    pending.Push(nested);
+            }
+        }
+
+        return result;
+    }
+
     private static void ValidateOperationIdentity(
         PhysicalRenderGraphOperation operation,
         IReadOnlySet<WTK.MediaForge.Core.Identifiers.CanvasId> canvasIds,
         IReadOnlySet<ResolvedCanvasKey> resolvedCanvasKeys,
         IReadOnlySet<WTK.MediaForge.Core.Identifiers.DrawObjectId> drawObjectIds,
+        IReadOnlySet<WTK.MediaForge.Core.Identifiers.SourceId> sourceIds,
         IReadOnlySet<WTK.MediaForge.Core.Identifiers.RenderOutputId> outputIds,
         ISet<WTK.MediaForge.Core.Identifiers.RenderOutputId> plannedOutputIds)
     {
         switch (operation.Kind)
         {
-            case PhysicalRenderGraphOperationKind.AcquireSourceFrame when operation.SourceId is null:
-                throw new InvalidOperationException(
-                    $"Physical source acquisition '{operation.Key}' does not identify a source.");
+            case PhysicalRenderGraphOperationKind.AcquireSourceFrame:
+                if (operation.SourceId is not { } acquiredSourceId || !sourceIds.Contains(acquiredSourceId))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical source acquisition '{operation.Key}' references a source absent from the render snapshot.");
+                }
+
+                break;
 
             case PhysicalRenderGraphOperationKind.RenderCanvas:
             case PhysicalRenderGraphOperationKind.RenderCanvasEffect:
@@ -251,10 +278,15 @@ internal sealed class PhysicalRenderGraphPlan
 
                 break;
 
-            case PhysicalRenderGraphOperationKind.RenderEffectIntermediate when operation.DrawObjectId is { } effectDrawObjectId &&
-                                                                            !drawObjectIds.Contains(effectDrawObjectId):
-                throw new InvalidOperationException(
-                    $"Physical effect pass '{operation.Key}' references a draw object absent from the render snapshot.");
+            case PhysicalRenderGraphOperationKind.RenderEffectIntermediate:
+                if (operation.SourceId is not { } effectSourceId || !sourceIds.Contains(effectSourceId) ||
+                    operation.DrawObjectId is { } effectDrawObjectId && !drawObjectIds.Contains(effectDrawObjectId))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical effect pass '{operation.Key}' references a source or draw object absent from the render snapshot.");
+                }
+
+                break;
 
             case PhysicalRenderGraphOperationKind.RenderOutputTransition:
                 if (operation.OutputId is not { } transitionOutputId || !outputIds.Contains(transitionOutputId))
