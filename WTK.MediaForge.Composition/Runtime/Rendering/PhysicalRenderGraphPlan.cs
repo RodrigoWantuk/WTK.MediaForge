@@ -79,7 +79,8 @@ internal sealed class PhysicalRenderGraphPlan
         var resolvedCanvasKeys = CollectResolvedCanvasKeys(snapshot.Canvases);
         var drawObjects = CollectDrawObjects(snapshot.Canvases);
         var sourceIds = CollectSourceIds(snapshot.Canvases);
-        var expectedOutputIds = snapshot.Outputs.Select(static output => output.Id).ToHashSet();
+        var outputsById = snapshot.Outputs.ToDictionary(static output => output.Id);
+        var expectedOutputIds = outputsById.Keys.ToHashSet();
         var plannedOutputIds = new HashSet<WTK.MediaForge.Core.Identifiers.RenderOutputId>();
 
         for (var index = 0; index < Operations.Count; index++)
@@ -124,7 +125,15 @@ internal sealed class PhysicalRenderGraphPlan
                 }
             }
 
-            ValidateOperationIdentity(operation, canvasIds, resolvedCanvasKeys, drawObjects, sourceIds, expectedOutputIds, plannedOutputIds);
+            ValidateOperationIdentity(
+                operation,
+                canvasIds,
+                resolvedCanvasKeys,
+                drawObjects,
+                sourceIds,
+                outputsById,
+                snapshot.Canvases,
+                plannedOutputIds);
         }
 
         if (!plannedOutputIds.SetEquals(expectedOutputIds))
@@ -224,7 +233,8 @@ internal sealed class PhysicalRenderGraphPlan
         IReadOnlySet<ResolvedCanvasKey> resolvedCanvasKeys,
         IReadOnlyDictionary<(ResolvedCanvasKey CanvasKey, WTK.MediaForge.Core.Identifiers.DrawObjectId DrawObjectId), RenderDrawObjectSnapshot> drawObjects,
         IReadOnlySet<WTK.MediaForge.Core.Identifiers.SourceId> sourceIds,
-        IReadOnlySet<WTK.MediaForge.Core.Identifiers.RenderOutputId> outputIds,
+        IReadOnlyDictionary<WTK.MediaForge.Core.Identifiers.RenderOutputId, RenderOutputStateSnapshot> outputsById,
+        IReadOnlyList<RenderCanvasSnapshot> rootCanvases,
         ISet<WTK.MediaForge.Core.Identifiers.RenderOutputId> plannedOutputIds)
     {
         switch (operation.Kind)
@@ -296,36 +306,53 @@ internal sealed class PhysicalRenderGraphPlan
                 break;
 
             case PhysicalRenderGraphOperationKind.RenderOutputTransition:
-                if (operation.OutputId is not { } transitionOutputId || !outputIds.Contains(transitionOutputId))
+                if (operation.OutputId is not { } transitionOutputId ||
+                    !outputsById.TryGetValue(transitionOutputId, out var transitionOutput))
                 {
                     throw new InvalidOperationException(
                         $"Physical transition pass '{operation.Key}' references an output absent from the render snapshot.");
                 }
 
-                if (operation.CanvasId is not { } currentCanvasId || !canvasIds.Contains(currentCanvasId) ||
-                    operation.PreviousCanvasId is not { } previousCanvasId || !canvasIds.Contains(previousCanvasId))
+                if (transitionOutput.RouteTransitionKind == WTK.MediaForge.Composition.Outputs.OutputRouteTransitionKind.Cut ||
+                    transitionOutput.PreviousCanvasId is not { } expectedPreviousCanvasId ||
+                    operation.CanvasId != transitionOutput.CanvasId ||
+                    operation.PreviousCanvasId != expectedPreviousCanvasId)
                 {
                     throw new InvalidOperationException(
-                        $"Physical transition pass '{operation.Key}' references a canvas absent from the render snapshot.");
+                        $"Physical transition pass '{operation.Key}' must identify the current and previous canvases declared by output '{transitionOutputId}'.");
                 }
 
-
-                if (operation.ResolvedCanvasKey is not { } currentResolvedKey ||
-                    !resolvedCanvasKeys.Contains(currentResolvedKey) ||
-                    operation.PreviousResolvedCanvasKey is not { } previousResolvedKey ||
-                    !resolvedCanvasKeys.Contains(previousResolvedKey))
+                var expectedCurrentResolvedKey = ResolveOutputCanvasKey(transitionOutput, rootCanvases);
+                var expectedPreviousResolvedKey = ResolvePreviousCanvasKey(
+                    transitionOutput,
+                    expectedPreviousCanvasId,
+                    rootCanvases);
+                if (operation.ResolvedCanvasKey != expectedCurrentResolvedKey ||
+                    operation.PreviousResolvedCanvasKey != expectedPreviousResolvedKey ||
+                    !resolvedCanvasKeys.Contains(expectedCurrentResolvedKey) ||
+                    !resolvedCanvasKeys.Contains(expectedPreviousResolvedKey))
                 {
                     throw new InvalidOperationException(
-                        $"Physical transition pass '{operation.Key}' references a resolved canvas absent from the render snapshot.");
+                        $"Physical transition pass '{operation.Key}' must identify the resolved canvases declared by output '{transitionOutputId}'.");
                 }
 
                 break;
 
             case PhysicalRenderGraphOperationKind.RenderOutput:
-                if (operation.OutputId is not { } outputId || !outputIds.Contains(outputId))
+                if (operation.OutputId is not { } outputId ||
+                    !outputsById.TryGetValue(outputId, out var output))
                 {
                     throw new InvalidOperationException(
                         $"Physical output pass '{operation.Key}' references an output absent from the render snapshot.");
+                }
+
+                var expectedOutputCanvasKey = ResolveOutputCanvasKey(output, rootCanvases);
+                if (operation.CanvasId != output.CanvasId ||
+                    operation.ResolvedCanvasKey != expectedOutputCanvasKey ||
+                    !resolvedCanvasKeys.Contains(expectedOutputCanvasKey))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical output pass '{operation.Key}' must identify the canvas and resolved canvas declared by output '{outputId}'.");
                 }
 
                 if (!plannedOutputIds.Add(outputId))
@@ -336,6 +363,44 @@ internal sealed class PhysicalRenderGraphPlan
 
                 break;
         }
+    }
+
+    private static ResolvedCanvasKey ResolveOutputCanvasKey(
+        RenderOutputStateSnapshot output,
+        IReadOnlyList<RenderCanvasSnapshot> rootCanvases)
+    {
+        if (!output.ResolvedCanvasKey.IsEmpty)
+            return output.ResolvedCanvasKey;
+
+        return ResolveCanvasKey(output.CanvasId, rootCanvases, output.Name, "output");
+    }
+
+    private static ResolvedCanvasKey ResolvePreviousCanvasKey(
+        RenderOutputStateSnapshot output,
+        WTK.MediaForge.Core.Identifiers.CanvasId previousCanvasId,
+        IReadOnlyList<RenderCanvasSnapshot> rootCanvases)
+    {
+        if (output.PreviousResolvedCanvasKey is { IsEmpty: false } resolvedCanvasKey)
+            return resolvedCanvasKey;
+
+        return ResolveCanvasKey(previousCanvasId, rootCanvases, output.Name, "output transition");
+    }
+
+    private static ResolvedCanvasKey ResolveCanvasKey(
+        WTK.MediaForge.Core.Identifiers.CanvasId canvasId,
+        IReadOnlyList<RenderCanvasSnapshot> rootCanvases,
+        string outputName,
+        string operation)
+    {
+        var candidates = rootCanvases
+            .Where(canvas => canvas.Id == canvasId)
+            .Select(static canvas => canvas.PhysicalKey)
+            .Distinct()
+            .ToArray();
+        return candidates.Length == 1
+            ? candidates[0]
+            : throw new InvalidOperationException(
+                $"{operation} for '{outputName}' does not identify one resolved canvas revision.");
     }
 }
 
