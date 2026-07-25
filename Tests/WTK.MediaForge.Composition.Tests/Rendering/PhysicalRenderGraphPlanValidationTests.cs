@@ -93,6 +93,36 @@ public sealed class PhysicalRenderGraphPlanValidationTests
         Assert.Contains("not topologically ordered", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Plan_rejects_dependency_without_a_reciprocal_consumer_link()
+    {
+        using var snapshot = CreateSnapshot();
+        var canvas = snapshot.Canvases.Single();
+        var output = snapshot.Outputs.Single();
+        var plan = new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "canvas:program",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "output:program",
+                OutputId = output.Id,
+                CanvasId = canvas.Id,
+                Dependencies = ["canvas:program"]
+            }
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("does not declare 'output:program' as a consumer", exception.Message, StringComparison.Ordinal);
+    }
+
     private static RenderFrameSnapshot CreateSnapshot()
     {
         var canvasId = CanvasId.New();

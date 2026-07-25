@@ -96,6 +96,13 @@ internal sealed class PhysicalRenderGraphPlan
                     throw new InvalidOperationException(
                         $"Physical RenderGraph operation '{operation.Key}' is not topologically ordered after dependency '{dependency}'.");
                 }
+
+                var producer = Operations[dependencyIndex];
+                if (!producer.Consumers.Contains(operation.Key, StringComparer.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical RenderGraph dependency '{dependency}' does not declare '{operation.Key}' as a consumer.");
+                }
             }
 
             foreach (var consumer in operation.Consumers)
@@ -104,6 +111,13 @@ internal sealed class PhysicalRenderGraphPlan
                 {
                     throw new InvalidOperationException(
                         $"Physical RenderGraph operation '{operation.Key}' references missing consumer '{consumer}'.");
+                }
+
+                if (operation.Kind != PhysicalRenderGraphOperationKind.FanOutRenderedOutput &&
+                    !Operations[operationIndexes[consumer]].Dependencies.Contains(operation.Key, StringComparer.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical RenderGraph consumer '{consumer}' does not declare '{operation.Key}' as a dependency.");
                 }
             }
 
