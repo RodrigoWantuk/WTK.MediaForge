@@ -101,8 +101,7 @@ internal sealed class PhysicalRenderGraphPlan
                 }
 
                 var producer = Operations[dependencyIndex];
-                if (operation.Kind != PhysicalRenderGraphOperationKind.FanOutRenderedOutput &&
-                    !producer.Consumers.Contains(operation.Key, StringComparer.Ordinal))
+                if (!producer.Consumers.Contains(operation.Key, StringComparer.Ordinal))
                 {
                     throw new InvalidOperationException(
                         $"Physical RenderGraph dependency '{dependency}' does not declare '{operation.Key}' as a consumer.");
@@ -117,8 +116,7 @@ internal sealed class PhysicalRenderGraphPlan
                         $"Physical RenderGraph operation '{operation.Key}' references missing consumer '{consumer}'.");
                 }
 
-                if (operation.Kind != PhysicalRenderGraphOperationKind.FanOutRenderedOutput &&
-                    !Operations[operationIndexes[consumer]].Dependencies.Contains(operation.Key, StringComparer.Ordinal))
+                if (!Operations[operationIndexes[consumer]].Dependencies.Contains(operation.Key, StringComparer.Ordinal))
                 {
                     throw new InvalidOperationException(
                         $"Physical RenderGraph consumer '{consumer}' does not declare '{operation.Key}' as a dependency.");
@@ -362,6 +360,22 @@ internal sealed class PhysicalRenderGraphPlan
                 }
 
                 break;
+
+            case PhysicalRenderGraphOperationKind.FanOutRenderedOutput:
+                if (operation.CanvasId is not { } fanOutCanvasId || !canvasIds.Contains(fanOutCanvasId) ||
+                    operation.ResolvedCanvasKey is not { } fanOutCanvasKey ||
+                    !resolvedCanvasKeys.Contains(fanOutCanvasKey) ||
+                    operation.Dependencies.Count != 1 ||
+                    operation.Consumers.Count < 2 ||
+                    operation.Consumers.Any(static consumer =>
+                        !consumer.StartsWith("output:", StringComparison.Ordinal) &&
+                        !consumer.StartsWith("transition:", StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical output fanout '{operation.Key}' must own one resolved canvas and at least two output consumers.");
+                }
+
+                break;
         }
     }
 
@@ -427,8 +441,8 @@ internal sealed record PhysicalRenderGraphStatistics(
             .Where(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate)
             .Sum(static operation => Math.Max(0, operation.Consumers.Count - 1));
         var reusedCanvasOutputs = operations
-            .Where(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas)
-            .Sum(static operation => Math.Max(0, operation.Consumers.Count(IsRenderedCanvasConsumer) - 1));
+            .Where(static operation => operation.Kind == PhysicalRenderGraphOperationKind.FanOutRenderedOutput)
+            .Sum(static operation => Math.Max(0, operation.Consumers.Count - 1));
 
         return new PhysicalRenderGraphStatistics(
             SourceAcquirePasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame),
@@ -443,10 +457,6 @@ internal sealed record PhysicalRenderGraphStatistics(
             ReusedCanvasOutputs: reusedCanvasOutputs,
             ReusedSourceConsumers: sourceConsumers + effectIntermediateConsumers);
     }
-
-    private static bool IsRenderedCanvasConsumer(string consumer) =>
-        consumer.StartsWith("output:", StringComparison.Ordinal) ||
-        consumer.StartsWith("transition:", StringComparison.Ordinal);
 }
 
 internal static class PhysicalRenderGraphPlanner
@@ -455,37 +465,38 @@ internal static class PhysicalRenderGraphPlanner
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        var consumers = BuildConsumerMap(plan);
-        var operations = new List<PhysicalRenderGraphOperation>(plan.Nodes.Count);
+        var logicalConsumers = BuildConsumerMap(plan.Nodes.Select(static node => (node.Key, node.Dependencies)));
+        var fanOutDefinitions = CreateFanOutDefinitions(plan, logicalConsumers);
+        var fanOutKeysByConsumerDependency = fanOutDefinitions
+            .SelectMany(static definition => definition.Consumers.Select(
+                consumer => (Consumer: consumer, Dependency: definition.SourceKey, FanOutKey: definition.Key)))
+            .ToDictionary(
+                static entry => (entry.Consumer, entry.Dependency),
+                static entry => entry.FanOutKey);
+        var seeds = new List<PhysicalOperationSeed>(plan.Nodes.Count + fanOutDefinitions.Count);
         foreach (var node in plan.Nodes)
         {
-            operations.Add(new PhysicalRenderGraphOperation
-            {
-                Kind = MapKind(node.Kind),
-                Key = node.Key,
-                Name = node.Name,
-                Dependencies = node.Dependencies,
-                Consumers = consumers.TryGetValue(node.Key, out var nodeConsumers)
-                    ? nodeConsumers
-                    : [],
-                OutputId = node.OutputId,
-                CanvasId = node.CanvasId,
-                ResolvedCanvasKey = node.ResolvedCanvasKey,
-                PreviousCanvasId = node.PreviousCanvasId,
-                PreviousResolvedCanvasKey = node.PreviousResolvedCanvasKey,
-                SourceId = node.SourceId,
-                DrawObjectId = node.DrawObjectId
-            });
+            seeds.Add(PhysicalOperationSeed.FromNode(
+                node,
+                node.Dependencies.Select(dependency =>
+                    fanOutKeysByConsumerDependency.TryGetValue((node.Key, dependency), out var fanOutKey)
+                        ? fanOutKey
+                        : dependency).ToArray()));
+
+            foreach (var fanOut in fanOutDefinitions.Where(definition => definition.SourceKey == node.Key))
+                seeds.Add(PhysicalOperationSeed.FromFanOut(fanOut));
         }
 
-        operations.AddRange(CreateFanOutOperations(plan, consumers));
-        return new PhysicalRenderGraphPlan(operations);
+        var consumers = BuildConsumerMap(seeds.Select(static seed => (seed.Key, seed.Dependencies)));
+        return new PhysicalRenderGraphPlan(seeds.Select(seed => seed.ToOperation(
+            consumers.TryGetValue(seed.Key, out var operationConsumers) ? operationConsumers : [])).ToArray());
     }
 
-    private static Dictionary<string, IReadOnlyList<string>> BuildConsumerMap(MediaForgeRenderGraphPlan plan)
+    private static Dictionary<string, IReadOnlyList<string>> BuildConsumerMap(
+        IEnumerable<(string Key, IReadOnlyList<string> Dependencies)> nodes)
     {
         var map = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        foreach (var node in plan.Nodes)
+        foreach (var node in nodes)
         {
             foreach (var dependency in node.Dependencies)
             {
@@ -505,33 +516,87 @@ internal static class PhysicalRenderGraphPlanner
             StringComparer.Ordinal);
     }
 
-    private static IEnumerable<PhysicalRenderGraphOperation> CreateFanOutOperations(
+    private static IReadOnlyList<FanOutDefinition> CreateFanOutDefinitions(
         MediaForgeRenderGraphPlan plan,
         IReadOnlyDictionary<string, IReadOnlyList<string>> consumers)
     {
-        foreach (var canvas in plan.Nodes.Where(static node =>
-                     node.Kind is MediaForgeRenderGraphNodeKind.CanvasRender or MediaForgeRenderGraphNodeKind.CanvasEffectChain))
-        {
-            if (!consumers.TryGetValue(canvas.Key, out var nodeConsumers))
-                continue;
-
-            var outputConsumers = nodeConsumers
+        return plan.Nodes
+            .Where(static node => node.Kind is MediaForgeRenderGraphNodeKind.CanvasRender or MediaForgeRenderGraphNodeKind.CanvasEffectChain)
+            .Select(canvas => new { Canvas = canvas, Consumers = consumers.TryGetValue(canvas.Key, out var nodeConsumers) ? nodeConsumers : [] })
+            .Select(candidate => new FanOutDefinition(
+                candidate.Canvas.Key,
+                $"fanout:{candidate.Canvas.Key}",
+                $"{candidate.Canvas.Name} output fanout",
+                candidate.Canvas.CanvasId,
+                candidate.Canvas.ResolvedCanvasKey,
+                candidate.Consumers
                 .Where(IsRenderedCanvasConsumer)
-                .ToArray();
-            if (outputConsumers.Length <= 1)
-                continue;
+                .ToArray()))
+            .Where(static definition => definition.Consumers.Count > 1)
+            .ToArray();
+    }
 
-            yield return new PhysicalRenderGraphOperation
+    private static bool IsRenderedCanvasConsumer(string consumer) =>
+        consumer.StartsWith("output:", StringComparison.Ordinal) ||
+        consumer.StartsWith("transition:", StringComparison.Ordinal);
+
+    private sealed record FanOutDefinition(
+        string SourceKey,
+        string Key,
+        string Name,
+        WTK.MediaForge.Core.Identifiers.CanvasId? CanvasId,
+        ResolvedCanvasKey? ResolvedCanvasKey,
+        IReadOnlyList<string> Consumers);
+
+    private sealed record PhysicalOperationSeed(
+        PhysicalRenderGraphOperationKind Kind,
+        string Key,
+        string Name,
+        IReadOnlyList<string> Dependencies,
+        WTK.MediaForge.Core.Identifiers.RenderOutputId? OutputId,
+        WTK.MediaForge.Core.Identifiers.CanvasId? CanvasId,
+        ResolvedCanvasKey? ResolvedCanvasKey,
+        WTK.MediaForge.Core.Identifiers.CanvasId? PreviousCanvasId,
+        ResolvedCanvasKey? PreviousResolvedCanvasKey,
+        WTK.MediaForge.Core.Identifiers.SourceId? SourceId,
+        WTK.MediaForge.Core.Identifiers.DrawObjectId? DrawObjectId)
+    {
+        public static PhysicalOperationSeed FromNode(MediaForgeRenderGraphNode node, IReadOnlyList<string> dependencies) =>
+            new(
+                MapKind(node.Kind), node.Key, node.Name, dependencies, node.OutputId, node.CanvasId,
+                node.ResolvedCanvasKey, node.PreviousCanvasId, node.PreviousResolvedCanvasKey,
+                node.SourceId, node.DrawObjectId);
+
+        public static PhysicalOperationSeed FromFanOut(FanOutDefinition fanOut) =>
+            new(
+                PhysicalRenderGraphOperationKind.FanOutRenderedOutput,
+                fanOut.Key,
+                fanOut.Name,
+                [fanOut.SourceKey],
+                null,
+                fanOut.CanvasId,
+                fanOut.ResolvedCanvasKey,
+                null,
+                null,
+                null,
+                null);
+
+        public PhysicalRenderGraphOperation ToOperation(IReadOnlyList<string> consumers) =>
+            new()
             {
-                Kind = PhysicalRenderGraphOperationKind.FanOutRenderedOutput,
-                Key = $"fanout:{canvas.Key}",
-                Name = $"{canvas.Name} output fanout",
-                Dependencies = [canvas.Key],
-                Consumers = outputConsumers,
-                CanvasId = canvas.CanvasId,
-                ResolvedCanvasKey = canvas.ResolvedCanvasKey
+                Kind = Kind,
+                Key = Key,
+                Name = Name,
+                Dependencies = Dependencies,
+                Consumers = consumers,
+                OutputId = OutputId,
+                CanvasId = CanvasId,
+                ResolvedCanvasKey = ResolvedCanvasKey,
+                PreviousCanvasId = PreviousCanvasId,
+                PreviousResolvedCanvasKey = PreviousResolvedCanvasKey,
+                SourceId = SourceId,
+                DrawObjectId = DrawObjectId
             };
-        }
     }
 
     private static PhysicalRenderGraphOperationKind MapKind(MediaForgeRenderGraphNodeKind kind) =>
@@ -549,7 +614,4 @@ internal static class PhysicalRenderGraphPlanner
             _ => throw new NotSupportedException($"Unsupported render graph node kind '{kind}'.")
         };
 
-    private static bool IsRenderedCanvasConsumer(string consumer) =>
-        consumer.StartsWith("output:", StringComparison.Ordinal) ||
-        consumer.StartsWith("transition:", StringComparison.Ordinal);
 }

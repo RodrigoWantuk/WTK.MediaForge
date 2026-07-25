@@ -198,6 +198,23 @@ public sealed class RenderGraphExecutorTests
         Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.FanOutRenderedOutput));
         Assert.True(physical.Statistics.ReusedSourceConsumers >= 1);
         Assert.Equal(1, physical.Statistics.ReusedCanvasOutputs);
+
+        var fanOut = Assert.Single(physical.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.FanOutRenderedOutput);
+        var fanOutIndex = physical.Operations
+            .Select((operation, index) => (operation, index))
+            .Single(candidate => ReferenceEquals(candidate.operation, fanOut))
+            .index;
+        Assert.Equal(2, fanOut.Consumers.Count);
+        foreach (var consumer in fanOut.Consumers)
+        {
+            var consumerIndex = physical.Operations
+                .Select((operation, index) => (operation, index))
+                .Single(candidate => candidate.operation.Key == consumer)
+                .index;
+            Assert.True(fanOutIndex < consumerIndex);
+            Assert.Contains(fanOut.Key, physical.Operations[consumerIndex].Dependencies);
+        }
     }
 
     [Fact]
