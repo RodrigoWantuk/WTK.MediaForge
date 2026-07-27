@@ -15,6 +15,8 @@ internal sealed class MediaForgeRenderGraphNode
 
     public RenderOutputId? OutputId { get; init; }
 
+    public RenderOutputTypeId? OutputTypeId { get; init; }
+
     public CanvasId? CanvasId { get; init; }
 
     public ResolvedCanvasKey? ResolvedCanvasKey { get; init; }

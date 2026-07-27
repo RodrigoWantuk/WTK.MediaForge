@@ -240,6 +240,26 @@ public sealed class RenderGraphExecutorTests
     }
 
     [Fact]
+    public void Encoded_output_has_a_distinct_physical_dispatch_after_its_output_pass()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080))
+            .RecordMp4Output("Record", scene, "program.mp4", 1920, 1080, out var output)
+            .BuildValidated();
+
+        var physical = MediaForgeRenderGraphCompiler.Compile(project).PhysicalPlan;
+        var render = Assert.Single(physical.Operations, operation =>
+            operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput && operation.OutputId == output.Id);
+        var dispatch = Assert.Single(physical.Operations, operation =>
+            operation.Kind == PhysicalRenderGraphOperationKind.DispatchEncodedOutput && operation.OutputId == output.Id);
+
+        Assert.Equal([render.Key], dispatch.Dependencies);
+        Assert.Equal(1, physical.Statistics.EncodedOutputDispatches);
+    }
+
+    [Fact]
     public void Transition_snapshot_physical_plan_has_explicit_transition_operation()
     {
         var sourceId = SourceId.New();

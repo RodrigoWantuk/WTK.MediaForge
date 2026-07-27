@@ -12,7 +12,8 @@ internal enum PhysicalRenderGraphOperationKind
     RenderAdjustmentLayer,
     RenderOutputTransition,
     RenderOutput,
-    FanOutRenderedOutput
+    FanOutRenderedOutput,
+    DispatchEncodedOutput
 }
 
 internal sealed class PhysicalRenderGraphOperation
@@ -28,6 +29,8 @@ internal sealed class PhysicalRenderGraphOperation
     public IReadOnlyList<string> Consumers { get; init; } = [];
 
     public WTK.MediaForge.Core.Identifiers.RenderOutputId? OutputId { get; init; }
+
+    public WTK.MediaForge.Core.Identifiers.RenderOutputTypeId? OutputTypeId { get; init; }
 
     public WTK.MediaForge.Core.Identifiers.CanvasId? CanvasId { get; init; }
 
@@ -361,6 +364,23 @@ internal sealed class PhysicalRenderGraphPlan
 
                 break;
 
+            case PhysicalRenderGraphOperationKind.DispatchEncodedOutput:
+                if (operation.OutputId is not { } dispatchOutputId ||
+                    !outputsById.TryGetValue(dispatchOutputId, out var dispatchOutput) ||
+                    operation.OutputTypeId != dispatchOutput.TypeId ||
+                    !(dispatchOutput.TypeId == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.EncodedFile ||
+                      dispatchOutput.TypeId == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.RecordingMp4 ||
+                      dispatchOutput.TypeId == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.StreamingRtmp ||
+                      dispatchOutput.TypeId == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.RemoteScene) ||
+                    operation.Dependencies.Count != 1 ||
+                    !operation.Dependencies[0].StartsWith("output:", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Physical encoded dispatch '{operation.Key}' must consume exactly one matching encoded output pass.");
+                }
+
+                break;
+
             case PhysicalRenderGraphOperationKind.FanOutRenderedOutput:
                 if (operation.CanvasId is not { } fanOutCanvasId || !canvasIds.Contains(fanOutCanvasId) ||
                     operation.ResolvedCanvasKey is not { } fanOutCanvasKey ||
@@ -427,6 +447,7 @@ internal sealed record PhysicalRenderGraphStatistics(
     int AdjustmentLayerPasses,
     int OutputTransitionPasses,
     int OutputPasses,
+    int EncodedOutputDispatches,
     int FanOutGroups,
     int ReusedCanvasOutputs,
     int ReusedSourceConsumers)
@@ -453,6 +474,7 @@ internal sealed record PhysicalRenderGraphStatistics(
             AdjustmentLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderAdjustmentLayer),
             OutputTransitionPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition),
             OutputPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput),
+            EncodedOutputDispatches: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.DispatchEncodedOutput),
             FanOutGroups: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.FanOutRenderedOutput),
             ReusedCanvasOutputs: reusedCanvasOutputs,
             ReusedSourceConsumers: sourceConsumers + effectIntermediateConsumers);
@@ -485,6 +507,9 @@ internal static class PhysicalRenderGraphPlanner
 
             foreach (var fanOut in fanOutDefinitions.Where(definition => definition.SourceKey == node.Key))
                 seeds.Add(PhysicalOperationSeed.FromFanOut(fanOut));
+
+            if (node.Kind == MediaForgeRenderGraphNodeKind.OutputPass && IsEncodedOutput(node.OutputTypeId))
+                seeds.Add(PhysicalOperationSeed.FromEncodedDispatch(node));
         }
 
         var consumers = BuildConsumerMap(seeds.Select(static seed => (seed.Key, seed.Dependencies)));
@@ -554,6 +579,7 @@ internal static class PhysicalRenderGraphPlanner
         string Name,
         IReadOnlyList<string> Dependencies,
         WTK.MediaForge.Core.Identifiers.RenderOutputId? OutputId,
+        WTK.MediaForge.Core.Identifiers.RenderOutputTypeId? OutputTypeId,
         WTK.MediaForge.Core.Identifiers.CanvasId? CanvasId,
         ResolvedCanvasKey? ResolvedCanvasKey,
         WTK.MediaForge.Core.Identifiers.CanvasId? PreviousCanvasId,
@@ -563,7 +589,7 @@ internal static class PhysicalRenderGraphPlanner
     {
         public static PhysicalOperationSeed FromNode(MediaForgeRenderGraphNode node, IReadOnlyList<string> dependencies) =>
             new(
-                MapKind(node.Kind), node.Key, node.Name, dependencies, node.OutputId, node.CanvasId,
+                MapKind(node.Kind), node.Key, node.Name, dependencies, node.OutputId, node.OutputTypeId, node.CanvasId,
                 node.ResolvedCanvasKey, node.PreviousCanvasId, node.PreviousResolvedCanvasKey,
                 node.SourceId, node.DrawObjectId);
 
@@ -574,12 +600,18 @@ internal static class PhysicalRenderGraphPlanner
                 fanOut.Name,
                 [fanOut.SourceKey],
                 null,
+                null,
                 fanOut.CanvasId,
                 fanOut.ResolvedCanvasKey,
                 null,
                 null,
                 null,
                 null);
+
+        public static PhysicalOperationSeed FromEncodedDispatch(MediaForgeRenderGraphNode output) =>
+            new(PhysicalRenderGraphOperationKind.DispatchEncodedOutput, $"encode-dispatch:{output.OutputId}",
+                $"{output.Name} encoded dispatch", [output.Key], output.OutputId, output.OutputTypeId,
+                output.CanvasId, output.ResolvedCanvasKey, null, null, null, null);
 
         public PhysicalRenderGraphOperation ToOperation(IReadOnlyList<string> consumers) =>
             new()
@@ -590,6 +622,7 @@ internal static class PhysicalRenderGraphPlanner
                 Dependencies = Dependencies,
                 Consumers = consumers,
                 OutputId = OutputId,
+                OutputTypeId = OutputTypeId,
                 CanvasId = CanvasId,
                 ResolvedCanvasKey = ResolvedCanvasKey,
                 PreviousCanvasId = PreviousCanvasId,
@@ -613,5 +646,11 @@ internal static class PhysicalRenderGraphPlanner
             MediaForgeRenderGraphNodeKind.OutputPass => PhysicalRenderGraphOperationKind.RenderOutput,
             _ => throw new NotSupportedException($"Unsupported render graph node kind '{kind}'.")
         };
+
+    private static bool IsEncodedOutput(WTK.MediaForge.Core.Identifiers.RenderOutputTypeId? typeId) =>
+        typeId is { } value && (value == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.EncodedFile ||
+            value == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.RecordingMp4 ||
+            value == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.StreamingRtmp ||
+            value == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.RemoteScene);
 
 }

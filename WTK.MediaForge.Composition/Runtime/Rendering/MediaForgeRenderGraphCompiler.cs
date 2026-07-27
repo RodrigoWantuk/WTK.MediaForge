@@ -68,6 +68,7 @@ internal static class MediaForgeRenderGraphCompiler
                 output.Name,
                 [dependency],
                 outputId: output.Id,
+                outputTypeId: output.TypeId,
                 canvasId: output.CanvasId);
         }
 
@@ -200,6 +201,7 @@ internal static class MediaForgeRenderGraphCompiler
             string name,
             IReadOnlyList<string>? dependencies = null,
             Core.Identifiers.RenderOutputId? outputId = null,
+            Core.Identifiers.RenderOutputTypeId? outputTypeId = null,
             Core.Identifiers.CanvasId? canvasId = null,
             Core.Identifiers.CanvasId? previousCanvasId = null,
             Core.Identifiers.SourceId? sourceId = null,
@@ -217,6 +219,7 @@ internal static class MediaForgeRenderGraphCompiler
                     Name = name,
                     Dependencies = dependencies ?? [],
                     OutputId = outputId,
+                    OutputTypeId = outputTypeId,
                     CanvasId = canvasId,
                     PreviousCanvasId = previousCanvasId,
                     SourceId = sourceId,
@@ -284,6 +287,7 @@ internal static class MediaForgeRenderGraphCompiler
                 output.Name,
                 [dependency],
                 outputId: output.Id,
+                outputTypeId: output.TypeId,
                 canvasId: output.CanvasId,
                 resolvedCanvasKey: currentResolvedKey);
         }
@@ -453,6 +457,7 @@ internal static class MediaForgeRenderGraphCompiler
             string name,
             IReadOnlyList<string>? dependencies = null,
             Core.Identifiers.RenderOutputId? outputId = null,
+            Core.Identifiers.RenderOutputTypeId? outputTypeId = null,
             Core.Identifiers.CanvasId? canvasId = null,
             ResolvedCanvasKey? resolvedCanvasKey = null,
             Core.Identifiers.CanvasId? previousCanvasId = null,
@@ -472,6 +477,7 @@ internal static class MediaForgeRenderGraphCompiler
                     Name = name,
                     Dependencies = dependencies ?? [],
                     OutputId = outputId,
+                    OutputTypeId = outputTypeId,
                     CanvasId = canvasId,
                     ResolvedCanvasKey = resolvedCanvasKey,
                     PreviousCanvasId = previousCanvasId,
