@@ -241,6 +241,39 @@ public sealed class RenderGraphExecutorTests
     }
 
     [Fact]
+    public void Adjustment_layer_checkpoint_executes_and_satisfies_production_submission_validation()
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Scene("Program", 1920, 1080, out var scene)
+            .DesktopSource("Desktop", displayIndex: 0, out var source)
+            .AddSourceLayer(scene, source, layer => layer.SetBounds(0, 0, 1920, 1080));
+        var project = builder
+            .AddAdjustmentLayer(scene, layer => layer.Effects.Add(new ColorCorrectionEffect { Brightness = 0.1f }))
+            .OffscreenOutput("Program", scene, 1920, 1080, out _)
+            .BuildValidated();
+
+        var plan = MediaForgeRenderGraphCompiler.Compile(project);
+        var checkpoint = Assert.Single(plan.Nodes,
+            node => node.Kind == MediaForgeRenderGraphNodeKind.AdjustmentLayerCheckpoint);
+
+        var result = RenderGraphExecutor.Execute(
+            plan,
+            new RenderGraphContext
+            {
+                FrameContext = new FrameExecutionContext
+                {
+                    FrameId = 9,
+                    FrameBudget = TimeSpan.FromSeconds(1d / 60d)
+                },
+                SourceFrames = CreateSourceFrames(source.Id)
+            });
+
+        Assert.Contains(checkpoint.Key, result.ExecutedNodeKeys);
+        Assert.False(result.NodeResults[checkpoint.Key].WasSkipped);
+        result.ValidateForProductionSubmission();
+    }
+
+    [Fact]
     public void Encoded_output_has_a_distinct_physical_dispatch_after_its_output_pass()
     {
         var project = MediaForgeProjectBuilder.Create()

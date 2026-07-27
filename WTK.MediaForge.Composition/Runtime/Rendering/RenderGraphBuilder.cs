@@ -85,6 +85,7 @@ internal static class RenderGraphBuilder
             MediaForgeRenderGraphNodeKind.CanvasLayer => RenderGraphNodeKind.Transform,
             MediaForgeRenderGraphNodeKind.CanvasRender => RenderGraphNodeKind.Blend,
             MediaForgeRenderGraphNodeKind.CanvasEffectChain => RenderGraphNodeKind.Transform,
+            MediaForgeRenderGraphNodeKind.AdjustmentLayerCheckpoint => RenderGraphNodeKind.Transform,
             MediaForgeRenderGraphNodeKind.OutputTransition => RenderGraphNodeKind.Transition,
             MediaForgeRenderGraphNodeKind.OutputPass => RenderGraphNodeKind.Output,
             _ => throw new NotSupportedException($"Unsupported planner node kind '{planKind}'.")
