@@ -40,6 +40,36 @@ internal sealed class RenderOutputIdJsonConverter : JsonConverter<RenderOutputId
         writer.WriteStringValue(value.Value);
 }
 
+internal sealed class AudioSourceIdJsonConverter : JsonConverter<AudioSourceId>
+{
+    public override AudioSourceId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => new(reader.GetGuid());
+    public override void Write(Utf8JsonWriter writer, AudioSourceId value, JsonSerializerOptions options) => writer.WriteStringValue(value.Value);
+}
+
+internal sealed class AudioNodeIdJsonConverter : JsonConverter<AudioNodeId>
+{
+    public override AudioNodeId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => new(reader.GetGuid());
+    public override void Write(Utf8JsonWriter writer, AudioNodeId value, JsonSerializerOptions options) => writer.WriteStringValue(value.Value);
+}
+
+internal sealed class AudioBusIdJsonConverter : JsonConverter<AudioBusId>
+{
+    public override AudioBusId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => new(reader.GetGuid());
+    public override void Write(Utf8JsonWriter writer, AudioBusId value, JsonSerializerOptions options) => writer.WriteStringValue(value.Value);
+}
+
+internal sealed class AudioOutputRouteIdJsonConverter : JsonConverter<AudioOutputRouteId>
+{
+    public override AudioOutputRouteId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => new(reader.GetGuid());
+    public override void Write(Utf8JsonWriter writer, AudioOutputRouteId value, JsonSerializerOptions options) => writer.WriteStringValue(value.Value);
+}
+
+internal sealed class AudioSinkIdJsonConverter : JsonConverter<AudioSinkId>
+{
+    public override AudioSinkId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => new(reader.GetGuid());
+    public override void Write(Utf8JsonWriter writer, AudioSinkId value, JsonSerializerOptions options) => writer.WriteStringValue(value.Value);
+}
+
 internal sealed class MediaSourceTypeIdJsonConverter : JsonConverter<MediaSourceTypeId>
 {
     public override MediaSourceTypeId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>

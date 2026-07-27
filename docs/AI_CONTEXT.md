@@ -200,7 +200,10 @@ capability reports; it is never converted into a hosted-runner product pass.
   enabled for tests.
 - NDI product video remains blocked because Standard SDK CPU framebuffer APIs do
   not satisfy the GPU media law.
-- Audio, SRT, virtual camera, and FFmpeg are deferred.
+- SRT, virtual camera, FFmpeg, product NDI video, physical audio capture, native
+  playback and audio mux remain deferred. The portable audio graph, compiler and
+  deterministic in-memory runtime are current roadmap work; they do not change
+  the GPU-only law for continuous video.
 
 ## Platform Boundaries
 
@@ -211,6 +214,18 @@ capability reports; it is never converted into a hosted-runner product pass.
 
 Platform code belongs only in its platform project. Unsupported adapters report
 an explicit reason instead of contaminating Core with fallback logic.
+
+## Current execution priority and audio boundary
+
+`docs/ROADMAP_CURRENT.md` gives priority to the Physical RenderGraph, the
+runtime/Studio vertical, and sustained v14 promotion before feature expansion.
+Portable audio foundation follows that vertical. `WTK.MediaForge.Audio` may
+reference only Core and owns no native handles or platform API. Its real-time
+contract is 48 kHz float32 planar mono/stereo, a default 10 ms (480-frame)
+graph quantum, bounded adapter queues, immutable graph publication between
+blocks, and no allocation, blocking, contested lock, disk access, formatted log
+or slow sink invocation on the callback path. Platform audio adapters remain
+separate projects and must truthfully report `Unavailable` until implemented.
 
 ## Documentation Authority
 

@@ -6,6 +6,7 @@ namespace WTK.MediaForge.Composition.Validation.Effects;
 internal static class EffectValidation
 {
     private static readonly EffectCapabilityRegistry Capabilities = EffectCapabilityRegistry.Default;
+    private static readonly EffectMaskCapabilityRegistry MaskCapabilities = EffectMaskCapabilityRegistry.Default;
 
     public static IEnumerable<ValidationIssue> ValidateDrawObjectEffects(
         MediaForgeDrawObject drawObject,
@@ -79,6 +80,28 @@ internal static class EffectValidation
         if (mask is null)
             yield break;
 
+        if (!MaskCapabilities.TryGet(mask.GetType(), out var capability))
+        {
+            yield return ValidationIssue.Error(
+                "effect.mask.capability.missing",
+                $"Mask type '{mask.GetType().FullName}' has no capability descriptor.");
+            yield break;
+        }
+
+        if (mask.Enabled && !capability.IsExecutable)
+        {
+            yield return ValidationIssue.Error(
+                "effect.mask.unavailable",
+                capability.UnavailableReason ?? $"Mask '{mask.GetType().Name}' is not executable by the current runtime.");
+        }
+
+        if (!capability.TransformSupported && !IsDefaultTransform(mask.Transform))
+        {
+            yield return ValidationIssue.Error(
+                "effect.mask.transform.unavailable",
+                "Mask transform is modeled but is not executable by the current GPU runtime.");
+        }
+
         if (!float.IsFinite(mask.Feather) || mask.Feather < 0f || mask.Feather > 1f)
         {
             yield return ValidationIssue.Error(
@@ -147,6 +170,9 @@ internal static class EffectValidation
                 break;
         }
     }
+
+    private static bool IsDefaultTransform(Core.Geometry.Transform2D transform) =>
+        transform.Equals(Core.Geometry.Transform2D.Default);
 
     private static bool IsNormalizedPoint(Core.Geometry.NormalizedPoint point) =>
         float.IsFinite(point.X) && float.IsFinite(point.Y) &&

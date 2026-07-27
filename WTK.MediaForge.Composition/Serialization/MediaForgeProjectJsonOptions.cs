@@ -19,6 +19,11 @@ public static class MediaForgeProjectJsonOptions
         options.Converters.Add(new CanvasIdJsonConverter());
         options.Converters.Add(new DrawObjectIdJsonConverter());
         options.Converters.Add(new RenderOutputIdJsonConverter());
+        options.Converters.Add(new AudioSourceIdJsonConverter());
+        options.Converters.Add(new AudioNodeIdJsonConverter());
+        options.Converters.Add(new AudioBusIdJsonConverter());
+        options.Converters.Add(new AudioOutputRouteIdJsonConverter());
+        options.Converters.Add(new AudioSinkIdJsonConverter());
         options.Converters.Add(new MediaSourceTypeIdJsonConverter());
         options.Converters.Add(new EffectIdJsonConverter());
         options.Converters.Add(new RenderOutputTypeIdJsonConverter());

@@ -15,6 +15,7 @@ $stressFilter = "Category=Stress"
 $performanceFilter = "Category=Performance"
 
 $coreTests = "Tests\WTK.MediaForge.Core.Tests\WTK.MediaForge.Core.Tests.csproj"
+$audioTests = "Tests\WTK.MediaForge.Audio.Tests\WTK.MediaForge.Audio.Tests.csproj"
 $diagnosticsTests = "Tests\WTK.MediaForge.Diagnostics.Tests\WTK.MediaForge.Diagnostics.Tests.csproj"
 $compositionTests = "Tests\WTK.MediaForge.Composition.Tests\WTK.MediaForge.Composition.Tests.csproj"
 $studioTests = "Tests\WTK.MediaForge.Studio.Tests\WTK.MediaForge.Studio.Tests.csproj"
@@ -65,6 +66,7 @@ switch ($Tier) {
     "Fast" {
         # All non-GPU/non-performance contracts run here, including platform projects.
         Invoke-TestProject -Project $coreTests -Filter $fastFilter
+        Invoke-TestProject -Project $audioTests -Filter $fastFilter
         Invoke-TestProject -Project $diagnosticsTests -Filter $fastFilter
         Invoke-TestProject -Project $compositionTests -Filter $fastFilter
         Invoke-TestProject -Project $studioTests -Filter $fastFilter

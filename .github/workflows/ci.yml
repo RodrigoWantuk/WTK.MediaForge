@@ -75,6 +75,10 @@ jobs:
           --results-directory .\test-reports\windows
           --verbosity minimal
 
+      - name: Audit test matrix
+        shell: pwsh
+        run: .\scripts\verify-test-matrix.ps1 -Runner Windows -ReportPath .\test-reports\windows\test-matrix.json -RequireExecution
+
       - name: Fast gate
         shell: pwsh
         run: .\scripts\test.ps1 -Tier Fast
@@ -149,6 +153,7 @@ jobs:
           set -euo pipefail
           projects=(
             WTK.MediaForge.Core/WTK.MediaForge.Core.csproj
+            WTK.MediaForge.Audio/WTK.MediaForge.Audio.csproj
             WTK.MediaForge.Diagnostics/WTK.MediaForge.Diagnostics.csproj
             WTK.MediaForge.Capture/WTK.MediaForge.Capture.csproj
             WTK.MediaForge.Graphics.Interop/WTK.MediaForge.Graphics.Interop.csproj
@@ -171,6 +176,7 @@ jobs:
           set -euo pipefail
           projects=(
             WTK.MediaForge.Core/WTK.MediaForge.Core.csproj
+            WTK.MediaForge.Audio/WTK.MediaForge.Audio.csproj
             WTK.MediaForge.Diagnostics/WTK.MediaForge.Diagnostics.csproj
             WTK.MediaForge.Capture/WTK.MediaForge.Capture.csproj
             WTK.MediaForge.Graphics.Interop/WTK.MediaForge.Graphics.Interop.csproj
@@ -196,6 +202,7 @@ jobs:
           set -euo pipefail
           tests=(
             Tests/WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
+            Tests/WTK.MediaForge.Audio.Tests/WTK.MediaForge.Audio.Tests.csproj
             Tests/WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
             Tests/WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj
             Tests/WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
@@ -213,6 +220,7 @@ jobs:
           set -euo pipefail
           tests=(
             Tests/WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj
+            Tests/WTK.MediaForge.Audio.Tests/WTK.MediaForge.Audio.Tests.csproj
             Tests/WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj
             Tests/WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj
             Tests/WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
@@ -231,6 +239,10 @@ jobs:
               --results-directory test-reports/linux \
               --verbosity minimal
           done
+
+      - name: Audit test matrix
+        shell: pwsh
+        run: ./scripts/verify-test-matrix.ps1 -Runner Linux -ReportPath ./test-reports/linux/test-matrix.json -RequireExecution
 
       - name: Publish Linux reports
         if: always()

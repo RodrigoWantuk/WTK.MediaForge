@@ -8,8 +8,11 @@ Use this checklist for the Studio v13 Avalonia editor.
 - [ ] No React, WebView, Electron, Tailwind runtime, or browser dependency.
 - [ ] Studio accesses sources/outputs only through engine contracts and capability snapshots.
 - [ ] Unavailable runtime features are disabled with a reason, never simulated.
-- [ ] No real audio pipeline.
-- [ ] No real GPU preview integration.
+- [ ] No physical audio capture, playback, mux, or codec pipeline. A future
+  Program Bus panel controls only the approved portable audio runtime.
+- [ ] No GPU preview integration before the hosted-preview reliability gate;
+  when enabled it uses a platform presenter and GPU lease, never WebView or
+  continuous CPU readback.
 - [ ] No legacy preview/capture path.
 
 ## Product Flow
@@ -86,3 +89,15 @@ Use this checklist for the Studio v13 Avalonia editor.
 - [ ] `./scripts/verify-studio-ui-visual-qa.ps1` passes and writes
   `test-reports/studio-visual-qa-report.md`.
 - [ ] GPU tier is only required if runtime/render/GPU code changed.
+
+## Runtime vertical (after its gate opens)
+
+- [ ] `MediaForgeProject` remains the sole persisted project; Studio drafts are
+  projections and are physically unwound before project replacement.
+- [ ] Explorer and Inspector mutations use engine Live/Apply operations and
+  undo/redo rather than a duplicate project as runtime state.
+- [ ] Unavailable effects, masks, sources, sinks and platform presenters remain
+  visible but disabled with a concrete diagnostic.
+- [ ] Hosted previews support asynchronous attach, resize/DPI, rebind and
+  timeout-bounded detach; multiple compatible previews do not duplicate canvas
+  rendering.

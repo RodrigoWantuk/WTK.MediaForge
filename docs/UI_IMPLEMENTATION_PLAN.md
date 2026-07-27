@@ -101,8 +101,12 @@ Key implementation areas:
 - No WebView, React, Electron, Tailwind runtime, or browser dependency.
 - Studio does not instantiate adapters directly; it uses the engine/runtime boundary.
 - No output is presented as active unless the runtime capability and route are real.
-- No real audio capture/mix/mux/equalization.
-- No real GPU preview integration until the preview reliability gate allows it.
+- No real audio capture/mux/equalization. A later simple Program Bus panel may
+  control the approved portable audio runtime only after the Studio vertical is
+  accepted.
+- No real GPU preview integration until the hosted-preview reliability gate
+  allows it. The eventual surface uses platform presenters and GPU leases,
+  never WebView or continuous CPU readback.
 - No legacy direct preview/capture path.
 - ViewModels must not depend on Avalonia controls.
 - Product logic must not live in `.axaml.cs`; code-behind is allowed only for
@@ -116,8 +120,10 @@ Key implementation areas:
 2. Keep the automated Studio visual QA gate green whenever layout, shell,
    preview editor, properties, workbench, accessibility, or shell-loading
    behavior changes.
-3. After runtime gates: introduce the real preview frame provider below the
-   Avalonia overlay.
+3. After the hosted-preview reliability gate: introduce
+   `IHostedPreviewSurface` below the Avalonia overlay, with
+   attach/resize-DPI/rebind/detach lifetime behavior supplied only by platform
+   adapters.
 
 ## Validation
 

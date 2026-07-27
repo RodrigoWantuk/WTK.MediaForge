@@ -37,4 +37,7 @@ public sealed class MediaForgeRenderOutput
 
     public OutputRouteTransition RouteTransition { get; set; } =
         OutputRouteTransition.Cut("cut");
+
+    /// <summary>Optional portable audio routes associated with this video output.</summary>
+    public List<AudioOutputRouteId> AudioOutputRouteIds { get; set; } = [];
 }

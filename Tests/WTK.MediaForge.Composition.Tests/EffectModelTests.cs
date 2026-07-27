@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.DrawObjects;
+using WTK.MediaForge.Audio;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Runtime.Rendering;
@@ -15,6 +16,34 @@ namespace WTK.MediaForge.Composition.Tests;
 
 public class EffectModelTests
 {
+    [Fact]
+    public void Json_round_trip_preserves_portable_audio_graph()
+    {
+        var sourceId = AudioSourceId.New();
+        var nodeId = AudioNodeId.New();
+        var busId = AudioBusId.New();
+        var sinkId = AudioSinkId.New();
+        var project = new MediaForgeProject
+        {
+            Audio = new AudioGraphDefinition
+            {
+                Sources = [new AudioSourceDefinition { Id = sourceId, Name = "Tone", Kind = AudioSourceKind.GeneratedTone }],
+                Nodes = [new AudioNodeDefinition { Id = nodeId, Name = "Gain", Kind = AudioNodeKind.Gain }],
+                Connections = [new AudioConnection { SourceId = sourceId, ToNodeId = nodeId }],
+                Buses = [new AudioBusDefinition { Id = busId, Name = "Program", InputNodeIds = [nodeId] }],
+                Sinks = [new AudioSinkDefinition { Id = sinkId, Name = "Program", Kind = AudioSinkKind.ProgramMix }],
+                OutputRoutes = [new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = busId, SinkId = sinkId }]
+            }
+        };
+
+        var restored = MediaForgeProjectSerializer.Deserialize(MediaForgeProjectSerializer.Serialize(project));
+
+        Assert.Equal(sourceId, Assert.Single(restored.Audio.Sources).Id);
+        Assert.Equal(nodeId, Assert.Single(restored.Audio.Nodes).Id);
+        Assert.Equal(busId, Assert.Single(restored.Audio.Buses).Id);
+        Assert.Equal(sinkId, Assert.Single(restored.Audio.Sinks).Id);
+    }
+
     [Fact]
     public void Json_round_trip_preserves_effect_discriminator()
     {
@@ -129,6 +158,42 @@ public class EffectModelTests
         var blur = registry.GetRequired(new BlurEffect());
         Assert.False(blur.AcceptsScope(EffectScope.Source));
         Assert.Equal(EffectPassClass.Spatial, blur.PassClass);
+    }
+
+    [Fact]
+    public void Mask_capabilities_do_not_overstate_serializable_models_as_executable()
+    {
+        var registry = EffectMaskCapabilityRegistry.Default;
+
+        var rectangle = registry.GetRequired(new RectangleEffectMask());
+        Assert.True(rectangle.ModelSupported);
+        Assert.True(rectangle.RuntimeSupported);
+        Assert.True(rectangle.GpuBackendSupported);
+        Assert.True(rectangle.ProductAvailable);
+        Assert.False(rectangle.StudioEditable);
+        Assert.False(rectangle.TransformSupported);
+
+        var image = registry.GetRequired(new ImageAlphaEffectMask());
+        Assert.True(image.ModelSupported);
+        Assert.False(image.RuntimeSupported);
+        Assert.False(image.GpuBackendSupported);
+        Assert.False(image.StudioEditable);
+        Assert.False(image.ProductAvailable);
+        Assert.False(string.IsNullOrWhiteSpace(image.UnavailableReason));
+    }
+
+    [Fact]
+    public void Validator_rejects_enabled_mask_without_an_executable_runtime()
+    {
+        var project = ProjectWithChromaEffect();
+        Assert.IsType<ChromaKeyEffect>(project.Canvases[0].Objects[0].Effects[0]).Mask = new ImageAlphaEffectMask
+        {
+            AssetPath = "assets/masks/matte.png"
+        };
+
+        var validation = MediaForgeProjectValidator.Validate(project);
+
+        Assert.Contains(validation.Issues, issue => issue.Code == "effect.mask.unavailable");
     }
 
     [Fact]

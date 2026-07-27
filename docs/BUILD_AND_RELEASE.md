@@ -48,6 +48,13 @@ dotnet test .\WTK.MediaForge.sln --no-restore --no-build --configuration Release
 
 On Linux, use the portable project and test lists maintained in `.github/workflows/ci.yml`, always with locked restore. Those lists are part of the architecture contract and must remain current.
 
+The CI workflow audits every `*.Tests.csproj`: each assembly belongs to at
+least one of portable, Windows, Linux, GPU, performance, or stress; portable
+assemblies execute on both runners; platform-specific assemblies are never
+forced into the other platform's portable gate. Per-runner totals by assembly
+and filter are published as artifacts. A coverage or classification gap fails
+the workflow rather than silently reducing validation.
+
 Changes to GPU ownership, capture, D3D11, Vulkan, render submission, providers, or shutdown also require the hardware-appropriate GPU gate:
 
 ```powershell

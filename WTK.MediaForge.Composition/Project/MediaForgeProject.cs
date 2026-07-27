@@ -1,3 +1,5 @@
+using WTK.MediaForge.Audio;
+
 namespace WTK.MediaForge.Composition.Project;
 
 public sealed class MediaForgeProject
@@ -15,4 +17,7 @@ public sealed class MediaForgeProject
     public List<MediaForgeCanvas> Canvases { get; set; } = [];
 
     public List<MediaForgeRenderOutput> Outputs { get; set; } = [];
+
+    /// <summary>Portable global audio graph. Physical adapters remain capability-gated.</summary>
+    public AudioGraphDefinition Audio { get; set; } = new();
 }

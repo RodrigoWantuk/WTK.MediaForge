@@ -120,7 +120,9 @@ Experimental and not yet product-promoted:
 
 Unavailable/planned:
 
-- SRT, virtual camera, audio capture/mix/mux, and product NDI video.
+- SRT, virtual camera, physical audio capture/playback/mux, and product NDI
+  video. The portable audio graph/model/runtime is current roadmap work, but
+  has no physical adapter or product audio route yet.
 - Linux VAAPI/DRM/DMABUF and macOS VideoToolbox/IOSurface adapters.
 - NDI discovery/runtime packaging exists, but Standard SDK raw CPU video buffers
   do not satisfy the GPU Media Transport Law.
@@ -128,7 +130,20 @@ Unavailable/planned:
   libwebrtc bridge and direct/TURN GPU end-to-end proofs pass. The signaling
   service alone is not media capability evidence.
 
-## v14 Execution Order
+## Current Execution Order
+
+1. Make the Physical RenderGraph the sole authority for production rendering,
+   resource ownership, fan-out and encoded dispatch.
+2. Complete the usable runtime/Studio vertical with hosted native preview,
+   real Live/Apply, output routing and actionable diagnostics on Windows and
+   Linux through platform adapters.
+3. Sustain and promote preview/capture/MP4/RTMP only through v14 hardware
+   evidence and long-running target-adapter qualification.
+4. Build the portable audio model, compiler and deterministic memory runtime;
+   native audio capture/playback and mux remain separate future adapter work.
+5. Resume advanced effects, complex masks and later media/Remote Scene work.
+
+## v14 Media Promotion Order
 
 1. Close Desktop Duplication and preview presenter lifetime under repeated stop,
    timeout, resize, and device/display-reset cycles.
@@ -146,8 +161,9 @@ Unavailable/planned:
    intermediate, then enforce baseline-return assertions in sustained runs.
 7. Promote preview/desktop/window/webcam/video/MP4/RTMP only from sustained
    v14 evidence on the target adapter.
-8. Integrate Studio preview and output controls after promotion; keep Avalonia
-   overlays independent from the native presentation surface.
+8. Keep Studio preview and output controls behind the portable runtime boundary;
+   hosted native presentation is promoted only after its target-adapter evidence,
+   while Avalonia overlays remain independent from the native surface.
 9. Freeze Core adapter contracts, then implement Linux and macOS backends in
    their own projects.
 10. Build the functional pinned libwebrtc adapter behind the frozen C ABI only
@@ -216,6 +232,9 @@ run cannot accidentally promote unavailable media.
 
 ## Deferred Scope
 
-Audio, SRT, virtual camera, FFmpeg, and product NDI video remain outside v14.
-FFmpeg/libav may only be reconsidered after native sustained routes and a
-separate encoded-packet/container legal review.
+SRT, virtual camera, FFmpeg, physical audio capture/playback/mux, audio plugins,
+and product NDI video remain outside v14 promotion. The portable audio graph,
+compiler, clock/sync contracts and deterministic memory runtime are explicitly
+inside the current roadmap after the runtime/Studio vertical. FFmpeg/libav may
+only be reconsidered after native sustained routes and a separate
+encoded-packet/container legal review.

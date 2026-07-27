@@ -4,14 +4,18 @@ Before considering a change complete, verify:
 
 ## General
 
-- [ ] No new UI, NDI, encoder, audio, offscreen, or visual pipeline work before required gates.
+- [ ] New UI, NDI, encoder, audio, offscreen, or visual pipeline work follows the
+  current roadmap priority and its required gates. The portable audio
+  model/compiler/runtime is allowed; physical capture, playback, mux and codec
+  work are not.
 - [ ] No new TODOs in lifetime paths.
 - [ ] No swallowed exceptions in physical resource cleanup.
 - [ ] Tests added for every lifetime change.
 - [ ] Runtime/GPU/snapshot internals are not exposed as public product API.
 - [ ] Public API changes update `docs/PUBLIC_API.md` and `Public_api_matches_approved_allowlist`.
 - [ ] Prototype, planned, blocked, unsupported, debug-only, or non-product capabilities/sinks have user-visible unavailable reasons.
-- [ ] CP2, nested canvas, preview, NDI, encoder, webcam, RTSP, MP4, streaming, or audio work starts only after the roadmap explicitly opens that track.
+- [ ] CP2, nested canvas, preview, NDI, encoder, webcam, RTSP, MP4, streaming,
+  or audio work starts only after the roadmap explicitly opens that track.
 - [ ] New source/output types are introduced first as product contracts, not hidden runtime integrations.
 - [ ] `dotnet test` passes.
 - [ ] `scripts/test.ps1 -Tier Fast` passes.

@@ -19,6 +19,7 @@ MediaForgeProject
   -> Effects
   -> RenderOutputs
   -> RenderOutputSink(s)
+  -> Audio (sources, graph, buses, routes, sinks)
 ```
 
 `MediaForgeCanvas` is the canonical scene object. Public APIs may use `Scene`
@@ -55,6 +56,14 @@ Forbidden product-layer shortcuts:
 Public callers should prefer `MediaForgeProjectBuilder`,
 `MediaForgeProjectEditor`, typed helper factories, and package import/export
 APIs for normal authoring.
+
+## Audio
+
+Audio is a project-global graph. Sources are reusable and capture once; buses
+mix N inputs and feed N routes; routes bind zero or more sinks and may be
+selected by video outputs. Audio model objects are serializable definitions,
+never native devices, callback buffers, threads, or handles. See
+[`AUDIO_ARCHITECTURE.md`](AUDIO_ARCHITECTURE.md) for runtime and ownership rules.
 
 ## Sources
 

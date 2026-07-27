@@ -35,14 +35,25 @@ Act as a senior technical implementer. Follow the current roadmap in `docs/ROADM
   version binding, detect cycles/depth, and propagate Apply commits to affected
   output routes.
 - Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; never block the UI thread.
+- The current roadmap prioritizes the usable engine/Studio vertical first, then
+  sustained qualification, then the portable audio foundation. Audio is CPU
+  real-time first: no blocking, allocation, native handle, platform API, or
+  slow sink call on the callback path. Native audio APIs belong only in platform
+  adapter projects.
 
 ## Studio UI Exception
 
 A limited Avalonia Studio track is allowed when it follows `docs/UI_STUDIO_DESIGN.md`, `docs/UI_IMPLEMENTATION_PLAN.md`, and `docs/UI_ACCEPTANCE_CHECKLIST.md`.
 
-This exception is UI-only. It permits dark-theme shell layout, mock/design data, Project Explorer, preview mock, Inspector, Bottom Workbench, diagnostics/performance/output-monitor mock panels, status bar, and fake command state.
+This exception is UI-only until the hosted-preview reliability gate is passed.
+It permits dark-theme shell layout, mock/design data, Project Explorer, preview
+mock, Inspector, Bottom Workbench, diagnostics/performance/output-monitor mock
+panels, status bar, and fake command state.
 
-It does not permit real capture adapters, real media adapters, real recording/streaming/NDI/virtual-camera sinks, real audio pipeline work, real GPU preview integration before the approved preview reliability gate, or any legacy direct preview/capture path.
+It does not permit legacy direct preview/capture paths. A real hosted preview
+must use the portable contract and platform adapter, preserve GPU leases, and
+be enabled only after the approved reliability gate. Audio UI must not imply a
+physical capture or mux capability before its runtime/adapter proof exists.
 
 ## Current Technical Contract
 

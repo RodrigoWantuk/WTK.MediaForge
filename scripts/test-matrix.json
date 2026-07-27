@@ -1,0 +1,14 @@
+{
+  "assemblies": [
+    { "project": "Tests/WTK.MediaForge.Core.Tests/WTK.MediaForge.Core.Tests.csproj", "platforms": ["portable", "linux", "windows"], "categories": ["fast"] },
+    { "project": "Tests/WTK.MediaForge.Audio.Tests/WTK.MediaForge.Audio.Tests.csproj", "platforms": ["portable", "linux", "windows"], "categories": ["fast"] },
+    { "project": "Tests/WTK.MediaForge.Diagnostics.Tests/WTK.MediaForge.Diagnostics.Tests.csproj", "platforms": ["portable", "linux", "windows"], "categories": ["fast"] },
+    { "project": "Tests/WTK.MediaForge.Capture.Tests/WTK.MediaForge.Capture.Tests.csproj", "platforms": ["portable", "linux", "windows"], "categories": ["fast", "gpu", "stress"] },
+    { "project": "Tests/WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj", "platforms": ["portable", "linux", "windows"], "categories": ["fast", "performance", "stress"] },
+    { "project": "Tests/WTK.MediaForge.Graphics.D3D11.Tests/WTK.MediaForge.Graphics.D3D11.Tests.csproj", "platforms": ["windows"], "categories": ["fast", "gpu"] },
+    { "project": "Tests/WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj", "platforms": ["portable", "linux", "windows"], "categories": ["fast", "gpu", "performance", "stress"] },
+    { "project": "Tests/WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj", "platforms": ["portable", "linux", "windows"], "categories": ["fast"] },
+    { "project": "Tests/WTK.MediaForge.Studio.Tests/WTK.MediaForge.Studio.Tests.csproj", "platforms": ["windows"], "categories": ["fast", "visual"] },
+    { "project": "Tests/WTK.MediaForge.Windows.Tests/WTK.MediaForge.Windows.Tests.csproj", "platforms": ["windows"], "categories": ["fast", "gpu"] }
+  ]
+}

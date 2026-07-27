@@ -451,3 +451,13 @@ mean the media feature is available. `remote.publish`, `remote.subscribe`,
 `proof.remote_scene.direct`, and `proof.remote_scene.turn` remain unavailable
 until reviewed physical reports pass. Runtime credentials are deliberately
 separate from canonical project settings and must never be serialized there.
+
+## 12. Portable audio contracts
+
+Core exposes logical `AudioSourceId`, `AudioNodeId`, `AudioBusId`,
+`AudioOutputRouteId`, and `AudioSinkId`. The portable `WTK.MediaForge.Audio`
+assembly exposes the project graph, validation/compiler, block/clock contracts,
+bounded buffer pool and deterministic memory runtime. Those contracts do not
+expose WASAPI, PipeWire, ALSA, native handles, physical capture/playback, mux,
+or codec fallback. Such functionality requires a separate platform adapter and
+an explicit available capability.

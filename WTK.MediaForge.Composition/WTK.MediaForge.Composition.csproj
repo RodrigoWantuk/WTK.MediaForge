@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WTK.MediaForge.Core\WTK.MediaForge.Core.csproj" />
+    <ProjectReference Include="..\WTK.MediaForge.Audio\WTK.MediaForge.Audio.csproj" />
     <ProjectReference Include="..\WTK.MediaForge.Diagnostics\WTK.MediaForge.Diagnostics.csproj" />
   </ItemGroup>
 

@@ -15,6 +15,8 @@ MediaForgeProject
       ordered effects
   RenderOutputs
     scene route, dimensions, color space, transition, settings
+  Audio
+    sources, graph nodes, buses, routes, sinks
 ```
 
 Project JSON contains stable ids, schema versions, typed settings, transforms,
@@ -39,6 +41,16 @@ MediaForgeEngine facade
 `MediaForgeEngine` remains the public facade. Internal ownership is split by
 lifecycle, scene editing, source orchestration, output routing, scheduling, and
 recovery; none of those services expose platform GPU objects publicly.
+
+## Audio Boundary
+
+Audio is a global project graph independent from the visual graph. Video scenes
+and outputs select audio routes but do not own physical capture. The portable
+audio runtime uses pooled planar float32 blocks at 48 kHz, explicit timestamps,
+bounded fan-out, immutable compiled plans and transactional swaps between
+blocks. Real-time callbacks never block, allocate, await, take contested locks,
+access disk, or call UI/sinks directly. Platform capture/playback belongs in
+dedicated Windows/Linux adapter projects.
 
 ## Cross-platform Contract
 

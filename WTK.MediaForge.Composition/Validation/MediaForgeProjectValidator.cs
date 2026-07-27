@@ -2,6 +2,7 @@ using WTK.MediaForge.Composition.DrawObjects;
 using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Validation.Effects;
+using WTK.MediaForge.Audio;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
 
@@ -31,6 +32,16 @@ public static class MediaForgeProjectValidator
         issues.AddRange(CanvasGraphValidator.Validate(project));
         ValidateSourceDefinitions(project, sourceIds, issues);
         ValidateOutputs(project, canvasIds, issues);
+        if (project.Audio is null)
+        {
+            issues.Add(ValidationIssue.Error("audio.graph.missing", "Project audio graph cannot be null."));
+        }
+        else
+        {
+            issues.AddRange(AudioGraphValidator.Validate(project.Audio).Issues.Select(static issue =>
+                ValidationIssue.Error(issue.Code, issue.Message)));
+            ValidateOutputAudioRoutes(project, project.Audio, issues);
+        }
 
         return new ProjectValidationResult(issues);
     }
@@ -220,6 +231,25 @@ public static class MediaForgeProjectValidator
                     drawObject.Name,
                     canvasName));
                 break;
+        }
+    }
+
+    private static void ValidateOutputAudioRoutes(
+        MediaForgeProject project,
+        AudioGraphDefinition audio,
+        List<ValidationIssue> issues)
+    {
+        var routeIds = audio.OutputRoutes.Select(static route => route.Id).ToHashSet();
+        foreach (var output in project.Outputs)
+        {
+            var seen = new HashSet<AudioOutputRouteId>();
+            foreach (var routeId in output.AudioOutputRouteIds)
+            {
+                if (routeId.IsEmpty || !routeIds.Contains(routeId))
+                    issues.Add(ValidationIssue.Error("output.audio_route.missing", $"Output '{output.Name}' references a missing audio route {routeId}."));
+                else if (!seen.Add(routeId))
+                    issues.Add(ValidationIssue.Error("output.audio_route.duplicate", $"Output '{output.Name}' references audio route {routeId} more than once."));
+            }
         }
     }
 

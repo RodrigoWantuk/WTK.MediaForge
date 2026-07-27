@@ -107,26 +107,7 @@
           "WTK.MediaForge.Core": "[1.0.0, )"
         }
       },
-      "wtk.mediaforge.composition": {
-        "type": "Project",
-        "dependencies": {
-          "WTK.MediaForge.Audio": "[1.0.0, )",
-          "WTK.MediaForge.Core": "[1.0.0, )",
-          "WTK.MediaForge.Diagnostics": "[1.0.0, )"
-        }
-      },
       "wtk.mediaforge.core": {
-        "type": "Project"
-      },
-      "wtk.mediaforge.core.tests": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.NET.Test.Sdk": "[17.12.0, )",
-          "WTK.MediaForge.Core": "[1.0.0, )",
-          "xunit": "[2.9.2, )"
-        }
-      },
-      "wtk.mediaforge.diagnostics": {
         "type": "Project"
       }
     }

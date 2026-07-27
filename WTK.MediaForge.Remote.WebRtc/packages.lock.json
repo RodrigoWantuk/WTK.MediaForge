@@ -2,9 +2,16 @@
   "version": 2,
   "dependencies": {
     "net8.0": {
+      "wtk.mediaforge.audio": {
+        "type": "Project",
+        "dependencies": {
+          "WTK.MediaForge.Core": "[1.0.0, )"
+        }
+      },
       "wtk.mediaforge.composition": {
         "type": "Project",
         "dependencies": {
+          "WTK.MediaForge.Audio": "[1.0.0, )",
           "WTK.MediaForge.Core": "[1.0.0, )",
           "WTK.MediaForge.Diagnostics": "[1.0.0, )"
         }
