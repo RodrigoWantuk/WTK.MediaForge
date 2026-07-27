@@ -372,7 +372,12 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Engine.MediaForgeRecoveryEventArgs",
                 "WTK.MediaForge.Composition.Engine.MediaForgeRecoverySnapshot",
                 "WTK.MediaForge.Composition.Engine.MediaForgeRecoveryStatus",
+                "WTK.MediaForge.Composition.Runtime.IMediaForgeRuntimeFactory",
+                "WTK.MediaForge.Composition.Runtime.MediaForgeRuntime",
+                "WTK.MediaForge.Composition.Runtime.MediaForgeRuntimeAdapterCatalog",
+                "WTK.MediaForge.Composition.Runtime.MediaForgeRuntimeAvailability",
                 "WTK.MediaForge.Composition.Runtime.RenderFrameContext",
+                "WTK.MediaForge.Composition.Runtime.RuntimeCreationRequest",
                 "WTK.MediaForge.Composition.Runtime.Streaming.ITextureStreamConsumer",
                 "WTK.MediaForge.Composition.Runtime.Streaming.TextureLeaseQueue",
                 "WTK.MediaForge.Composition.Runtime.Streaming.TextureLeaseQueuePolicy",
@@ -469,7 +474,8 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Windows.Media.Ndi.WindowsNdiSourceInfo",
                 "WTK.MediaForge.Windows.Media.WindowsHardwareMediaCapabilityProbe",
                 "WTK.MediaForge.Windows.MediaForgeEngineOptions",
-                "WTK.MediaForge.Windows.MediaForgeWindows"
+                "WTK.MediaForge.Windows.MediaForgeWindows",
+                "WTK.MediaForge.Windows.WindowsMediaForgeRuntimeFactory"
             ]
         };
 }
