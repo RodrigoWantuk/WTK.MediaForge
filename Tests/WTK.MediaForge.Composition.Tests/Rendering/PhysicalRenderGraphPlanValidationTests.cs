@@ -1,4 +1,5 @@
 using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Color;
@@ -18,6 +19,20 @@ public sealed class PhysicalRenderGraphPlanValidationTests
         var plan = MediaForgeRenderGraphCompiler.Compile(snapshot).PhysicalPlan;
 
         plan.ValidateFor(snapshot);
+    }
+
+    [Fact]
+    public void Compiled_effect_plan_covers_source_and_layer_effect_stacks()
+    {
+        using var snapshot = CreateSourceSnapshot(
+            out _,
+            includeSourceEffects: true,
+            includeLayerEffects: true);
+        var plan = MediaForgeRenderGraphCompiler.Compile(snapshot).PhysicalPlan;
+
+        plan.ValidateFor(snapshot);
+
+        Assert.Equal(2, plan.Count(PhysicalRenderGraphOperationKind.RenderEffectIntermediate));
     }
 
     [Fact]
@@ -337,6 +352,32 @@ public sealed class PhysicalRenderGraphPlanValidationTests
         Assert.Contains("enabled nested canvas layer", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Plan_rejects_source_effect_stack_without_an_explicit_intermediate_pass()
+    {
+        using var snapshot = CreateSourceSnapshot(out var sourceId, includeSourceEffects: true);
+        var canvas = snapshot.Canvases.Single();
+        var output = snapshot.Outputs.Single();
+        var plan = CreateSourceLayerPlan(canvas, output, sourceId);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("no source-effect operation", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Plan_rejects_layer_effect_stack_without_an_explicit_intermediate_pass()
+    {
+        using var snapshot = CreateSourceSnapshot(out var sourceId, includeLayerEffects: true);
+        var canvas = snapshot.Canvases.Single();
+        var output = snapshot.Outputs.Single();
+        var plan = CreateSourceLayerPlan(canvas, output, sourceId);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("enabled layer-effect stack", exception.Message, StringComparison.Ordinal);
+    }
+
     private static RenderFrameSnapshot CreateSnapshot()
     {
         var canvasId = CanvasId.New();
@@ -407,7 +448,10 @@ public sealed class PhysicalRenderGraphPlanValidationTests
         };
     }
 
-    private static RenderFrameSnapshot CreateSourceSnapshot(out SourceId sourceId)
+    private static RenderFrameSnapshot CreateSourceSnapshot(
+        out SourceId sourceId,
+        bool includeSourceEffects = false,
+        bool includeLayerEffects = false)
     {
         sourceId = SourceId.New();
         var canvasId = CanvasId.New();
@@ -429,7 +473,13 @@ public sealed class PhysicalRenderGraphPlanValidationTests
                         {
                             Id = DrawObjectId.New(),
                             Name = "Camera",
-                            SourceId = sourceId
+                            SourceId = sourceId,
+                            SourceEffects = includeSourceEffects
+                                ? [new ColorCorrectionEffectSnapshot { Id = EffectId.New(), Name = "Source grade" }]
+                                : [],
+                            Effects = includeLayerEffects
+                                ? [new BlurEffectSnapshot { Id = EffectId.New(), Name = "Layer blur", Radius = 4f }]
+                                : []
                         }
                     ]
                 }
@@ -448,6 +498,53 @@ public sealed class PhysicalRenderGraphPlanValidationTests
                 }
             ]
         };
+    }
+
+    private static PhysicalRenderGraphPlan CreateSourceLayerPlan(
+        RenderCanvasSnapshot canvas,
+        RenderOutputStateSnapshot output,
+        SourceId sourceId)
+    {
+        var sourceLayer = Assert.IsType<RenderSourceLayerDrawObjectSnapshot>(Assert.Single(canvas.Objects));
+        return new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                Key = "source:camera",
+                SourceId = sourceId,
+                Consumers = ["source-layer:camera"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderSourceLayer,
+                Key = "source-layer:camera",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                DrawObjectId = sourceLayer.Id,
+                SourceId = sourceId,
+                Dependencies = ["source:camera"],
+                Consumers = ["canvas:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "canvas:program",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["source-layer:camera"],
+                Consumers = ["output:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "output:program",
+                OutputId = output.Id,
+                CanvasId = output.CanvasId,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["canvas:program"]
+            }
+        ]);
     }
 
     private static RenderFrameSnapshot CreateNestedCanvasSnapshot(

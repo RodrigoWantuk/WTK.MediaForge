@@ -170,6 +170,26 @@ internal sealed class PhysicalRenderGraphPlan
                 switch (drawObject)
                 {
                     case RenderSourceLayerDrawObjectSnapshot sourceLayer:
+                        if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Source, sourceLayer.SourceEffects).IsEmpty &&
+                            !operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
+                                operation.SourceId == sourceLayer.SourceId && operation.DrawObjectId is null))
+                        {
+                            throw new InvalidOperationException(
+                                $"Physical RenderGraph has no source-effect operation for source '{sourceLayer.SourceId}'.");
+                        }
+
+                        if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, sourceLayer.Effects).IsEmpty)
+                        {
+                            RequireExactlyOneOperation(
+                                operations,
+                                operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
+                                    operation.CanvasId == canvas.Id &&
+                                    operation.ResolvedCanvasKey == canvas.PhysicalKey &&
+                                    operation.DrawObjectId == sourceLayer.Id &&
+                                    operation.SourceId == sourceLayer.SourceId,
+                                $"enabled layer-effect stack for source layer '{sourceLayer.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+                        }
+
                         RequireExactlyOneOperation(
                             operations,
                             operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderSourceLayer &&
