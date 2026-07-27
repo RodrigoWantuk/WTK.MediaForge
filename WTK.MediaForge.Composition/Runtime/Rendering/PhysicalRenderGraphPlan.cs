@@ -150,54 +150,40 @@ internal sealed class PhysicalRenderGraphPlan
         }
 
         if (requireCompleteSnapshotCoverage)
-            ValidateSnapshotCoverage(snapshot.Canvases, Operations);
+            ValidateSnapshotCoverage(snapshot.Canvases, Operations, outputsById);
     }
 
     private static void ValidateSnapshotCoverage(
         IReadOnlyList<RenderCanvasSnapshot> rootCanvases,
-        IReadOnlyList<PhysicalRenderGraphOperation> operations)
+        IReadOnlyList<PhysicalRenderGraphOperation> operations,
+        IReadOnlyDictionary<WTK.MediaForge.Core.Identifiers.RenderOutputId, RenderOutputStateSnapshot> outputsById)
     {
+        var operationsByKey = operations.ToDictionary(static operation => operation.Key, StringComparer.Ordinal);
         foreach (var canvas in EnumerateCanvases(rootCanvases))
         {
-            if (!operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
-                operation.CanvasId == canvas.Id && operation.ResolvedCanvasKey == canvas.PhysicalKey))
+            var canvasOperations = operations
+                .Where(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
+                    operation.CanvasId == canvas.Id && operation.ResolvedCanvasKey == canvas.PhysicalKey)
+                .ToArray();
+            if (canvasOperations.Length == 0)
             {
                 continue;
             }
+
+            if (canvasOperations.Length != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Physical RenderGraph requires exactly one canvas operation for '{canvas.PhysicalKey.StableValue}'; found {canvasOperations.Length}.");
+            }
+
+            var canvasOperation = canvasOperations[0];
 
             foreach (var drawObject in canvas.Objects.Where(static drawObject => drawObject.Enabled))
             {
                 switch (drawObject)
                 {
                     case RenderSourceLayerDrawObjectSnapshot sourceLayer:
-                        if (!operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame &&
-                            operation.SourceId == sourceLayer.SourceId))
-                        {
-                            throw new InvalidOperationException(
-                                $"Physical RenderGraph has no source-acquisition operation for source '{sourceLayer.SourceId}'.");
-                        }
-
-                        if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Source, sourceLayer.SourceEffects).IsEmpty &&
-                            !operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
-                                operation.SourceId == sourceLayer.SourceId && operation.DrawObjectId is null))
-                        {
-                            throw new InvalidOperationException(
-                                $"Physical RenderGraph has no source-effect operation for source '{sourceLayer.SourceId}'.");
-                        }
-
-                        if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, sourceLayer.Effects).IsEmpty)
-                        {
-                            RequireExactlyOneOperation(
-                                operations,
-                                operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
-                                    operation.CanvasId == canvas.Id &&
-                                    operation.ResolvedCanvasKey == canvas.PhysicalKey &&
-                                    operation.DrawObjectId == sourceLayer.Id &&
-                                    operation.SourceId == sourceLayer.SourceId,
-                                $"enabled layer-effect stack for source layer '{sourceLayer.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
-                        }
-
-                        RequireExactlyOneOperation(
+                        var sourceOperation = RequireExactlyOneOperation(
                             operations,
                             operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderSourceLayer &&
                                 operation.CanvasId == canvas.Id &&
@@ -205,74 +191,250 @@ internal sealed class PhysicalRenderGraphPlan
                                 operation.DrawObjectId == sourceLayer.Id &&
                                 operation.SourceId == sourceLayer.SourceId,
                             $"enabled source layer '{sourceLayer.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+
+                        if (!operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame &&
+                            operation.SourceId == sourceLayer.SourceId))
+                        {
+                            throw new InvalidOperationException(
+                                $"Physical RenderGraph has no source-acquisition operation for source '{sourceLayer.SourceId}'.");
+                        }
+
+                        if (!HasDependencyPath(
+                                sourceOperation,
+                                operationsByKey,
+                                operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame &&
+                                    operation.SourceId == sourceLayer.SourceId))
+                        {
+                            throw new InvalidOperationException(
+                                $"Physical source layer '{sourceLayer.Id}' does not depend on an acquisition for source '{sourceLayer.SourceId}'.");
+                        }
+
+                        if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Source, sourceLayer.SourceEffects).IsEmpty)
+                        {
+                            if (!operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
+                                operation.SourceId == sourceLayer.SourceId && operation.DrawObjectId is null))
+                            {
+                                throw new InvalidOperationException(
+                                    $"Physical RenderGraph has no source-effect operation for source '{sourceLayer.SourceId}'.");
+                            }
+
+                            var sourceEffectOperation = RequireExactlyOneOperation(
+                                operations,
+                                operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
+                                    operation.SourceId == sourceLayer.SourceId && operation.DrawObjectId is null,
+                                $"source-effect stack for source '{sourceLayer.SourceId}'");
+
+                            RequireDependencyPath(
+                                sourceEffectOperation,
+                                operationsByKey,
+                                operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame &&
+                                    operation.SourceId == sourceLayer.SourceId,
+                                $"Physical source-effect operation '{sourceEffectOperation.Key}' does not depend on its source acquisition.");
+                            RequireDependencyPath(
+                                sourceOperation,
+                                operationsByKey,
+                                operation => ReferenceEquals(operation, sourceEffectOperation),
+                                $"Physical source layer '{sourceLayer.Id}' does not consume its source-effect operation.");
+                        }
+
+                        if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, sourceLayer.Effects).IsEmpty)
+                        {
+                            var layerEffectOperation = RequireExactlyOneOperation(
+                                operations,
+                                operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
+                                    operation.CanvasId == canvas.Id &&
+                                    operation.ResolvedCanvasKey == canvas.PhysicalKey &&
+                                    operation.DrawObjectId == sourceLayer.Id &&
+                                    operation.SourceId == sourceLayer.SourceId,
+                                $"enabled layer-effect stack for source layer '{sourceLayer.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+
+                            RequireDependencyPath(
+                                sourceOperation,
+                                operationsByKey,
+                                operation => ReferenceEquals(operation, layerEffectOperation),
+                                $"Physical source layer '{sourceLayer.Id}' does not consume its layer-effect operation.");
+                        }
+
+                        RequireDependencyPath(
+                            canvasOperation,
+                            operationsByKey,
+                            operation => ReferenceEquals(operation, sourceOperation),
+                            $"Physical canvas '{canvas.PhysicalKey.StableValue}' does not consume source layer '{sourceLayer.Id}'.");
                         break;
 
                     case RenderTextDrawObjectSnapshot or RenderSolidDrawObjectSnapshot:
-                        RequireExactlyOneOperation(
+                        var primitiveOperation = RequireExactlyOneOperation(
                             operations,
                             operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderPrimitiveLayer &&
                                 operation.CanvasId == canvas.Id &&
                                 operation.ResolvedCanvasKey == canvas.PhysicalKey &&
                                 operation.DrawObjectId == drawObject.Id,
                             $"enabled primitive layer '{drawObject.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+                        RequireDependencyPath(
+                            canvasOperation,
+                            operationsByKey,
+                            operation => ReferenceEquals(operation, primitiveOperation),
+                            $"Physical canvas '{canvas.PhysicalKey.StableValue}' does not consume primitive layer '{drawObject.Id}'.");
                         break;
 
                     case RenderAdjustmentLayerDrawObjectSnapshot adjustment when
                         !EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, adjustment.Effects).IsEmpty:
-                        RequireExactlyOneOperation(
+                        var adjustmentOperation = RequireExactlyOneOperation(
                             operations,
                             operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderAdjustmentLayer &&
                                 operation.CanvasId == canvas.Id &&
                                 operation.ResolvedCanvasKey == canvas.PhysicalKey &&
                                 operation.DrawObjectId == adjustment.Id,
                             $"enabled adjustment layer '{adjustment.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+                        RequireDependencyPath(
+                            canvasOperation,
+                            operationsByKey,
+                            operation => ReferenceEquals(operation, adjustmentOperation),
+                            $"Physical canvas '{canvas.PhysicalKey.StableValue}' does not consume adjustment layer '{adjustment.Id}'.");
                         break;
 
                     case RenderCanvasDrawObjectSnapshot nested:
                         var nestedKey = nested.NestedCanvas?.PhysicalKey ?? nested.NestedResolvedCanvasKey;
                         if (nestedKey is { IsEmpty: false } resolvedNestedKey)
                         {
-                            RequireExactlyOneOperation(
+                            var nestedLayerOperation = RequireExactlyOneOperation(
                                 operations,
                                 operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasLayer &&
                                     operation.CanvasId == canvas.Id &&
                                     operation.ResolvedCanvasKey == canvas.PhysicalKey &&
-                                    operation.DrawObjectId == nested.Id,
+                                operation.DrawObjectId == nested.Id,
                                 $"enabled nested canvas layer '{nested.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
 
-                            if (!operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
-                                operation.ResolvedCanvasKey == resolvedNestedKey))
-                            {
-                                throw new InvalidOperationException(
-                                    $"Physical RenderGraph has no canvas operation for enabled nested canvas '{resolvedNestedKey.StableValue}'.");
-                            }
+                            RequireDependencyPath(
+                                nestedLayerOperation,
+                                operationsByKey,
+                                operation => (operation.Kind is PhysicalRenderGraphOperationKind.RenderCanvas or PhysicalRenderGraphOperationKind.RenderCanvasEffect) &&
+                                    operation.ResolvedCanvasKey == resolvedNestedKey,
+                                $"Physical nested canvas layer '{nested.Id}' does not consume canvas '{resolvedNestedKey.StableValue}'.");
+                            RequireDependencyPath(
+                                canvasOperation,
+                                operationsByKey,
+                                operation => ReferenceEquals(operation, nestedLayerOperation),
+                                $"Physical canvas '{canvas.PhysicalKey.StableValue}' does not consume nested canvas layer '{nested.Id}'.");
                         }
 
                         break;
                 }
             }
 
-            if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Canvas, canvas.Effects).IsEmpty &&
-                !operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasEffect &&
-                    operation.CanvasId == canvas.Id && operation.ResolvedCanvasKey == canvas.PhysicalKey))
+            if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Canvas, canvas.Effects).IsEmpty)
             {
-                throw new InvalidOperationException(
-                    $"Physical RenderGraph has no canvas-effect operation for canvas '{canvas.PhysicalKey.StableValue}'.");
+                var canvasEffectOperation = RequireExactlyOneOperation(
+                    operations,
+                    operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasEffect &&
+                        operation.CanvasId == canvas.Id && operation.ResolvedCanvasKey == canvas.PhysicalKey,
+                    $"canvas-effect stack for canvas '{canvas.PhysicalKey.StableValue}'");
+                RequireDependencyPath(
+                    canvasEffectOperation,
+                    operationsByKey,
+                    operation => ReferenceEquals(operation, canvasOperation),
+                    $"Physical canvas-effect operation '{canvasEffectOperation.Key}' does not consume canvas '{canvas.PhysicalKey.StableValue}'.");
             }
         }
+
+        ValidateOutputDependencyPaths(operations, operationsByKey, rootCanvases, outputsById);
     }
 
-    private static void RequireExactlyOneOperation(
+    private static PhysicalRenderGraphOperation RequireExactlyOneOperation(
         IReadOnlyList<PhysicalRenderGraphOperation> operations,
         Func<PhysicalRenderGraphOperation, bool> predicate,
         string owner)
     {
-        var count = operations.Count(predicate);
-        if (count == 1)
-            return;
+        var matches = operations.Where(predicate).Take(2).ToArray();
+        if (matches.Length == 1)
+            return matches[0];
 
         throw new InvalidOperationException(
-            $"Physical RenderGraph requires exactly one operation for {owner}; found {count}.");
+            $"Physical RenderGraph requires exactly one operation for {owner}; found {matches.Length}.");
+    }
+
+    private static void ValidateOutputDependencyPaths(
+        IReadOnlyList<PhysicalRenderGraphOperation> operations,
+        IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey,
+        IReadOnlyList<RenderCanvasSnapshot> rootCanvases,
+        IReadOnlyDictionary<WTK.MediaForge.Core.Identifiers.RenderOutputId, RenderOutputStateSnapshot> outputsById)
+    {
+        foreach (var outputOperation in operations.Where(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput))
+        {
+            if (outputOperation.OutputId is not { } outputId || !outputsById.TryGetValue(outputId, out var output))
+                continue;
+
+            var expectedCanvasKey = ResolveOutputCanvasKey(output, rootCanvases);
+            if (output.RouteTransitionKind == WTK.MediaForge.Composition.Outputs.OutputRouteTransitionKind.Cut)
+            {
+                RequireDependencyPath(
+                    outputOperation,
+                    operationsByKey,
+                    operation => (operation.Kind is PhysicalRenderGraphOperationKind.RenderCanvas or PhysicalRenderGraphOperationKind.RenderCanvasEffect) &&
+                        operation.ResolvedCanvasKey == expectedCanvasKey,
+                    $"Physical output '{outputId}' does not consume its resolved canvas '{expectedCanvasKey.StableValue}'.");
+                continue;
+            }
+
+            var transitionOperation = RequireExactlyOneOperation(
+                operations,
+                operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderOutputTransition && operation.OutputId == outputId,
+                $"transition for output '{outputId}'");
+            var previousCanvasKey = ResolvePreviousCanvasKey(
+                output,
+                output.PreviousCanvasId ?? throw new InvalidOperationException(
+                    $"Transition output '{outputId}' has no previous canvas identity."),
+                rootCanvases);
+            RequireDependencyPath(
+                transitionOperation,
+                operationsByKey,
+                operation => (operation.Kind is PhysicalRenderGraphOperationKind.RenderCanvas or PhysicalRenderGraphOperationKind.RenderCanvasEffect) &&
+                    operation.ResolvedCanvasKey == expectedCanvasKey,
+                $"Physical transition '{transitionOperation.Key}' does not consume its current canvas '{expectedCanvasKey.StableValue}'.");
+            RequireDependencyPath(
+                transitionOperation,
+                operationsByKey,
+                operation => (operation.Kind is PhysicalRenderGraphOperationKind.RenderCanvas or PhysicalRenderGraphOperationKind.RenderCanvasEffect) &&
+                    operation.ResolvedCanvasKey == previousCanvasKey,
+                $"Physical transition '{transitionOperation.Key}' does not consume its previous canvas '{previousCanvasKey.StableValue}'.");
+            RequireDependencyPath(
+                outputOperation,
+                operationsByKey,
+                operation => ReferenceEquals(operation, transitionOperation),
+                $"Physical output '{outputId}' does not consume its transition operation.");
+        }
+    }
+
+    private static void RequireDependencyPath(
+        PhysicalRenderGraphOperation consumer,
+        IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey,
+        Func<PhysicalRenderGraphOperation, bool> predicate,
+        string failureMessage)
+    {
+        if (!HasDependencyPath(consumer, operationsByKey, predicate))
+            throw new InvalidOperationException(failureMessage);
+    }
+
+    private static bool HasDependencyPath(
+        PhysicalRenderGraphOperation consumer,
+        IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey,
+        Func<PhysicalRenderGraphOperation, bool> predicate)
+    {
+        var pending = new Stack<string>(consumer.Dependencies.Reverse());
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (pending.TryPop(out var key))
+        {
+            if (!visited.Add(key) || !operationsByKey.TryGetValue(key, out var operation))
+                continue;
+
+            if (predicate(operation))
+                return true;
+
+            foreach (var dependency in operation.Dependencies.Reverse())
+                pending.Push(dependency);
+        }
+
+        return false;
     }
 
     private static IEnumerable<RenderCanvasSnapshot> EnumerateCanvases(

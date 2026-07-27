@@ -358,6 +358,117 @@ public sealed class PhysicalRenderGraphPlanValidationTests
     }
 
     [Fact]
+    public void Plan_rejects_source_layer_disconnected_from_its_source_acquisition()
+    {
+        using var snapshot = CreateSourceSnapshot(out var sourceId);
+        var canvas = snapshot.Canvases.Single();
+        var output = snapshot.Outputs.Single();
+        var sourceLayer = Assert.IsType<RenderSourceLayerDrawObjectSnapshot>(Assert.Single(canvas.Objects));
+        var plan = new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                Key = "source:camera",
+                SourceId = sourceId,
+                Consumers = ["canvas:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
+                Key = "effect:disconnected",
+                SourceId = sourceId,
+                Consumers = ["source-layer:camera"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderSourceLayer,
+                Key = "source-layer:camera",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                DrawObjectId = sourceLayer.Id,
+                SourceId = sourceId,
+                Dependencies = ["effect:disconnected"],
+                Consumers = ["canvas:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "canvas:program",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["source:camera", "source-layer:camera"],
+                Consumers = ["output:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "output:program",
+                OutputId = output.Id,
+                CanvasId = output.CanvasId,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["canvas:program"]
+            }
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("does not depend on an acquisition", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Plan_rejects_canvas_disconnected_from_its_physical_source_layer()
+    {
+        using var snapshot = CreateSourceSnapshot(out var sourceId);
+        var canvas = snapshot.Canvases.Single();
+        var output = snapshot.Outputs.Single();
+        var sourceLayer = Assert.IsType<RenderSourceLayerDrawObjectSnapshot>(Assert.Single(canvas.Objects));
+        var plan = new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                Key = "source:camera",
+                SourceId = sourceId,
+                Consumers = ["source-layer:camera", "canvas:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderSourceLayer,
+                Key = "source-layer:camera",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                DrawObjectId = sourceLayer.Id,
+                SourceId = sourceId,
+                Dependencies = ["source:camera"],
+                Consumers = ["output:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "canvas:program",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["source:camera"],
+                Consumers = ["output:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "output:program",
+                OutputId = output.Id,
+                CanvasId = output.CanvasId,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["canvas:program", "source-layer:camera"]
+            }
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("does not consume source layer", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Plan_rejects_enabled_nested_canvas_without_an_explicit_physical_layer_pass()
     {
         using var snapshot = CreateNestedCanvasSnapshot(out var parent, out var child, out var output);
