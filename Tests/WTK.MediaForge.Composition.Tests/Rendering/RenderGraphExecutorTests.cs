@@ -193,6 +193,7 @@ public sealed class RenderGraphExecutorTests
 
         Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.AcquireSourceFrame));
         Assert.Equal(2, physical.Count(PhysicalRenderGraphOperationKind.RenderEffectIntermediate));
+        Assert.Equal(2, physical.Count(PhysicalRenderGraphOperationKind.RenderSourceLayer));
         Assert.Equal(2, physical.Count(PhysicalRenderGraphOperationKind.RenderCanvas));
         Assert.Equal(3, physical.Count(PhysicalRenderGraphOperationKind.RenderOutput));
         Assert.Equal(1, physical.Count(PhysicalRenderGraphOperationKind.FanOutRenderedOutput));
@@ -460,6 +461,63 @@ public sealed class RenderGraphExecutorTests
     }
 
     [Fact]
+    public void Source_layer_has_a_distinct_physical_operation_after_its_effect_chain()
+    {
+        var sourceId = SourceId.New();
+        var drawObjectId = DrawObjectId.New();
+        var outputId = RenderOutputId.New();
+        var canvasId = CanvasId.New();
+        var snapshot = new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 14,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Layer scene",
+                    Size = new FrameSize(1920, 1080),
+                    Objects =
+                    [
+                        new RenderSourceLayerDrawObjectSnapshot
+                        {
+                            Id = drawObjectId,
+                            Name = "Layer",
+                            SourceId = sourceId,
+                            Transform = new Transform2D { Size = new CanvasSize(1920, 1080) },
+                            Effects =
+                            [
+                                new BlurEffectSnapshot { Id = EffectId.New(), Name = "Blur", Radius = 6f }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Program",
+                    CanvasId = canvasId,
+                    OutputSize = new FrameSize(1920, 1080)
+                }
+            ]
+        };
+
+        var physical = MediaForgeRenderGraphCompiler.Compile(snapshot).PhysicalPlan;
+        var effect = Assert.Single(physical.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate);
+        var sourceLayer = Assert.Single(physical.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderSourceLayer);
+
+        Assert.Equal(canvasId, sourceLayer.CanvasId);
+        Assert.Equal(sourceId, sourceLayer.SourceId);
+        Assert.Equal(drawObjectId, sourceLayer.DrawObjectId);
+        Assert.Equal([effect.Key], sourceLayer.Dependencies);
+    }
+
+    [Fact]
     public void Primitive_layer_canvas_executes_without_source_frame()
     {
         var outputId = RenderOutputId.New();
@@ -607,6 +665,36 @@ public sealed class RenderGraphExecutorTests
 
         Assert.True(context.NodeResults[outputKey].WasSkipped);
         Assert.Contains("renderable", context.NodeResults[outputKey].FailureReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Production_submission_rejects_a_skipped_physical_operation()
+    {
+        var sourceId = SourceId.New();
+        var operation = new PhysicalRenderGraphOperation
+        {
+            Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+            Key = "source:missing",
+            SourceId = sourceId
+        };
+        var result = new RenderGraphExecutionResult(
+            executedNodeKeys: [],
+            skippedNodeKeys: [operation.Key],
+            nodeResults: new Dictionary<string, RenderGraphNodeResult>(StringComparer.Ordinal)
+            {
+                [operation.Key] = new RenderGraphNodeResult
+                {
+                    NodeKey = operation.Key,
+                    Kind = RenderGraphNodeKind.Source,
+                    WasSkipped = true,
+                    FailureReason = "Source frame is unavailable."
+                }
+            },
+            physicalPlan: new PhysicalRenderGraphPlan([operation]));
+
+        var exception = Assert.Throws<InvalidOperationException>(result.ValidateForProductionSubmission);
+
+        Assert.Contains("was skipped", exception.Message, StringComparison.Ordinal);
     }
 
     private static IReadOnlyDictionary<SourceId, GpuFrameReference> CreateSourceFrames(SourceId sourceId) =>

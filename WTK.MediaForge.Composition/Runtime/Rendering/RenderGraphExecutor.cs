@@ -21,6 +21,35 @@ internal sealed class RenderGraphExecutionResult
     public IReadOnlyDictionary<string, RenderGraphNodeResult> NodeResults { get; }
 
     public PhysicalRenderGraphPlan PhysicalPlan { get; }
+
+    /// <summary>
+    /// Ensures that the logical execution that produced this physical plan did not omit an
+    /// operation. Production backends call this before importing resources or recording Vulkan.
+    /// </summary>
+    public void ValidateForProductionSubmission()
+    {
+        foreach (var operation in PhysicalPlan.Operations)
+        {
+            if (operation.Kind is PhysicalRenderGraphOperationKind.FanOutRenderedOutput or
+                PhysicalRenderGraphOperationKind.DispatchEncodedOutput)
+            {
+                continue;
+            }
+
+            if (!NodeResults.TryGetValue(operation.Key, out var nodeResult))
+            {
+                throw new InvalidOperationException(
+                    $"Physical RenderGraph operation '{operation.Key}' has no logical execution result.");
+            }
+
+            if (nodeResult.WasSkipped)
+            {
+                throw new InvalidOperationException(
+                    $"Physical RenderGraph operation '{operation.Key}' was skipped and cannot be submitted." +
+                    (string.IsNullOrWhiteSpace(nodeResult.FailureReason) ? string.Empty : $" {nodeResult.FailureReason}"));
+            }
+        }
+    }
 }
 
 internal static class RenderGraphExecutor

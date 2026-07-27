@@ -119,19 +119,24 @@ internal static class MediaForgeRenderGraphCompiler
                         var enabledEffects = GetEnabledEffects(sourceLayer);
                         if (enabledEffects.Count > 0)
                         {
-                            dependencies.Add(AddNode(
+                            dependency = AddNode(
                                 MediaForgeRenderGraphNodeKind.LayerEffectChain,
                                 CreateLayerEffectKey(canvas, sourceLayer, enabledEffects),
                                 sourceLayer.Name,
                                 [dependency],
                                 canvasId: canvas.Id,
                                 sourceId: sourceLayer.SourceId,
-                                drawObjectId: sourceLayer.Id));
+                                drawObjectId: sourceLayer.Id);
                         }
-                        else
-                        {
-                            dependencies.Add(dependency);
-                        }
+
+                        dependencies.Add(AddNode(
+                            MediaForgeRenderGraphNodeKind.SourceLayer,
+                            CreateSourceLayerKey(canvas, sourceLayer, dependency),
+                            sourceLayer.Name,
+                            [dependency],
+                            canvasId: canvas.Id,
+                            sourceId: sourceLayer.SourceId,
+                            drawObjectId: sourceLayer.Id));
 
                         break;
 
@@ -336,8 +341,9 @@ internal static class MediaForgeRenderGraphCompiler
                         }
 
                         var enabledEffects = GetEnabledEffects(sourceLayer);
-                        dependencies.Add(enabledEffects.Count > 0
-                            ? AddNode(
+                        if (enabledEffects.Count > 0)
+                        {
+                            dependency = AddNode(
                                 MediaForgeRenderGraphNodeKind.LayerEffectChain,
                                 $"{CreateLayerEffectKey(canvas, sourceLayer, enabledEffects)}:input:{dependency}",
                                 sourceLayer.Name,
@@ -345,8 +351,18 @@ internal static class MediaForgeRenderGraphCompiler
                                 canvasId: canvas.Id,
                                 resolvedCanvasKey: canvas.PhysicalKey,
                                 sourceId: sourceLayer.SourceId,
-                                drawObjectId: sourceLayer.Id)
-                            : dependency);
+                                drawObjectId: sourceLayer.Id);
+                        }
+
+                        dependencies.Add(AddNode(
+                            MediaForgeRenderGraphNodeKind.SourceLayer,
+                            CreateSourceLayerKey(canvas, sourceLayer, dependency),
+                            sourceLayer.Name,
+                            [dependency],
+                            canvasId: canvas.Id,
+                            resolvedCanvasKey: canvas.PhysicalKey,
+                            sourceId: sourceLayer.SourceId,
+                            drawObjectId: sourceLayer.Id));
                         break;
 
                     case RenderCanvasDrawObjectSnapshot nested when nested.NestedCanvas is not null:
@@ -543,6 +559,18 @@ internal static class MediaForgeRenderGraphCompiler
         var effectHash = HashEffects(effects);
         return $"layer-effect:{sourceLayer.SourceId}:canvas:{canvas.PhysicalKey.StableValue}:draw:{sourceLayer.Id}:local-size:{ResolveLocalLayerSize(sourceLayer.Transform)}:placement:{HashSourceEffectPlacement(canvas, sourceLayer)}:effects:{effectHash}";
     }
+
+    private static string CreateSourceLayerKey(
+        CanvasStateSnapshot canvas,
+        SourceLayerDrawObjectSnapshot sourceLayer,
+        string inputKey) =>
+        $"source-layer:{sourceLayer.SourceId}:canvas:{canvas.Id}:draw:{sourceLayer.Id}:state:{DrawObjectVisualStateFingerprint.Create(sourceLayer)}:input:{inputKey}";
+
+    private static string CreateSourceLayerKey(
+        RenderCanvasSnapshot canvas,
+        RenderSourceLayerDrawObjectSnapshot sourceLayer,
+        string inputKey) =>
+        $"source-layer:{sourceLayer.SourceId}:canvas:{canvas.PhysicalKey.StableValue}:draw:{sourceLayer.Id}:state:{DrawObjectVisualStateFingerprint.Create(sourceLayer)}:input:{inputKey}";
 
     private static string ResolveLocalLayerSize(WTK.MediaForge.Core.Geometry.Transform2D transform) =>
         $"{Math.Max(1, (uint)Math.Ceiling(transform.Size.Width))}x{Math.Max(1, (uint)Math.Ceiling(transform.Size.Height))}";

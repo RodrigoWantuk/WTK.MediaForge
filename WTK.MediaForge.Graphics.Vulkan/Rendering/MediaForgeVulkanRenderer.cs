@@ -504,7 +504,12 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
     private PhysicalRenderGraphPlan ResolvePhysicalPlan(RenderFrameSnapshot snapshot)
     {
         if (snapshot.RenderGraphExecution is { } execution)
+        {
+            if (!_allowUnplannedSnapshotsForTests)
+                execution.ValidateForProductionSubmission();
+
             return execution.PhysicalPlan;
+        }
 
         if (!_allowUnplannedSnapshotsForTests)
         {

@@ -6,6 +6,7 @@ internal enum PhysicalRenderGraphOperationKind
 {
     AcquireSourceFrame,
     RenderEffectIntermediate,
+    RenderSourceLayer,
     RenderPrimitiveLayer,
     RenderCanvas,
     RenderCanvasEffect,
@@ -293,6 +294,21 @@ internal sealed class PhysicalRenderGraphPlan
 
                 break;
 
+            case PhysicalRenderGraphOperationKind.RenderSourceLayer:
+                if (operation.CanvasId is not { } sourceLayerCanvasId || !canvasIds.Contains(sourceLayerCanvasId) ||
+                    operation.ResolvedCanvasKey is not { } sourceLayerResolvedCanvasKey || !resolvedCanvasKeys.Contains(sourceLayerResolvedCanvasKey) ||
+                    operation.DrawObjectId is not { } sourceLayerDrawObjectId ||
+                    operation.SourceId is not { } sourceLayerSourceId || !sourceIds.Contains(sourceLayerSourceId) ||
+                    !drawObjects.TryGetValue((sourceLayerResolvedCanvasKey, sourceLayerDrawObjectId), out var sourceLayerDrawObject) ||
+                    sourceLayerDrawObject is not RenderSourceLayerDrawObjectSnapshot renderedSourceLayer ||
+                    renderedSourceLayer.SourceId != sourceLayerSourceId)
+                {
+                    throw new InvalidOperationException(
+                        $"Physical source layer pass '{operation.Key}' must identify its canvas, resolved canvas, source and draw object.");
+                }
+
+                break;
+
             case PhysicalRenderGraphOperationKind.RenderEffectIntermediate:
                 if (operation.SourceId is not { } effectSourceId || !sourceIds.Contains(effectSourceId) ||
                     operation.DrawObjectId is { } effectDrawObjectId &&
@@ -441,6 +457,7 @@ internal sealed class PhysicalRenderGraphPlan
 internal sealed record PhysicalRenderGraphStatistics(
     int SourceAcquirePasses,
     int EffectIntermediatePasses,
+    int SourceLayerPasses,
     int PrimitiveLayerPasses,
     int CanvasPasses,
     int CanvasEffectPasses,
@@ -468,6 +485,7 @@ internal sealed record PhysicalRenderGraphStatistics(
         return new PhysicalRenderGraphStatistics(
             SourceAcquirePasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame),
             EffectIntermediatePasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate),
+            SourceLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderSourceLayer),
             PrimitiveLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderPrimitiveLayer),
             CanvasPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas),
             CanvasEffectPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasEffect),
@@ -638,6 +656,7 @@ internal static class PhysicalRenderGraphPlanner
             MediaForgeRenderGraphNodeKind.SourceFrame => PhysicalRenderGraphOperationKind.AcquireSourceFrame,
             MediaForgeRenderGraphNodeKind.SourceEffectChain => PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
             MediaForgeRenderGraphNodeKind.LayerEffectChain => PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
+            MediaForgeRenderGraphNodeKind.SourceLayer => PhysicalRenderGraphOperationKind.RenderSourceLayer,
             MediaForgeRenderGraphNodeKind.PrimitiveLayer => PhysicalRenderGraphOperationKind.RenderPrimitiveLayer,
             MediaForgeRenderGraphNodeKind.CanvasRender => PhysicalRenderGraphOperationKind.RenderCanvas,
             MediaForgeRenderGraphNodeKind.CanvasEffectChain => PhysicalRenderGraphOperationKind.RenderCanvasEffect,

@@ -5,10 +5,11 @@ internal enum MediaForgeRenderGraphNodeKind
     SourceFrame = 0,
     SourceEffectChain = 1,
     LayerEffectChain = 2,
-    PrimitiveLayer = 3,
-    CanvasRender = 4,
-    CanvasEffectChain = 5,
-    AdjustmentLayerCheckpoint = 6,
-    OutputTransition = 7,
-    OutputPass = 8
+    SourceLayer = 3,
+    PrimitiveLayer = 4,
+    CanvasRender = 5,
+    CanvasEffectChain = 6,
+    AdjustmentLayerCheckpoint = 7,
+    OutputTransition = 8,
+    OutputPass = 9
 }

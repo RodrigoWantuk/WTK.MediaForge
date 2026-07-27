@@ -63,7 +63,12 @@ public class RenderGraphCompilerTests
         Assert.Contains("resolution:1920x1080", sourceEffect.Key, StringComparison.Ordinal);
         Assert.Contains("color-space:Srgb", sourceEffect.Key, StringComparison.Ordinal);
         var canvas = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender);
-        Assert.Equal(2, canvas.Dependencies.Count(key => key == sourceEffect.Key));
+        var sourceLayers = graph.Nodes
+            .Where(node => node.Kind == MediaForgeRenderGraphNodeKind.SourceLayer)
+            .ToArray();
+        Assert.Equal(2, sourceLayers.Length);
+        Assert.All(sourceLayers, node => Assert.Equal([sourceEffect.Key], node.Dependencies));
+        Assert.Equal(2, canvas.Dependencies.Count(key => sourceLayers.Select(node => node.Key).Contains(key)));
     }
 
     [Fact]
@@ -193,10 +198,12 @@ public class RenderGraphCompilerTests
         var graph = MediaForgeRenderGraphCompiler.Compile(project);
         var sourceNode = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.SourceFrame);
         var effectNode = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.LayerEffectChain);
+        var sourceLayerNode = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.SourceLayer);
         var canvasNode = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender);
 
         Assert.Contains(sourceNode.Key, effectNode.Dependencies);
-        Assert.Contains(effectNode.Key, canvasNode.Dependencies);
+        Assert.Equal([effectNode.Key], sourceLayerNode.Dependencies);
+        Assert.Contains(sourceLayerNode.Key, canvasNode.Dependencies);
         Assert.DoesNotContain(sourceNode.Key, canvasNode.Dependencies);
     }
 
