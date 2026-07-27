@@ -499,7 +499,12 @@ public sealed class EncodedOutputPipelineTests
         var slow = new BlockingPacketConsumer();
         var fast = new RecordingPacketConsumer();
         router.RegisterConsumer(slow);
-        router.RegisterConsumer(fast);
+        router.RegisterConsumer(fast, new EncodedPacketConsumerOptions
+        {
+            BackpressurePolicy = EncodedPacketConsumerBackpressurePolicy.Backpressure,
+            RequiresLosslessDelivery = true,
+            DisplayName = "fast-lossless"
+        });
 
         var start = Environment.TickCount64;
         await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
@@ -619,6 +624,8 @@ public sealed class EncodedOutputPipelineTests
         await router.RoutePacketAsync(CreateSyntheticH264Packets(1).Single(), CancellationToken.None);
 
         await WaitForConditionAsync(() => fast.Packets.Count == 3, TimeSpan.FromSeconds(2));
+        var slowStatistics = router.GetConsumerStatistics().Single(statistics => statistics.DisplayName == "slow-drop");
+        Assert.Equal(1, slowStatistics.DroppedPackets);
         slow.Release();
     }
 
