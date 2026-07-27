@@ -298,6 +298,45 @@ public sealed class PhysicalRenderGraphPlanValidationTests
         Assert.Contains("enabled source layer", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Plan_rejects_enabled_nested_canvas_without_an_explicit_physical_layer_pass()
+    {
+        using var snapshot = CreateNestedCanvasSnapshot(out var parent, out var child, out var output);
+        var plan = new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "canvas:child",
+                CanvasId = child.Id,
+                ResolvedCanvasKey = child.PhysicalKey,
+                Consumers = ["canvas:parent"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "canvas:parent",
+                CanvasId = parent.Id,
+                ResolvedCanvasKey = parent.PhysicalKey,
+                Dependencies = ["canvas:child"],
+                Consumers = ["output:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "output:program",
+                OutputId = output.Id,
+                CanvasId = parent.Id,
+                ResolvedCanvasKey = parent.PhysicalKey,
+                Dependencies = ["canvas:parent"]
+            }
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("enabled nested canvas layer", exception.Message, StringComparison.Ordinal);
+    }
+
     private static RenderFrameSnapshot CreateSnapshot()
     {
         var canvasId = CanvasId.New();
@@ -408,6 +447,56 @@ public sealed class PhysicalRenderGraphPlanValidationTests
                     LetterboxColor = ColorRgba.Black
                 }
             ]
+        };
+    }
+
+    private static RenderFrameSnapshot CreateNestedCanvasSnapshot(
+        out RenderCanvasSnapshot parent,
+        out RenderCanvasSnapshot child,
+        out RenderOutputStateSnapshot output)
+    {
+        var parentId = CanvasId.New();
+        var childId = CanvasId.New();
+        var size = new FrameSize(1920, 1080);
+        child = new RenderCanvasSnapshot
+        {
+            Id = childId,
+            Name = "Child",
+            Size = size
+        };
+        parent = new RenderCanvasSnapshot
+        {
+            Id = parentId,
+            Name = "Program",
+            Size = size,
+            Objects =
+            [
+                new RenderCanvasDrawObjectSnapshot
+                {
+                    Id = DrawObjectId.New(),
+                    Name = "Child layer",
+                    NestedCanvasId = childId,
+                    NestedCanvas = child,
+                    NestedResolvedCanvasKey = child.PhysicalKey
+                }
+            ]
+        };
+        output = new RenderOutputStateSnapshot
+        {
+            Id = RenderOutputId.New(),
+            Name = "Program output",
+            TypeId = RenderOutputTypes.Offscreen,
+            CanvasId = parentId,
+            OutputSize = size,
+            CanvasLayoutMode = LayoutMode.Stretch,
+            LetterboxColor = ColorRgba.Black
+        };
+
+        return new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 3,
+            Canvases = [parent, child],
+            Outputs = [output]
         };
     }
 }

@@ -136,7 +136,8 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         RenderOutputStateSnapshot output,
         IReadOnlyDictionary<VulkanExternalTextureKey, VulkanD3D11TextureImport> importsByHandle,
         VulkanSubmissionResourceScope submissionResources,
-        IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null)
+        IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null,
+        IReadOnlySet<DrawObjectId>? physicalDrawObjectIds = null)
     {
         var canvasHandle = _intermediateTargetPool.Rent(canvas.PhysicalKey, canvas.Size);
         submissionResources.RetainOffscreenTarget(canvasHandle);
@@ -151,7 +152,8 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
             canvasTarget,
             submissionResources,
             depth: 0,
-            physicalBlurTargets);
+            physicalBlurTargets,
+            physicalDrawObjectIds);
         return RenderCanvasEffects(
             commandBuffer,
             canvas,
@@ -524,7 +526,8 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         VulkanOffscreenRenderTarget canvasTarget,
         VulkanSubmissionResourceScope submissionResources,
         int depth,
-        IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null)
+        IReadOnlyDictionary<DrawObjectId, VulkanOffscreenRenderTarget>? physicalBlurTargets = null,
+        IReadOnlySet<DrawObjectId>? physicalDrawObjectIds = null)
     {
         var nestedTargets = RenderNestedCanvasTargets(
             commandBuffer,
@@ -563,6 +566,9 @@ internal sealed unsafe class VulkanCompositionShaderPipelines : IDisposable
         {
             foreach (var drawObject in canvas.Objects)
             {
+                if (physicalDrawObjectIds is not null && !physicalDrawObjectIds.Contains(drawObject.Id))
+                    continue;
+
                 if (!drawObject.Enabled)
                 {
                     continue;

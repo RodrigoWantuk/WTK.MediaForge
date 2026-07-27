@@ -240,6 +240,12 @@ public class RenderGraphCompilerTests
         var graph = MediaForgeRenderGraphCompiler.Compile(project);
 
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.CanvasRender));
+        var nestedLayer = Assert.Single(graph.Nodes, node => node.Kind == MediaForgeRenderGraphNodeKind.CanvasLayer);
+        var nestedCanvas = Assert.Single(graph.Nodes, node =>
+            node.Kind == MediaForgeRenderGraphNodeKind.CanvasRender && node.CanvasId == reusable.Id);
+        Assert.Equal(program.Id, nestedLayer.CanvasId);
+        Assert.Equal([nestedCanvas.Key], nestedLayer.Dependencies);
+        Assert.Equal(1, graph.PhysicalPlan.Count(PhysicalRenderGraphOperationKind.RenderCanvasLayer));
         Assert.Equal(2, graph.Count(MediaForgeRenderGraphNodeKind.OutputPass));
     }
 

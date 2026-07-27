@@ -141,8 +141,17 @@ internal static class MediaForgeRenderGraphCompiler
                         break;
 
                     case CanvasDrawObjectSnapshot nested:
-                        dependencies.Add(AddCanvas(nested.NestedCanvasId, nested.VersionBinding, colorSpace));
+                    {
+                        var nestedCanvas = AddCanvas(nested.NestedCanvasId, nested.VersionBinding, colorSpace);
+                        dependencies.Add(AddNode(
+                            MediaForgeRenderGraphNodeKind.CanvasLayer,
+                            $"canvas-layer:{canvas.Id}:version:{versionKey}:draw:{nested.Id}:state:{HashPrimitive(nested)}:input:{nestedCanvas}",
+                            nested.Name,
+                            [nestedCanvas],
+                            canvasId: canvas.Id,
+                            drawObjectId: nested.Id));
                         break;
+                    }
 
                     case AdjustmentLayerDrawObjectSnapshot adjustment:
                         AddAdjustmentLayerCheckpoint(canvas, adjustment, colorSpace, dependencies);
@@ -366,12 +375,32 @@ internal static class MediaForgeRenderGraphCompiler
                         break;
 
                     case RenderCanvasDrawObjectSnapshot nested when nested.NestedCanvas is not null:
-                        dependencies.Add(AddCanvas(nested.NestedCanvas, colorSpace));
+                    {
+                        var nestedCanvas = AddCanvas(nested.NestedCanvas, colorSpace);
+                        dependencies.Add(AddNode(
+                            MediaForgeRenderGraphNodeKind.CanvasLayer,
+                            $"canvas-layer:{canvas.PhysicalKey.StableValue}:draw:{nested.Id}:state:{HashPrimitive(nested)}:input:{nestedCanvas}",
+                            nested.Name,
+                            [nestedCanvas],
+                            canvasId: canvas.Id,
+                            resolvedCanvasKey: canvas.PhysicalKey,
+                            drawObjectId: nested.Id));
                         break;
+                    }
 
                     case RenderCanvasDrawObjectSnapshot nested when nested.NestedResolvedCanvasKey is { } nestedKey:
-                        dependencies.Add(AddCanvas(nestedKey, colorSpace));
+                    {
+                        var nestedCanvas = AddCanvas(nestedKey, colorSpace);
+                        dependencies.Add(AddNode(
+                            MediaForgeRenderGraphNodeKind.CanvasLayer,
+                            $"canvas-layer:{canvas.PhysicalKey.StableValue}:draw:{nested.Id}:state:{HashPrimitive(nested)}:input:{nestedCanvas}",
+                            nested.Name,
+                            [nestedCanvas],
+                            canvasId: canvas.Id,
+                            resolvedCanvasKey: canvas.PhysicalKey,
+                            drawObjectId: nested.Id));
                         break;
+                    }
 
                     case RenderAdjustmentLayerDrawObjectSnapshot adjustment:
                         AddAdjustmentLayerCheckpoint(canvas, adjustment, colorSpace, dependencies);

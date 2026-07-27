@@ -5,17 +5,18 @@ using WTK.MediaForge.Composition.Snapshots;
 
 internal enum PhysicalRenderGraphOperationKind
 {
-    AcquireSourceFrame,
-    RenderEffectIntermediate,
-    RenderSourceLayer,
-    RenderPrimitiveLayer,
-    RenderCanvas,
-    RenderCanvasEffect,
-    RenderAdjustmentLayer,
-    RenderOutputTransition,
-    RenderOutput,
-    FanOutRenderedOutput,
-    DispatchEncodedOutput
+    AcquireSourceFrame = 0,
+    RenderEffectIntermediate = 1,
+    RenderSourceLayer = 2,
+    RenderPrimitiveLayer = 3,
+    RenderCanvas = 4,
+    RenderCanvasEffect = 5,
+    RenderAdjustmentLayer = 6,
+    RenderOutputTransition = 7,
+    RenderOutput = 8,
+    FanOutRenderedOutput = 9,
+    DispatchEncodedOutput = 10,
+    RenderCanvasLayer = 11
 }
 
 internal sealed class PhysicalRenderGraphOperation
@@ -202,12 +203,22 @@ internal sealed class PhysicalRenderGraphPlan
 
                     case RenderCanvasDrawObjectSnapshot nested:
                         var nestedKey = nested.NestedCanvas?.PhysicalKey ?? nested.NestedResolvedCanvasKey;
-                        if (nestedKey is { IsEmpty: false } resolvedNestedKey &&
-                            !operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
-                                operation.ResolvedCanvasKey == resolvedNestedKey))
+                        if (nestedKey is { IsEmpty: false } resolvedNestedKey)
                         {
-                            throw new InvalidOperationException(
-                                $"Physical RenderGraph has no canvas operation for enabled nested canvas '{resolvedNestedKey.StableValue}'.");
+                            RequireExactlyOneOperation(
+                                operations,
+                                operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasLayer &&
+                                    operation.CanvasId == canvas.Id &&
+                                    operation.ResolvedCanvasKey == canvas.PhysicalKey &&
+                                    operation.DrawObjectId == nested.Id,
+                                $"enabled nested canvas layer '{nested.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+
+                            if (!operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
+                                operation.ResolvedCanvasKey == resolvedNestedKey))
+                            {
+                                throw new InvalidOperationException(
+                                    $"Physical RenderGraph has no canvas operation for enabled nested canvas '{resolvedNestedKey.StableValue}'.");
+                            }
                         }
 
                         break;
@@ -404,6 +415,19 @@ internal sealed class PhysicalRenderGraphPlan
 
                 break;
 
+            case PhysicalRenderGraphOperationKind.RenderCanvasLayer:
+                if (operation.CanvasId is not { } canvasLayerCanvasId || !canvasIds.Contains(canvasLayerCanvasId) ||
+                    operation.ResolvedCanvasKey is not { } canvasLayerResolvedCanvasKey || !resolvedCanvasKeys.Contains(canvasLayerResolvedCanvasKey) ||
+                    operation.DrawObjectId is not { } canvasLayerDrawObjectId ||
+                    !drawObjects.TryGetValue((canvasLayerResolvedCanvasKey, canvasLayerDrawObjectId), out var canvasLayerDrawObject) ||
+                    canvasLayerDrawObject is not RenderCanvasDrawObjectSnapshot)
+                {
+                    throw new InvalidOperationException(
+                        $"Physical nested canvas layer pass '{operation.Key}' must identify its canvas, resolved canvas and draw object.");
+                }
+
+                break;
+
             case PhysicalRenderGraphOperationKind.RenderSourceLayer:
                 if (operation.CanvasId is not { } sourceLayerCanvasId || !canvasIds.Contains(sourceLayerCanvasId) ||
                     operation.ResolvedCanvasKey is not { } sourceLayerResolvedCanvasKey || !resolvedCanvasKeys.Contains(sourceLayerResolvedCanvasKey) ||
@@ -569,6 +593,7 @@ internal sealed record PhysicalRenderGraphStatistics(
     int EffectIntermediatePasses,
     int SourceLayerPasses,
     int PrimitiveLayerPasses,
+    int CanvasLayerPasses,
     int CanvasPasses,
     int CanvasEffectPasses,
     int AdjustmentLayerPasses,
@@ -597,6 +622,7 @@ internal sealed record PhysicalRenderGraphStatistics(
             EffectIntermediatePasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate),
             SourceLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderSourceLayer),
             PrimitiveLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderPrimitiveLayer),
+            CanvasLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasLayer),
             CanvasPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas),
             CanvasEffectPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasEffect),
             AdjustmentLayerPasses: operations.Count(static operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderAdjustmentLayer),
@@ -768,6 +794,7 @@ internal static class PhysicalRenderGraphPlanner
             MediaForgeRenderGraphNodeKind.LayerEffectChain => PhysicalRenderGraphOperationKind.RenderEffectIntermediate,
             MediaForgeRenderGraphNodeKind.SourceLayer => PhysicalRenderGraphOperationKind.RenderSourceLayer,
             MediaForgeRenderGraphNodeKind.PrimitiveLayer => PhysicalRenderGraphOperationKind.RenderPrimitiveLayer,
+            MediaForgeRenderGraphNodeKind.CanvasLayer => PhysicalRenderGraphOperationKind.RenderCanvasLayer,
             MediaForgeRenderGraphNodeKind.CanvasRender => PhysicalRenderGraphOperationKind.RenderCanvas,
             MediaForgeRenderGraphNodeKind.CanvasEffectChain => PhysicalRenderGraphOperationKind.RenderCanvasEffect,
             MediaForgeRenderGraphNodeKind.AdjustmentLayerCheckpoint => PhysicalRenderGraphOperationKind.RenderAdjustmentLayer,

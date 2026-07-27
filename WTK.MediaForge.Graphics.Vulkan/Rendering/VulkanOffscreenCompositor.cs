@@ -302,6 +302,10 @@ internal static class VulkanOffscreenCompositor
             submissionResources,
             operationsByKey,
             stats);
+        var physicalDrawObjectIds = CollectCanvasDrawObjectDependencies(
+            canvas,
+            canvasOperation,
+            operationsByKey);
 
         var target = pipelines.RenderCanvasToIntermediateTarget(
             commandBuffer,
@@ -309,7 +313,8 @@ internal static class VulkanOffscreenCompositor
             output,
             importsByHandle,
             submissionResources,
-            physicalBlurTargets);
+            physicalBlurTargets,
+            physicalDrawObjectIds);
 
         renderedCanvas = new RenderedCanvasTarget(target, canvas.Size);
         canvasCache.Add(cacheKey, renderedCanvas);
@@ -368,6 +373,32 @@ internal static class VulkanOffscreenCompositor
             foreach (var nestedDependency in dependency.Dependencies.Reverse())
                 pending.Push(nestedDependency);
         }
+    }
+
+    private static IReadOnlySet<DrawObjectId>? CollectCanvasDrawObjectDependencies(
+        RenderCanvasSnapshot canvas,
+        PhysicalRenderGraphOperation? canvasOperation,
+        IReadOnlyDictionary<string, PhysicalRenderGraphOperation> operationsByKey)
+    {
+        if (canvasOperation is null)
+            return null;
+
+        var drawObjectIds = CollectEffectDependencies(canvasOperation, operationsByKey)
+            .Where(static dependency => dependency.Kind is
+                PhysicalRenderGraphOperationKind.RenderSourceLayer or
+                PhysicalRenderGraphOperationKind.RenderPrimitiveLayer or
+                PhysicalRenderGraphOperationKind.RenderAdjustmentLayer or
+                PhysicalRenderGraphOperationKind.RenderCanvasLayer)
+            .Where(dependency => dependency.CanvasId == canvas.Id &&
+                dependency.ResolvedCanvasKey == canvas.PhysicalKey &&
+                dependency.DrawObjectId is not null)
+            .Select(static dependency => dependency.DrawObjectId!.Value)
+            .ToHashSet();
+
+        // Low-level renderer tests may deliberately supply a partial plan through the
+        // explicit low-level factory. Production plans cannot reach this branch for a
+        // non-empty canvas because ValidateFor requires complete physical coverage.
+        return drawObjectIds.Count == 0 ? null : drawObjectIds;
     }
 
     private static PhysicalRenderGraphOperation? ResolveCanvasOperation(

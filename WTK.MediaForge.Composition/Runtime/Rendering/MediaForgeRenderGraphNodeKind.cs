@@ -11,5 +11,6 @@ internal enum MediaForgeRenderGraphNodeKind
     CanvasEffectChain = 6,
     AdjustmentLayerCheckpoint = 7,
     OutputTransition = 8,
-    OutputPass = 9
+    OutputPass = 9,
+    CanvasLayer = 10
 }
