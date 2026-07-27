@@ -76,6 +76,46 @@ public class RenderFrameSnapshotGpuFramesTests
         }
     }
 
+    [Fact]
+    public void CollectD3D11SharedTextures_ignores_sources_without_a_physical_acquisition()
+    {
+        if (!TryCreateDevice(out var device))
+            return;
+
+        using (device)
+        using (var acquired = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, 64, 64))
+        using (var unplanned = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, 64, 64))
+        {
+            var acquiredFrame = ToFrame(acquired);
+            var unplannedFrame = ToFrame(unplanned);
+            var snapshot = new RenderFrameSnapshot
+            {
+                ProjectStateVersion = 1,
+                Canvases =
+                [
+                    new RenderCanvasSnapshot
+                    {
+                        Id = CanvasId.New(),
+                        Name = "Main",
+                        Size = acquired.TextureSize,
+                        Objects =
+                        [
+                            CreateLayer(acquiredFrame, "Acquired"),
+                            CreateLayer(unplannedFrame, "Unplanned")
+                        ]
+                    }
+                ]
+            };
+
+            var collected = RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(
+                snapshot,
+                new HashSet<SourceId> { acquiredFrame.SourceId });
+
+            var handle = Assert.Single(collected);
+            Assert.Same(acquired, handle);
+        }
+    }
+
     private static RenderFrameSnapshot CreateSnapshotWithHandles(
         D3D11SharedTextureFrameHandle first,
         D3D11SharedTextureFrameHandle second)

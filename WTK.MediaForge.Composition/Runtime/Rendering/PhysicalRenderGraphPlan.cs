@@ -170,6 +170,13 @@ internal sealed class PhysicalRenderGraphPlan
                 switch (drawObject)
                 {
                     case RenderSourceLayerDrawObjectSnapshot sourceLayer:
+                        if (!operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame &&
+                            operation.SourceId == sourceLayer.SourceId))
+                        {
+                            throw new InvalidOperationException(
+                                $"Physical RenderGraph has no source-acquisition operation for source '{sourceLayer.SourceId}'.");
+                        }
+
                         if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Source, sourceLayer.SourceEffects).IsEmpty &&
                             !operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderEffectIntermediate &&
                                 operation.SourceId == sourceLayer.SourceId && operation.DrawObjectId is null))

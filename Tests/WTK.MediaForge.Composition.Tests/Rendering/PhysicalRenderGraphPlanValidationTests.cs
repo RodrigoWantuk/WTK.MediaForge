@@ -314,6 +314,50 @@ public sealed class PhysicalRenderGraphPlanValidationTests
     }
 
     [Fact]
+    public void Plan_rejects_enabled_source_layer_without_an_explicit_source_acquisition()
+    {
+        using var snapshot = CreateSourceSnapshot(out var sourceId);
+        var canvas = snapshot.Canvases.Single();
+        var output = snapshot.Outputs.Single();
+        var sourceLayer = Assert.IsType<RenderSourceLayerDrawObjectSnapshot>(Assert.Single(canvas.Objects));
+        var plan = new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderSourceLayer,
+                Key = "source-layer:camera",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                DrawObjectId = sourceLayer.Id,
+                SourceId = sourceId,
+                Consumers = ["canvas:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "canvas:program",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["source-layer:camera"],
+                Consumers = ["output:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "output:program",
+                OutputId = output.Id,
+                CanvasId = output.CanvasId,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["canvas:program"]
+            }
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("no source-acquisition operation", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Plan_rejects_enabled_nested_canvas_without_an_explicit_physical_layer_pass()
     {
         using var snapshot = CreateNestedCanvasSnapshot(out var parent, out var child, out var output);
