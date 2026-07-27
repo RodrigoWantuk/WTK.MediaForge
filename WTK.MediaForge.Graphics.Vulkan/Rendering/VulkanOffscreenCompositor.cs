@@ -13,13 +13,20 @@ internal sealed record VulkanOffscreenCompositionResult(
     VulkanPhysicalCompositionStats Stats);
 
 internal sealed record VulkanPhysicalCompositionStats(
+    int PlannedSourceAcquirePasses,
+    int PlannedEffectIntermediatePasses,
+    int PlannedCanvasPasses,
+    int PlannedOutputPasses,
+    int PlannedEncodedOutputDispatches,
+    int PlannedFanOutGroups,
+    int ExternalTextureImports,
     int CanvasRenderPasses,
     int ReusedCanvasPasses,
     int OutputCompositePasses,
     int TransitionPasses,
     int EffectIntermediatePasses)
 {
-    public static VulkanPhysicalCompositionStats Empty { get; } = new(0, 0, 0, 0, 0);
+    public static VulkanPhysicalCompositionStats Empty { get; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 }
 
 internal static class VulkanOffscreenCompositor
@@ -49,7 +56,7 @@ internal static class VulkanOffscreenCompositor
             static operation => operation.Key,
             StringComparer.Ordinal);
         var canvasCache = new Dictionary<string, RenderedCanvasTarget>(StringComparer.Ordinal);
-        var stats = new PhysicalCompositionStatsBuilder();
+        var stats = new PhysicalCompositionStatsBuilder(physicalPlan.Statistics, textureLeases.Count);
 
         foreach (var operation in physicalPlan.Operations.Where(static operation =>
                      operation.Kind == PhysicalRenderGraphOperationKind.RenderOutput))
@@ -452,11 +459,21 @@ internal static class VulkanOffscreenCompositor
 
     private sealed class PhysicalCompositionStatsBuilder
     {
+        private readonly PhysicalRenderGraphStatistics _planned;
+        private readonly int _externalTextureImports;
         private int _canvasRenderPasses;
         private int _reusedCanvasPasses;
         private int _outputCompositePasses;
         private int _transitionPasses;
         private int _effectIntermediatePasses;
+
+        public PhysicalCompositionStatsBuilder(
+            PhysicalRenderGraphStatistics planned,
+            int externalTextureImports)
+        {
+            _planned = planned ?? throw new ArgumentNullException(nameof(planned));
+            _externalTextureImports = externalTextureImports;
+        }
 
         public void RecordCanvasRenderPass() => _canvasRenderPasses++;
 
@@ -469,6 +486,18 @@ internal static class VulkanOffscreenCompositor
         public void RecordEffectIntermediatePasses(int count) => _effectIntermediatePasses += count;
 
         public VulkanPhysicalCompositionStats Build() =>
-            new(_canvasRenderPasses, _reusedCanvasPasses, _outputCompositePasses, _transitionPasses, _effectIntermediatePasses);
+            new(
+                _planned.SourceAcquirePasses,
+                _planned.EffectIntermediatePasses,
+                _planned.CanvasPasses,
+                _planned.OutputPasses,
+                _planned.EncodedOutputDispatches,
+                _planned.FanOutGroups,
+                _externalTextureImports,
+                _canvasRenderPasses,
+                _reusedCanvasPasses,
+                _outputCompositePasses,
+                _transitionPasses,
+                _effectIntermediatePasses);
     }
 }

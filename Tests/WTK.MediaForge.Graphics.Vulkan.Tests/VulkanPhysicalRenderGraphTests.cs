@@ -86,6 +86,13 @@ public sealed class VulkanPhysicalRenderGraphTests
                 VulkanCompositionTestHarness.AssertPixelNear(halfPixel, expectedR: 0, expectedG: 204, expectedB: 51, expectedA: 255, tolerance: 3);
 
                 var stats = backend.LastPhysicalCompositionStatsForTests;
+                Assert.Equal(0, stats.PlannedSourceAcquirePasses);
+                Assert.Equal(0, stats.PlannedEffectIntermediatePasses);
+                Assert.Equal(1, stats.PlannedCanvasPasses);
+                Assert.Equal(2, stats.PlannedOutputPasses);
+                Assert.Equal(0, stats.PlannedEncodedOutputDispatches);
+                Assert.Equal(1, stats.PlannedFanOutGroups);
+                Assert.Equal(0, stats.ExternalTextureImports);
                 Assert.Equal(1, stats.CanvasRenderPasses);
                 Assert.Equal(1, stats.ReusedCanvasPasses);
                 Assert.Equal(2, stats.OutputCompositePasses);

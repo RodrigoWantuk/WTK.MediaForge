@@ -374,14 +374,9 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
         var physicalPlan = ResolvePhysicalPlan(snapshot);
         physicalPlan.ValidateFor(snapshot, requireCompleteSnapshotCoverage: !_allowUnplannedSnapshotsForTests);
 
-        var acquiredSourceIds = _allowUnplannedSnapshotsForTests
-            ? null
-            : physicalPlan.Operations
-                .Where(static operation => operation.Kind == PhysicalRenderGraphOperationKind.AcquireSourceFrame)
-                .Select(static operation => operation.SourceId)
-                .OfType<SourceId>()
-                .ToHashSet();
-        var handles = RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot, acquiredSourceIds);
+        var handles = _allowUnplannedSnapshotsForTests
+            ? RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot)
+            : RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot, physicalPlan.Operations);
 
         if (handles.Count > MaxExternalTextureImportsPerSubmit)
         {

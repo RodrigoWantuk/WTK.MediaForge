@@ -1,4 +1,5 @@
 using Vortice.DXGI;
+using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
@@ -109,11 +110,94 @@ public class RenderFrameSnapshotGpuFramesTests
 
             var collected = RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(
                 snapshot,
-                new HashSet<SourceId> { acquiredFrame.SourceId });
+                [
+                    new PhysicalRenderGraphOperation
+                    {
+                        Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                        Key = "source:acquired",
+                        SourceId = acquiredFrame.SourceId
+                    }
+                ]);
 
             var handle = Assert.Single(collected);
             Assert.Same(acquired, handle);
         }
+    }
+
+    [Fact]
+    public void Physical_source_acquisition_rejects_divergent_external_textures_for_one_source()
+    {
+        if (!TryCreateDevice(out var device))
+            return;
+
+        using (device)
+        using (var first = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, 64, 64))
+        using (var second = D3D11SharedTextureFactory.CreateSharedTexture(device.Device, 64, 64))
+        {
+            var sourceId = SourceId.New();
+            var firstFrame = ToFrame(first) with { SourceId = sourceId };
+            var secondFrame = ToFrame(second) with { SourceId = sourceId };
+            var snapshot = new RenderFrameSnapshot
+            {
+                ProjectStateVersion = 1,
+                Canvases =
+                [
+                    new RenderCanvasSnapshot
+                    {
+                        Id = CanvasId.New(),
+                        Name = "Main",
+                        Size = first.TextureSize,
+                        Objects =
+                        [
+                            CreateLayer(firstFrame, "First"),
+                            CreateLayer(secondFrame, "Second")
+                        ]
+                    }
+                ]
+            };
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(
+                    snapshot,
+                    [
+                        new PhysicalRenderGraphOperation
+                        {
+                            Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                            Key = "source:camera",
+                            SourceId = sourceId
+                        }
+                    ]));
+
+            Assert.Contains("resolved multiple external textures", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("source:camera", exception.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Physical_source_acquisition_rejects_duplicate_operations_for_one_source()
+    {
+        var sourceId = SourceId.New();
+        var snapshot = new RenderFrameSnapshot { ProjectStateVersion = 1 };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(
+                snapshot,
+                [
+                    new PhysicalRenderGraphOperation
+                    {
+                        Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                        Key = "source:first",
+                        SourceId = sourceId
+                    },
+                    new PhysicalRenderGraphOperation
+                    {
+                        Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                        Key = "source:second",
+                        SourceId = sourceId
+                    }
+                ]));
+
+        Assert.Contains("more than one source acquisition", exception.Message, StringComparison.Ordinal);
     }
 
     private static RenderFrameSnapshot CreateSnapshotWithHandles(
