@@ -1,5 +1,6 @@
 namespace WTK.MediaForge.Composition.Runtime.Rendering;
 
+using WTK.MediaForge.Composition.Effects;
 using WTK.MediaForge.Composition.Snapshots;
 
 internal enum PhysicalRenderGraphOperationKind
@@ -61,7 +62,7 @@ internal sealed class PhysicalRenderGraphPlan
     public int Count(PhysicalRenderGraphOperationKind kind) =>
         Operations.Count(operation => operation.Kind == kind);
 
-    public void ValidateFor(RenderFrameSnapshot snapshot)
+    public void ValidateFor(RenderFrameSnapshot snapshot, bool requireCompleteSnapshotCoverage = true)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
@@ -145,6 +146,115 @@ internal sealed class PhysicalRenderGraphPlan
             throw new InvalidOperationException(
                 $"Physical RenderGraph output operations do not match the render snapshot. " +
                 $"Missing=[{string.Join(", ", missing)}], Unexpected=[{string.Join(", ", unexpected)}].");
+        }
+
+        if (requireCompleteSnapshotCoverage)
+            ValidateSnapshotCoverage(snapshot.Canvases, Operations);
+    }
+
+    private static void ValidateSnapshotCoverage(
+        IReadOnlyList<RenderCanvasSnapshot> rootCanvases,
+        IReadOnlyList<PhysicalRenderGraphOperation> operations)
+    {
+        foreach (var canvas in EnumerateCanvases(rootCanvases))
+        {
+            if (!operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
+                operation.CanvasId == canvas.Id && operation.ResolvedCanvasKey == canvas.PhysicalKey))
+            {
+                continue;
+            }
+
+            foreach (var drawObject in canvas.Objects.Where(static drawObject => drawObject.Enabled))
+            {
+                switch (drawObject)
+                {
+                    case RenderSourceLayerDrawObjectSnapshot sourceLayer:
+                        RequireExactlyOneOperation(
+                            operations,
+                            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderSourceLayer &&
+                                operation.CanvasId == canvas.Id &&
+                                operation.ResolvedCanvasKey == canvas.PhysicalKey &&
+                                operation.DrawObjectId == sourceLayer.Id &&
+                                operation.SourceId == sourceLayer.SourceId,
+                            $"enabled source layer '{sourceLayer.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+                        break;
+
+                    case RenderTextDrawObjectSnapshot or RenderSolidDrawObjectSnapshot:
+                        RequireExactlyOneOperation(
+                            operations,
+                            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderPrimitiveLayer &&
+                                operation.CanvasId == canvas.Id &&
+                                operation.ResolvedCanvasKey == canvas.PhysicalKey &&
+                                operation.DrawObjectId == drawObject.Id,
+                            $"enabled primitive layer '{drawObject.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+                        break;
+
+                    case RenderAdjustmentLayerDrawObjectSnapshot adjustment when
+                        !EffectExecutionPlanner.Default.CreatePlan(EffectScope.Layer, adjustment.Effects).IsEmpty:
+                        RequireExactlyOneOperation(
+                            operations,
+                            operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderAdjustmentLayer &&
+                                operation.CanvasId == canvas.Id &&
+                                operation.ResolvedCanvasKey == canvas.PhysicalKey &&
+                                operation.DrawObjectId == adjustment.Id,
+                            $"enabled adjustment layer '{adjustment.Id}' on canvas '{canvas.PhysicalKey.StableValue}'");
+                        break;
+
+                    case RenderCanvasDrawObjectSnapshot nested:
+                        var nestedKey = nested.NestedCanvas?.PhysicalKey ?? nested.NestedResolvedCanvasKey;
+                        if (nestedKey is { IsEmpty: false } resolvedNestedKey &&
+                            !operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvas &&
+                                operation.ResolvedCanvasKey == resolvedNestedKey))
+                        {
+                            throw new InvalidOperationException(
+                                $"Physical RenderGraph has no canvas operation for enabled nested canvas '{resolvedNestedKey.StableValue}'.");
+                        }
+
+                        break;
+                }
+            }
+
+            if (!EffectExecutionPlanner.Default.CreatePlan(EffectScope.Canvas, canvas.Effects).IsEmpty &&
+                !operations.Any(operation => operation.Kind == PhysicalRenderGraphOperationKind.RenderCanvasEffect &&
+                    operation.CanvasId == canvas.Id && operation.ResolvedCanvasKey == canvas.PhysicalKey))
+            {
+                throw new InvalidOperationException(
+                    $"Physical RenderGraph has no canvas-effect operation for canvas '{canvas.PhysicalKey.StableValue}'.");
+            }
+        }
+    }
+
+    private static void RequireExactlyOneOperation(
+        IReadOnlyList<PhysicalRenderGraphOperation> operations,
+        Func<PhysicalRenderGraphOperation, bool> predicate,
+        string owner)
+    {
+        var count = operations.Count(predicate);
+        if (count == 1)
+            return;
+
+        throw new InvalidOperationException(
+            $"Physical RenderGraph requires exactly one operation for {owner}; found {count}.");
+    }
+
+    private static IEnumerable<RenderCanvasSnapshot> EnumerateCanvases(
+        IEnumerable<RenderCanvasSnapshot> rootCanvases)
+    {
+        var visited = new HashSet<ResolvedCanvasKey>();
+        var pending = new Stack<RenderCanvasSnapshot>(rootCanvases.Reverse());
+        while (pending.TryPop(out var canvas))
+        {
+            if (!visited.Add(canvas.PhysicalKey))
+                continue;
+
+            yield return canvas;
+            foreach (var nested in canvas.Objects
+                         .OfType<RenderCanvasDrawObjectSnapshot>()
+                         .Select(static drawObject => drawObject.NestedCanvas)
+                         .Where(static nestedCanvas => nestedCanvas is not null))
+            {
+                pending.Push(nested!);
+            }
         }
     }
 

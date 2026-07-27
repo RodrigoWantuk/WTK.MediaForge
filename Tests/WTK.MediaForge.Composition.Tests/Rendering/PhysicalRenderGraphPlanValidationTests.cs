@@ -258,6 +258,46 @@ public sealed class PhysicalRenderGraphPlanValidationTests
         Assert.Contains("source absent", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Plan_rejects_enabled_source_layer_without_an_explicit_physical_layer_pass()
+    {
+        using var snapshot = CreateSourceSnapshot(out var sourceId);
+        var canvas = snapshot.Canvases.Single();
+        var output = snapshot.Outputs.Single();
+        var plan = new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.AcquireSourceFrame,
+                Key = "source:camera",
+                SourceId = sourceId,
+                Consumers = ["canvas:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "canvas:program",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["source:camera"],
+                Consumers = ["output:program"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "output:program",
+                OutputId = output.Id,
+                CanvasId = output.CanvasId,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["canvas:program"]
+            }
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("enabled source layer", exception.Message, StringComparison.Ordinal);
+    }
+
     private static RenderFrameSnapshot CreateSnapshot()
     {
         var canvasId = CanvasId.New();
@@ -320,6 +360,49 @@ public sealed class PhysicalRenderGraphPlanValidationTests
                     CanvasId = canvasId,
                     PreviousCanvasId = canvasId,
                     RouteTransitionKind = OutputRouteTransitionKind.Fade,
+                    OutputSize = size,
+                    CanvasLayoutMode = LayoutMode.Stretch,
+                    LetterboxColor = ColorRgba.Black
+                }
+            ]
+        };
+    }
+
+    private static RenderFrameSnapshot CreateSourceSnapshot(out SourceId sourceId)
+    {
+        sourceId = SourceId.New();
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var size = new FrameSize(1920, 1080);
+        return new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 2,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Program",
+                    Size = size,
+                    Objects =
+                    [
+                        new RenderSourceLayerDrawObjectSnapshot
+                        {
+                            Id = DrawObjectId.New(),
+                            Name = "Camera",
+                            SourceId = sourceId
+                        }
+                    ]
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Program output",
+                    TypeId = RenderOutputTypes.Offscreen,
+                    CanvasId = canvasId,
                     OutputSize = size,
                     CanvasLayoutMode = LayoutMode.Stretch,
                     LetterboxColor = ColorRgba.Black
