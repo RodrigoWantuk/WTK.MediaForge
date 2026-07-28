@@ -140,6 +140,8 @@ internal sealed class PhysicalRenderGraphPlan
                 plannedOutputIds);
         }
 
+        ValidateOperationRelationships(operationIndexes);
+
         if (!plannedOutputIds.SetEquals(expectedOutputIds))
         {
             var missing = expectedOutputIds.Except(plannedOutputIds).Select(static id => id.ToString());
@@ -151,6 +153,41 @@ internal sealed class PhysicalRenderGraphPlan
 
         if (requireCompleteSnapshotCoverage)
             ValidateSnapshotCoverage(snapshot.Canvases, Operations, outputsById);
+    }
+
+    private void ValidateOperationRelationships(IReadOnlyDictionary<string, int> operationIndexes)
+    {
+        foreach (var operation in Operations)
+        {
+            switch (operation.Kind)
+            {
+                case PhysicalRenderGraphOperationKind.DispatchEncodedOutput:
+                    var dispatchDependency = Operations[operationIndexes[operation.Dependencies.Single()]];
+                    if (dispatchDependency.Kind != PhysicalRenderGraphOperationKind.RenderOutput ||
+                        dispatchDependency.OutputId != operation.OutputId ||
+                        dispatchDependency.OutputTypeId != operation.OutputTypeId)
+                    {
+                        throw new InvalidOperationException(
+                            $"Physical encoded dispatch '{operation.Key}' must consume its matching physical output pass.");
+                    }
+
+                    break;
+
+                case PhysicalRenderGraphOperationKind.FanOutRenderedOutput:
+                    foreach (var consumerKey in operation.Consumers)
+                    {
+                        var consumer = Operations[operationIndexes[consumerKey]];
+                        if (consumer.Kind is not (PhysicalRenderGraphOperationKind.RenderOutput or
+                            PhysicalRenderGraphOperationKind.RenderOutputTransition))
+                        {
+                            throw new InvalidOperationException(
+                                $"Physical output fanout '{operation.Key}' may only serve output or transition operations.");
+                        }
+                    }
+
+                    break;
+            }
+        }
     }
 
     private static void ValidateSnapshotCoverage(
@@ -711,8 +748,7 @@ internal sealed class PhysicalRenderGraphPlan
                       dispatchOutput.TypeId == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.RecordingMp4 ||
                       dispatchOutput.TypeId == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.StreamingRtmp ||
                       dispatchOutput.TypeId == global::WTK.MediaForge.Composition.Outputs.RenderOutputTypes.RemoteScene) ||
-                    operation.Dependencies.Count != 1 ||
-                    !operation.Dependencies[0].StartsWith("output:", StringComparison.Ordinal))
+                    operation.Dependencies.Count != 1)
                 {
                     throw new InvalidOperationException(
                         $"Physical encoded dispatch '{operation.Key}' must consume exactly one matching encoded output pass.");
@@ -725,10 +761,7 @@ internal sealed class PhysicalRenderGraphPlan
                     operation.ResolvedCanvasKey is not { } fanOutCanvasKey ||
                     !resolvedCanvasKeys.Contains(fanOutCanvasKey) ||
                     operation.Dependencies.Count != 1 ||
-                    operation.Consumers.Count < 2 ||
-                    operation.Consumers.Any(static consumer =>
-                        !consumer.StartsWith("output:", StringComparison.Ordinal) &&
-                        !consumer.StartsWith("transition:", StringComparison.Ordinal)))
+                    operation.Consumers.Count < 2)
                 {
                     throw new InvalidOperationException(
                         $"Physical output fanout '{operation.Key}' must own one resolved canvas and at least two output consumers.");
@@ -831,7 +864,11 @@ internal static class PhysicalRenderGraphPlanner
         ArgumentNullException.ThrowIfNull(plan);
 
         var logicalConsumers = BuildConsumerMap(plan.Nodes.Select(static node => (node.Key, node.Dependencies)));
-        var fanOutDefinitions = CreateFanOutDefinitions(plan, logicalConsumers);
+        var renderConsumerKeys = plan.Nodes
+            .Where(static node => node.Kind is MediaForgeRenderGraphNodeKind.OutputPass or MediaForgeRenderGraphNodeKind.OutputTransition)
+            .Select(static node => node.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        var fanOutDefinitions = CreateFanOutDefinitions(plan, logicalConsumers, renderConsumerKeys);
         var fanOutKeysByConsumerDependency = fanOutDefinitions
             .SelectMany(static definition => definition.Consumers.Select(
                 consumer => (Consumer: consumer, Dependency: definition.SourceKey, FanOutKey: definition.Key)))
@@ -886,7 +923,8 @@ internal static class PhysicalRenderGraphPlanner
 
     private static IReadOnlyList<FanOutDefinition> CreateFanOutDefinitions(
         MediaForgeRenderGraphPlan plan,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> consumers)
+        IReadOnlyDictionary<string, IReadOnlyList<string>> consumers,
+        IReadOnlySet<string> renderConsumerKeys)
     {
         return plan.Nodes
             .Where(static node => node.Kind is MediaForgeRenderGraphNodeKind.CanvasRender or MediaForgeRenderGraphNodeKind.CanvasEffectChain)
@@ -898,15 +936,11 @@ internal static class PhysicalRenderGraphPlanner
                 candidate.Canvas.CanvasId,
                 candidate.Canvas.ResolvedCanvasKey,
                 candidate.Consumers
-                .Where(IsRenderedCanvasConsumer)
+                .Where(renderConsumerKeys.Contains)
                 .ToArray()))
             .Where(static definition => definition.Consumers.Count > 1)
             .ToArray();
     }
-
-    private static bool IsRenderedCanvasConsumer(string consumer) =>
-        consumer.StartsWith("output:", StringComparison.Ordinal) ||
-        consumer.StartsWith("transition:", StringComparison.Ordinal);
 
     private sealed record FanOutDefinition(
         string SourceKey,

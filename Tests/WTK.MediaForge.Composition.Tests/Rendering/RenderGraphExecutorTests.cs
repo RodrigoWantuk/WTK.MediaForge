@@ -165,6 +165,64 @@ public sealed class RenderGraphExecutorTests
     }
 
     [Fact]
+    public void Source_execution_uses_declared_source_identity_instead_of_parsing_the_operation_key()
+    {
+        var sourceId = SourceId.New();
+        var plan = new MediaForgeRenderGraphPlan(
+        [
+            new MediaForgeRenderGraphNode
+            {
+                Kind = MediaForgeRenderGraphNodeKind.SourceFrame,
+                Key = "opaque-acquisition-operation",
+                SourceId = sourceId
+            }
+        ]);
+
+        var result = RenderGraphExecutor.Execute(
+            plan,
+            new RenderGraphContext
+            {
+                FrameContext = new FrameExecutionContext
+                {
+                    FrameId = 17,
+                    FrameBudget = TimeSpan.FromSeconds(1d / 60d)
+                },
+                SourceFrames = CreateSourceFrames(sourceId)
+            });
+
+        Assert.Equal(["opaque-acquisition-operation"], result.ExecutedNodeKeys);
+        Assert.Equal(sourceId, result.NodeResults["opaque-acquisition-operation"].SourceFrame?.SourceId);
+    }
+
+    [Fact]
+    public void Source_execution_rejects_an_operation_that_omits_its_declared_source_identity()
+    {
+        var plan = new MediaForgeRenderGraphPlan(
+        [
+            new MediaForgeRenderGraphNode
+            {
+                Kind = MediaForgeRenderGraphNodeKind.SourceFrame,
+                Key = "source:untrusted-key-content"
+            }
+        ]);
+
+        var result = RenderGraphExecutor.Execute(
+            plan,
+            new RenderGraphContext
+            {
+                FrameContext = new FrameExecutionContext
+                {
+                    FrameId = 18,
+                    FrameBudget = TimeSpan.FromSeconds(1d / 60d)
+                }
+            });
+
+        var nodeResult = Assert.Single(result.NodeResults.Values);
+        Assert.True(nodeResult.WasSkipped);
+        Assert.Contains("does not declare a source id", nodeResult.FailureReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Physical_plan_exposes_source_reuse_placement_dependent_effect_canvas_and_output_passes()
     {
         var project = MediaForgeProjectBuilder.Create()
@@ -216,6 +274,45 @@ public sealed class RenderGraphExecutorTests
             Assert.True(fanOutIndex < consumerIndex);
             Assert.Contains(fanOut.Key, physical.Operations[consumerIndex].Dependencies);
         }
+    }
+
+    [Fact]
+    public void Physical_planner_creates_fanout_for_typed_output_operations_with_opaque_keys()
+    {
+        var canvasId = CanvasId.New();
+        var plan = new MediaForgeRenderGraphPlan(
+        [
+            new MediaForgeRenderGraphNode
+            {
+                Kind = MediaForgeRenderGraphNodeKind.CanvasRender,
+                Key = "opaque-canvas-producer",
+                CanvasId = canvasId,
+                ResolvedCanvasKey = ResolvedCanvasKey.Unversioned(canvasId)
+            },
+            new MediaForgeRenderGraphNode
+            {
+                Kind = MediaForgeRenderGraphNodeKind.OutputPass,
+                Key = "opaque-output-a",
+                OutputId = RenderOutputId.New(),
+                CanvasId = canvasId,
+                ResolvedCanvasKey = ResolvedCanvasKey.Unversioned(canvasId),
+                Dependencies = ["opaque-canvas-producer"]
+            },
+            new MediaForgeRenderGraphNode
+            {
+                Kind = MediaForgeRenderGraphNodeKind.OutputPass,
+                Key = "opaque-output-b",
+                OutputId = RenderOutputId.New(),
+                CanvasId = canvasId,
+                ResolvedCanvasKey = ResolvedCanvasKey.Unversioned(canvasId),
+                Dependencies = ["opaque-canvas-producer"]
+            }
+        ]);
+
+        var fanOut = Assert.Single(plan.PhysicalPlan.Operations,
+            operation => operation.Kind == PhysicalRenderGraphOperationKind.FanOutRenderedOutput);
+
+        Assert.Equal(["opaque-output-a", "opaque-output-b"], fanOut.Consumers);
     }
 
     [Fact]

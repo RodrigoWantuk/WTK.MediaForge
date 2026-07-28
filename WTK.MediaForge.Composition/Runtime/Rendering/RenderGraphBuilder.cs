@@ -105,7 +105,7 @@ internal sealed class SourceRenderGraphNode : RenderGraphNode
             SceneSnapshot.HiddenLayerIds.Count > 0 &&
             !PlanNode.Dependencies.Any())
         {
-            var sourceId = ExtractSourceId(PlanNode.Key);
+            var sourceId = PlanNode.SourceId;
             if (sourceId is not null && IsSourceHidden(sourceId.Value))
             {
                 return new RenderGraphNodeResult
@@ -118,7 +118,7 @@ internal sealed class SourceRenderGraphNode : RenderGraphNode
             }
         }
 
-        var requiredSourceId = ExtractSourceId(PlanNode.Key);
+        var requiredSourceId = PlanNode.SourceId;
         if (requiredSourceId is null)
         {
             return new RenderGraphNodeResult
@@ -126,7 +126,7 @@ internal sealed class SourceRenderGraphNode : RenderGraphNode
                 NodeKey = Key,
                 Kind = Kind,
                 WasSkipped = true,
-                FailureReason = "Source node key does not contain a source id."
+                FailureReason = "Source node does not declare a source id."
             };
         }
 
@@ -164,17 +164,6 @@ internal sealed class SourceRenderGraphNode : RenderGraphNode
         return false;
     }
 
-    private static SourceId? ExtractSourceId(string key)
-    {
-        const string prefix = "source:";
-        if (!key.StartsWith(prefix, StringComparison.Ordinal))
-            return null;
-
-        var sourceIdText = key[prefix.Length..].Split(':', 2)[0];
-        return Guid.TryParse(sourceIdText, out var value)
-            ? SourceId.From(value)
-            : null;
-    }
 }
 
 internal sealed class TransformRenderGraphNode : RenderGraphNode

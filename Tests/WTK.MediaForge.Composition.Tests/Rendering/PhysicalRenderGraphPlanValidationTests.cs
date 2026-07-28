@@ -58,6 +58,47 @@ public sealed class PhysicalRenderGraphPlanValidationTests
     }
 
     [Fact]
+    public void Plan_rejects_encoded_dispatch_that_targets_a_non_output_operation_even_when_key_looks_like_an_output()
+    {
+        using var snapshot = CreateEncodedSnapshot();
+        var canvas = snapshot.Canvases.Single();
+        var output = snapshot.Outputs.Single();
+        var plan = new PhysicalRenderGraphPlan(
+        [
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderCanvas,
+                Key = "output:misleading-key",
+                CanvasId = canvas.Id,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Consumers = ["opaque-output", "opaque-dispatch"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.RenderOutput,
+                Key = "opaque-output",
+                OutputId = output.Id,
+                OutputTypeId = output.TypeId,
+                CanvasId = output.CanvasId,
+                ResolvedCanvasKey = canvas.PhysicalKey,
+                Dependencies = ["output:misleading-key"]
+            },
+            new PhysicalRenderGraphOperation
+            {
+                Kind = PhysicalRenderGraphOperationKind.DispatchEncodedOutput,
+                Key = "opaque-dispatch",
+                OutputId = output.Id,
+                OutputTypeId = RenderOutputTypes.RecordingMp4,
+                Dependencies = ["output:misleading-key"]
+            }
+        ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => plan.ValidateFor(snapshot));
+
+        Assert.Contains("matching physical output pass", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Plan_rejects_snapshot_output_without_exactly_one_physical_output_pass()
     {
         using var snapshot = CreateSnapshot();
@@ -558,6 +599,40 @@ public sealed class PhysicalRenderGraphPlanValidationTests
                     Id = outputId,
                     Name = "Program output",
                     TypeId = RenderOutputTypes.Offscreen,
+                    CanvasId = canvasId,
+                    OutputSize = size,
+                    CanvasLayoutMode = LayoutMode.Stretch,
+                    LetterboxColor = ColorRgba.Black
+                }
+            ]
+        };
+    }
+
+    private static RenderFrameSnapshot CreateEncodedSnapshot()
+    {
+        var canvasId = CanvasId.New();
+        var outputId = RenderOutputId.New();
+        var size = new FrameSize(1920, 1080);
+        return new RenderFrameSnapshot
+        {
+            ProjectStateVersion = 1,
+            Canvases =
+            [
+                new RenderCanvasSnapshot
+                {
+                    Id = canvasId,
+                    Name = "Program",
+                    Size = size,
+                    BackgroundColor = ColorRgba.Black
+                }
+            ],
+            Outputs =
+            [
+                new RenderOutputStateSnapshot
+                {
+                    Id = outputId,
+                    Name = "Recording output",
+                    TypeId = RenderOutputTypes.RecordingMp4,
                     CanvasId = canvasId,
                     OutputSize = size,
                     CanvasLayoutMode = LayoutMode.Stretch,
