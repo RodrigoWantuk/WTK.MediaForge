@@ -28,6 +28,10 @@ The 120-frame/2.5 ms option is represented by configuration but is not required
 from the first adapters. Native callback periods and graph quanta communicate
 through bounded buffers, never per-block allocation.
 
+Program Mix fan-out has one bounded pooled queue per route. Queue or pool
+pressure drops only the affected route block and increments diagnostics; it
+never blocks or faults the real-time callback or interrupts a healthy route.
+
 Every `AudioBlockLease` carries format, frame count, monotonic timestamp,
 duration, sequence number, discontinuity/silence flags, and explicit ownership.
 

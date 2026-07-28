@@ -225,6 +225,42 @@ public sealed class AudioGraphTests
     }
 
     [Fact]
+    public void Pool_exhaustion_drops_the_pressed_route_without_faulting_the_audio_callback()
+    {
+        var graph = CreateValidGraph();
+        var secondSink = new AudioSinkDefinition { Id = AudioSinkId.New(), Name = "Program monitor", Kind = AudioSinkKind.ProgramMix };
+        var secondRoute = new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = graph.Buses[0].Id, SinkId = secondSink.Id };
+        var thirdSink = new AudioSinkDefinition { Id = AudioSinkId.New(), Name = "Program archive", Kind = AudioSinkKind.ProgramMix };
+        var thirdRoute = new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = graph.Buses[0].Id, SinkId = thirdSink.Id };
+        var fourthSink = new AudioSinkDefinition { Id = AudioSinkId.New(), Name = "Program overflow", Kind = AudioSinkKind.ProgramMix };
+        var fourthRoute = new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = graph.Buses[0].Id, SinkId = fourthSink.Id };
+        graph.Sinks.Add(secondSink);
+        graph.Sinks.Add(thirdSink);
+        graph.Sinks.Add(fourthSink);
+        graph.OutputRoutes.Add(secondRoute);
+        graph.OutputRoutes.Add(thirdRoute);
+        graph.OutputRoutes.Add(fourthRoute);
+        var runtime = new AudioRuntime(new AudioBufferPool(maximumRetainedBlocks: 4), routeQueueCapacity: 2);
+        runtime.Publish(AudioGraphCompiler.Compile(graph));
+        runtime.Start();
+
+        var result = runtime.DispatchBus(graph.Buses[0].Id, new AudioTimestamp(0), 0);
+
+        Assert.Equal(new AudioRouteDispatchResult(4, 3, 1), result);
+        Assert.True(runtime.TryDequeueRoute(graph.OutputRoutes[0].Id, out var lease));
+        using (var dequeued = Assert.IsType<AudioBlockLease>(lease))
+            Assert.Equal(0, dequeued.Block.Sequence);
+        Assert.True(runtime.TryDequeueRoute(secondRoute.Id, out var secondLease));
+        Assert.True(runtime.TryDequeueRoute(thirdRoute.Id, out var thirdLease));
+        Assert.False(runtime.TryDequeueRoute(fourthRoute.Id, out _));
+        Assert.IsType<AudioBlockLease>(secondLease).Dispose();
+        Assert.IsType<AudioBlockLease>(thirdLease).Dispose();
+        Assert.Equal(1, runtime.GetHealth().DroppedRouteBlocks);
+        runtime.Stop();
+        Assert.Equal(0, runtime.GetHealth().RentedBlocks);
+    }
+
+    [Fact]
     public void Fixed_delay_returns_the_previous_quantum_without_retaining_leases()
     {
         var source = new AudioSourceDefinition { Id = AudioSourceId.New(), Kind = AudioSourceKind.GeneratedTone, ToneFrequencyHz = 1_000d };

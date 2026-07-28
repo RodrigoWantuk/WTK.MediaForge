@@ -60,12 +60,18 @@ public sealed class AudioSinkDispatcher
         var dropped = 0;
         foreach (var route in routes)
         {
-            var copy = bufferPool.RentPrepared(
+            if (!bufferPool.TryRentPrepared(
                 busBlock.Format,
                 quantum,
                 busBlock.Timestamp,
                 busBlock.Sequence,
-                busBlock.Flags);
+                out var copy,
+                busBlock.Flags))
+            {
+                route.RecordDrop();
+                dropped++;
+                continue;
+            }
             Copy(busBlock, copy.Block);
             if (route.TryEnqueue(copy))
             {

@@ -110,17 +110,39 @@ public sealed class AudioBufferPool
 
     public AudioBlockLease RentPrepared(AudioFormat format, AudioQuantum quantum, AudioTimestamp timestamp, long sequence, AudioBlockFlags flags = AudioBlockFlags.None)
     {
+        if (!TryRentPrepared(format, quantum, timestamp, sequence, out var lease, flags))
+            throw new InvalidOperationException("Audio buffer pool is bounded and exhausted.");
+        return lease;
+    }
+
+    /// <summary>
+    /// Attempts to rent an already prepared block without allocating or waiting.
+    /// The audio callback uses this form to turn bounded backpressure into an
+    /// explicit route drop instead of an exception.
+    /// </summary>
+    public bool TryRentPrepared(
+        AudioFormat format,
+        AudioQuantum quantum,
+        AudioTimestamp timestamp,
+        long sequence,
+        out AudioBlockLease lease,
+        AudioBlockFlags flags = AudioBlockFlags.None)
+    {
         if (_preparedFormat != format || _preparedQuantum != quantum)
             throw new InvalidOperationException("Audio buffer pool must be prepared before real-time processing.");
-        if (!_available.TryPop(out var lease))
-            throw new InvalidOperationException("Audio buffer pool is bounded and exhausted.");
+        if (!_available.TryPop(out var rentedLease))
+        {
+            lease = null!;
+            return false;
+        }
+        lease = rentedLease;
         var rented = Interlocked.Increment(ref _rentedBlocks);
         UpdateHighWaterMark(rented);
         lease.Block.Timestamp = timestamp;
         lease.Block.Sequence = sequence;
         lease.Block.Flags = flags;
         lease.Activate(this);
-        return lease;
+        return true;
     }
 
     internal void Return(AudioBlockLease lease)

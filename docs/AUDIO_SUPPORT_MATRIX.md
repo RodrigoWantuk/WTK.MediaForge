@@ -4,7 +4,7 @@
 |---|---:|---:|---|
 | Generated tone | Implemented | Implemented through pooled source-to-bus processing | Unavailable until runtime proof |
 | Silence source | Implemented | Implemented through pooled source-to-bus processing | Unavailable until runtime proof |
-| Memory Program Mix route | Implemented | Bounded pooled fan-out queue with explicit drops | Test/debug only; no physical or encoded sink |
+| Memory Program Mix route | Implemented | Bounded pooled fan-out queue with explicit queue/pool-pressure drops | Test/debug only; no physical or encoded sink |
 | Gain/mute/pan/polarity/mix/meter/fixed delay | Implemented | Implemented for deterministic bus processing | Unavailable until runtime proof |
 | Channel mapper | Declared | No | Unavailable until conversion semantics are implemented |
 | Physical input/loopback | Declared | No | Unavailable: platform adapter absent |
