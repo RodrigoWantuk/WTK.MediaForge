@@ -281,10 +281,11 @@ public sealed class StudioShellViewModel : ViewModelBase, IAsyncDisposable
 
     public StudioDocument Document => _document;
 
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    public async Task InitializeAsync(CancellationToken cancellationToken = default, bool startEngine = true)
     {
         await _sceneEditRuntimeService.SynchronizeProjectAsync(_document, cancellationToken).ConfigureAwait(false);
-        await _engineService.StartAsync(cancellationToken).ConfigureAwait(false);
+        if (startEngine)
+            await _engineService.StartAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()

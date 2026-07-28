@@ -2,13 +2,13 @@ using WTK.MediaForge.Composition.Engine;
 using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Composition.Project;
+using WTK.MediaForge.Composition.Runtime;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Core.Media;
 using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Studio.DocumentModel;
 using WTK.MediaForge.Studio.Engine;
 using WTK.MediaForge.Studio.Models;
-using WTK.MediaForge.Windows;
 
 namespace WTK.MediaForge.Studio.Services;
 
@@ -703,9 +703,13 @@ public sealed class RuntimeStudioOutputService : IStudioOutputService
 
 public sealed class RuntimeStudioCapabilityService : IStudioCapabilityService
 {
+    private readonly MediaForgeRuntime _runtime;
     private readonly object _gate = new();
     private IReadOnlyList<StudioCapabilityDescriptor> _sources = CreatePendingSources();
     private IReadOnlyList<StudioCapabilityDescriptor> _outputs = CreatePendingOutputs();
+
+    public RuntimeStudioCapabilityService(MediaForgeRuntime runtime) =>
+        _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
 
     public IReadOnlyList<StudioCapabilityDescriptor> GetSourceCapabilities()
     {
@@ -721,10 +725,7 @@ public sealed class RuntimeStudioCapabilityService : IStudioCapabilityService
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
-        if (!OperatingSystem.IsWindows())
-            return;
-
-        var snapshot = await MediaForgeWindows.GetCapabilitySnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = await _runtime.GetCapabilitySnapshotAsync(cancellationToken).ConfigureAwait(false);
         var sources = CreateSourceDescriptors(snapshot.Report);
         var outputs = CreateOutputDescriptors(snapshot.Report);
         lock (_gate)

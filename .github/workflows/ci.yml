@@ -164,6 +164,7 @@ jobs:
             WTK.MediaForge.Remote.WebRtc/WTK.MediaForge.Remote.WebRtc.csproj
             WTK.MediaForge.Remote.Signaling/WTK.MediaForge.Remote.Signaling.csproj
             WTK.MediaForge.Testing/WTK.MediaForge.Testing.csproj
+            WTK.MediaForge.Studio/WTK.MediaForge.Studio.csproj
           )
           for project in "${projects[@]}"; do
             echo "Restoring $project"
@@ -187,6 +188,7 @@ jobs:
             WTK.MediaForge.Remote.WebRtc/WTK.MediaForge.Remote.WebRtc.csproj
             WTK.MediaForge.Remote.Signaling/WTK.MediaForge.Remote.Signaling.csproj
             WTK.MediaForge.Testing/WTK.MediaForge.Testing.csproj
+            WTK.MediaForge.Studio/WTK.MediaForge.Studio.csproj
           )
           for project in "${projects[@]}"; do
             echo "Building $project"
@@ -208,6 +210,7 @@ jobs:
             Tests/WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
             Tests/WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
             Tests/WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
+            Tests/WTK.MediaForge.Studio.Tests/WTK.MediaForge.Studio.Tests.csproj
           )
           for project in "${tests[@]}"; do
             echo "Restoring $project"
@@ -226,6 +229,7 @@ jobs:
             Tests/WTK.MediaForge.Composition.Tests/WTK.MediaForge.Composition.Tests.csproj
             Tests/WTK.MediaForge.Graphics.Vulkan.Tests/WTK.MediaForge.Graphics.Vulkan.Tests.csproj
             Tests/WTK.MediaForge.Remote.Tests/WTK.MediaForge.Remote.Tests.csproj
+            Tests/WTK.MediaForge.Studio.Tests/WTK.MediaForge.Studio.Tests.csproj
           )
           mkdir -p test-reports/linux
           for project in "${tests[@]}"; do
