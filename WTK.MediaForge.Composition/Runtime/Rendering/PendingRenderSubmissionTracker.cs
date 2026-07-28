@@ -296,11 +296,14 @@ internal class PendingRenderSubmissionTracker : IDisposable
             return;
 
         var frames = submission.AcquireOutputFrames();
+        var encodedOutputDispatchIds = submission.HasPhysicalEncodedOutputDispatchPlan
+            ? submission.EncodedOutputDispatchIds
+            : null;
         foreach (var consumer in _frameConsumers)
         {
             try
             {
-                consumer.PublishCompletedFrames(frames);
+                consumer.PublishCompletedFrames(frames, encodedOutputDispatchIds);
             }
             catch (Exception ex)
             {

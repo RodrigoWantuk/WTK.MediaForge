@@ -118,7 +118,12 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
         return false;
     }
 
-    public void PublishCompletedFrames(RenderedOutputFrameBatch frameBatch)
+    public void PublishCompletedFrames(RenderedOutputFrameBatch frameBatch) =>
+        PublishCompletedFrames(frameBatch, encodedOutputDispatchIds: null);
+
+    public void PublishCompletedFrames(
+        RenderedOutputFrameBatch frameBatch,
+        IReadOnlySet<RenderOutputId>? encodedOutputDispatchIds)
     {
         ArgumentNullException.ThrowIfNull(frameBatch);
 
@@ -133,6 +138,9 @@ internal sealed class RenderedOutputEncodingPipeline : IRenderedOutputFrameConsu
 
         foreach (var frame in frameBatch.Frames)
         {
+            if (encodedOutputDispatchIds is not null && !encodedOutputDispatchIds.Contains(frame.OutputId))
+                continue;
+
             var runtime = runtimes.FirstOrDefault(item => item.OutputId == frame.OutputId);
             if (runtime is null)
                 continue;

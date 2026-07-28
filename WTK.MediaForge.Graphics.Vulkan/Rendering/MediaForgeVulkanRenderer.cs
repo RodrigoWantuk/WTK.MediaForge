@@ -373,6 +373,11 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
 
         var physicalPlan = ResolvePhysicalPlan(snapshot);
         physicalPlan.ValidateFor(snapshot, requireCompleteSnapshotCoverage: !_allowUnplannedSnapshotsForTests);
+        var encodedOutputDispatchIds = physicalPlan.Operations
+            .Where(static operation => operation.Kind == PhysicalRenderGraphOperationKind.DispatchEncodedOutput)
+            .Select(static operation => operation.OutputId)
+            .OfType<RenderOutputId>()
+            .ToHashSet();
 
         var handles = _allowUnplannedSnapshotsForTests
             ? RenderFrameSnapshotGpuFrames.CollectD3D11SharedTextures(snapshot)
@@ -460,6 +465,7 @@ internal sealed unsafe class MediaForgeVulkanRenderer : IRenderBackend, IRenderB
                 textureLeases,
                 submissionResources,
                 renderedOutputSurfaces,
+                encodedOutputDispatchIds,
                 _diagnostics);
         }
         catch (Exception submitFailure)

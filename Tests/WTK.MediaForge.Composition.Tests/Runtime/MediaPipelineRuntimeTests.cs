@@ -86,6 +86,57 @@ public sealed class MediaPipelineRuntimeTests
     }
 
     [Fact]
+    public async Task Physical_dispatch_delivers_completed_frames_only_to_planned_encoded_outputs()
+    {
+        var dispatchedOutputId = RenderOutputId.New();
+        var undispatchedOutputId = RenderOutputId.New();
+        var dispatchedEncoder = new PreExportedInputRecordingEncoder();
+        var undispatchedEncoder = new PreExportedInputRecordingEncoder();
+        var dispatchedSink = new RecordingEncodedPacketSink();
+        var undispatchedSink = new RecordingEncodedPacketSink();
+        await using var runtime = new MediaPipelineRuntime();
+
+        await runtime.RegisterEncodedOutputAsync(
+            dispatchedOutputId,
+            new RenderedOutputEncodeFrameAdapter(new ImmediateRenderedOutputExporter()),
+            dispatchedEncoder,
+            new ThrowingGpuFrameExporter(),
+            CreateSinkContext(),
+            [dispatchedSink],
+            new CollectingMediaTransportAuditSink(),
+            cancellationToken: CancellationToken.None);
+        await runtime.RegisterEncodedOutputAsync(
+            undispatchedOutputId,
+            new RenderedOutputEncodeFrameAdapter(new ImmediateRenderedOutputExporter()),
+            undispatchedEncoder,
+            new ThrowingGpuFrameExporter(),
+            CreateSinkContext(),
+            [undispatchedSink],
+            new CollectingMediaTransportAuditSink(),
+            cancellationToken: CancellationToken.None);
+
+        var undispatchedSurface = new TrackingRenderedOutputSurfaceLease(undispatchedOutputId);
+        var batch = RenderedOutputFrameBatch.FromRenderedSurfaces(
+            [
+                new TrackingRenderedOutputSurfaceLease(dispatchedOutputId),
+                undispatchedSurface
+            ]);
+
+        runtime.PublishCompletedFrames(batch, new HashSet<RenderOutputId> { dispatchedOutputId });
+
+        await WaitForConditionAsync(() => dispatchedSink.Packets.Count == 1, TimeSpan.FromSeconds(2));
+        await batch.WaitForLeasesReleasedAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+
+        Assert.Equal(1, dispatchedEncoder.EncodeAsyncCalls);
+        Assert.Equal(0, undispatchedEncoder.EncodeAsyncCalls);
+        Assert.Empty(undispatchedSink.Packets);
+        Assert.Equal(0, undispatchedSurface.DisposeCount);
+
+        batch.DisposeSurfaces();
+        Assert.Equal(1, undispatchedSurface.DisposeCount);
+    }
+
+    [Fact]
     public async Task Register_encoded_route_rolls_back_started_sinks_when_later_sink_fails()
     {
         var outputId = RenderOutputId.New();

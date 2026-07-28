@@ -81,6 +81,24 @@ public class PendingRenderSubmissionTrackerTests
     }
 
     [Fact]
+    public void PollCompleted_forwards_physical_encoded_dispatch_outputs_to_frame_consumers()
+    {
+        var dispatchedOutputId = RenderOutputId.New();
+        var consumer = new DispatchTrackingRenderedOutputFrameConsumer();
+        var tracker = new PendingRenderSubmissionTracker(frameConsumers: [consumer]);
+        var submission = new RenderedSurfaceSubmission(
+            new RenderedOutputFrameBatch([]),
+            new HashSet<RenderOutputId> { dispatchedOutputId });
+
+        tracker.Add(submission);
+        tracker.PollCompleted();
+
+        Assert.Equal(0, tracker.PendingCount);
+        Assert.NotNull(consumer.EncodedOutputDispatchIds);
+        Assert.Equal([dispatchedOutputId], consumer.EncodedOutputDispatchIds);
+    }
+
+    [Fact]
     public void DisposeCompleted_throws_when_submission_not_completed()
     {
         var submission = new ManualRenderFrameSubmission(CreateEmptySnapshot(1));
@@ -664,7 +682,9 @@ public class PendingRenderSubmissionTrackerTests
         }
     }
 
-    private sealed class RenderedSurfaceSubmission(RenderedOutputFrameBatch outputFrames)
+    private sealed class RenderedSurfaceSubmission(
+        RenderedOutputFrameBatch outputFrames,
+        IReadOnlySet<RenderOutputId>? encodedOutputDispatchIds = null)
         : IRenderFrameSubmission
     {
         private int _outputFramesAcquired;
@@ -675,6 +695,11 @@ public class PendingRenderSubmissionTrackerTests
         public bool OutputFramesAcquired => Volatile.Read(ref _outputFramesAcquired) != 0;
 
         public bool HasOutstandingOutputFrameLeases => outputFrames.HasOutstandingLeases;
+
+        public bool HasPhysicalEncodedOutputDispatchPlan => encodedOutputDispatchIds is not null;
+
+        public IReadOnlySet<RenderOutputId> EncodedOutputDispatchIds =>
+            encodedOutputDispatchIds ?? RenderOutputDispatchSet.Empty;
 
         public RenderedOutputFrameBatch AcquireOutputFrames()
         {
@@ -726,6 +751,19 @@ public class PendingRenderSubmissionTrackerTests
 
             await lease.DisposeAsync();
         }
+    }
+
+    private sealed class DispatchTrackingRenderedOutputFrameConsumer : IRenderedOutputFrameConsumer
+    {
+        public IReadOnlySet<RenderOutputId>? EncodedOutputDispatchIds { get; private set; }
+
+        public void PublishCompletedFrames(RenderedOutputFrameBatch frameBatch) =>
+            throw new InvalidOperationException("Physical dispatch metadata was not forwarded.");
+
+        public void PublishCompletedFrames(
+            RenderedOutputFrameBatch frameBatch,
+            IReadOnlySet<RenderOutputId>? encodedOutputDispatchIds) =>
+            EncodedOutputDispatchIds = encodedOutputDispatchIds;
     }
 
     private sealed class TrackingRenderedOutputSurfaceLease(

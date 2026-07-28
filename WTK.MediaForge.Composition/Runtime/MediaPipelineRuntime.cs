@@ -389,6 +389,11 @@ internal sealed class MediaPipelineRuntime : IRenderedOutputFrameConsumer, IAsyn
     public void PublishCompletedFrames(RenderedOutputFrameBatch frameBatch) =>
         Encoding.PublishCompletedFrames(frameBatch);
 
+    public void PublishCompletedFrames(
+        RenderedOutputFrameBatch frameBatch,
+        IReadOnlySet<RenderOutputId>? encodedOutputDispatchIds) =>
+        Encoding.PublishCompletedFrames(frameBatch, encodedOutputDispatchIds);
+
     public IReadOnlyList<EncodedOutputRuntimeSnapshot> GetEncodedOutputRuntimeSnapshots()
     {
         KeyValuePair<RenderOutputId, EncodedRenderOutputRoute>[] routes;

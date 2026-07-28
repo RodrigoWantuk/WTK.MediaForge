@@ -1,6 +1,7 @@
 using Silk.NET.Vulkan;
 using WTK.MediaForge.Composition.Runtime.Rendering;
 using WTK.MediaForge.Composition.Snapshots;
+using WTK.MediaForge.Core.Identifiers;
 using WTK.MediaForge.Diagnostics;
 
 namespace WTK.MediaForge.Graphics.Vulkan.Rendering;
@@ -12,6 +13,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
     private readonly List<VulkanExternalTextureLease> _textureLeases;
     private readonly VulkanSubmissionResourceScope _submissionResources;
     private readonly RenderedOutputFrameBatch _outputFrames;
+    private readonly IReadOnlySet<RenderOutputId> _encodedOutputDispatchIds;
     private RenderFrameSnapshot? _snapshot;
     private int _resourcesDisposed;
     private int _outputFramesAcquired;
@@ -24,6 +26,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         IReadOnlyList<VulkanExternalTextureLease> textureLeases,
         VulkanSubmissionResourceScope submissionResources,
         IReadOnlyList<IRenderedOutputSurfaceLease> renderedOutputSurfaces,
+        IReadOnlySet<RenderOutputId> encodedOutputDispatchIds,
         IMediaForgeDiagnosticsSink? diagnostics = null)
     {
         _deviceContext = deviceContext ?? throw new ArgumentNullException(nameof(deviceContext));
@@ -32,6 +35,7 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
         _outputFrames = RenderedOutputFrameBatch.FromRenderedSurfaces(
             renderedOutputSurfaces,
             snapshot.Context);
+        _encodedOutputDispatchIds = encodedOutputDispatchIds ?? throw new ArgumentNullException(nameof(encodedOutputDispatchIds));
         CommandBuffer = commandBuffer;
         Fence = fence;
         _textureLeases = textureLeases.ToList();
@@ -60,6 +64,10 @@ internal sealed unsafe class VulkanRenderFrameSubmission : IRenderFrameSubmissio
     public bool OutputFramesAcquired => Volatile.Read(ref _outputFramesAcquired) != 0;
 
     public bool HasOutstandingOutputFrameLeases => _outputFrames.HasOutstandingLeases;
+
+    public bool HasPhysicalEncodedOutputDispatchPlan => true;
+
+    public IReadOnlySet<RenderOutputId> EncodedOutputDispatchIds => _encodedOutputDispatchIds;
 
     public RenderedOutputFrameBatch AcquireOutputFrames()
     {
