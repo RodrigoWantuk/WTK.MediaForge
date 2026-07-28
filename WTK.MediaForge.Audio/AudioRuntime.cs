@@ -154,31 +154,47 @@ public sealed record AudioRuntimeHealth(
     int RentedBlocks,
     int BlockHighWaterMark,
     int RetiredPlanCount,
-    bool IsRunning);
+    bool IsRunning,
+    int QueuedRouteBlocks = 0,
+    long DroppedRouteBlocks = 0,
+    int RouteQueueHighWaterMark = 0);
 
 public sealed class AudioRuntime
 {
     private AudioPhysicalGraphPlan? _publishedPlan;
     private AudioGraphExecutionState? _executionState;
     private readonly AudioBufferPool _bufferPool;
+    private readonly int _routeQueueCapacity;
     private int _running;
     private int _retiredPlanCount;
 
-    public AudioRuntime(AudioBufferPool? bufferPool = null) => _bufferPool = bufferPool ?? new AudioBufferPool();
+    public AudioRuntime(AudioBufferPool? bufferPool = null, int routeQueueCapacity = 3)
+    {
+        if (routeQueueCapacity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(routeQueueCapacity));
+        _bufferPool = bufferPool ?? new AudioBufferPool();
+        _routeQueueCapacity = routeQueueCapacity;
+    }
 
     public void Publish(AudioPhysicalGraphPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
         _bufferPool.Prepare(plan.ExecutionGraph.Format, plan.ExecutionGraph.Quantum);
-        var executionState = new AudioGraphExecutionState(plan);
+        var executionState = new AudioGraphExecutionState(plan, _routeQueueCapacity);
         var previous = Interlocked.Exchange(ref _publishedPlan, plan);
-        Interlocked.Exchange(ref _executionState, executionState);
+        var previousState = Interlocked.Exchange(ref _executionState, executionState);
+        previousState?.Reset();
         if (previous is not null)
             Interlocked.Increment(ref _retiredPlanCount);
     }
 
     public void Start() => Interlocked.Exchange(ref _running, 1);
-    public void Stop() => Interlocked.Exchange(ref _running, 0);
+
+    public void Stop()
+    {
+        Interlocked.Exchange(ref _running, 0);
+        Volatile.Read(ref _executionState)?.Reset();
+    }
 
     public AudioBlockLease ProcessSilence(AudioTimestamp timestamp, long sequence)
     {
@@ -220,15 +236,42 @@ public sealed class AudioRuntime
         return state.ProcessBus(_bufferPool, busId, timestamp, sequence);
     }
 
+    public AudioRouteDispatchResult DispatchBus(AudioBusId busId, AudioTimestamp timestamp, long sequence)
+    {
+        var plan = Volatile.Read(ref _publishedPlan) ?? throw new InvalidOperationException("An audio graph plan must be published before processing.");
+        var state = Volatile.Read(ref _executionState) ?? throw new InvalidOperationException("An audio graph execution state must be published before processing.");
+        if (Volatile.Read(ref _running) == 0)
+            throw new InvalidOperationException("Audio runtime is not running.");
+        if (!ReferenceEquals(state.Plan, plan))
+            throw new InvalidOperationException("Audio graph plan changed while a block was being prepared.");
+
+        using var bus = state.ProcessBus(_bufferPool, busId, timestamp, sequence);
+        return state.Dispatcher.Dispatch(busId, bus.Block, _bufferPool, plan.ExecutionGraph.Quantum);
+    }
+
+    public bool TryDequeueRoute(AudioOutputRouteId routeId, out AudioBlockLease? lease)
+    {
+        var state = Volatile.Read(ref _executionState);
+        if (state is not null && state.Dispatcher.TryDequeue(routeId, out lease))
+            return true;
+
+        lease = null;
+        return false;
+    }
+
     public AudioRuntimeHealth GetHealth()
     {
         var plan = Volatile.Read(ref _publishedPlan);
+        var dispatcherHealth = Volatile.Read(ref _executionState)?.Dispatcher.GetHealth() ?? AudioSinkDispatcherHealth.Empty;
         return new AudioRuntimeHealth(
             plan?.Fingerprint ?? string.Empty,
             _bufferPool.RentedBlocks,
             _bufferPool.HighWaterMark,
             Volatile.Read(ref _retiredPlanCount),
-            Volatile.Read(ref _running) != 0);
+            Volatile.Read(ref _running) != 0,
+            dispatcherHealth.QueuedBlocks,
+            dispatcherHealth.DroppedBlocks,
+            dispatcherHealth.HighWaterMark);
     }
 }
 
@@ -240,7 +283,7 @@ internal sealed class AudioGraphExecutionState
     private readonly AudioNodeExecution[] _nodes;
     private readonly AudioSourceDefinition[] _sources;
 
-    public AudioGraphExecutionState(AudioPhysicalGraphPlan plan)
+    public AudioGraphExecutionState(AudioPhysicalGraphPlan plan, int routeQueueCapacity)
     {
         Plan = plan ?? throw new ArgumentNullException(nameof(plan));
         var graph = plan.ExecutionGraph;
@@ -264,9 +307,18 @@ internal sealed class AudioGraphExecutionState
             graph.Format,
             graph.Quantum)).ToArray();
         _busInputs = graph.Buses.ToDictionary(static bus => bus.Id, static bus => bus.InputNodeIds.ToArray());
+        Dispatcher = new AudioSinkDispatcher(graph, routeQueueCapacity);
     }
 
     public AudioPhysicalGraphPlan Plan { get; }
+    public AudioSinkDispatcher Dispatcher { get; }
+
+    public void Reset()
+    {
+        foreach (var node in _nodes)
+            node.Reset();
+        Dispatcher.Drain();
+    }
 
     public AudioBlockLease ProcessBus(
         AudioBufferPool bufferPool,
@@ -360,6 +412,15 @@ internal sealed class AudioGraphExecutionState
             }
 
             AudioDsp.Apply(Definition, block);
+        }
+
+        public void Reset()
+        {
+            if (_fixedDelaySamples is null)
+                return;
+            foreach (var channel in _fixedDelaySamples)
+                Array.Clear(channel, 0, channel.Length);
+            _fixedDelayPrimed = false;
         }
     }
 }

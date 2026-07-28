@@ -7,8 +7,9 @@ v14 video/media gates.
 2. Compile the audio DAG into a deterministic physical plan with fan-out,
    latency accumulation and format-conversion decisions.
 3. Run generated tone/silence through pooled blocks, buses, independent bounded
-   sinks and transactional graph replacement. Pooled source-to-bus execution and
-   transactional plan replacement are implemented; bounded independent sinks remain.
+   sinks and transactional graph replacement. Pooled source-to-bus execution,
+   bounded Program Mix route queues and plan replacement are implemented; physical
+   and encoded sinks remain unavailable until their platform/product proofs exist.
 4. Add gain, mute, pan, polarity, channel mapping, mixing, meters and fixed
    delay with deterministic tests. Gain, mute, pan, polarity, mixing, meters and
    a one-quantum fixed delay are implemented; channel mapping remains pending.

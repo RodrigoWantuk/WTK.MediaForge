@@ -160,6 +160,71 @@ public sealed class AudioGraphTests
     }
 
     [Fact]
+    public void Runtime_dispatches_program_bus_to_independent_bounded_routes_and_stop_returns_to_baseline()
+    {
+        var graph = CreateValidGraph();
+        var secondSink = new AudioSinkDefinition { Id = AudioSinkId.New(), Name = "Program monitor", Kind = AudioSinkKind.ProgramMix };
+        var secondRoute = new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = graph.Buses[0].Id, SinkId = secondSink.Id };
+        graph.Sinks.Add(secondSink);
+        graph.OutputRoutes.Add(secondRoute);
+        var runtime = new AudioRuntime(new AudioBufferPool(maximumRetainedBlocks: 8), routeQueueCapacity: 1);
+        runtime.Publish(AudioGraphCompiler.Compile(graph));
+        runtime.Start();
+
+        var result = runtime.DispatchBus(graph.Buses[0].Id, new AudioTimestamp(0), 0);
+
+        Assert.Equal(new AudioRouteDispatchResult(2, 2, 0), result);
+        Assert.Equal(2, runtime.GetHealth().QueuedRouteBlocks);
+        Assert.True(runtime.TryDequeueRoute(graph.OutputRoutes[0].Id, out var first));
+        Assert.True(runtime.TryDequeueRoute(secondRoute.Id, out var second));
+        var firstLease = Assert.IsType<AudioBlockLease>(first);
+        var secondLease = Assert.IsType<AudioBlockLease>(second);
+        using (firstLease)
+        using (secondLease)
+        {
+            Assert.NotSame(firstLease.Block, secondLease.Block);
+            Assert.Equal(firstLease.Block.Sequence, secondLease.Block.Sequence);
+            Assert.Equal(firstLease.Block.Channels[0][1], secondLease.Block.Channels[0][1]);
+        }
+
+        Assert.Equal(0, runtime.GetHealth().RentedBlocks);
+        runtime.DispatchBus(graph.Buses[0].Id, new AudioTimestamp(10), 1);
+        Assert.Equal(2, runtime.GetHealth().QueuedRouteBlocks);
+        runtime.Stop();
+
+        var health = runtime.GetHealth();
+        Assert.Equal(0, health.RentedBlocks);
+        Assert.Equal(0, health.QueuedRouteBlocks);
+    }
+
+    [Fact]
+    public void Full_route_queue_drops_only_that_route_without_blocking_other_routes()
+    {
+        var graph = CreateValidGraph();
+        var secondSink = new AudioSinkDefinition { Id = AudioSinkId.New(), Name = "Program monitor", Kind = AudioSinkKind.ProgramMix };
+        var secondRoute = new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = graph.Buses[0].Id, SinkId = secondSink.Id };
+        graph.Sinks.Add(secondSink);
+        graph.OutputRoutes.Add(secondRoute);
+        var runtime = new AudioRuntime(new AudioBufferPool(maximumRetainedBlocks: 8), routeQueueCapacity: 1);
+        runtime.Publish(AudioGraphCompiler.Compile(graph));
+        runtime.Start();
+
+        Assert.Equal(new AudioRouteDispatchResult(2, 2, 0), runtime.DispatchBus(graph.Buses[0].Id, new AudioTimestamp(0), 0));
+        Assert.True(runtime.TryDequeueRoute(graph.OutputRoutes[0].Id, out var firstRouteBlock));
+        Assert.IsType<AudioBlockLease>(firstRouteBlock).Dispose();
+
+        var result = runtime.DispatchBus(graph.Buses[0].Id, new AudioTimestamp(10), 1);
+
+        Assert.Equal(new AudioRouteDispatchResult(2, 1, 1), result);
+        Assert.True(runtime.TryDequeueRoute(graph.OutputRoutes[0].Id, out var secondRouteBlock));
+        using (var secondLease = Assert.IsType<AudioBlockLease>(secondRouteBlock))
+            Assert.Equal(1, secondLease.Block.Sequence);
+        Assert.Equal(1, runtime.GetHealth().DroppedRouteBlocks);
+        runtime.Stop();
+        Assert.Equal(0, runtime.GetHealth().RentedBlocks);
+    }
+
+    [Fact]
     public void Fixed_delay_returns_the_previous_quantum_without_retaining_leases()
     {
         var source = new AudioSourceDefinition { Id = AudioSourceId.New(), Kind = AudioSourceKind.GeneratedTone, ToneFrequencyHz = 1_000d };
