@@ -2,10 +2,11 @@
 
 | Capability | Model | Portable runtime | Product availability |
 |---|---:|---:|---|
-| Generated tone | Planned | Planned | Unavailable until runtime proof |
-| Silence source | Planned | Planned | Unavailable until runtime proof |
-| Memory sink | Planned | Planned | Test/debug only initially |
-| Gain/mute/pan/mix/meter | Planned | Planned | Unavailable until runtime proof |
+| Generated tone | Implemented | Implemented through pooled source-to-bus processing | Unavailable until runtime proof |
+| Silence source | Implemented | Implemented through pooled source-to-bus processing | Unavailable until runtime proof |
+| Memory sink | Planned | No | Test/debug only initially |
+| Gain/mute/pan/polarity/mix/meter/fixed delay | Implemented | Implemented for deterministic bus processing | Unavailable until runtime proof |
+| Channel mapper | Declared | No | Unavailable until conversion semantics are implemented |
 | Physical input/loopback | Declared | No | Unavailable: platform adapter absent |
 | Application capture | Declared | No | Unavailable: platform adapter absent |
 | Audio file/network/Remote Scene | Declared | No | Unavailable: product path absent |

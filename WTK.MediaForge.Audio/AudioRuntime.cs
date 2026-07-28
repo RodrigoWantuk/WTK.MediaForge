@@ -159,6 +159,7 @@ public sealed record AudioRuntimeHealth(
 public sealed class AudioRuntime
 {
     private AudioPhysicalGraphPlan? _publishedPlan;
+    private AudioGraphExecutionState? _executionState;
     private readonly AudioBufferPool _bufferPool;
     private int _running;
     private int _retiredPlanCount;
@@ -169,7 +170,9 @@ public sealed class AudioRuntime
     {
         ArgumentNullException.ThrowIfNull(plan);
         _bufferPool.Prepare(plan.ExecutionGraph.Format, plan.ExecutionGraph.Quantum);
+        var executionState = new AudioGraphExecutionState(plan);
         var previous = Interlocked.Exchange(ref _publishedPlan, plan);
+        Interlocked.Exchange(ref _executionState, executionState);
         if (previous is not null)
             Interlocked.Increment(ref _retiredPlanCount);
     }
@@ -200,6 +203,23 @@ public sealed class AudioRuntime
         return lease;
     }
 
+    /// <summary>
+    /// Processes the published source/node DAG into one logical bus. The graph
+    /// workspace is prepared during Publish; processing only rents bounded blocks
+    /// and returns a caller-owned lease for the resulting mix.
+    /// </summary>
+    public AudioBlockLease ProcessBus(AudioBusId busId, AudioTimestamp timestamp, long sequence)
+    {
+        var plan = Volatile.Read(ref _publishedPlan) ?? throw new InvalidOperationException("An audio graph plan must be published before processing.");
+        var state = Volatile.Read(ref _executionState) ?? throw new InvalidOperationException("An audio graph execution state must be published before processing.");
+        if (Volatile.Read(ref _running) == 0)
+            throw new InvalidOperationException("Audio runtime is not running.");
+        if (!ReferenceEquals(state.Plan, plan))
+            throw new InvalidOperationException("Audio graph plan changed while a block was being prepared.");
+
+        return state.ProcessBus(_bufferPool, busId, timestamp, sequence);
+    }
+
     public AudioRuntimeHealth GetHealth()
     {
         var plan = Volatile.Read(ref _publishedPlan);
@@ -212,20 +232,157 @@ public sealed class AudioRuntime
     }
 }
 
+internal sealed class AudioGraphExecutionState
+{
+    private readonly Dictionary<AudioSourceId, AudioBlockLease> _sourceLeases;
+    private readonly Dictionary<AudioNodeId, AudioBlockLease> _nodeLeases;
+    private readonly Dictionary<AudioBusId, AudioNodeId[]> _busInputs;
+    private readonly AudioNodeExecution[] _nodes;
+    private readonly AudioSourceDefinition[] _sources;
+
+    public AudioGraphExecutionState(AudioPhysicalGraphPlan plan)
+    {
+        Plan = plan ?? throw new ArgumentNullException(nameof(plan));
+        var graph = plan.ExecutionGraph;
+        _sourceLeases = new Dictionary<AudioSourceId, AudioBlockLease>(graph.Sources.Count);
+        _nodeLeases = new Dictionary<AudioNodeId, AudioBlockLease>(graph.Nodes.Count);
+        _sources = graph.Sources.ToArray();
+
+        var sourceInputs = graph.Connections
+            .Where(static connection => connection.SourceId is not null)
+            .GroupBy(static connection => connection.ToNodeId)
+            .ToDictionary(static group => group.Key, static group => group.Select(static connection => connection.SourceId!.Value).ToArray());
+        var nodeInputs = graph.Connections
+            .Where(static connection => connection.FromNodeId is not null)
+            .GroupBy(static connection => connection.ToNodeId)
+            .ToDictionary(static group => group.Key, static group => group.Select(static connection => connection.FromNodeId!.Value).ToArray());
+        var nodesById = graph.Nodes.ToDictionary(static node => node.Id);
+        _nodes = plan.TopologicalNodeIds.Select(nodeId => new AudioNodeExecution(
+            nodesById[nodeId],
+            sourceInputs.GetValueOrDefault(nodeId, []),
+            nodeInputs.GetValueOrDefault(nodeId, []),
+            graph.Format,
+            graph.Quantum)).ToArray();
+        _busInputs = graph.Buses.ToDictionary(static bus => bus.Id, static bus => bus.InputNodeIds.ToArray());
+    }
+
+    public AudioPhysicalGraphPlan Plan { get; }
+
+    public AudioBlockLease ProcessBus(
+        AudioBufferPool bufferPool,
+        AudioBusId busId,
+        AudioTimestamp timestamp,
+        long sequence)
+    {
+        if (!_busInputs.TryGetValue(busId, out var busInputs))
+            throw new InvalidOperationException("Audio bus is not part of the published graph plan.");
+
+        AudioBlockLease? result = null;
+        try
+        {
+            foreach (var source in _sources)
+            {
+                var flags = !source.Enabled || source.Kind == AudioSourceKind.Silence ? AudioBlockFlags.Silence : AudioBlockFlags.None;
+                var lease = bufferPool.RentPrepared(Plan.ExecutionGraph.Format, Plan.ExecutionGraph.Quantum, timestamp, sequence, flags);
+                if (source.Enabled && source.Kind == AudioSourceKind.GeneratedTone)
+                    AudioSourceRenderer.RenderGeneratedTone(source, lease.Block);
+                _sourceLeases.Add(source.Id, lease);
+            }
+
+            foreach (var node in _nodes)
+            {
+                var lease = bufferPool.RentPrepared(Plan.ExecutionGraph.Format, Plan.ExecutionGraph.Quantum, timestamp, sequence);
+                foreach (var sourceId in node.SourceInputs)
+                    AudioBusMixer.Mix(_sourceLeases[sourceId].Block, lease.Block);
+                foreach (var nodeId in node.NodeInputs)
+                    AudioBusMixer.Mix(_nodeLeases[nodeId].Block, lease.Block);
+                node.Apply(lease.Block);
+                _nodeLeases.Add(node.Definition.Id, lease);
+            }
+
+            result = bufferPool.RentPrepared(Plan.ExecutionGraph.Format, Plan.ExecutionGraph.Quantum, timestamp, sequence);
+            foreach (var nodeId in busInputs)
+                AudioBusMixer.Mix(_nodeLeases[nodeId].Block, result.Block);
+            return result;
+        }
+        catch
+        {
+            result?.Dispose();
+            throw;
+        }
+        finally
+        {
+            foreach (var lease in _nodeLeases.Values)
+                lease.Dispose();
+            foreach (var lease in _sourceLeases.Values)
+                lease.Dispose();
+            _nodeLeases.Clear();
+            _sourceLeases.Clear();
+        }
+    }
+
+    private sealed class AudioNodeExecution(
+        AudioNodeDefinition definition,
+        AudioSourceId[] sourceInputs,
+        AudioNodeId[] nodeInputs,
+        AudioFormat format,
+        AudioQuantum quantum)
+    {
+        private readonly float[][]? _fixedDelaySamples = definition.Kind == AudioNodeKind.FixedDelay
+            ? Enumerable.Range(0, format.ChannelCount).Select(_ => new float[quantum.Frames]).ToArray()
+            : null;
+        private bool _fixedDelayPrimed;
+
+        public AudioNodeDefinition Definition { get; } = definition;
+        public AudioSourceId[] SourceInputs { get; } = sourceInputs;
+        public AudioNodeId[] NodeInputs { get; } = nodeInputs;
+
+        public void Apply(AudioBlock block)
+        {
+            if (_fixedDelaySamples is not null)
+            {
+                for (var channel = 0; channel < block.Channels.Length; channel++)
+                {
+                    var current = block.Channels[channel];
+                    var delayed = _fixedDelaySamples[channel];
+                    for (var frame = 0; frame < block.Frames; frame++)
+                    {
+                        var sample = current[frame];
+                        current[frame] = delayed[frame];
+                        delayed[frame] = sample;
+                    }
+                }
+                if (!_fixedDelayPrimed)
+                {
+                    block.Flags |= AudioBlockFlags.Discontinuity;
+                    _fixedDelayPrimed = true;
+                }
+            }
+
+            AudioDsp.Apply(Definition, block);
+        }
+    }
+}
+
 public static class AudioBusMixer
 {
+    public static void Mix(AudioBlock input, AudioBlock destination)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(destination);
+        if (input.Format != destination.Format || input.Frames != destination.Frames)
+            throw new InvalidOperationException("Audio mixer requires matching planar formats and frame counts.");
+        for (var channel = 0; channel < destination.Channels.Length; channel++)
+            for (var frame = 0; frame < destination.Frames; frame++)
+                destination.Channels[channel][frame] += input.Channels[channel][frame];
+    }
+
     public static void Mix(IReadOnlyList<AudioBlock> inputs, AudioBlock destination)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(destination);
         foreach (var input in inputs)
-        {
-            if (input.Format != destination.Format || input.Frames != destination.Frames)
-                throw new InvalidOperationException("Audio mixer requires matching planar formats and frame counts.");
-            for (var channel = 0; channel < destination.Channels.Length; channel++)
-                for (var frame = 0; frame < destination.Frames; frame++)
-                    destination.Channels[channel][frame] += input.Channels[channel][frame];
-        }
+            Mix(input, destination);
     }
 }
 

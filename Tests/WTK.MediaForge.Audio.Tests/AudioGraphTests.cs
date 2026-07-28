@@ -130,6 +130,61 @@ public sealed class AudioGraphTests
     }
 
     [Fact]
+    public void Runtime_processes_source_node_dag_into_a_program_bus()
+    {
+        var source = new AudioSourceDefinition { Id = AudioSourceId.New(), Kind = AudioSourceKind.GeneratedTone, ToneFrequencyHz = 1_000d };
+        var gain = new AudioNodeDefinition { Id = AudioNodeId.New(), Kind = AudioNodeKind.Gain, Value = .5f };
+        var bus = new AudioBusDefinition { Id = AudioBusId.New(), InputNodeIds = [gain.Id] };
+        var sink = new AudioSinkDefinition { Id = AudioSinkId.New(), Kind = AudioSinkKind.ProgramMix };
+        var graph = new AudioGraphDefinition
+        {
+            Sources = [source],
+            Nodes = [gain],
+            Connections = [new AudioConnection { SourceId = source.Id, ToNodeId = gain.Id }],
+            Buses = [bus],
+            Sinks = [sink],
+            OutputRoutes = [new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = bus.Id, SinkId = sink.Id }]
+        };
+        var runtime = new AudioRuntime(new AudioBufferPool(maximumRetainedBlocks: 4));
+        runtime.Publish(AudioGraphCompiler.Compile(graph));
+        runtime.Start();
+
+        using (var mix = runtime.ProcessBus(bus.Id, new AudioTimestamp(0), 0))
+        {
+            Assert.Equal(0f, mix.Block.Channels[0][0]);
+            Assert.InRange(mix.Block.Channels[0][1], .064f, .066f);
+            Assert.Equal(1, runtime.GetHealth().RentedBlocks);
+        }
+
+        Assert.Equal(0, runtime.GetHealth().RentedBlocks);
+    }
+
+    [Fact]
+    public void Fixed_delay_returns_the_previous_quantum_without_retaining_leases()
+    {
+        var source = new AudioSourceDefinition { Id = AudioSourceId.New(), Kind = AudioSourceKind.GeneratedTone, ToneFrequencyHz = 1_000d };
+        var delay = new AudioNodeDefinition { Id = AudioNodeId.New(), Kind = AudioNodeKind.FixedDelay };
+        var bus = new AudioBusDefinition { Id = AudioBusId.New(), InputNodeIds = [delay.Id] };
+        var sink = new AudioSinkDefinition { Id = AudioSinkId.New(), Kind = AudioSinkKind.ProgramMix };
+        var graph = new AudioGraphDefinition
+        {
+            Sources = [source], Nodes = [delay],
+            Connections = [new AudioConnection { SourceId = source.Id, ToNodeId = delay.Id }],
+            Buses = [bus], Sinks = [sink],
+            OutputRoutes = [new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = bus.Id, SinkId = sink.Id }]
+        };
+        var runtime = new AudioRuntime(new AudioBufferPool(maximumRetainedBlocks: 4));
+        runtime.Publish(AudioGraphCompiler.Compile(graph));
+        runtime.Start();
+
+        using var first = runtime.ProcessBus(bus.Id, new AudioTimestamp(0), 0);
+        using var second = runtime.ProcessBus(bus.Id, new AudioTimestamp(10), 1);
+
+        Assert.Equal(0f, first.Block.Channels[0][1]);
+        Assert.InRange(second.Block.Channels[0][1], .129f, .131f);
+    }
+
+    [Fact]
     public void Dsp_and_meter_are_deterministic()
     {
         var pool = new AudioBufferPool();
