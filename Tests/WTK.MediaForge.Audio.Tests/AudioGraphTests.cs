@@ -48,6 +48,16 @@ public sealed class AudioGraphTests
         Assert.Contains(issues, issue => issue.Code == "audio.sink.unavailable");
     }
 
+    [Fact]
+    public void Incompatible_formats_are_rejected_until_a_converter_is_planned()
+    {
+        var graph = CreateValidGraph();
+        graph.Sources[0].Format = AudioFormat.Mono;
+
+        Assert.Contains(AudioGraphValidator.Validate(graph).Issues,
+            issue => issue.Code == "audio.source.format.incompatible");
+    }
+
     [Theory]
     [InlineData(AudioQuantum.FiveMillisecondsFrames)]
     [InlineData(AudioQuantum.DefaultFrames)]
@@ -71,6 +81,52 @@ public sealed class AudioGraphTests
         Assert.Equal(0, health.RentedBlocks);
         Assert.Equal(1, health.RetiredPlanCount);
         Assert.True(health.IsRunning);
+    }
+
+    [Fact]
+    public void Published_plan_is_immutable_and_fingerprint_includes_graph_parameters()
+    {
+        var graph = CreateValidGraph();
+        var plan = AudioGraphCompiler.Compile(graph);
+        var fingerprint = plan.Fingerprint;
+
+        graph.Sources[0].ToneFrequencyHz = 880d;
+        graph.Nodes[0].Value = .25f;
+
+        Assert.Equal(440d, plan.Graph.Sources[0].ToneFrequencyHz);
+        Assert.Equal(1f, plan.Graph.Nodes[0].Value);
+        Assert.NotEqual(fingerprint, AudioGraphCompiler.Compile(graph).Fingerprint);
+    }
+
+    [Fact]
+    public void Runtime_renders_deterministic_generated_tone_from_prepared_pool()
+    {
+        var graph = CreateValidGraph();
+        graph.Sources[0].ToneFrequencyHz = 1_000d;
+        var pool = new AudioBufferPool(maximumRetainedBlocks: 2);
+        var runtime = new AudioRuntime(pool);
+        runtime.Publish(AudioGraphCompiler.Compile(graph));
+        runtime.Start();
+
+        using var first = runtime.ProcessSource(graph.Sources[0].Id, new AudioTimestamp(0), 0);
+        Assert.Equal(2, pool.PreparedBlockCount);
+        Assert.Equal(0f, first.Block.Channels[0][0]);
+        Assert.NotEqual(0f, first.Block.Channels[0][1]);
+        Assert.Equal(first.Block.Channels[0][1], first.Block.Channels[1][1]);
+    }
+
+    [Fact]
+    public void Clock_synchronization_and_drift_adjustment_are_bounded()
+    {
+        var clock = new FixedClock(new AudioTimestamp(100));
+        var synchronizer = new AudioClockSynchronizer(clock);
+        Assert.Equal(0, synchronizer.GetSynchronizedTimestamp().MonotonicTicks);
+        clock.Timestamp = new AudioTimestamp(200);
+        Assert.Equal(100, synchronizer.GetSynchronizedTimestamp().MonotonicTicks);
+
+        var coordinator = new AudioVideoSyncCoordinator();
+        coordinator.Observe(new AudioTimestamp(TimeSpan.TicksPerSecond), new AudioTimestamp(0));
+        Assert.InRange(coordinator.GetSuggestedResampleFrameAdjustment(AudioQuantum.Default), -4, 4);
     }
 
     [Fact]
@@ -107,5 +163,11 @@ public sealed class AudioGraphTests
             Sinks = [sink],
             OutputRoutes = [new AudioOutputRoute { Id = AudioOutputRouteId.New(), BusId = bus.Id, SinkId = sink.Id }]
         };
+    }
+
+    private sealed class FixedClock(AudioTimestamp timestamp) : IAudioClock
+    {
+        public AudioTimestamp Timestamp { get; set; } = timestamp;
+        public AudioTimestamp GetTimestamp() => Timestamp;
     }
 }

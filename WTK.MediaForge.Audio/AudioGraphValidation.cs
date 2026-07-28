@@ -45,6 +45,7 @@ public static class AudioGraphValidator
         foreach (var source in graph.Sources)
         {
             ValidateFormat(source.Format, "audio.source.format", issues);
+            ValidateCompatibleFormat(graph.Format, source.Format, "audio.source.format.incompatible", "Audio source format must match the current graph format.", issues);
             if (source.Id.IsEmpty)
                 issues.Add(new("audio.source.id.empty", "Audio source id cannot be empty."));
             if (source.Kind is AudioSourceKind.PhysicalCapture or AudioSourceKind.File or AudioSourceKind.Network or AudioSourceKind.RemoteScene or AudioSourceKind.VirtualDevice)
@@ -56,6 +57,7 @@ public static class AudioGraphValidator
         foreach (var node in graph.Nodes)
         {
             ValidateFormat(node.Format, "audio.node.format", issues);
+            ValidateCompatibleFormat(graph.Format, node.Format, "audio.node.format.incompatible", "Audio node format must match the current graph format until a converter is explicitly planned.", issues);
             if (node.Id.IsEmpty)
                 issues.Add(new("audio.node.id.empty", "Audio node id cannot be empty."));
             if (!float.IsFinite(node.Value))
@@ -79,6 +81,7 @@ public static class AudioGraphValidator
         foreach (var bus in graph.Buses)
         {
             ValidateFormat(bus.Format, "audio.bus.format", issues);
+            ValidateCompatibleFormat(graph.Format, bus.Format, "audio.bus.format.incompatible", "Audio bus format must match the current graph format until a converter is explicitly planned.", issues);
             if (bus.Id.IsEmpty)
                 issues.Add(new("audio.bus.id.empty", "Audio bus id cannot be empty."));
             foreach (var nodeId in bus.InputNodeIds)
@@ -89,6 +92,7 @@ public static class AudioGraphValidator
         foreach (var sink in graph.Sinks)
         {
             ValidateFormat(sink.Format, "audio.sink.format", issues);
+            ValidateCompatibleFormat(graph.Format, sink.Format, "audio.sink.format.incompatible", "Audio sink format must match the current graph format until a converter is explicitly planned.", issues);
             if (sink.Id.IsEmpty)
                 issues.Add(new("audio.sink.id.empty", "Audio sink id cannot be empty."));
             if (sink.Kind is not AudioSinkKind.ProgramMix)
@@ -140,6 +144,17 @@ public static class AudioGraphValidator
         catch (ArgumentOutOfRangeException exception) { issues.Add(new(code, exception.Message)); }
     }
 
+    private static void ValidateCompatibleFormat(
+        AudioFormat graphFormat,
+        AudioFormat candidate,
+        string code,
+        string message,
+        List<AudioGraphValidationIssue> issues)
+    {
+        if (candidate != graphFormat)
+            issues.Add(new(code, message));
+    }
+
     private static void ValidateUnique(IEnumerable<Guid> ids, string prefix, List<AudioGraphValidationIssue> issues)
     {
         var seen = new HashSet<Guid>();
@@ -153,22 +168,50 @@ public static class AudioGraphValidator
     }
 }
 
-public sealed record AudioPhysicalGraphPlan(
-    AudioGraphDefinition Graph,
-    IReadOnlyList<AudioNodeId> TopologicalNodeIds,
-    IReadOnlyDictionary<AudioSourceId, int> SourceConsumerCounts,
-    TimeSpan Latency,
-    string Fingerprint);
+public sealed class AudioPhysicalGraphPlan
+{
+    private readonly AudioGraphDefinition _graph;
+    private readonly IReadOnlyDictionary<AudioSourceId, AudioSourceDefinition> _sources;
+
+    internal AudioPhysicalGraphPlan(
+        AudioGraphDefinition graph,
+        IReadOnlyList<AudioNodeId> topologicalNodeIds,
+        IReadOnlyDictionary<AudioSourceId, int> sourceConsumerCounts,
+        TimeSpan latency,
+        string fingerprint)
+    {
+        _graph = graph;
+        _sources = graph.Sources.ToDictionary(static source => source.Id);
+        TopologicalNodeIds = topologicalNodeIds;
+        SourceConsumerCounts = sourceConsumerCounts;
+        Latency = latency;
+        Fingerprint = fingerprint;
+    }
+
+    // A published plan is immutable from the runtime's perspective. Callers only
+    // receive a copy, so editing the project model cannot alter an active graph.
+    public AudioGraphDefinition Graph => AudioGraphCloner.Clone(_graph);
+    public IReadOnlyList<AudioNodeId> TopologicalNodeIds { get; }
+    public IReadOnlyDictionary<AudioSourceId, int> SourceConsumerCounts { get; }
+    public TimeSpan Latency { get; }
+    public string Fingerprint { get; }
+
+    internal AudioGraphDefinition ExecutionGraph => _graph;
+
+    internal bool TryGetSource(AudioSourceId sourceId, out AudioSourceDefinition source) =>
+        _sources.TryGetValue(sourceId, out source!);
+}
 
 public static class AudioGraphCompiler
 {
     public static AudioPhysicalGraphPlan Compile(AudioGraphDefinition graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        AudioGraphValidator.Validate(graph).ThrowIfInvalid();
-        var dependencies = graph.Nodes.ToDictionary(static node => node.Id, static _ => 0);
-        var outgoing = graph.Nodes.ToDictionary(static node => node.Id, static _ => new List<AudioNodeId>());
-        foreach (var connection in graph.Connections.Where(static connection => connection.FromNodeId is not null))
+        var snapshot = AudioGraphCloner.Clone(graph);
+        AudioGraphValidator.Validate(snapshot).ThrowIfInvalid();
+        var dependencies = snapshot.Nodes.ToDictionary(static node => node.Id, static _ => 0);
+        var outgoing = snapshot.Nodes.ToDictionary(static node => node.Id, static _ => new List<AudioNodeId>());
+        foreach (var connection in snapshot.Connections.Where(static connection => connection.FromNodeId is not null))
         {
             dependencies[connection.ToNodeId]++;
             outgoing[connection.FromNodeId!.Value].Add(connection.ToNodeId);
@@ -176,7 +219,7 @@ public static class AudioGraphCompiler
         var ready = new SortedSet<AudioNodeId>(Comparer<AudioNodeId>.Create(static (left, right) => left.Value.CompareTo(right.Value)));
         foreach (var pair in dependencies.Where(static pair => pair.Value == 0))
             ready.Add(pair.Key);
-        var ordered = new List<AudioNodeId>(graph.Nodes.Count);
+        var ordered = new List<AudioNodeId>(snapshot.Nodes.Count);
         while (ready.Count > 0)
         {
             var node = ready.Min;
@@ -186,14 +229,62 @@ public static class AudioGraphCompiler
                 if (--dependencies[child] == 0)
                     ready.Add(child);
         }
-        var fanOut = graph.Connections.Where(static connection => connection.SourceId is not null)
+        var fanOut = snapshot.Connections.Where(static connection => connection.SourceId is not null)
             .GroupBy(static connection => connection.SourceId!.Value)
             .ToDictionary(static group => group.Key, static group => group.Count());
-        var canonical = string.Join('|', ordered.Select(static id => id.Value.ToString("N"))) + ";" +
-            string.Join('|', fanOut.OrderBy(static pair => pair.Key.Value).Select(static pair => $"{pair.Key.Value:N}:{pair.Value}")) + ";" +
-            graph.Format + ";" + graph.Quantum.Frames;
+        var canonical = BuildCanonicalSnapshot(snapshot, ordered, fanOut);
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
-        var latency = TimeSpan.FromTicks(graph.Nodes.Count(static node => node.Kind == AudioNodeKind.FixedDelay) * graph.Quantum.Duration.Ticks);
-        return new AudioPhysicalGraphPlan(graph, ordered, fanOut, latency, fingerprint);
+        var latency = TimeSpan.FromTicks(snapshot.Nodes.Count(static node => node.Kind == AudioNodeKind.FixedDelay) * snapshot.Quantum.Duration.Ticks);
+        return new AudioPhysicalGraphPlan(snapshot, ordered, fanOut, latency, fingerprint);
     }
+
+    private static string BuildCanonicalSnapshot(
+        AudioGraphDefinition graph,
+        IReadOnlyList<AudioNodeId> ordered,
+        IReadOnlyDictionary<AudioSourceId, int> fanOut) =>
+        string.Join('|', ordered.Select(static id => id.Value.ToString("N"))) + ";" +
+        string.Join('|', fanOut.OrderBy(static pair => pair.Key.Value).Select(static pair => $"{pair.Key.Value:N}:{pair.Value}")) + ";" +
+        string.Join('|', graph.Sources.OrderBy(static source => source.Id.Value).Select(static source => FormattableString.Invariant($"S:{source.Id.Value:N}:{source.Kind}:{source.Format}:{source.Enabled}:{source.ToneFrequencyHz:R}"))) + ";" +
+        string.Join('|', graph.Nodes.OrderBy(static node => node.Id.Value).Select(static node => FormattableString.Invariant($"N:{node.Id.Value:N}:{node.Kind}:{node.Format}:{node.Enabled}:{node.Value:R}"))) + ";" +
+        string.Join('|', graph.Connections.OrderBy(static connection => connection.ToNodeId.Value).ThenBy(static connection => connection.SourceId?.Value).ThenBy(static connection => connection.FromNodeId?.Value).Select(static connection => $"C:{connection.SourceId?.Value:N}:{connection.FromNodeId?.Value:N}:{connection.ToNodeId.Value:N}")) + ";" +
+        string.Join('|', graph.Buses.OrderBy(static bus => bus.Id.Value).Select(static bus => $"B:{bus.Id.Value:N}:{bus.Format}:{string.Join(',', bus.InputNodeIds.OrderBy(static id => id.Value).Select(static id => id.Value.ToString("N")))}")) + ";" +
+        string.Join('|', graph.OutputRoutes.OrderBy(static route => route.Id.Value).Select(static route => $"R:{route.Id.Value:N}:{route.BusId.Value:N}:{route.SinkId.Value:N}:{route.Enabled}")) + ";" +
+        string.Join('|', graph.Sinks.OrderBy(static sink => sink.Id.Value).Select(static sink => $"K:{sink.Id.Value:N}:{sink.Kind}:{sink.Format}:{sink.Enabled}")) + ";" +
+        graph.SchemaVersion + ";" + graph.Format + ";" + graph.Quantum.Frames;
+}
+
+internal static class AudioGraphCloner
+{
+    public static AudioGraphDefinition Clone(AudioGraphDefinition graph) => new()
+    {
+        SchemaVersion = graph.SchemaVersion,
+        Format = graph.Format,
+        Quantum = graph.Quantum,
+        Sources = graph.Sources.Select(static source => new AudioSourceDefinition
+        {
+            Id = source.Id, Name = source.Name, Kind = source.Kind, Format = source.Format,
+            Enabled = source.Enabled, ToneFrequencyHz = source.ToneFrequencyHz
+        }).ToList(),
+        Nodes = graph.Nodes.Select(static node => new AudioNodeDefinition
+        {
+            Id = node.Id, Name = node.Name, Kind = node.Kind, Format = node.Format,
+            Enabled = node.Enabled, Value = node.Value
+        }).ToList(),
+        Connections = graph.Connections.Select(static connection => new AudioConnection
+        {
+            SourceId = connection.SourceId, FromNodeId = connection.FromNodeId, ToNodeId = connection.ToNodeId
+        }).ToList(),
+        Buses = graph.Buses.Select(static bus => new AudioBusDefinition
+        {
+            Id = bus.Id, Name = bus.Name, Format = bus.Format, InputNodeIds = bus.InputNodeIds.ToList()
+        }).ToList(),
+        OutputRoutes = graph.OutputRoutes.Select(static route => new AudioOutputRoute
+        {
+            Id = route.Id, BusId = route.BusId, SinkId = route.SinkId, Enabled = route.Enabled
+        }).ToList(),
+        Sinks = graph.Sinks.Select(static sink => new AudioSinkDefinition
+        {
+            Id = sink.Id, Name = sink.Name, Kind = sink.Kind, Format = sink.Format, Enabled = sink.Enabled
+        }).ToList()
+    };
 }

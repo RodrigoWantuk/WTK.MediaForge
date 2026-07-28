@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Collections.Concurrent;
+using WTK.MediaForge.Core.Identifiers;
 
 namespace WTK.MediaForge.Audio;
 
@@ -36,19 +38,29 @@ public sealed class AudioBlockLease : IDisposable
 
     internal AudioBlockLease(AudioBufferPool pool, AudioBlock block)
     {
-        _pool = pool;
+        ArgumentNullException.ThrowIfNull(pool);
         Block = block;
     }
 
     public AudioBlock Block { get; }
 
-    public void Dispose() => Interlocked.Exchange(ref _pool, null)?.Return(Block);
+    internal void Activate(AudioBufferPool pool)
+    {
+        if (Interlocked.CompareExchange(ref _pool, pool, null) is not null)
+            throw new InvalidOperationException("Audio block lease is already active.");
+    }
+
+    public void Dispose() => Interlocked.Exchange(ref _pool, null)?.Return(this);
 }
 
 public sealed class AudioBufferPool
 {
     private readonly ArrayPool<float> _samples;
     private readonly int _maximumRetainedBlocks;
+    private readonly object _preparationGate = new();
+    private readonly ConcurrentStack<AudioBlockLease> _available = new();
+    private AudioFormat? _preparedFormat;
+    private AudioQuantum _preparedQuantum;
     private int _rentedBlocks;
     private int _highWaterMark;
 
@@ -62,37 +74,68 @@ public sealed class AudioBufferPool
 
     public int RentedBlocks => Volatile.Read(ref _rentedBlocks);
     public int HighWaterMark => Volatile.Read(ref _highWaterMark);
+    public int PreparedBlockCount => _available.Count + RentedBlocks;
 
-    public AudioBlockLease Rent(AudioFormat format, AudioQuantum quantum, AudioTimestamp timestamp, long sequence, AudioBlockFlags flags = AudioBlockFlags.None)
+    public void Prepare(AudioFormat format, AudioQuantum quantum)
     {
         format.Validate();
         quantum.Validate();
-        var rented = Interlocked.Increment(ref _rentedBlocks);
-        if (rented > _maximumRetainedBlocks)
+        lock (_preparationGate)
         {
-            Interlocked.Decrement(ref _rentedBlocks);
-            throw new InvalidOperationException("Audio buffer pool is bounded and exhausted.");
+            if (_preparedFormat == format && _preparedQuantum == quantum)
+                return;
+            if (RentedBlocks != 0)
+                throw new InvalidOperationException("Audio buffer pool cannot change format while blocks are leased.");
+
+            while (_available.TryPop(out var retired))
+                ReturnSamples(retired.Block);
+
+            _preparedFormat = format;
+            _preparedQuantum = quantum;
+            for (var blockIndex = 0; blockIndex < _maximumRetainedBlocks; blockIndex++)
+            {
+                var channels = new float[format.ChannelCount][];
+                for (var channel = 0; channel < channels.Length; channel++)
+                    channels[channel] = _samples.Rent(quantum.Frames);
+                _available.Push(new AudioBlockLease(this, new AudioBlock(format, quantum.Frames, channels)));
+            }
         }
-        UpdateHighWaterMark(rented);
-        var channels = new float[format.ChannelCount][];
-        for (var index = 0; index < channels.Length; index++)
-            channels[index] = _samples.Rent(quantum.Frames);
-        return new AudioBlockLease(this, new AudioBlock(format, quantum.Frames, channels)
-        {
-            Timestamp = timestamp,
-            Sequence = sequence,
-            Flags = flags
-        });
     }
 
-    internal void Return(AudioBlock block)
+    public AudioBlockLease Rent(AudioFormat format, AudioQuantum quantum, AudioTimestamp timestamp, long sequence, AudioBlockFlags flags = AudioBlockFlags.None)
+    {
+        Prepare(format, quantum);
+        return RentPrepared(format, quantum, timestamp, sequence, flags);
+    }
+
+    public AudioBlockLease RentPrepared(AudioFormat format, AudioQuantum quantum, AudioTimestamp timestamp, long sequence, AudioBlockFlags flags = AudioBlockFlags.None)
+    {
+        if (_preparedFormat != format || _preparedQuantum != quantum)
+            throw new InvalidOperationException("Audio buffer pool must be prepared before real-time processing.");
+        if (!_available.TryPop(out var lease))
+            throw new InvalidOperationException("Audio buffer pool is bounded and exhausted.");
+        var rented = Interlocked.Increment(ref _rentedBlocks);
+        UpdateHighWaterMark(rented);
+        lease.Block.Timestamp = timestamp;
+        lease.Block.Sequence = sequence;
+        lease.Block.Flags = flags;
+        lease.Activate(this);
+        return lease;
+    }
+
+    internal void Return(AudioBlockLease lease)
+    {
+        var block = lease.Block;
+        foreach (var channel in block.Channels)
+            Array.Clear(channel, 0, block.Frames);
+        Interlocked.Decrement(ref _rentedBlocks);
+        _available.Push(lease);
+    }
+
+    private void ReturnSamples(AudioBlock block)
     {
         foreach (var channel in block.Channels)
-        {
-            Array.Clear(channel, 0, block.Frames);
             _samples.Return(channel);
-        }
-        Interlocked.Decrement(ref _rentedBlocks);
     }
 
     private void UpdateHighWaterMark(int value)
@@ -125,6 +168,7 @@ public sealed class AudioRuntime
     public void Publish(AudioPhysicalGraphPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        _bufferPool.Prepare(plan.ExecutionGraph.Format, plan.ExecutionGraph.Quantum);
         var previous = Interlocked.Exchange(ref _publishedPlan, plan);
         if (previous is not null)
             Interlocked.Increment(ref _retiredPlanCount);
@@ -138,7 +182,22 @@ public sealed class AudioRuntime
         var plan = Volatile.Read(ref _publishedPlan) ?? throw new InvalidOperationException("An audio graph plan must be published before processing.");
         if (Volatile.Read(ref _running) == 0)
             throw new InvalidOperationException("Audio runtime is not running.");
-        return _bufferPool.Rent(plan.Graph.Format, plan.Graph.Quantum, timestamp, sequence, AudioBlockFlags.Silence);
+        return _bufferPool.RentPrepared(plan.ExecutionGraph.Format, plan.ExecutionGraph.Quantum, timestamp, sequence, AudioBlockFlags.Silence);
+    }
+
+    public AudioBlockLease ProcessSource(AudioSourceId sourceId, AudioTimestamp timestamp, long sequence)
+    {
+        var plan = Volatile.Read(ref _publishedPlan) ?? throw new InvalidOperationException("An audio graph plan must be published before processing.");
+        if (Volatile.Read(ref _running) == 0)
+            throw new InvalidOperationException("Audio runtime is not running.");
+        if (!plan.TryGetSource(sourceId, out var source))
+            throw new InvalidOperationException("Audio source is not part of the published graph plan.");
+
+        var flags = !source.Enabled || source.Kind == AudioSourceKind.Silence ? AudioBlockFlags.Silence : AudioBlockFlags.None;
+        var lease = _bufferPool.RentPrepared(plan.ExecutionGraph.Format, plan.ExecutionGraph.Quantum, timestamp, sequence, flags);
+        if (source.Enabled && source.Kind == AudioSourceKind.GeneratedTone)
+            AudioSourceRenderer.RenderGeneratedTone(source, lease.Block);
+        return lease;
     }
 
     public AudioRuntimeHealth GetHealth()
