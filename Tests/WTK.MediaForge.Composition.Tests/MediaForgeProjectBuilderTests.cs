@@ -196,4 +196,193 @@ public class MediaForgeProjectBuilderTests
         Assert.Throws<MediaForgeProjectValidationException>(() =>
             MediaForgeProjectBuilder.FromProject(invalidProject).BuildValidated());
     }
+
+    [Theory]
+    [InlineData("source")]
+    [InlineData("text")]
+    [InlineData("solid")]
+    [InlineData("nested")]
+    [InlineData("adjustment")]
+    [InlineData("output")]
+    public void ProjectBuilder_rolls_back_created_items_when_configure_throws(string operation)
+    {
+        var project = CreateRollbackProject(out var main, out var nested, out var source);
+        var before = MediaForgeProjectSerializer.Serialize(project);
+        var builder = MediaForgeProjectBuilder.FromProject(project);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+        {
+            switch (operation)
+            {
+                case "source":
+                    builder.AddSourceLayer(main, source, _ => throw new InvalidOperationException("boom"));
+                    break;
+                case "text":
+                    builder.AddText(main, "Title", _ => throw new InvalidOperationException("boom"));
+                    break;
+                case "solid":
+                    builder.AddSolid(main, ColorRgba.Black, _ => throw new InvalidOperationException("boom"));
+                    break;
+                case "nested":
+                    builder.AddCanvasLayer(main, nested, _ => throw new InvalidOperationException("boom"));
+                    break;
+                case "adjustment":
+                    builder.AddAdjustmentLayer(main, _ => throw new InvalidOperationException("boom"));
+                    break;
+                case "output":
+                    builder.OffscreenOutput("Program", main, 1920, 1080, out _, _ => throw new InvalidOperationException("boom"));
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unknown operation.");
+            }
+        });
+
+        Assert.Equal("boom", exception.Message);
+        Assert.Equal(before, MediaForgeProjectSerializer.Serialize(builder.Build()));
+        Assert.Empty(main.Objects);
+    }
+
+    [Fact]
+    public void ProjectBuilder_rolls_back_against_internal_canvas_when_external_canvas_has_same_id()
+    {
+        var project = CreateRollbackProject(out var main, out _, out _);
+        var before = MediaForgeProjectSerializer.Serialize(project);
+        var externalCanvas = MediaForgeProjectSerializer.Deserialize(before).Canvases.Single(canvas => canvas.Id == main.Id);
+        var builder = MediaForgeProjectBuilder.FromProject(project);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            builder.AddSolid(
+                externalCanvas,
+                ColorRgba.White,
+                layer =>
+                {
+                    layer.SetName("Should roll back");
+                    throw new InvalidOperationException("boom");
+                }));
+
+        Assert.Empty(externalCanvas.Objects);
+        Assert.Equal(before, MediaForgeProjectSerializer.Serialize(builder.Build()));
+    }
+
+    [Theory]
+    [InlineData(float.NaN, 0f, 1f, 1f)]
+    [InlineData(0f, float.PositiveInfinity, 1f, 1f)]
+    [InlineData(0.8f, 0f, 0.2f, 1f)]
+    [InlineData(-0.1f, 0f, 1f, 1f)]
+    [InlineData(0f, 0f, 1.1f, 1f)]
+    public void LayerBuilder_set_crop_rejects_invalid_normalized_rect(float left, float top, float right, float bottom)
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddSolid(
+                main,
+                ColorRgba.Black,
+                layer => layer.SetCrop(left, top, right, bottom)));
+    }
+
+    [Fact]
+    public void LayerBuilder_clear_crop_removes_existing_crop()
+    {
+        var project = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main)
+            .AddSolid(
+                main,
+                ColorRgba.Black,
+                layer => layer.SetCrop(0.1f, 0.1f, 0.9f, 0.9f).ClearCrop())
+            .BuildValidated();
+
+        var layer = Assert.IsType<SolidDrawObject>(Assert.Single(project.Canvases[0].Objects));
+        Assert.Null(layer.Crop);
+    }
+
+    [Theory]
+    [InlineData(float.NaN, 0.5f)]
+    [InlineData(0.5f, float.PositiveInfinity)]
+    [InlineData(-0.1f, 0.5f)]
+    [InlineData(0.5f, 1.1f)]
+    public void LayerBuilder_set_pivot_rejects_invalid_unit_values(float x, float y)
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddText(
+                main,
+                "Title",
+                layer => layer.SetPivot(x, y)));
+    }
+
+    [Theory]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void LayerBuilder_set_rotation_rejects_non_finite_values(float rotationDegrees)
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddSolid(
+                main,
+                ColorRgba.Black,
+                layer => layer.SetRotationDegrees(rotationDegrees)));
+    }
+
+    [Theory]
+    [InlineData(float.NaN)]
+    [InlineData(float.NegativeInfinity)]
+    [InlineData(-0.1f)]
+    [InlineData(1.1f)]
+    public void LayerBuilder_set_opacity_rejects_invalid_values(float opacity)
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddSolid(
+                main,
+                ColorRgba.Black,
+                layer => layer.SetOpacity(opacity)));
+    }
+
+    [Fact]
+    public void LayerBuilder_color_helpers_reject_invalid_colors_consistently()
+    {
+        var invalid = new ColorRgba(float.NaN, 0f, 0f, 1f);
+        var builder = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main)
+            .DesktopSource("Desktop", displayIndex: 0, out var desktop);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddSolid(main, ColorRgba.Black, layer => layer.SetFillColor(invalid)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddText(main, "Title", layer => layer.SetTextColor(invalid)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddSourceLayer(main, desktop, layer => layer.SetLetterboxColor(invalid)));
+    }
+
+    [Fact]
+    public void LayerBuilder_set_blend_mode_rejects_invalid_enum_values()
+    {
+        var invalid = (BlendMode)42;
+        var builder = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddSolid(
+                main,
+                ColorRgba.Black,
+                layer => layer.SetBlendMode(invalid)));
+    }
+
+    private static MediaForgeProject CreateRollbackProject(
+        out MediaForgeCanvas main,
+        out MediaForgeCanvas nested,
+        out MediaForgeSourceDefinition source) =>
+        MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out main)
+            .Canvas("Nested", 640, 360, out nested)
+            .DesktopSource("Desktop", displayIndex: 0, out source)
+            .BuildValidated();
 }

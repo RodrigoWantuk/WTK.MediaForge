@@ -176,7 +176,8 @@ public sealed class MediaForgeProjectBuilder
     {
         ArgumentNullException.ThrowIfNull(canvas);
 
-        var layer = _editor.AddText(canvas.Id, text, Transform2D.Default);
+        var projectCanvas = RequireCanvas(canvas.Id);
+        var layer = _editor.AddText(projectCanvas.Id, text, Transform2D.Default);
 
         try
         {
@@ -185,7 +186,7 @@ public sealed class MediaForgeProjectBuilder
         }
         catch
         {
-            canvas.Objects.Remove(layer);
+            projectCanvas.Objects.Remove(layer);
             throw;
         }
     }
@@ -197,7 +198,8 @@ public sealed class MediaForgeProjectBuilder
     {
         ArgumentNullException.ThrowIfNull(canvas);
 
-        var layer = _editor.AddSolid(canvas.Id, fillColor, Transform2D.Default);
+        var projectCanvas = RequireCanvas(canvas.Id);
+        var layer = _editor.AddSolid(projectCanvas.Id, fillColor, Transform2D.Default);
 
         try
         {
@@ -206,7 +208,7 @@ public sealed class MediaForgeProjectBuilder
         }
         catch
         {
-            canvas.Objects.Remove(layer);
+            projectCanvas.Objects.Remove(layer);
             throw;
         }
     }
@@ -219,7 +221,9 @@ public sealed class MediaForgeProjectBuilder
         ArgumentNullException.ThrowIfNull(parentCanvas);
         ArgumentNullException.ThrowIfNull(nestedCanvas);
 
-        var layer = _editor.AddCanvasLayer(parentCanvas.Id, nestedCanvas.Id, Transform2D.Default);
+        var projectParentCanvas = RequireCanvas(parentCanvas.Id);
+        var projectNestedCanvas = RequireCanvas(nestedCanvas.Id);
+        var layer = _editor.AddCanvasLayer(projectParentCanvas.Id, projectNestedCanvas.Id, Transform2D.Default);
 
         try
         {
@@ -228,7 +232,7 @@ public sealed class MediaForgeProjectBuilder
         }
         catch
         {
-            parentCanvas.Objects.Remove(layer);
+            projectParentCanvas.Objects.Remove(layer);
             throw;
         }
     }
@@ -239,7 +243,8 @@ public sealed class MediaForgeProjectBuilder
     {
         ArgumentNullException.ThrowIfNull(canvas);
 
-        var layer = _editor.AddAdjustmentLayer(canvas.Id, Transform2D.Default);
+        var projectCanvas = RequireCanvas(canvas.Id);
+        var layer = _editor.AddAdjustmentLayer(projectCanvas.Id, Transform2D.Default);
         try
         {
             configure?.Invoke(layer);
@@ -247,7 +252,7 @@ public sealed class MediaForgeProjectBuilder
         }
         catch
         {
-            canvas.Objects.Remove(layer);
+            projectCanvas.Objects.Remove(layer);
             throw;
         }
     }
@@ -361,9 +366,19 @@ public sealed class MediaForgeProjectBuilder
         Action<MediaForgeRenderOutput>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
-        output = _editor.CreateOutput(name, canvas.Id, settings, ToFrameSize(width, height));
-        configure?.Invoke(output);
-        return this;
+        var projectCanvas = RequireCanvas(canvas.Id);
+        output = _editor.CreateOutput(name, projectCanvas.Id, settings, ToFrameSize(width, height));
+
+        try
+        {
+            configure?.Invoke(output);
+            return this;
+        }
+        catch
+        {
+            _editor.Project.Outputs.Remove(output);
+            throw;
+        }
     }
 
     public MediaForgeProject Build() => MediaForgeProjectCloner.DeepClone(_editor.Project);
@@ -391,6 +406,63 @@ public sealed class MediaForgeProjectBuilder
     }
 }
 
+internal static class LayerBuilderValidation
+{
+    public static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
+    {
+        EnsurePositive(width, nameof(width));
+        EnsurePositive(height, nameof(height));
+
+        return new Transform2D
+        {
+            Position = new CanvasPoint(x, y),
+            Size = new CanvasSize(width, height),
+            RotationDegrees = current.RotationDegrees,
+            Pivot = current.Pivot
+        };
+    }
+
+    public static NormalizedRect ToCrop(float left, float top, float right, float bottom)
+    {
+        var crop = new NormalizedRect(left, top, right, bottom);
+        if (!crop.IsValid)
+            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
+
+        return crop;
+    }
+
+    public static void EnsurePositive(float value, string parameterName)
+    {
+        if (!float.IsFinite(value) || value <= 0)
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and positive.");
+    }
+
+    public static void EnsureUnitRange(float value, string parameterName)
+    {
+        if (!float.IsFinite(value) || value < 0 || value > 1)
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
+    }
+
+    public static void EnsureFinite(float value, string parameterName)
+    {
+        if (!float.IsFinite(value))
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
+    }
+
+    public static void EnsureColorInRange(ColorRgba color, string parameterName)
+    {
+        if (!color.IsInRange())
+            throw new ArgumentOutOfRangeException(parameterName, "Color components must be finite and between 0 and 1.");
+    }
+
+    public static void EnsureDefined<TEnum>(TEnum value, string parameterName)
+        where TEnum : struct, Enum
+    {
+        if (!Enum.IsDefined(value))
+            throw new ArgumentOutOfRangeException(parameterName, $"Value '{value}' is not a defined {typeof(TEnum).Name}.");
+    }
+}
+
 public sealed class SourceLayerBuilder
 {
     private readonly SourceLayerDrawObject _layer;
@@ -407,32 +479,28 @@ public sealed class SourceLayerBuilder
 
     public SourceLayerBuilder SetBounds(float x, float y, float width, float height)
     {
-        _layer.Transform = WithBounds(_layer.Transform, x, y, width, height);
+        _layer.Transform = LayerBuilderValidation.WithBounds(_layer.Transform, x, y, width, height);
         return this;
     }
 
     public SourceLayerBuilder SetRotationDegrees(float rotationDegrees)
     {
-        EnsureFinite(rotationDegrees, nameof(rotationDegrees));
+        LayerBuilderValidation.EnsureFinite(rotationDegrees, nameof(rotationDegrees));
         _layer.Transform = _layer.Transform with { RotationDegrees = rotationDegrees };
         return this;
     }
 
     public SourceLayerBuilder SetPivot(float x, float y)
     {
-        EnsureUnitRange(x, nameof(x));
-        EnsureUnitRange(y, nameof(y));
+        LayerBuilderValidation.EnsureUnitRange(x, nameof(x));
+        LayerBuilderValidation.EnsureUnitRange(y, nameof(y));
         _layer.Transform = _layer.Transform with { Pivot = new NormalizedPoint(x, y) };
         return this;
     }
 
     public SourceLayerBuilder SetCrop(float left, float top, float right, float bottom)
     {
-        var crop = new NormalizedRect(left, top, right, bottom);
-        if (!crop.IsValid)
-            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
-
-        _layer.Crop = crop;
+        _layer.Crop = LayerBuilderValidation.ToCrop(left, top, right, bottom);
         return this;
     }
 
@@ -468,9 +536,7 @@ public sealed class SourceLayerBuilder
 
     public SourceLayerBuilder SetLetterboxColor(ColorRgba color)
     {
-        if (!color.IsInRange())
-            throw new ArgumentOutOfRangeException(nameof(color), "Color components must be finite and between 0 and 1.");
-
+        LayerBuilderValidation.EnsureColorInRange(color, nameof(color));
         _layer.LetterboxColor = color;
         return this;
     }
@@ -483,13 +549,14 @@ public sealed class SourceLayerBuilder
 
     public SourceLayerBuilder SetOpacity(float opacity)
     {
-        EnsureUnitRange(opacity, nameof(opacity));
+        LayerBuilderValidation.EnsureUnitRange(opacity, nameof(opacity));
         _layer.Opacity = opacity;
         return this;
     }
 
     public SourceLayerBuilder SetBlendMode(BlendMode blendMode)
     {
+        LayerBuilderValidation.EnsureDefined(blendMode, nameof(blendMode));
         _layer.BlendMode = blendMode;
         return this;
     }
@@ -500,12 +567,10 @@ public sealed class SourceLayerBuilder
         float smoothness = 0.08f,
         float spillReduction = 0.5f)
     {
-        EnsureUnitRange(similarity, nameof(similarity));
-        EnsureUnitRange(smoothness, nameof(smoothness));
-        EnsureUnitRange(spillReduction, nameof(spillReduction));
-
-        if (!keyColor.IsInRange())
-            throw new ArgumentOutOfRangeException(nameof(keyColor), "Color components must be finite and between 0 and 1.");
+        LayerBuilderValidation.EnsureUnitRange(similarity, nameof(similarity));
+        LayerBuilderValidation.EnsureUnitRange(smoothness, nameof(smoothness));
+        LayerBuilderValidation.EnsureUnitRange(spillReduction, nameof(spillReduction));
+        LayerBuilderValidation.EnsureColorInRange(keyColor, nameof(keyColor));
 
         _layer.Effects.Add(new ChromaKeyEffect
         {
@@ -523,10 +588,10 @@ public sealed class SourceLayerBuilder
         float saturation = 1f,
         float hueDegrees = 0f)
     {
-        EnsureFinite(brightness, nameof(brightness));
-        EnsurePositive(contrast, nameof(contrast));
-        EnsurePositive(saturation, nameof(saturation));
-        EnsureFinite(hueDegrees, nameof(hueDegrees));
+        LayerBuilderValidation.EnsureFinite(brightness, nameof(brightness));
+        LayerBuilderValidation.EnsurePositive(contrast, nameof(contrast));
+        LayerBuilderValidation.EnsurePositive(saturation, nameof(saturation));
+        LayerBuilderValidation.EnsureFinite(hueDegrees, nameof(hueDegrees));
 
         _layer.Effects.Add(new ColorCorrectionEffect
         {
@@ -540,7 +605,7 @@ public sealed class SourceLayerBuilder
 
     public SourceLayerBuilder AddBlur(float radius)
     {
-        EnsurePositive(radius, nameof(radius));
+        LayerBuilderValidation.EnsurePositive(radius, nameof(radius));
 
         _layer.Effects.Add(new BlurEffect
         {
@@ -549,37 +614,6 @@ public sealed class SourceLayerBuilder
         return this;
     }
 
-    private static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
-    {
-        EnsurePositive(width, nameof(width));
-        EnsurePositive(height, nameof(height));
-
-        return new Transform2D
-        {
-            Position = new CanvasPoint(x, y),
-            Size = new CanvasSize(width, height),
-            RotationDegrees = current.RotationDegrees,
-            Pivot = current.Pivot
-        };
-    }
-
-    private static void EnsurePositive(float value, string parameterName)
-    {
-        if (!float.IsFinite(value) || value <= 0)
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and positive.");
-    }
-
-    private static void EnsureUnitRange(float value, string parameterName)
-    {
-        if (!float.IsFinite(value) || value < 0 || value > 1)
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
-    }
-
-    private static void EnsureFinite(float value, string parameterName)
-    {
-        if (!float.IsFinite(value))
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
-    }
 }
 
 public sealed class TextLayerBuilder
@@ -598,32 +632,28 @@ public sealed class TextLayerBuilder
 
     public TextLayerBuilder SetBounds(float x, float y, float width, float height)
     {
-        _layer.Transform = WithBounds(_layer.Transform, x, y, width, height);
+        _layer.Transform = LayerBuilderValidation.WithBounds(_layer.Transform, x, y, width, height);
         return this;
     }
 
     public TextLayerBuilder SetRotationDegrees(float rotationDegrees)
     {
-        EnsureFinite(rotationDegrees, nameof(rotationDegrees));
+        LayerBuilderValidation.EnsureFinite(rotationDegrees, nameof(rotationDegrees));
         _layer.Transform = _layer.Transform with { RotationDegrees = rotationDegrees };
         return this;
     }
 
     public TextLayerBuilder SetPivot(float x, float y)
     {
-        EnsureUnitRange(x, nameof(x));
-        EnsureUnitRange(y, nameof(y));
+        LayerBuilderValidation.EnsureUnitRange(x, nameof(x));
+        LayerBuilderValidation.EnsureUnitRange(y, nameof(y));
         _layer.Transform = _layer.Transform with { Pivot = new NormalizedPoint(x, y) };
         return this;
     }
 
     public TextLayerBuilder SetCrop(float left, float top, float right, float bottom)
     {
-        var crop = new NormalizedRect(left, top, right, bottom);
-        if (!crop.IsValid)
-            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
-
-        _layer.Crop = crop;
+        _layer.Crop = LayerBuilderValidation.ToCrop(left, top, right, bottom);
         return this;
     }
 
@@ -641,9 +671,7 @@ public sealed class TextLayerBuilder
 
     public TextLayerBuilder SetFontSize(float fontSize)
     {
-        if (!float.IsFinite(fontSize) || fontSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(fontSize), "Font size must be finite and positive.");
-
+        LayerBuilderValidation.EnsurePositive(fontSize, nameof(fontSize));
         _layer.FontSize = fontSize;
         return this;
     }
@@ -657,54 +685,25 @@ public sealed class TextLayerBuilder
 
     public TextLayerBuilder SetTextColor(ColorRgba color)
     {
+        LayerBuilderValidation.EnsureColorInRange(color, nameof(color));
         _layer.TextColor = color;
         return this;
     }
 
     public TextLayerBuilder SetOpacity(float opacity)
     {
-        EnsureUnitRange(opacity, nameof(opacity));
+        LayerBuilderValidation.EnsureUnitRange(opacity, nameof(opacity));
         _layer.Opacity = opacity;
         return this;
     }
 
     public TextLayerBuilder SetBlendMode(BlendMode blendMode)
     {
+        LayerBuilderValidation.EnsureDefined(blendMode, nameof(blendMode));
         _layer.BlendMode = blendMode;
         return this;
     }
 
-    private static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
-    {
-        EnsurePositive(width, nameof(width));
-        EnsurePositive(height, nameof(height));
-
-        return new Transform2D
-        {
-            Position = new CanvasPoint(x, y),
-            Size = new CanvasSize(width, height),
-            RotationDegrees = current.RotationDegrees,
-            Pivot = current.Pivot
-        };
-    }
-
-    private static void EnsurePositive(float value, string parameterName)
-    {
-        if (!float.IsFinite(value) || value <= 0)
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and positive.");
-    }
-
-    private static void EnsureUnitRange(float value, string parameterName)
-    {
-        if (!float.IsFinite(value) || value < 0 || value > 1)
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
-    }
-
-    private static void EnsureFinite(float value, string parameterName)
-    {
-        if (!float.IsFinite(value))
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
-    }
 }
 
 public sealed class SolidLayerBuilder
@@ -723,32 +722,28 @@ public sealed class SolidLayerBuilder
 
     public SolidLayerBuilder SetBounds(float x, float y, float width, float height)
     {
-        _layer.Transform = WithBounds(_layer.Transform, x, y, width, height);
+        _layer.Transform = LayerBuilderValidation.WithBounds(_layer.Transform, x, y, width, height);
         return this;
     }
 
     public SolidLayerBuilder SetRotationDegrees(float rotationDegrees)
     {
-        EnsureFinite(rotationDegrees, nameof(rotationDegrees));
+        LayerBuilderValidation.EnsureFinite(rotationDegrees, nameof(rotationDegrees));
         _layer.Transform = _layer.Transform with { RotationDegrees = rotationDegrees };
         return this;
     }
 
     public SolidLayerBuilder SetPivot(float x, float y)
     {
-        EnsureUnitRange(x, nameof(x));
-        EnsureUnitRange(y, nameof(y));
+        LayerBuilderValidation.EnsureUnitRange(x, nameof(x));
+        LayerBuilderValidation.EnsureUnitRange(y, nameof(y));
         _layer.Transform = _layer.Transform with { Pivot = new NormalizedPoint(x, y) };
         return this;
     }
 
     public SolidLayerBuilder SetCrop(float left, float top, float right, float bottom)
     {
-        var crop = new NormalizedRect(left, top, right, bottom);
-        if (!crop.IsValid)
-            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
-
-        _layer.Crop = crop;
+        _layer.Crop = LayerBuilderValidation.ToCrop(left, top, right, bottom);
         return this;
     }
 
@@ -766,57 +761,25 @@ public sealed class SolidLayerBuilder
 
     public SolidLayerBuilder SetFillColor(ColorRgba color)
     {
-        if (!color.IsInRange())
-            throw new ArgumentOutOfRangeException(nameof(color), "Color components must be finite and between 0 and 1.");
-
+        LayerBuilderValidation.EnsureColorInRange(color, nameof(color));
         _layer.FillColor = color;
         return this;
     }
 
     public SolidLayerBuilder SetOpacity(float opacity)
     {
-        EnsureUnitRange(opacity, nameof(opacity));
+        LayerBuilderValidation.EnsureUnitRange(opacity, nameof(opacity));
         _layer.Opacity = opacity;
         return this;
     }
 
     public SolidLayerBuilder SetBlendMode(BlendMode blendMode)
     {
+        LayerBuilderValidation.EnsureDefined(blendMode, nameof(blendMode));
         _layer.BlendMode = blendMode;
         return this;
     }
 
-    private static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
-    {
-        EnsurePositive(width, nameof(width));
-        EnsurePositive(height, nameof(height));
-
-        return new Transform2D
-        {
-            Position = new CanvasPoint(x, y),
-            Size = new CanvasSize(width, height),
-            RotationDegrees = current.RotationDegrees,
-            Pivot = current.Pivot
-        };
-    }
-
-    private static void EnsurePositive(float value, string parameterName)
-    {
-        if (!float.IsFinite(value) || value <= 0)
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and positive.");
-    }
-
-    private static void EnsureUnitRange(float value, string parameterName)
-    {
-        if (!float.IsFinite(value) || value < 0 || value > 1)
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
-    }
-
-    private static void EnsureFinite(float value, string parameterName)
-    {
-        if (!float.IsFinite(value))
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
-    }
 }
 
 public sealed class CanvasLayerBuilder
@@ -835,32 +798,28 @@ public sealed class CanvasLayerBuilder
 
     public CanvasLayerBuilder SetBounds(float x, float y, float width, float height)
     {
-        _layer.Transform = WithBounds(_layer.Transform, x, y, width, height);
+        _layer.Transform = LayerBuilderValidation.WithBounds(_layer.Transform, x, y, width, height);
         return this;
     }
 
     public CanvasLayerBuilder SetRotationDegrees(float rotationDegrees)
     {
-        EnsureFinite(rotationDegrees, nameof(rotationDegrees));
+        LayerBuilderValidation.EnsureFinite(rotationDegrees, nameof(rotationDegrees));
         _layer.Transform = _layer.Transform with { RotationDegrees = rotationDegrees };
         return this;
     }
 
     public CanvasLayerBuilder SetPivot(float x, float y)
     {
-        EnsureUnitRange(x, nameof(x));
-        EnsureUnitRange(y, nameof(y));
+        LayerBuilderValidation.EnsureUnitRange(x, nameof(x));
+        LayerBuilderValidation.EnsureUnitRange(y, nameof(y));
         _layer.Transform = _layer.Transform with { Pivot = new NormalizedPoint(x, y) };
         return this;
     }
 
     public CanvasLayerBuilder SetCrop(float left, float top, float right, float bottom)
     {
-        var crop = new NormalizedRect(left, top, right, bottom);
-        if (!crop.IsValid)
-            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
-
-        _layer.Crop = crop;
+        _layer.Crop = LayerBuilderValidation.ToCrop(left, top, right, bottom);
         return this;
     }
 
@@ -878,46 +837,16 @@ public sealed class CanvasLayerBuilder
 
     public CanvasLayerBuilder SetOpacity(float opacity)
     {
-        EnsureUnitRange(opacity, nameof(opacity));
+        LayerBuilderValidation.EnsureUnitRange(opacity, nameof(opacity));
         _layer.Opacity = opacity;
         return this;
     }
 
     public CanvasLayerBuilder SetBlendMode(BlendMode blendMode)
     {
+        LayerBuilderValidation.EnsureDefined(blendMode, nameof(blendMode));
         _layer.BlendMode = blendMode;
         return this;
     }
 
-    private static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
-    {
-        EnsurePositive(width, nameof(width));
-        EnsurePositive(height, nameof(height));
-
-        return new Transform2D
-        {
-            Position = new CanvasPoint(x, y),
-            Size = new CanvasSize(width, height),
-            RotationDegrees = current.RotationDegrees,
-            Pivot = current.Pivot
-        };
-    }
-
-    private static void EnsurePositive(float value, string parameterName)
-    {
-        if (!float.IsFinite(value) || value <= 0)
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and positive.");
-    }
-
-    private static void EnsureUnitRange(float value, string parameterName)
-    {
-        if (!float.IsFinite(value) || value < 0 || value > 1)
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
-    }
-
-    private static void EnsureFinite(float value, string parameterName)
-    {
-        if (!float.IsFinite(value))
-            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
-    }
 }
