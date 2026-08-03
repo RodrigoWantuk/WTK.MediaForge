@@ -1,93 +1,159 @@
 # WTK MediaForge
 
-**WTK MediaForge** is a high-performance video-first media composition engine focused on real-time processing, hardware acceleration, and low system overhead. Audio routing, mixing, and muxing are planned future product areas, not part of the current engine path.
+WTK MediaForge is a GPU-first media composition engine and native Avalonia Studio for real-time capture, composition, preview, recording, and streaming.
 
-The project is designed as a GPU-first media compositor: instead of relying heavily on CPU-based frame processing, WTK MediaForge aims to use hardware acceleration together with Vulkan whenever possible to reduce CPU usage, avoid unnecessary raw video transfers through system RAM, and keep the host machine responsive even when working with complex scenes.
+The project is designed so that continuous uncompressed video remains on GPU-backed surfaces from capture or hardware decode through Vulkan composition and hardware encode/presentation. There is no software video codec fallback on product paths.
 
-The long-term goal is to provide a lightweight, modular, and extensible media composition engine for scenarios such as live production, screen capture, picture-in-picture layouts, scene composition, overlays, real-time text, audio/video routing, recording, and streaming.
+## Current status
 
-## Project Goals
+The repository contains a substantial Windows implementation and portable cross-platform architecture:
 
-WTK MediaForge is being built around a few core principles:
+- canonical project, source, canvas, layer, effect, output, capability, and scene-editing contracts;
+- transactional engine lifecycle and deterministic resource ownership;
+- Vulkan composition with nested canvases, transforms, crop, opacity, blend, text, solid layers, chroma key, color correction, blur, Cut, and Fade;
+- a validated physical RenderGraph covering source acquisition, effects, canvases, outputs, fan-out, transitions, and encoded dispatch;
+- Windows desktop, window, webcam, static-image, and MP4 input paths;
+- Windows GPU export, Media Foundation hardware H.264 encode, MP4 recording, and RTMP publishing;
+- explicit Live and Apply scene editing with versioned nested canvases;
+- native Avalonia Studio with canonical persistence, scene/layer editing, output routing, runtime lifecycle, and proof-gated recording/streaming controls;
+- portable audio graph, pooled processing, mixing, meters, fixed delay, and bounded in-memory Program Mix routes;
+- Remote Scene signaling and transport contracts;
+- mandatory Windows and Linux CI for portable architecture.
 
-* **GPU-first composition**
-  Video frames should be processed, transformed, composed, and rendered primarily on the GPU.
+The main product gaps are hosted-preview promotion, sustained hardware qualification, remaining Physical RenderGraph ownership closure, physical audio adapters, Linux/macOS media adapters, and Remote Scene media.
 
-* **Low CPU overhead**
-  The CPU should coordinate the pipeline, not process every raw video frame.
+See [`docs/ROADMAP_CURRENT.md`](docs/ROADMAP_CURRENT.md) for current reality and execution order.
 
-* **Reduced RAM bandwidth usage**
-  The project aims to avoid unnecessary movement of uncompressed video frames through system RAM whenever possible.
+## Active functional milestone
 
-* **Hardware acceleration**
-  Capture, decoding, rendering, composition, and encoding use hardware acceleration on product paths. Continuous video decode/encode is hardware/GPU path or unavailable; there is no software fallback for product media.
+The next integrated delivery checkpoint is a functional public API and Avalonia Studio using the same production engine path.
 
-* **Modular architecture**
-  Capture sources, rendering backends, composition logic, media processing, and output modules should be isolated and replaceable.
+The milestone includes:
 
-* **Real-time control**
-  Scenes, overlays, text, layouts, and media sources should be adjustable while the pipeline is running.
+- a public API quickstart;
+- native hosted GPU preview;
+- nested scenes;
+- Live and Apply editing;
+- proof-gated MP4 and RTMP outputs;
+- real Studio source/output editing;
+- deterministic shutdown and resource baseline return.
 
-* **Studio application**
-  The Avalonia Studio has a real runtime/design composition boundary, capability probing, an editable overlay, and canonical project sessions that preserve settings not exposed by the UI. Saves validate a clone and atomically replace the file before committing session state. Native preview/output controls remain capability-gated.
+See [`docs/MVP_API_STUDIO.md`](docs/MVP_API_STUDIO.md).
 
-## Technology Direction
+“MVP” is used only as a delivery checkpoint. It does not relax the final architecture, GPU transport law, capability truth, cross-platform boundaries, or validation requirements.
 
-The current technical direction is:
+## Core principles
 
-* **.NET 8**
-* **Avalonia UI** for the Studio application; cross-platform is the product goal,
-  while the current production media implementation and qualified Studio host are Windows
-* **WinForms** only as an initial Windows test harness / legacy POC host
-* **Silk.NET** for Vulkan bindings
-* **Vulkan** for GPU-based rendering and composition
-* **Vortice.Direct3D11 / Vortice.DXGI** for D3D11/DXGI interop
-* **Desktop Duplication API** for the first Windows desktop capture implementation
+### GPU-first video
 
-## Studio UI Direction
+- Continuous uncompressed video remains in GPU memory on product paths.
+- Capture/decode produces GPU-backed leases.
+- Composition and effects execute through Vulkan.
+- Encode and preview consume GPU-backed output.
+- Software decode/encode and raw-video pipes are prohibited as product fallback.
 
-WTK MediaForge Studio is the desktop product shell for users who do not want to consume the engine through APIs directly.
+### Explicit capability truth
 
-The approved current UI direction is an Avalonia dark-theme mock workbench with:
+A feature is available only when the real adapter, driver, API, implementation, output surface, and required proof chain support it.
 
-* a project model centered on scenes/canvases, reusable sources, scene layers, scene/layer effects, and routed outputs;
-* a scenes-first left navigation with source/output actions close to the relevant lists;
-* a dominant editable canvas mock with zoom, pan, layer hit testing, move/resize handles, grid/safe-area controls, and a separate overlay layer for future GPU preview integration;
-* contextual properties for scene, source, layer, effect, and output routing settings;
-* bottom workbench content limited to the main user workflow: layers, effects, and scene outputs;
-* production/output cards that make scene-to-sink routing and transitions visible without exposing engine, Vulkan, D3D11, command buffers, fences, or native handles.
+Missing hardware or incomplete proof is reported with a concrete reason. Model presence, prototype code, nominal GPU names, and skipped tests are not capability evidence.
 
-Diagnostics, performance details, and other low-level runtime information belong in advanced tooling, not in the primary user workflow. The scene editor overlay remains mock-rendered while native preview is experimental; runtime features are shown only from actual capability snapshots.
+### Modular product architecture
 
-The React/Lovable prototype is a visual reference only. The Studio implementation must be native Avalonia/MVVM and must not embed React, WebView, Electron, or browser runtime dependencies.
+```text
+MediaForgeProject
+  -> reusable sources
+  -> canvases/scenes
+     -> source, text, solid, or nested-canvas layers
+     -> ordered effects
+  -> render outputs
+     -> preview and/or encoded sinks
+  -> global audio graph
+```
 
-See:
+Sources do not render. Sinks do not request rendering. Native resources remain in platform projects.
 
-* `docs/UI_STUDIO_DESIGN.md`
-* `docs/UI_IMPLEMENTATION_PLAN.md`
-* `docs/UI_ACCEPTANCE_CHECKLIST.md`
-* `docs/BUILD_AND_RELEASE.md`
-* `docs/SIGNALING_DEPLOYMENT.md`
-* `docs/KNOWN_LIMITATIONS.md`
+### Cross-platform contract
+
+- Windows and Linux are mandatory build/test targets.
+- Windows currently owns the physical production media path.
+- Linux and macOS physical adapters remain planned.
+- Portable projects never depend on platform implementation projects.
+
+## Technology
+
+- .NET 8
+- Avalonia UI
+- CommunityToolkit.Mvvm
+- Silk.NET Vulkan
+- Vortice D3D11/DXGI
+- Windows Graphics Capture
+- Desktop Duplication API
+- Media Foundation hardware decode/encode
+
+WinForms remains a legacy/diagnostic host, not the primary product UI.
+
+## Documentation
+
+Start with [`docs/README.md`](docs/README.md).
+
+Primary normative documents:
+
+- [`docs/ROADMAP_CURRENT.md`](docs/ROADMAP_CURRENT.md)
+- [`docs/AI_CONTEXT.md`](docs/AI_CONTEXT.md)
+- [`docs/PRODUCT_MODEL.md`](docs/PRODUCT_MODEL.md)
+- [`docs/PUBLIC_API.md`](docs/PUBLIC_API.md)
+- [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- [`docs/GPU_MEDIA_SUPPORT_MATRIX.md`](docs/GPU_MEDIA_SUPPORT_MATRIX.md)
+- [`docs/AUDIO_SUPPORT_MATRIX.md`](docs/AUDIO_SUPPORT_MATRIX.md)
+- [`docs/BUILD_AND_RELEASE.md`](docs/BUILD_AND_RELEASE.md)
+
+Files under `docs/history` are non-normative evidence.
+
+## Validation
+
+Baseline:
+
+```powershell
+dotnet restore .\WTK.MediaForge.sln --locked-mode
+dotnet build .\WTK.MediaForge.sln --no-restore --configuration Release
+dotnet test .\WTK.MediaForge.sln --no-restore --no-build --configuration Release
+.\scripts\test.ps1 -Tier Fast
+```
+
+Hardware-sensitive work:
+
+```powershell
+.\scripts\test.ps1 -Tier Gpu
+.\scripts\verify-engine-readiness-v14.ps1 -RequireHardwareMedia
+```
+
+Studio UI:
+
+```powershell
+.\scripts\verify-studio-ui-visual-qa.ps1
+```
+
+Release entrypoint:
+
+```powershell
+.\scripts\verify-final-gate.ps1 -RequireHardwareMedia
+```
 
 ## License
 
 WTK MediaForge is source-available under the PolyForm Noncommercial License 1.0.0.
 
-You may use, study, modify, and run this project for personal, educational, research, evaluation, hobby, and other non-commercial purposes.
+You may use, study, modify, and run the project for personal, educational, research, evaluation, hobby, and other non-commercial purposes.
 
 Commercial, industrial, SaaS, broadcast, resale, consulting, integration into paid products or services, production use, or any revenue-generating use requires a separate written commercial license from the author.
 
-For commercial licensing, contact:
+For commercial licensing, contact [rodrigowantuk@gmail.com](mailto:rodrigowantuk@gmail.com).
 
-[rodrigowantuk@gmail.com](mailto:rodrigowantuk@gmail.com)
+You can also support the project through [Buy Me a Coffee](https://buymeacoffee.com/rodrigowantuk).
 
-Also, if you like or found this Project useful, you can [buy me a coffee](https://buymeacoffee.com/rodrigowantuk)!
+Required notice: Copyright Rodrigo Wantuk.
 
-Required Notice: Copyright Rodrigo Wantuk.
+## Third-party components
 
-## Third-Party Components
-
-This project may depend on third-party libraries and components with their own licenses.
-
-Third-party licenses are not replaced or overridden by the WTK MediaForge license. Each dependency remains governed by its respective license.
+Third-party dependencies retain their own licenses. The MediaForge license does not replace or override those terms.
