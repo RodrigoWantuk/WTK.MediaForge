@@ -20,7 +20,7 @@ Read the files relevant to the task in this order:
 8. `docs/BUILD_AND_RELEASE.md`
 9. `docs/REVIEW_CHECKLIST.md`
 
-For work in the current functional integration milestone, also read `docs/MVP_API_STUDIO.md`.
+For work in the current functional integration milestone, also read `docs/MVP_API_STUDIO.md`; MVP is used only as a delivery milestone and integration checkpoint, not as a product capability status.
 
 Files under `docs/history` are evidence only. They are not active requirements or current readiness entrypoints.
 

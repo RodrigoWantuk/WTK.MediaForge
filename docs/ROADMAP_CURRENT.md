@@ -157,8 +157,8 @@ Promotion requires the matching capability proof and sustained qualification on 
 
 ## Active functional milestone
 
-The current delivery checkpoint is defined by the functional API/Studio
-milestone document.
+The current delivery checkpoint is defined by
+[`MVP_API_STUDIO.md`](MVP_API_STUDIO.md).
 
 The milestone must produce:
 
@@ -170,8 +170,10 @@ The milestone must produce:
 - deterministic stop/dispose and resource baseline return;
 - mandatory Windows/Linux baseline validation and reviewed Windows hardware evidence.
 
-The integration checkpoint is not a support-status label and does not authorize
-reduced architecture or temporary media paths.
+MVP is used here only as a delivery milestone and integration checkpoint. It is
+not a support-status label and does not authorize reduced architecture,
+temporary media paths, software media fallback, raw-video pipes, fake preview,
+model-only support claims, or bypassed validation.
 
 ## Current execution order
 

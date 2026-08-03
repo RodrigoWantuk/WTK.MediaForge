@@ -38,9 +38,9 @@ The milestone includes:
 - real Studio source/output editing;
 - deterministic shutdown and resource baseline return.
 
-See the functional API/Studio milestone document.
+See [`docs/MVP_API_STUDIO.md`](docs/MVP_API_STUDIO.md).
 
-The milestone is used only as a delivery checkpoint. It does not relax the final architecture, GPU transport law, capability truth, cross-platform boundaries, or validation requirements.
+MVP is used only as a delivery checkpoint and integration milestone. It is not a product capability status and does not relax the final architecture, GPU transport law, capability truth, cross-platform boundaries, or validation requirements.
 
 ## Core principles
 

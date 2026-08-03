@@ -7,9 +7,14 @@ public sealed class DocsProductTruthTests
     private static readonly string[] NormativeDocs =
     [
         "README.md",
+        "AGENTS.md",
         "ARCHITECTURE.md",
+        "CONTRIBUTING.md",
         Path.Combine("docs", "AI_CONTEXT.md"),
+        Path.Combine("docs", "BUILD_AND_RELEASE.md"),
         Path.Combine("docs", "GPU_MEDIA_SUPPORT_MATRIX.md"),
+        Path.Combine("docs", "MVP_API_STUDIO.md"),
+        Path.Combine("docs", "PRODUCT_MODEL.md"),
         Path.Combine("docs", "PUBLIC_API.md"),
         Path.Combine("docs", "REVIEW_CHECKLIST.md"),
         Path.Combine("docs", "ROADMAP_CURRENT.md")
@@ -136,16 +141,47 @@ public sealed class DocsProductTruthTests
     }
 
     [Fact]
-    public void Normative_docs_do_not_contain_mvp_or_mojibake()
+    public void Normative_docs_use_mvp_only_as_a_qualified_milestone_and_have_no_mojibake()
     {
         var root = FindRepositoryRoot();
+        var forbiddenMvpPhrases = new[]
+        {
+            "MVP architecture",
+            "temporary MVP path",
+            "software fallback for MVP",
+            "reduced MVP implementation"
+        };
+
         foreach (var relativePath in NormativeDocs)
         {
             var text = File.ReadAllText(Path.Combine(root, relativePath));
-            Assert.DoesNotContain("MVP", text, StringComparison.OrdinalIgnoreCase);
+            foreach (var phrase in forbiddenMvpPhrases)
+                Assert.DoesNotContain(phrase, text, StringComparison.OrdinalIgnoreCase);
+
+            if (text.Contains("MVP", StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.True(
+                    text.Contains("delivery milestone", StringComparison.OrdinalIgnoreCase) ||
+                    text.Contains("integration checkpoint", StringComparison.OrdinalIgnoreCase) ||
+                    text.Contains("not a product capability status", StringComparison.OrdinalIgnoreCase),
+                    $"{relativePath} uses MVP without qualifying it as a milestone/checkpoint rather than product capability status.");
+            }
+
             foreach (var marker in MojibakeMarkers)
                 Assert.DoesNotContain(marker, text, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void Normative_docs_link_directly_to_functional_milestone_scope()
+    {
+        var root = FindRepositoryRoot();
+
+        Assert.Contains("docs/MVP_API_STUDIO.md", Read(root, "README.md"), StringComparison.Ordinal);
+        Assert.Contains("MVP_API_STUDIO.md", Read(root, "docs", "README.md"), StringComparison.Ordinal);
+        Assert.Contains("MVP_API_STUDIO.md", Read(root, "docs", "ROADMAP_CURRENT.md"), StringComparison.Ordinal);
+        Assert.Contains("docs/MVP_API_STUDIO.md", Read(root, "docs", "AI_CONTEXT.md"), StringComparison.Ordinal);
+        Assert.Contains("docs/MVP_API_STUDIO.md", Read(root, "AGENTS.md"), StringComparison.Ordinal);
     }
 
     private static string Read(string root, params string[] pathParts) =>

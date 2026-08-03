@@ -188,8 +188,8 @@ Studio has explicit Design/Test and Runtime composition.
 - Runtime credentials never enter project JSON.
 - Project replacement awaits physical draft disposal before session maps are cleared.
 
-The active API/Studio integration milestone is defined by the functional
-API/Studio milestone document.
+The active API/Studio integration checkpoint is defined by
+[`MVP_API_STUDIO.md`](MVP_API_STUDIO.md).
 
 ## Portable audio boundary
 
@@ -259,8 +259,8 @@ Unsupported platform adapters report a concrete unavailable reason. Portable pro
 7. Build Linux physical media adapters.
 8. Build Remote Scene media and later deferred features.
 
-See `docs/ROADMAP_CURRENT.md` for exit criteria and the functional API/Studio
-milestone document for the integration scope.
+See `docs/ROADMAP_CURRENT.md` for exit criteria and `docs/MVP_API_STUDIO.md`
+for the functional API/Studio integration scope.
 
 ## Documentation authority
 
