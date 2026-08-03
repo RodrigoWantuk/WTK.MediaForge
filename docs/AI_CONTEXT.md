@@ -1,235 +1,277 @@
-# AI Context - WTK MediaForge
+# AI Context — WTK MediaForge
+
+This file is the compact technical context for developers and coding agents. Read `docs/README.md` for document authority and `docs/ROADMAP_CURRENT.md` for current execution order.
 
 ## Mission
 
-WTK MediaForge is a GPU-first media composition engine with a cross-platform
-product goal. Windows is the only current production media backend; Core must
-remain independent of Vulkan, D3D11,
-Media Foundation, VAAPI, and VideoToolbox.
+WTK MediaForge is a GPU-first real-time media composition engine with a native Avalonia Studio and cross-platform product architecture.
 
-## Non-Negotiable Media Law
+Windows currently owns the physical production video path. Core, Composition, Vulkan contracts, Audio, Remote, and Studio architecture must remain portable. Linux and macOS physical media adapters remain separate platform work.
 
-Continuous video decode and encode must use platform hardware acceleration.
-Uncompressed continuous frames stay in GPU memory from decode/capture through
-composition and encode/presentation. There is no software codec fallback.
+## Non-negotiable video law
 
-CPU/RAM is allowed for encoded packets, metadata, commands, static-image
-load-time decode, tests/debug readback, and a documented OS capture boundary
-that immediately uploads into a bounded GPU slot.
+Continuous video decode and encode use hardware acceleration.
 
-## Product Model
+Continuous uncompressed frames remain on GPU-backed surfaces from capture/decode through composition and encode/presentation. There is no product software codec fallback and no raw-video pipe.
+
+CPU/RAM is allowed for:
+
+- encoded packets;
+- metadata and commands;
+- static-image load-time decode before GPU upload;
+- tests/debug readback;
+- a documented unavoidable OS capture boundary that immediately copies into a bounded GPU slot.
+
+A raw continuous video frame must not circulate through Core, Composition, Studio, sinks, or product routing.
+
+## Product model
 
 ```text
 MediaForgeProject
-  -> MediaForgeCanvas (public scene)
-     -> layers: source, nested canvas, text, solid
-     -> layer/scene effects
-  -> MediaForgeRenderOutput
-     -> one or more sinks
+  -> SourceDefinitions
+  -> Canvases / Scenes
+     -> source layers
+     -> text and solid primitives
+     -> nested canvases
+     -> ordered effects
+  -> RenderOutputs
+     -> preview and/or encoded sinks
+  -> Audio graph
+     -> sources, nodes, buses, routes, sinks
 ```
 
-- Sources produce leased frames; they do not render.
-- Layers are scene instances of reusable sources.
-- Nested canvas references carry version binding and reject cycles/depth overflow.
-- Scene versioning, dirty classification, and RenderGraph cache identity share
-  `CanvasVisualStateFingerprint` and `DrawObjectVisualStateFingerprint`.
-  Layer order and every supported visual field participate; display names and
-  other non-visual metadata do not invalidate rendered content.
-- Live edits publish transactionally. Apply edits remain draft until commit.
-- Studio exposes Draft and Live explicitly. Live drag mutations are coalesced to
-  one latest atomic batch per UI frame, keep the last valid published scene on
-  rejection, surface the error, and close their engine session on mode exit.
-- Studio draft synchronization uses `StudioSceneDraftDiff` and
-  `SceneMutationBatchBuilder`; one atomic engine batch contains only actual
-  add/remove/order/common/type-specific changes. The engine clones and validates
-  the scene project once for the complete batch.
-- Apply completion trusts only engine `AffectedOutputIds`; Studio does not
-  synthesize a second pending-update state or mark unrelated outputs.
-- The Studio shell owns the UI-facing engine lifecycle. It subscribes to real
-  status/health, exposes serialized Start/Stop/Restart commands, blocks actions
-  during incompatible states, and shuts down drafts, outputs, timer,
-  subscriptions, and engine in ownership order.
-- Project replacement awaits `DiscardSceneDraftAsync` for every tracked runtime
-  session before synchronizing the next canonical project; session maps are
-  never cleared as a substitute for physical draft cleanup.
-- Sinks consume completed output; they never request a render.
+- `MediaForgeCanvas` is the canonical scene object.
+- Sources produce leased frames and do not render.
+- Draw objects describe intent and do not own native resources.
+- Sinks consume completed output leases or validated encoded packets and never request rendering.
+- Transitions belong to output routes, not permanent layer effects.
+- `MediaForgeProject` is the sole persisted project root.
 
-## Runtime Path
+## Scene editing
+
+Scene editing belongs to the engine.
+
+- `Live` publishes validated mutations transactionally.
+- Rejected Live mutations preserve the last valid published scene.
+- `Apply` isolates mutations in a draft session until commit.
+- `Discard` removes the draft without changing published output.
+- Nested canvases carry published, draft-session, or explicit-version bindings.
+- Cycles and depth overflow are invalid.
+- Apply computes direct/transitive parent dependencies and affected output ids.
+- Studio trusts only engine-reported affected output ids.
+- Route transitions own old/new explicit version graphs.
+
+Scene history retains the latest bounded versions plus pinned versions and recursively pinned explicit dependencies. Drafts and transitions own explicit pin handles and release them deterministically.
+
+## Runtime path
 
 ```text
 SourceRuntimeManager
+  -> leased source frames
   -> immutable RenderFrameSnapshot
-  -> compiled physical RenderGraph plan
-  -> MediaForgeRenderThread / Vulkan backend
-  -> IRenderFrameSubmission
-  -> completed RenderedOutputFrame leases
-  -> preview sinks and/or shared encoded output groups
-  -> GPU NV12 conversion -> hardware encoder -> validated packets
-  -> MP4 / RTMP packet workers
+  -> logical RenderGraph
+  -> validated physical RenderGraph
+  -> Vulkan backend submission
+  -> completed rendered-output leases
+  -> preview sinks and/or shared encoded groups
+  -> GPU NV12 conversion
+  -> hardware H.264 encoder
+  -> validated encoded-packet leases
+  -> MP4 / RTMP sink workers
 ```
 
-Compatible encoded outputs share scene, dimensions, color space, H.264 profile,
-FPS, bitrate, GOP, and pixel format. They render/convert/encode once and fan out
-ref-counted packets. Recording never silently drops; RTMP uses explicit
-drop/reconnect policy.
+Compatible MP4/RTMP routes share rendered pixels, conversion, and encoder configuration. Sinks retain independent bounded queues, lifecycle, and failure state.
 
-Logical MP4/RTMP consumers can join or leave a live shared encoder without
-stopping peers; removal drains and physically finalizes only that sink unless
-it is the last route member. Studio output controls use this real route API and
-surface capability truth, status details, packet/drop/latency metrics,
-reconnect state, elapsed recording time, and numbered MP4 segment rollover.
+Compatibility is separated into:
 
-Compatibility is intentionally split: rendered-output identity describes
-pixels, encoder identity describes the complete codec configuration, and sink
-identity describes destination/consumer ownership. Do not collapse these keys
-or include secrets directly; destination identity uses a one-way fingerprint.
+- rendered-pixel identity;
+- encoder identity;
+- sink/destination identity.
 
-## Lifetime Contracts
+Destination secrets do not participate directly in public or logged identity.
 
-- Submission cleanup is `WaitForCompletionAsync(timeout, cancellationToken)`
-  followed by `DisposeCompleted()`.
-- A command buffer retains every referenced framebuffer, descriptor set,
-  temporary target, texture lease, snapshot, fence, and command resource until
-  completion.
-- Fence timeout preserves potentially in-flight resources. It cannot trigger
-  physical destruction; retry or terminal failure owns them.
-- Provider ownership transfers once to `SourceRuntimeManager`; unregister and
-  engine shutdown await asynchronous physical cleanup.
-- Native handles are never logical texture identity.
-- `CanvasId` is logical authoring identity. Physical render/cache identity is a
-  deterministic resolved key containing the effective scene version, draft
-  session where applicable, and nested graph fingerprint. Never mint a new
-  logical canvas id to materialize a version binding.
-- Intermediate Vulkan targets are never borrowed by two in-flight submissions.
-  Cache invalidation retires an active target and physical disposal waits for
-  the post-fence submission lease to return.
-- Scene history retains the latest 32 versions per canvas plus every directly
-  pinned older version and its recursively resolved explicit nested-canvas
-  dependencies. Draft and transition owners release their root pins on
-  replacement, completion, clear, or disposal; transitive pins then disappear
-  with the root. Cycles are bounded and resolution failures are health metrics.
-- GPU, keyed-mutex, sink, provider, and shutdown waits always have timeouts.
-- Finalization errors are observable and cannot be reported as success.
-- Runtime health reports aggregate live, retired, pending-fence, cached, and
-  high-water GPU resource counts. Sustained tests must assert both bounded
-  high-water behavior and return to baseline after consumers and fences finish.
-- A hardware encoder session transitions through Created, Streaming, Draining,
-  Drained, Failed, and Disposed. EOS, delayed-packet drain, codec configuration,
-  and flush form one transaction; any failure invalidates the route/file.
+## Physical RenderGraph
 
-## Capability Truth
+The physical graph currently plans and validates:
 
-`IHardwareMediaCapabilityProbe.ProbeAsync` is asynchronous and never blocked on
-the UI thread. `MediaForgeCapabilitySnapshot` is immutable and cached by adapter,
-driver/device generation. Windows Vulkan and D3D11 interop uses matching adapter
-LUID; adapter 0 is not an acceptable implicit product choice.
+- source acquisition;
+- transforms and placement-dependent work;
+- effect intermediates;
+- canvas composition;
+- nested canvases;
+- route transitions;
+- output passes;
+- rendered-output fan-out;
+- encoded-output dispatch.
 
-`Supported`/`Experimental` requires implementation plus the applicable proof
-chain. Non-passed proofs require reasons. Product H.264 packets require trusted
-`BackendOutputValidated` evidence.
+Production Vulkan submission requires a validated physical plan. Missing plans fail before native import.
 
-The official validation is:
+Recent implementation binds Vulkan external-texture imports to declared physical source-acquisition operations and binds encoded delivery to declared physical encoded-dispatch operations. Physical identity is carried by typed fields, not parsed from operation-key strings.
+
+Remaining roadmap work is to make the graph the sole physical authority for every temporary/effect resource and sustain that ownership under long-running in-flight pressure.
+
+## Lifetime contracts
+
+- Submission cleanup is `WaitForCompletionAsync(timeout, cancellationToken)` followed by `DisposeCompleted()`.
+- `IRenderFrameSubmission` is not disposable; ownership is released only after completion rules pass.
+- Command resources retain every referenced source lease, texture, framebuffer, descriptor set, temporary target, snapshot, fence, and output surface until completion.
+- Fence timeout preserves potentially in-flight resources for retry or terminal failed ownership.
+- Native handles are not logical texture identity.
+- Providers transfer ownership once to `SourceRuntimeManager`.
+- Provider unregister and engine shutdown await physical cleanup.
+- Intermediate targets cannot be borrowed by concurrent in-flight submissions.
+- GPU, keyed-mutex, provider, sink, encoder, route, and shutdown waits require explicit timeouts.
+- Finalization errors remain observable.
+- Sustained tests assert bounded high-water behavior and return to baseline after work finishes.
+
+## Capability truth
+
+`IHardwareMediaCapabilityProbe.ProbeAsync` is asynchronous and must not block the UI thread.
+
+Capability snapshots are immutable and cached by adapter/device generation.
+
+Windows Vulkan and D3D11 interop matches adapters by LUID. Missing identity or cross-GPU mismatch fails closed.
+
+`Supported` or `Experimental` requires a real implementation plus the applicable evidence chain. Prototype, skeleton, contract-only, fake, nominal-hardware, and skipped-test results do not promote capabilities.
+
+Product packet paths require trusted backend-output evidence.
+
+Current hardware-media validation:
 
 ```powershell
 ./scripts/verify-engine-readiness-v14.ps1
 ./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia
 ```
 
-Historical readiness scripts are stored under `docs/history/readiness-scripts`
-and must not be executed as current gates.
+Hosted or portable CI cannot qualify physical GPU/capture/codec capabilities by itself.
 
-GitHub-hosted `windows-latest` runners execute the Release build and portable
-test filter only. They do not qualify Vulkan, D3D11, Media Foundation devices,
-capture hardware, or strict media proofs. Those tests run sequentially through
-the GPU tier and `-RequireHardwareMedia` on the self-hosted
-`windows, mediaforge-rx580` runner. Hardware absence must remain explicit in
-capability reports; it is never converted into a hosted-runner product pass.
+## Windows physical path
 
-## Current Constraints
+```text
+D3D11 capture/decode texture
+  <-> NT shared handle / keyed synchronization
+  <-> Vulkan external-memory image
+  -> composition
+  -> Vulkan output surface
+  -> D3D11/NV12 conversion
+  -> Media Foundation hardware H.264
+  -> MP4 and/or RTMP packets
+```
 
-- Preview is experimental until hosted resize and timeout-recovery evidence passes.
-- Product Vulkan submissions require a pre-executed physical RenderGraph plan;
-  missing plans fail before GPU resource import. Only an explicitly named
-  low-level-test factory may synthesize a plan. Physical execution remains
-  incomplete for source acquisition, all effect passes, encoded dispatch, and
-  exclusive temporary-resource ownership.
-- Vulkan canvas/effect/transition/output recording is controlled by a validated
-  physical plan. Invalid topology, canvas identity, or output identity fails
-  before command recording instead of being skipped.
-- Full Vulkan/D3D11 device-lost recreation is not yet proven end to end.
-- Window Capture uses `Direct3D11CaptureFramePool`, copies the WinRT frame
-  GPU-to-GPU into an engine-owned shared D3D11 slot, and is capability-promoted
-  only after its HWND-to-Vulkan product proof passes.
-- Studio probes runtime capabilities and uses `StudioProjectSession` to mutate a
-  cloned canonical project. Save preserves extension settings, output profiles,
-  advanced text/effect fields, transform pivots, alpha, nested bindings, and
-  disabled outputs. Source/output projections are explicitly editable,
-  read-only, or opaque; valid engine definitions that Studio cannot edit retain
-  their canonical type, schema, and settings. Session state advances only after
-  atomic file replacement. Native
-  preview/output control stays gated by runtime readiness.
-- Remote Scene signaling is a separate HTTPS/WebSocket service. It stores only
-  hashes of invitation/access secrets, relays bounded SDP/ICE messages, and can
-  issue temporary coturn REST/HMAC credentials. It never transports media and
-  does not promote `remote-scene.publish` or `remote-scene.subscribe`.
-- Signaling trusts forwarded client/protocol headers only from configured proxy
-  IPs and enforces role/order/sequence/renegotiation state, revocable session
-  tokens, bounded count/byte/rate quotas, policy close reasons, and
-  payload-free structured telemetry.
-- Remote Scene's canonical source/output settings persist only provider,
-  signaling endpoint, stream/session policy, codec/video/resolution, and
-  reconnection policy. Runtime credentials never enter project JSON. Encoded
-  packet APIs use explicit disposable leases, bounded timed queues, async
-  subscriber delivery, and publisher keyframe feedback.
-- Remote Scene media remains unavailable until the pinned native libwebrtc
-  encoded-access-unit bridge, Windows hardware packet decoder integration, and
-  direct/TURN GPU end-to-end proofs exist. Never route WebRTC `VideoFrame` CPU
-  data or a software codec around this requirement.
-- The native Remote Scene C ABI is version 2 and fully declares opaque session,
-  SDP/ICE, encoded packet, callback, candidate, stats, error, buffer ownership,
-  and destroy semantics. Its supply-chain manifest pins official LKGR
-  `86676d3c4ee49b92380647d4b68388ed8f0ce94a`. The contract-test library reports
-  backend unavailable and cannot be packaged; capability promotion requires the
-  actual pinned adapter and physical proofs.
-- Remote Scene output participates in existing render/encoder compatibility and
-  isolated encoded-sink routing; packets require trusted hardware evidence and
-  explicit leases. Receive uses a bounded reorder buffer and hardware decoder
-  pump that yields GPU textures and recreates on format changes. Windows knows
-  both canonical types but refuses activation until the native/Direct/TURN
-  composite capabilities pass, including when other unvalidated routes are
-  enabled for tests.
-- NDI product video remains blocked because Standard SDK CPU framebuffer APIs do
-  not satisfy the GPU media law.
-- SRT, virtual camera, FFmpeg, product NDI video, physical audio capture, native
-  playback and audio mux remain deferred. The portable audio graph, compiler and
-  deterministic in-memory runtime are current roadmap work; they do not change
-  the GPU-only law for continuous video.
+Implemented Windows paths include:
 
-## Platform Boundaries
+- Desktop Duplication;
+- Windows Graphics Capture for HWND;
+- Media Foundation webcam capture;
+- PNG/JPEG static image upload;
+- Media Foundation MP4 hardware decode accepting GPU samples only;
+- Vulkan/D3D11 interop;
+- Media Foundation hardware H.264;
+- packet-only MP4;
+- TCP RTMP/FLV.
 
-- Windows: `net8.0-windows10.0.19041.0`, D3D11/DXGI, Windows Graphics
-  Capture, D3D11VA, Media Foundation, and Vulkan interop.
-- Linux planned: VAAPI, DRM PRIME/DMABUF, Vulkan import/export or Vulkan Video.
-- macOS planned: VideoToolbox, CVPixelBuffer/IOSurface, Metal bridge.
+They remain proof-gated and hardware-dependent until matching reports pass on the active adapter/driver.
 
-Platform code belongs only in its platform project. Unsupported adapters report
-an explicit reason instead of contaminating Core with fallback logic.
+## Studio boundary
 
-## Current execution priority and audio boundary
+Studio has explicit Design/Test and Runtime composition.
 
-`docs/ROADMAP_CURRENT.md` gives priority to the Physical RenderGraph, the
-runtime/Studio vertical, and sustained v14 promotion before feature expansion.
-Portable audio foundation follows that vertical. `WTK.MediaForge.Audio` may
-reference only Core and owns no native handles or platform API. Its real-time
-contract is 48 kHz float32 planar mono/stereo, a default 10 ms (480-frame)
-graph quantum, bounded adapter queues, immutable graph publication between
-blocks, and no allocation, blocking, contested lock, disk access, formatted log
-or slow sink invocation on the callback path. Platform audio adapters remain
-separate projects and must truthfully report `Unavailable` until implemented.
+- Production saves canonical `MediaForgeProject` JSON.
+- `StudioProjectSession` applies UI edits to canonical clones and commits session state only after successful atomic replacement.
+- Valid fields not represented by the current UI are preserved.
+- Draft and Live use engine sessions.
+- Output cards use real route services where capability permits.
+- Production runtime failure must not fall back to fake/design services.
+- Avalonia overlays remain separate from native preview.
+- Hosted preview uses a portable lifecycle contract and platform presenter.
+- Runtime credentials never enter project JSON.
+- Project replacement awaits physical draft disposal before session maps are cleared.
 
-## Documentation Authority
+The active API/Studio integration milestone is defined in `docs/MVP_API_STUDIO.md`.
 
-Product truth is defined by `docs/ROADMAP_CURRENT.md`, this file,
-`docs/PRODUCT_MODEL.md`, `docs/PUBLIC_API.md`, `docs/GPU_MEDIA_SUPPORT_MATRIX.md`, and
-`docs/REVIEW_CHECKLIST.md`. License and transport policy documents remain
-mandatory supplemental policy. Files under `docs/history` are non-normative.
+## Portable audio boundary
+
+`WTK.MediaForge.Audio` references portable contracts only.
+
+Current portable implementation includes:
+
+- serializable graph model;
+- immutable compiled plans;
+- pooled planar float32 blocks at 48 kHz;
+- generated tone and silence;
+- gain, mute, pan, polarity, mix, meter, and fixed delay;
+- deterministic source/node DAG execution into buses;
+- bounded Program Mix route fan-out;
+- route-local drops on queue or pool pressure;
+- timestamps, clocks, latency, drift, resampling, and A/V mapping contracts.
+
+The real-time callback does not block, await, allocate, take contended locks, access disk, format logs, rebuild graphs, invoke UI, or call slow sinks.
+
+Physical capture, loopback, application capture, playback, encode, mux, and Remote Scene audio remain unavailable until platform adapters and product proofs exist.
+
+## Remote Scene boundary
+
+Remote Scene media target:
+
+```text
+GPU surface
+  -> existing hardware H.264 encoder
+  -> WebRTC/SRTP
+  -> encoded access units
+  -> existing hardware decoder
+  -> GPU surface
+```
+
+Current implementation includes:
+
+- platform-neutral contracts;
+- explicit encoded-packet leases;
+- bounded publish/subscribe queues;
+- reorder/jitter policy;
+- hardware decode pump contract;
+- telemetry and keyframe feedback;
+- signaling service with authenticated bounded SDP/ICE relay;
+- coturn credential integration;
+- native ABI v2 contract and pinned supply-chain metadata.
+
+The checked-in native backend is contract-test-only and deliberately unavailable. Publish/subscribe remains unavailable until the functional pinned adapter and Direct/TURN physical proofs pass.
+
+Signaling never transports media and is not media capability evidence.
+
+## Platform boundaries
+
+- Windows: `net8.0-windows10.0.19041.0`, D3D11/DXGI, Win32, WGC, D3D11VA, Media Foundation, Vulkan interop.
+- Linux planned: VAAPI, DRM PRIME/DMABUF, Vulkan import/export, Vulkan Video, or approved vendor interop.
+- macOS planned: VideoToolbox, CVPixelBuffer/IOSurface, Metal/Vulkan bridge.
+
+Unsupported platform adapters report a concrete unavailable reason. Portable projects never reference platform implementations.
+
+## Current execution priority
+
+1. Keep documentation and public contracts aligned with source reality.
+2. Complete Physical RenderGraph authority.
+3. Promote hosted native preview.
+4. Complete and qualify the public API vertical.
+5. Complete and qualify the Studio vertical.
+6. Build physical audio adapters.
+7. Build Linux physical media adapters.
+8. Build Remote Scene media and later deferred features.
+
+See `docs/ROADMAP_CURRENT.md` for exit criteria and `docs/MVP_API_STUDIO.md` for the functional API/Studio milestone.
+
+## Documentation authority
+
+Normative sources:
+
+- `docs/ROADMAP_CURRENT.md`
+- this file
+- `docs/PRODUCT_MODEL.md`
+- `docs/PUBLIC_API.md`
+- `ARCHITECTURE.md`
+- `docs/GPU_MEDIA_SUPPORT_MATRIX.md`
+- `docs/AUDIO_SUPPORT_MATRIX.md`
+- `docs/REVIEW_CHECKLIST.md`
+- `docs/BUILD_AND_RELEASE.md`
+- `AGENTS.md`
+
+Files under `docs/history` are non-normative.
