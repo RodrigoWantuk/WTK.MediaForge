@@ -1,294 +1,411 @@
 # WTK MediaForge Product Model
 
-This document is the product contract for WTK MediaForge: what users author,
-save, validate, route, and operate. Runtime and GPU execution details live in
-[ARCHITECTURE.md](../ARCHITECTURE.md). Public API boundaries live in
-[PUBLIC_API.md](PUBLIC_API.md). Active implementation order lives in
-[ROADMAP_CURRENT.md](ROADMAP_CURRENT.md).
+This document defines what users and applications author, save, validate, route, and operate.
 
-If a new media feature does not fit this model, update this document before
-adding code.
+Runtime ownership and physical execution live in [`../ARCHITECTURE.md`](../ARCHITECTURE.md). Public API exposure lives in [`PUBLIC_API.md`](PUBLIC_API.md). Active implementation order lives in [`ROADMAP_CURRENT.md`](ROADMAP_CURRENT.md).
 
-## Core Model
+If a proposed feature does not fit this model, update the model deliberately before implementing it. Do not create a parallel product concept inside a host, adapter, renderer, or test.
+
+## Canonical root
+
+`MediaForgeProject` is the only persisted product root.
 
 ```text
 MediaForgeProject
   -> SourceDefinitions
   -> Canvases / Scenes
-  -> DrawObjects
-  -> Effects
+     -> DrawObjects / Layers
+     -> Effects
   -> RenderOutputs
-  -> RenderOutputSink(s)
-  -> Audio (sources, graph, buses, routes, sinks)
+     -> Sink intent and routing
+  -> Audio graph
+     -> Sources, Nodes, Connections, Buses, Routes, Sinks
 ```
 
-`MediaForgeCanvas` is the canonical scene object. Public APIs may use `Scene`
-as ergonomic naming, but scene must remain an alias over canvas unless the
-product model is explicitly changed.
+Project JSON may contain:
 
-## Product/Runtime Boundary
+- schema/version metadata;
+- stable logical ids;
+- typed source and output settings;
+- canvases, draw objects, transforms, effects, and nested-canvas bindings;
+- output routing and transitions;
+- audio graph definitions;
+- user metadata and extension data.
 
-| Concern | Product layer | Runtime/GPU layer |
+Project JSON must not contain:
+
+- runtime leases;
+- native handles;
+- Vulkan or D3D11 objects;
+- command buffers, fences, semaphores, or queues;
+- provider, encoder, decoder, sink-worker, or presenter state;
+- connection/session credentials;
+- SDP, ICE, invitation, bearer, TURN, or other runtime secrets.
+
+## Product/runtime boundary
+
+| Concern | Product layer | Runtime/physical layer |
 |---|---|---|
-| Editable state | `MediaForgeProject`, editor/builder APIs | immutable snapshots |
-| Source definitions | `MediaForgeSourceDefinition` + typed settings | providers, frame buffers, GPU leases |
-| Canvas graph | `MediaForgeCanvas`, draw objects, effects | canvas/render snapshots |
-| Outputs | `MediaForgeRenderOutput` + typed settings | output surfaces and sink dispatcher |
-| Rendering | layout, opacity, crop, effect intent | Vulkan pipelines and command resources |
-| Diagnostics | validation/runtime diagnostics | backend and lifecycle diagnostics |
+| Editable state | `MediaForgeProject`, builders, editors | immutable snapshots and sessions |
+| Sources | reusable typed definitions | providers, hardware capture/decode, frame leases |
+| Scenes | canvases, ordered draw objects, effects | resolved versions, render snapshots, physical operations |
+| Outputs | enabled state, route, dimensions, format, transition, typed settings | output surfaces, presenters, exporters, encoders, packet sinks |
+| Audio | graph definitions, buses, routes, sink intent | compiled plans, pooled blocks, callbacks, native adapters |
+| Diagnostics | validation and public health contracts | backend events, counters, failure/recovery state |
 
-Forbidden product-layer shortcuts:
+Forbidden shortcuts:
 
-- Source-specific draw objects such as `WebcamDrawObject`, `NdiDrawObject`, or `RtspDrawObject`.
-- NDI, encoder, stream, or file logic inside `MediaForgeVulkanRenderer`.
-- Chroma key as a source-layer property instead of an effect.
-- Public APIs requiring render threads, backend factories, Vulkan registry types, snapshots, or GPU leases.
+- source-specific draw-object classes such as `WebcamDrawObject` or `RtspDrawObject`;
+- source, NDI, encoder, network, file, or sink logic inside the Vulkan renderer;
+- chroma key or other effects as ad-hoc source properties;
+- transitions implemented as permanent layer effects;
+- Studio-specific persisted project formats;
+- public APIs that require render threads, backend factories, physical plans, snapshots, GPU leases, or native handles;
+- platform implementation references from portable product projects.
 
-## Project
+## Authoring API
 
-`MediaForgeProject` is the serializable root:
+Normal callers use:
 
-- `SourceDefinitions`
-- `Canvases`
-- `Outputs`
-- schema/version metadata
+- `MediaForgeProjectBuilder`;
+- `MediaForgeProjectEditor`;
+- typed source/output factories and settings;
+- layer builders;
+- serializer, loader, migrator, and validator;
+- package and preset import/export APIs.
 
-Public callers should prefer `MediaForgeProjectBuilder`,
-`MediaForgeProjectEditor`, typed helper factories, and package import/export
-APIs for normal authoring.
+Direct list mutation may exist for serialization and internal implementation, but it is not the preferred external authoring workflow.
 
-## Audio
-
-Audio is a project-global graph. Sources are reusable and capture once; buses
-mix N inputs and feed N routes; routes bind zero or more sinks and may be
-selected by video outputs. Audio model objects are serializable definitions,
-never native devices, callback buffers, threads, or handles. See
-[`AUDIO_ARCHITECTURE.md`](AUDIO_ARCHITECTURE.md) for runtime and ownership rules.
+All project mutation is validated before replacing engine-owned state.
 
 ## Sources
 
-Sources are defined once and referenced by source layers. A source produces
-frames; it does not render and does not know about canvases, layers, outputs, or
-sinks.
+A source is defined once and can be referenced by multiple layers and scenes.
 
-Current public source setting contracts:
+A source:
 
-- `DesktopCaptureSourceSettings`
-- `WindowCaptureSourceSettings`
-- `WebcamSourceSettings`
-- `ImageFileSourceSettings`
-- `AnimatedImageSourceSettings`
-- `LottieSourceSettings`
-- `VideoFileSourceSettings`
-- `RtspInputSourceSettings`
-- `IpCameraSourceSettings`
-- `NdiInputSourceSettings`
-- `GeneratedSourceSettings`
+- produces leased frames or static GPU assets;
+- owns no scene placement;
+- does not render;
+- does not know which canvases or outputs consume it;
+- does not invoke sinks;
+- has explicit runtime capability and lifecycle.
 
-Runtime adapters can land incrementally, but the product rule stays stable: one
-source can feed many layers/scenes and every source frame has explicit
-lease/lifetime ownership.
+Current source-setting contracts include:
 
-## Draw Objects
+- desktop capture;
+- window capture;
+- webcam;
+- static image;
+- animated image;
+- Lottie;
+- video file;
+- RTSP;
+- IP camera;
+- NDI input;
+- generated source;
+- Remote Scene input.
 
-Current draw object model:
+The presence of a setting contract does not mean a physical adapter is available.
 
-- `SourceLayerDrawObject`
-- `TextDrawObject`
-- `SolidDrawObject`
-- `CanvasDrawObject`
+## Draw objects and layers
 
-Common properties include transform, crop, opacity, blend mode, enabled state,
-and ordered effects. Draw objects describe intent; they never own GPU resources.
+Current canonical draw-object kinds:
 
-## Canvases / Scenes
+- source layer;
+- text;
+- solid;
+- nested canvas.
 
-Canvases hold ordered draw objects and may reference other canvases through
-`CanvasDrawObject`.
+Common visual properties include:
 
-Rules:
+- enabled/visible state;
+- transform and pivot;
+- position and dimensions;
+- rotation;
+- crop;
+- opacity;
+- blend mode;
+- ordered effects;
+- stable logical identity and user-facing name.
 
-- cycles are invalid
-- maximum nested canvas depth is 8
-- disabled nested canvas objects do not acquire internal frames
-- a canvas can be routed to multiple outputs
-- reusable canvases should become render-graph dedupe points when size/config/version match
+Draw objects describe intent. They never own native or GPU resources.
 
-### Scene Editing Modes
+A source layer references a reusable source definition. Multiple source layers may reference the same source with different placement and effects.
 
-Scene editing semantics are owned by the engine, not by Studio or another host
-application.
+## Canvases and scenes
 
-`Live` editing mutates the published scene version transactionally. Once the
-mutation validates, normal sinks and output routes observe the change on the
-next rendered frame without restarting the route.
+`MediaForgeCanvas` is the canonical scene object.
 
-`Apply` editing creates a draft version for an edit session. Draft mutations are
-visible only to draft/preview bindings for that session. Published sinks keep
-rendering the currently published version until `ApplySceneDraftAsync` commits
-the draft. `DiscardSceneDraftAsync` removes the draft without changing the
-published project.
+Public APIs and Studio may use “scene” as product terminology, but it remains an ergonomic name for canvas rather than a second graph type.
 
-The public contracts are:
+A canvas:
 
-- `SceneEditMode`
-- `SceneEditSessionId`
-- `SceneVersionId`
-- `SceneVersionBinding`
-- `SceneMutationPatch`
-- `SceneCommitRequest`
-- `SceneCommitResult`
+- has stable logical identity;
+- has dimensions, frame rate, color/background configuration, metadata, and ordered draw objects;
+- may be routed to multiple outputs;
+- may be used as a layer in another canvas;
+- participates in versioning and dependency resolution.
 
-### Scene Versions And Nested Canvases
+Nested-canvas rules:
 
-Every canvas has a published `SceneVersionId` in runtime state. A
-`CanvasDrawObject` also carries a `SceneVersionBinding`:
+- direct and transitive cycles are invalid;
+- maximum nesting depth is bounded by the engine contract;
+- disabled nested layers do not acquire/render their internal content;
+- version binding is explicit;
+- identical resolved content may be reused where physical configuration permits;
+- logical `CanvasId` remains stable across versions and bindings.
 
-- `Published` for normal outputs and sinks.
-- `Draft` for edit-session previews.
-- `ExplicitVersion` for transition boundaries that need to render old and new
-  version graphs.
+## Scene editing modes
 
-Canvas-as-source is a product feature. A canvas may be used as a layer inside
-another canvas, but cycles are invalid and nesting depth remains bounded by
-`CanvasGraphLimits.MaxNestedCanvasDepth`.
+Scene editing semantics are engine behavior.
 
-### Apply Propagation
+### Live
 
-When a draft is committed, the engine computes:
+- A Live session targets published state.
+- Mutations are applied as one validated transaction.
+- Successful changes become visible to published outputs on subsequent frames.
+- Rejected mutations leave the last valid published version intact.
+- Leaving Live closes/discards the runtime edit session deterministically.
 
-- direct canvas consumers;
-- transitive canvas consumers;
-- affected output routes;
-- whether the requested transition policy should be applied by the output route.
+### Apply
 
-For example:
+- An Apply session creates an isolated draft.
+- Draft mutations are visible only to that draft binding/session.
+- Published outputs continue rendering the published version.
+- `ApplySceneDraftAsync` validates and publishes the draft.
+- `DiscardSceneDraftAsync` removes the draft without changing published state.
 
-```text
-Canvas A v10 -> Canvas A v11
-Canvas B contains Canvas A
-Output Program renders Canvas B
-```
+### Version bindings
 
-Applying the draft for Canvas A publishes v11, invalidates Canvas B's version
-graph, and reports the Program output as affected. Visual transition execution
-belongs at the output route boundary; it must not become a permanent layer
-effect.
+Nested canvases use one of these semantic bindings:
+
+- published;
+- draft session;
+- explicit version.
+
+Explicit versions support transitions and historical resolution. They do not create new logical canvas ids.
+
+### Apply propagation
+
+Applying a canvas draft computes:
+
+- the changed canvas version;
+- direct parent canvases;
+- transitive parent canvases;
+- affected outputs;
+- route-owned transition policy.
+
+Studio and other hosts must use engine-reported affected output ids. They must not infer a second dependency graph.
 
 ## Effects
 
-Effects are ordered product-model objects on draw objects:
+Effects are ordered product objects in explicit stacks.
 
-- `ChromaKeyEffect`
-- `ColorCorrectionEffect`
-- `BlurEffect`
+Supported or declared effects include:
 
-Transitions are not effects. They are owned by scene/output routing. The loader
-migrates the obsolete schema-v1 `effect.transition` layer entry away and rejects
-the discriminator in current project documents.
+- chroma key;
+- color correction;
+- blur;
+- later approved effects and masks.
 
-Effects are held by explicit `SourceEffectStack`, `LayerEffectStack`, and
-`CanvasEffectStack` collections. `EffectCapabilityRegistry` is the source of
-truth for accepted scopes and formats, alpha and color-space behavior, pass
-class, temporal state, mask support, and hardware requirements. The validator
-rejects invalid placement before a render plan is created.
+Effect capability metadata defines:
 
-`ChromaKeyEffect` is the first renderer-supported source-layer effect. Other
-effect contracts may exist before renderer support, but public docs and samples
-must not imply rendering support until pixel/diagnostic tests prove it.
+- allowed scope;
+- input/output formats;
+- color/alpha behavior;
+- pass class;
+- temporal state;
+- mask support;
+- hardware requirements.
 
-## Outputs And Sinks
+The validator rejects invalid placement before physical planning.
 
-Output definitions route canvases to completed rendered output frames.
+A declared effect contract is not renderer support. Renderer support requires implementation, tests, and the applicable proof.
 
-Current public output setting contracts:
+Transitions are not effects. Cut/Fade and future transitions remain output-route behavior over old/new scene-version graphs.
 
-- `OffscreenOutputSettings`
-- `PreviewWindowOutputSettings`
-- `RecordingMp4OutputSettings`
-- `EncodedFileOutputSettings`
-- `StreamingRtmpOutputSettings`
-- `StreamingSrtOutputSettings`
-- `StreamingRtspOutputSettings`
-- `StreamingHlsOutputSettings`
-- `VirtualCameraOutputSettings`
-- `NdiOutputSettings`
+## Render outputs
 
-The output architecture is:
+A render output routes one canvas to completed output surfaces and sinks.
 
 ```text
-Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
+Canvas
+  -> RenderOutput
+  -> completed GPU output surface
+  -> one or more sinks
 ```
 
-The same `RenderOutput` can feed multiple sinks. Sinks do not trigger rendering
-directly. Slow sinks must use explicit backpressure and must not block the render
-thread.
+An output contains canonical authoring state such as:
 
-`CpuReadbackSink` is a debug/sample/validation sink. `PreviewPanelSink` is the
-validated Win32/Vulkan GPU preview sink for completed rendered surfaces without
-CPU readback. Runtime-connected Studio preview, additional encoded sinks, NDI,
-virtual camera, and audio outputs follow the roadmap order.
+- stable id and name;
+- enabled state;
+- routed canvas;
+- dimensions and frame rate;
+- layout and letterbox behavior;
+- color/output format;
+- transition policy;
+- typed preview/recording/streaming settings.
 
-## Routing And Render Graph
+Disabled outputs remain persisted and editable but do not create runtime routes.
 
-The target routing model is:
+Current output-setting contracts include:
+
+- offscreen;
+- preview;
+- MP4 recording;
+- encoded file;
+- RTMP;
+- SRT;
+- RTSP;
+- HLS;
+- virtual camera;
+- NDI output;
+- Remote Scene output.
+
+The presence of a contract does not imply runtime availability.
+
+## Sinks
+
+Sinks consume completed output.
+
+They:
+
+- never call or trigger the renderer;
+- use explicit bounded queues and backpressure policy;
+- retain independent lifecycle and failure state;
+- receive GPU output leases or validated encoded-packet leases according to transport kind;
+- release ownership deterministically.
+
+`CpuReadbackSink` is debug/test/sample only.
+
+Primary preview uses a GPU presenter. Recording and streaming consume validated hardware-encoded packets.
+
+## Routing and shared work
+
+Target dependency direction:
 
 ```text
-Source -> SourceLayer(s) -> Canvas/Scene -> RenderOutput -> RenderOutputSink(s)
+Outputs/Sinks
+  -> RenderOutput
+  -> Canvas
+  -> DrawObjects
+  -> Sources
+  -> Effects
 ```
 
-The render graph target is:
+Expected reuse:
 
-```text
-Outputs/Sinks -> RenderOutput -> Canvas/Scene -> DrawObjects -> Sources -> Effects
-```
+- acquire one source frame once per frame/version context;
+- reuse source/effect work when placement-independent and physically compatible;
+- reuse a canvas for matching resolved version, size, format, and output configuration;
+- split only required presentation/layout passes;
+- fan out one completed output to multiple sinks;
+- share conversion and encoder only when the complete encoder identity matches.
 
-Deduplication rules:
+Compatibility is intentionally separated into:
 
-- acquire the same source frame once per frame
-- render identical reusable source/effect chains once when independent of placement
-- render the same canvas once for the same size/config/version
-- split only output-fit/presentation passes for different output sizes/layouts
-- fan out one completed output frame to multiple sinks
+- rendered-pixel identity;
+- encoder identity;
+- sink identity.
 
-The current render-graph compiler is a planning foundation and test target, not
-yet the Vulkan execution scheduler.
+Destination/backpressure differences must not alter pixel or encoder identity. Codec profile, level, dimensions, FPS, bitrate, GOP, pixel format, and color differences must prevent unsafe sharing.
 
-## Package Serialization
+## Physical RenderGraph
 
-Serializable package types:
+The physical graph is the production execution contract between immutable render state and native backend work.
 
-- `MediaForgeProject` for full save/load
-- `MediaForgeScenePackage` for one scene/canvas plus nested canvases, sources, effects, routed outputs, and metadata
-- `MediaForgeCanvasPreset` for reusable layouts/PiP/mosaics/canvas arrangements
-- `MediaForgeSourcePreset` for source definitions without runtime state
-- `MediaForgeOutputPreset` for output profiles with secret-safe export by default
-- `MediaForgeEffectPreset` for reusable effect chains
+It represents:
 
-JSON may contain schema versions, stable ids, type ids, typed settings,
-transforms, effects, canvas graph, output routes, and metadata.
+- source acquisition;
+- transforms and placement-dependent operations;
+- effect intermediates;
+- primitive and source layers;
+- canvas composition;
+- nested canvases;
+- transitions;
+- output passes;
+- fan-out;
+- encoded dispatch;
+- physical resource ownership.
 
-JSON must not contain runtime leases, native handles, Vulkan/D3D11 objects,
-command buffers, fences, backend worker state, sink queue state, or secrets
-unless explicitly requested through export options.
+Production Vulkan submission requires a validated physical plan. It must not discover or reconstruct missing product behavior independently.
 
-Import modes:
+Current implementation already binds source imports and encoded dispatch to typed physical operations. Remaining roadmap work closes exclusive authority for every temporary/effect resource and sustains that behavior under long-running in-flight load.
 
-- replace project
-- merge as new scene
-- merge presets only
-- dry-run validation
+## Audio
 
-Import builds and validates a candidate project before returning it. Failed
-import and dry-run modes must not mutate the existing project.
+Audio is a project-global graph independent of the visual scene graph.
 
-## Engine
+A source captures or generates once. Nodes process. Buses mix. Routes bind buses to sinks. Video outputs may select audio routes but do not own physical audio devices.
 
-`MediaForgeEngine` is the public runtime facade. Current contracts:
+Portable audio definitions never contain native devices, callback buffers, threads, or handles.
 
-- `CurrentProject` returns a deep clone.
-- `LoadProjectAsync` and `ApplyProjectUpdateAsync` validate before swapping state.
-- `StartAsync`, `StopAsync`, and `DisposeAsync` use explicit timeouts and deterministic cleanup.
-- `AttachSinkAsync` and `DetachSinkAsync` connect public sinks to offscreen render outputs.
-- Runtime failures use public typed exceptions and diagnostics.
-- A failed or empty source must not crash the renderer or render pump.
+Current portable runtime includes deterministic pooled processing and in-memory route fan-out. Physical capture, playback, encode, and A/V mux remain separate platform-adapter work.
+
+See [`AUDIO_ARCHITECTURE.md`](AUDIO_ARCHITECTURE.md).
+
+## Package and preset serialization
+
+Supported package concepts include:
+
+- full project;
+- scene package with dependencies;
+- canvas/layout preset;
+- source preset;
+- output preset;
+- effect preset.
+
+Import modes may include:
+
+- replace project;
+- merge as new scene;
+- merge presets only;
+- dry-run validation.
+
+Import builds and validates a candidate before returning it. Failed import and dry-run never mutate current state.
+
+Secret-safe export is the default for output and remote configuration.
+
+## Engine facade
+
+`MediaForgeEngine` is the public runtime facade.
+
+Its product responsibilities include:
+
+- canonical project load/update;
+- lifecycle;
+- scene edit sessions;
+- sink/output activation through public contracts;
+- capability and health observation;
+- deterministic stop/dispose;
+- typed validation, unsupported-feature, and runtime failure reporting.
+
+Hosts must not manually assemble internal composition/runtime services.
+
+## Studio projection
+
+Studio is a projection and controller over canonical project and engine state.
+
+It may maintain UI-specific selection, viewport, undo/redo, dialog, layout, and draft presentation state, but it must not persist a competing media model.
+
+Studio save:
+
+1. applies UI edits to a detached canonical clone;
+2. validates the candidate;
+3. writes a temporary file in the destination directory;
+4. atomically replaces the destination;
+5. advances in-memory canonical session state only after replacement succeeds.
+
+Fields not represented by the current UI remain intact.
+
+## Capability and availability rule
+
+For every source, effect, output, sink, adapter, or product workflow:
+
+- model contract answers “can the project describe it?”;
+- implementation answers “does code exist?”;
+- proof answers “did the required physical path pass?”;
+- capability snapshot answers “is it available now on this environment?”
+
+Do not collapse those questions into one status.
