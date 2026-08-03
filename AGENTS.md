@@ -1,118 +1,245 @@
 # AGENTS.md
 
-## Project Role
+## Role
 
-You are working on WTK MediaForge, a GPU-first media compositor/capture/render engine.
+Work on WTK MediaForge as a senior product engineer responsible for architecture, implementation, tests, documentation, and operational evidence.
 
-Act as a senior technical implementer. Follow the current roadmap in `docs/ROADMAP_CURRENT.md` and the technical context in `docs/AI_CONTEXT.md`.
+Do not optimize for the smallest patch that compiles. Optimize for the final product contract, explicit ownership, capability truth, cross-platform boundaries, and maintainable integration.
 
-## Mandatory Rules
+## Read before changing code
 
-- Follow the product roadmap in `docs/ROADMAP_CURRENT.md`; do not follow historical gate language from older acceptance notes when it conflicts with the current roadmap.
-- **Windows and Linux are mandatory development targets.** Every new implementation must be designed for both platforms unless it is an explicitly isolated OS adapter.
-- Portable projects must target portable TFMs and must not reference `WTK.MediaForge.Windows`, Win32-only APIs, D3D11-only implementation types, or Windows-specific packages.
-- OS-specific behavior belongs in the corresponding platform project behind portable contracts. Do not place a Windows fallback, Linux fallback, or runtime OS switch in Core merely to make a build pass.
-- Every implementation unit must include tests designed for the Windows and Linux execution model. Portable behavior must be covered by tests that compile and run on both CI runners; platform-specific behavior must have dedicated tests in the matching platform test project.
-- A change is not complete while either the `Windows build and tests` or `Linux build and tests` CI job is failing, skipped unexpectedly, or not applicable because the project graph was incorrectly classified.
-- Advance media features only when the implementation preserves GPU lifetime, hardware media transport, capability truth, and explicit failure diagnostics.
-- Do not keep dangerous APIs for compatibility.
-- Do not introduce new `Simulate*` properties in production classes.
-- Do not add TODOs in GPU lifetime, shutdown, dispose, keyed mutex, Vulkan registry, or submission ownership paths.
-- Do not swallow physical resource finalization failures and mark success.
-- Do not use native handles (`nint`, `DangerousGetHandleForInterop`) as logical texture identity.
-- Do not call GPU wait APIs without explicit timeout.
-- Every lifetime change must include tests.
-- **GPU Media Transport Law**: no uncompressed continuous video frames in CPU/RAM on the product path.
-- No software decode/encode fallback for continuous video; hardware/GPU path or `Unsupported`.
-- `CpuReadbackSink` is debug/test only; never wire as recording, streaming, or primary preview.
-- Static image load uses `StaticCpuAsset` (load-time CPU decode, GPU render); not a `RawCpuVideoFrameException`.
-- FFmpeg is deferred until the native hardware MP4/RTMP product path is sustained and a separate encoded-packet/container-only legal review approves the scope.
-- Hardware MP4/RTMP routes require composite runtime proofs: render-to-encode, hardware encode, packet mux/transport, and sustained route validation.
-- Scene editing semantics belong to the engine. `Live` edits update published
-  scene state transactionally; `Apply` edits stay in draft state until commit.
-  Do not make Studio duplicate projects to simulate this behavior.
-- Canvas-as-source is a product feature. Nested canvas references must carry
-  version binding, detect cycles/depth, and propagate Apply commits to affected
-  output routes.
-- Capability probing uses `IHardwareMediaCapabilityProbe.ProbeAsync`; never block the UI thread.
-- The current roadmap prioritizes the usable engine/Studio vertical first, then
-  sustained qualification, then the portable audio foundation. Audio is CPU
-  real-time first: no blocking, allocation, native handle, platform API, or
-  slow sink call on the callback path. Native audio APIs belong only in platform
-  adapter projects.
+Read the files relevant to the task in this order:
 
-## Studio UI Exception
+1. `docs/README.md`
+2. `docs/ROADMAP_CURRENT.md`
+3. `docs/AI_CONTEXT.md`
+4. `docs/PRODUCT_MODEL.md`
+5. `docs/PUBLIC_API.md`
+6. `ARCHITECTURE.md`
+7. the matching support matrix and subject guide
+8. `docs/BUILD_AND_RELEASE.md`
+9. `docs/REVIEW_CHECKLIST.md`
 
-A limited Avalonia Studio track is allowed when it follows `docs/UI_STUDIO_DESIGN.md`, `docs/UI_IMPLEMENTATION_PLAN.md`, and `docs/UI_ACCEPTANCE_CHECKLIST.md`.
+For work in the current functional integration milestone, also read `docs/MVP_API_STUDIO.md`.
 
-This exception is UI-only until the hosted-preview reliability gate is passed.
-It permits dark-theme shell layout, mock/design data, Project Explorer, preview
-mock, Inspector, Bottom Workbench, diagnostics/performance/output-monitor mock
-panels, status bar, and fake command state.
+Files under `docs/history` are evidence only. They are not active requirements or current readiness entrypoints.
 
-It does not permit legacy direct preview/capture paths. A real hosted preview
-must use the portable contract and platform adapter, preserve GPU leases, and
-be enabled only after the approved reliability gate. Audio UI must not imply a
-physical capture or mux capability before its runtime/adapter proof exists.
+## Work-unit contract
 
-## Current Technical Contract
+Every implementation unit must be bounded and independently reviewable.
 
-- Submission cleanup must be `WaitForCompletionAsync(timeout, cancellationToken)` then `DisposeCompleted()`.
-- `IRenderFrameSubmission` must not inherit or implement `IAsyncDisposable` or `IDisposable`.
-- `IRenderBackend` must not expose synchronous `WaitIdle()`.
-- `MediaForgeVulkanRenderer` must be internal and created through a public factory.
-- Vulkan renderer test failures must use `IVulkanRendererFaultInjector`, not `Simulate*` properties.
-- External texture identity is `VulkanExternalTextureKey = GpuTextureId + Width + Height + Format`.
-- Provider lifecycle must be serialized through a single lifecycle gate.
-- D3D11 ring finalization must fault `FullyDisposed` if any physical handle dispose fails.
-- Legacy preview/capture paths must not be used as product paths.
+Before editing:
 
-## Required Validation
+- identify the current implementation and tests;
+- identify the normative contract affected;
+- state the exact product behavior to change;
+- state the acceptance evidence required;
+- avoid reopening decisions already settled by the product model.
 
-The automatic `cross-platform-ci` workflow runs for every push and for pull requests targeting `master`. It is the required baseline gate and always launches both:
+A unit is complete only when:
 
-- `Windows build and tests`: full solution Release restore/build, portable tests, Fast gate, transport rules, and license policy;
-- `Linux build and tests`: locked restore/build of the portable project set and the complete portable test set.
+- implementation and tests agree;
+- public capability status remains truthful;
+- the matching documentation is updated;
+- Windows and Linux baseline expectations are preserved;
+- required hardware validation is identified and executed where available;
+- no temporary bypass, fake success, or silent fallback was introduced.
 
-Run after each implementation unit before pushing:
+Use focused commits. Do not batch unrelated architecture, UI, media, cleanup, and documentation changes in one commit.
 
-```powershell
-git diff --stat
-dotnet test
-./scripts/test.ps1 -Tier Fast
-```
+## Mandatory product rules
 
-When developing on Linux, restore/build/test the portable projects affected by the change using `--locked-mode`; the authoritative project list is maintained in `.github/workflows/ci.yml`.
+### GPU Media Transport Law
 
-If the change touches Capture, D3D11, Vulkan, GPU lifecycle, keyed mutex, registry, render thread, provider, or submission, also run on the appropriate hardware host:
+- Continuous uncompressed video must not travel through CPU/RAM on a product path.
+- Continuous decode and encode use hardware acceleration or the capability is `Unavailable`/`Unsupported` with a concrete reason.
+- No software codec fallback.
+- No raw-video pipe.
+- `CpuReadbackSink` is debug/test/sample only; never use it for primary preview, recording, or streaming.
+- Static image load-time decode through `StaticCpuAsset` is allowed; it is not continuous video.
+- A documented OS capture boundary may receive CPU pixels only when unavoidable and must immediately upload into a bounded GPU slot. The raw frame must not circulate through the engine.
 
-```powershell
-./scripts/test.ps1 -Tier Gpu
-```
+### Capability truth
 
-Do not merge or move work to `master` until both automatic OS jobs pass. Hardware-specific qualification remains an additional gate and never substitutes for the Windows/Linux baseline.
+- Model presence is not implementation evidence.
+- Implementation presence is not product-promotion evidence.
+- Prototype, skeleton, fake, contract-only, or skipped code is never `Supported` or `Experimental` user capability.
+- Runtime capability reports must include concrete unavailable reasons.
+- Hardware support is detected from the real adapter, driver, API, surface type, backend output, and required proof chain—not from GPU marketing names.
+- Never convert missing hardware evidence into a passing developer result.
 
-## FFmpeg and codec policy
+### Product model
 
-Do not add FFmpeg, libav*, libx264, libx265, codec libraries, muxers, demuxers, or media container packages without checking:
+- `MediaForgeProject` is the only persisted product root.
+- `MediaForgeCanvas` is the canonical scene object.
+- Sources are reusable definitions and produce leased frames; they do not render and do not know about scenes or sinks.
+- Layers reference sources, primitives, or nested canvases. Do not add source-specific draw-object classes.
+- Effects are ordered product objects with validated scope.
+- Transitions belong to output routing, not permanent layer effects.
+- Sinks consume completed output leases or validated encoded packets and never trigger rendering.
+- Public hosts use builders/editors and public engine APIs; they do not manually wire internal renderer, provider, exporter, encoder, or sink-worker services.
+
+### Scene editing
+
+- `Live` and `Apply` semantics belong to the engine.
+- Live mutations publish transactionally and preserve the last valid published scene on rejection.
+- Apply mutations remain draft-bound until commit.
+- Studio must not duplicate engine state to simulate Live/Apply.
+- Canvas-as-source is mandatory.
+- Nested canvases require version binding, cycle rejection, depth limits, transitive dependency resolution, and correct Apply propagation.
+- Only engine-reported affected output ids may be marked as affected.
+
+### Physical RenderGraph
+
+- Production rendering must use a validated, pre-executed physical plan.
+- Source acquisition, effect intermediates, canvas/output passes, transitions, fan-out, encoded dispatch, and temporary-resource ownership must become graph-authoritative.
+- Missing, divergent, duplicate, or topologically invalid physical operations fail before native import or command recording.
+- Test-only plan synthesis must remain explicitly isolated and must never become a product fallback.
+
+### Lifetime and failure behavior
+
+- CPU submission completion is not GPU completion.
+- Cleanup order is `WaitForCompletionAsync(timeout, cancellationToken)` followed by `DisposeCompleted()`.
+- `IRenderFrameSubmission` must not implement `IDisposable` or `IAsyncDisposable`.
+- Do not expose synchronous `WaitIdle()` from `IRenderBackend`.
+- Do not call GPU, keyed-mutex, provider, sink, encoder, route, or shutdown waits without explicit timeout.
+- Fence timeout preserves potentially in-flight resources; it does not authorize destruction.
+- Native handles are never logical texture identity.
+- Every lifetime change requires focused tests for success, timeout, failure, cancellation, and shutdown.
+- Finalization errors remain observable and must not be reported as success.
+- Do not add TODOs in GPU lifetime, shutdown, disposal, keyed mutex, registry, render submission, encoder drain, or provider ownership paths.
+
+## Platform architecture
+
+Windows and Linux are mandatory development targets.
+
+Portable projects:
+
+- target portable frameworks;
+- contain product model, validation, orchestration, portable runtime, and portable tests;
+- never reference platform implementation projects;
+- never hide platform gaps with runtime OS switches or CPU fallback.
+
+Platform projects:
+
+- own native APIs, handles, bindings, device discovery, interop, and physical capability probes;
+- implement portable contracts;
+- expose unavailable capability when the adapter is absent or incomplete.
+
+Current physical media reality:
+
+- Windows owns the production D3D11/DXGI/Media Foundation/Vulkan interop path.
+- Linux and macOS own their future native adapters and must not reuse Windows implementation code.
+- Linux portable build/test success does not imply Linux physical media availability.
+
+When adding a portable project or test project, update the Linux project lists in `.github/workflows/ci.yml` in the same change.
+
+## Studio rules
+
+- Studio is native Avalonia/MVVM. No React, WebView, Electron, browser runtime, or embedded web frontend.
+- ViewModels do not depend on Avalonia controls.
+- Product logic does not live in `.axaml.cs`; code-behind is limited to visual pointer, keyboard, and native-host behavior.
+- Production composition must never fall back to fake/design services after a runtime failure.
+- The editor overlay remains separate from the native GPU preview surface.
+- Hosted preview uses a portable lifecycle contract plus a platform implementation and must preserve GPU leases through attach, resize/DPI, rebind, detach, timeout, and close.
+- Source and output editors mutate canonical typed settings.
+- Runtime secrets never enter project JSON.
+- Unavailable features remain visible only when useful and are disabled with a concrete reason.
+- Studio project replacement must await draft, output, timer, subscription, engine, and resource cleanup in ownership order.
+
+## Audio rules
+
+The portable audio foundation is implemented work, not a physical product route.
+
+- `WTK.MediaForge.Audio` references portable contracts only.
+- Internal format is planar float32, 48 kHz, mono/stereo, with bounded pooled blocks.
+- The real-time callback must not block, await, allocate, take a contended lock, access disk, format logs, rebuild graphs, invoke UI, or call slow sinks.
+- Graph publication occurs between blocks using immutable compiled plans.
+- Queue or pool pressure drops only the affected route and increments diagnostics.
+- Native capture, playback, application loopback, encode, and A/V mux belong in dedicated platform adapters and remain unavailable until physically implemented and proven.
+- Do not describe portable mixing as absent; do not describe it as product audio availability either.
+
+## Codec, transport, and dependency policy
+
+Before changing codec, container, network media, or third-party transport dependencies, read:
 
 - `docs/MEDIA_LICENSE_POLICY.md`
 - `docs/GPU_MEDIA_SUPPORT_MATRIX.md`
 - `docs/ROADMAP_CURRENT.md`
 
-FFmpeg is not allowed in the native MP4/RTMP hardware product path.
+Do not add FFmpeg, libav, libx264, libx265, external codec executables, muxers, demuxers, or media-container packages without the approved legal and architecture review.
 
-Future FFmpeg library usage is limited to encoded-packet/container operations after the dedicated **FFmpeg Libraries Integration Review** phase.
+The current native MP4/RTMP path must not use FFmpeg.
 
-Never implement:
+Never introduce:
 
-- rawvideo pipe;
-- software video encode fallback;
-- software video decode fallback;
-- raw decompressed video frames crossing CPU/RAM;
-- GPL/nonfree FFmpeg build;
-- libx264/libx265 dependency.
+- GPL/nonfree FFmpeg builds;
+- libx264/libx265 dependencies;
+- software encode/decode fallback;
+- rawvideo pipes;
+- decompressed continuous video in CPU memory.
 
-## For GPT / Codex Agents only:
+## Required validation
 
-- In Code Mode, within each bounded stage, run independent, functions.exec-available tool calls concurrently in one functions.exec call. Use await Promise.allSettled([...]) when partial results are useful, and inspect every result; use await Promise.all([...]) only when any failure should abort the batch. Keep dependencies, waits/resumes, approvals, conflicting or interdependent mutations, and adaptive investigations where each result may change the next step sequential. Do not split otherwise batchable inspections across outer tool calls
+Baseline Windows validation:
+
+```powershell
+dotnet restore .\WTK.MediaForge.sln --locked-mode
+dotnet build .\WTK.MediaForge.sln --no-restore --configuration Release
+dotnet test .\WTK.MediaForge.sln --no-restore --no-build --configuration Release `
+  --filter "Category!=GPU&Category!=Stress&Category!=Performance"
+.\scripts\test.ps1 -Tier Fast
+.\scripts\verify-media-transport-rules.ps1
+.\scripts\verify-license-policy.ps1
+```
+
+Linux validation uses the authoritative portable project and test lists in `.github/workflows/ci.yml`, with locked restore.
+
+Changes touching capture, D3D11, Vulkan, GPU lifetime, external memory, keyed mutex, preview presentation, render thread, providers, submissions, hardware decode/encode, or GPU export also require:
+
+```powershell
+.\scripts\test.ps1 -Tier Gpu
+```
+
+Current hardware-media readiness entrypoint:
+
+```powershell
+.\scripts\verify-engine-readiness-v14.ps1
+.\scripts\verify-engine-readiness-v14.ps1 -RequireHardwareMedia
+```
+
+Studio changes also require:
+
+```powershell
+.\scripts\verify-studio-ui-visual-qa.ps1
+```
+
+Do not claim a gate passed unless it was actually executed and its report was inspected. Report missing hardware, runner, dependency, or environment as a blocker—not as success.
+
+## Review checklist for every change
+
+Confirm all of the following before finishing:
+
+- The implementation matches the active roadmap and product model.
+- The change uses the correct portable/platform project boundary.
+- No raw continuous video crossed CPU/RAM.
+- No software fallback was added.
+- Capability state and unavailable reason are truthful.
+- Public APIs do not expose internal/native ownership.
+- Resource ownership is deterministic under success and failure.
+- Tests prove the new contract instead of only exercising a happy path.
+- Windows and Linux project/test classification remains correct.
+- Documentation was updated where product truth changed.
+- No stale historical language was reintroduced into normative documents.
+
+## Agent execution guidance
+
+- Inspect broadly, mutate narrowly.
+- Prefer current source and tests over old plans when determining implementation reality.
+- Do not report old defects as current without verifying them.
+- Use parallel read-only inspection when independent; keep dependent mutations sequential.
+- Never perform conflicting writes to the same file concurrently.
+- After each write, verify the resulting file or commit before continuing.
+- When the user explicitly requests direct work on `master`, write to `master`; otherwise use the repository's normal branch/review workflow.
+- Do not create fake progress percentages, synthetic proof reports, or unsupported claims.
+- End each task with the exact files changed, validation executed, validation not executed, and remaining blockers.
