@@ -105,6 +105,11 @@ A checked item must have current implementation and evidence. Do not check an it
 
 ## Hosted native preview
 
+Implementation status: the Windows/Avalonia host, engine attachment ownership,
+and target/sink replacement are implemented and exercised by focused tests.
+Every unchecked item below remains required for promotion; preview is
+Experimental and proof-gated.
+
 - [ ] Preview uses a GPU-backed completed output surface.
 - [ ] Primary preview does not use `CpuReadbackSink`.
 - [ ] Avalonia overlay is rendered independently above the native preview surface.

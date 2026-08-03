@@ -1,7 +1,9 @@
 # Preview Panel Acceptance
 
-`PreviewPanelSink` is an experimental GPU preview sink. It is allowed as a
-local reliability track, but it is not yet a product preview feature.
+`PreviewPanelSink` is an experimental GPU preview sink. The Windows/Avalonia
+hosted-surface integration is the product-direction host boundary, while this
+sink remains a separate presenter reliability track; preview is not yet a
+product-supported feature.
 
 ## Product Boundary
 
@@ -31,3 +33,8 @@ Before `PreviewPanelSink` can become product-supported, run and document a
 product-hosted Avalonia panel reliability pass proving real visible presentation,
 interactive resize, attach/detach, stop/dispose retry, and sustained delivery
 without CPU readback.
+
+The current host owns the native surface and the engine owns the attachment.
+Engine stop, project replacement, and disposal detach the surface; native-host
+close detaches it before closing the surface. This ownership is implemented but
+still requires the physical and sustained evidence above.

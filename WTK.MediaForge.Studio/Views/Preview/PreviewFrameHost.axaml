@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="WTK.MediaForge.Studio.Views.Preview.PreviewFrameHost">
   <Grid ClipToBounds="True">
+    <ContentControl x:Name="NativeHost" />
     <Border Background="{StaticResource MfCanvasFrameBrush}" />
     <Grid RowDefinitions="*,*,*" ColumnDefinitions="*,*,*">
       <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Background="{StaticResource MfSurface2Brush}" Opacity="0.55" />

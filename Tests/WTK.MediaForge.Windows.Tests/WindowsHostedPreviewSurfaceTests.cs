@@ -11,15 +11,12 @@ namespace WTK.MediaForge.Graphics.Vulkan.Tests;
 public sealed class WindowsHostedPreviewSurfaceTests
 {
     [Fact]
-    public void MediaForgeWindows_creates_hosted_preview_surface_without_public_native_handle()
+    public void Windows_hosted_preview_surface_has_no_public_native_handle_constructor()
     {
-        var surface = MediaForgeWindows.CreateHostedPreviewSurface();
-
-        Assert.False(surface.Id.IsEmpty);
-        Assert.Equal(HostedPreviewSurfaceState.Detached, surface.State);
         Assert.DoesNotContain(
             typeof(WindowsHostedPreviewSurface).GetConstructors(),
             constructor => constructor.GetParameters().Any(parameter => parameter.ParameterType == typeof(nint)));
+        Assert.Null(typeof(MediaForgeWindows).GetMethod("CreateHostedPreviewSurface"));
     }
 
     [Fact]

@@ -54,9 +54,6 @@ public static class MediaForgeWindows
         };
     }
 
-    public static WindowsHostedPreviewSurface CreateHostedPreviewSurface() =>
-        new();
-
     public static ValueTask<MediaForgeCapabilityReport> GetCapabilityReportAsync(
         CancellationToken cancellationToken = default) =>
         GetCapabilityReportAsync(DefaultCapabilityProbe, cancellationToken);

@@ -184,7 +184,9 @@ Studio has explicit Design/Test and Runtime composition.
 - Output cards use real route services where capability permits.
 - Production runtime failure must not fall back to fake/design services.
 - Avalonia overlays remain separate from native preview.
-- Hosted preview uses a portable lifecycle contract and platform presenter.
+- Hosted preview uses a portable lifecycle contract, engine-authoritative attachment ownership,
+  and a Windows/Avalonia native host. The platform host owns surface lifetime; the engine owns
+  attachment lifetime and detaches surfaces on stop, replacement, and disposal.
 - Runtime credentials never enter project JSON.
 - Project replacement awaits physical draft disposal before session maps are cleared.
 

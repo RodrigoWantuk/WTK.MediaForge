@@ -122,7 +122,7 @@ The following rules are not negotiable:
 
 The following have real implementations but are not automatically product-promoted on every machine:
 
-- hosted GPU preview through `PreviewPanelSink`;
+- hosted GPU preview through the Windows/Avalonia hosted-surface path; `PreviewPanelSink` remains a separate experimental presenter reliability track;
 - desktop capture;
 - window capture;
 - webcam capture;
@@ -207,6 +207,10 @@ Exit criteria:
 - Finalize the platform-neutral hosted-surface lifecycle.
 - Implement the Windows Avalonia native host.
 - Qualify attach, resize/DPI, rebind, dock/undock, minimize/restore, timeout, detach, and close.
+
+The portable lifecycle, engine-authoritative attachment registry, Windows render-target bridge,
+and Studio.Windows `NativeControlHost` integration are implemented. Hosted preview remains
+Experimental and proof-gated until the qualification evidence below is current.
 
 Exit criteria:
 

@@ -69,7 +69,9 @@ The active Studio delivery scope is defined together with the public API in [`MV
 
 ### 1. Hosted native preview
 
-The primary gap is the real GPU preview hosted below the Avalonia editing overlay.
+The Windows integration now creates a real `NativeControlHost` below the Avalonia editing
+overlay, owns a `WindowsHostedPreviewSurface`, and attaches the routed preview after engine
+load. It remains an Experimental, proof-gated integration rather than a promoted capability.
 
 Required contract:
 
@@ -170,8 +172,8 @@ Each numbered unit is a focused implementation and review unit.
    - Tests: portable lifecycle state machine.
 
 2. **Windows hosted presenter**
-   - Connect the native Avalonia host to `PreviewPanelSink`/presenter through the platform Studio assembly.
-   - Tests: attach, resize, DPI, rebind, detach, timeout, close.
+   - Implemented: native Avalonia host, engine-owned attachment, resize/DPI and target/sink rebind.
+   - Remaining: adapter lifecycle tests and sustained hardware evidence.
 
 3. **Studio preview integration**
    - Place the hosted surface below the existing overlay and keep hit-testing/editor geometry independent.

@@ -10,7 +10,16 @@ internal sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        StudioRuntimeHost.Configure(new WindowsMediaForgeRuntimeFactory());
+        var runtimeFactory = new WindowsMediaForgeRuntimeFactory();
+        StudioRuntimeHost.Configure(runtimeFactory);
+        StudioPreviewHostFactory.Configure(() =>
+        {
+            var control = new WindowsHostedPreviewControl(() => runtimeFactory.Engine);
+            runtimeFactory.EngineCreated += (_, engine) => control.NotifyEngineCreated(engine);
+            if (runtimeFactory.Engine is { } engine)
+                control.NotifyEngineCreated(engine);
+            return control;
+        });
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

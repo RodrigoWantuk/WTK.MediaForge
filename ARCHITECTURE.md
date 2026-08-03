@@ -209,5 +209,7 @@ from portable projects toward a platform implementation.
 
 Studio has explicit Design and Runtime composition. Runtime saves canonical
 `MediaForgeProject` JSON and probes hardware asynchronously. Avalonia selection,
-handles, grid, and safe-area overlays remain separate from the future native GPU
-surface. Native preview/output controls stay disabled until their engine gates pass.
+handles, grid, and safe-area overlays remain separate from the Windows/Avalonia
+native GPU surface. The platform host owns the native surface while the engine
+owns its attachment and render-target binding. Preview remains Experimental and
+proof-gated until its engine and hardware gates pass.

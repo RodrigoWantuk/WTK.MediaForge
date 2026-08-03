@@ -137,7 +137,6 @@ public class PublicApiSurfaceTests
         var productMethods = new[]
         {
             GetSinglePublicMethod(typeof(MediaForgeWindows), nameof(MediaForgeWindows.CreateEngine)),
-            GetSinglePublicMethod(typeof(MediaForgeWindows), nameof(MediaForgeWindows.CreateHostedPreviewSurface)),
             GetSinglePublicMethod(typeof(MediaForgeEngine), nameof(MediaForgeEngine.AttachHostedPreviewAsync)),
             GetSinglePublicMethod(typeof(MediaForgeEngine), nameof(MediaForgeEngine.DetachHostedPreviewAsync)),
             GetSinglePublicMethod(typeof(MediaForgeEngine), nameof(MediaForgeEngine.StartEncodedOutputAsync)),

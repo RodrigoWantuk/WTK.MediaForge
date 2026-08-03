@@ -27,6 +27,24 @@ public sealed class WindowsHostedPreviewSurface : HostedPreviewSurface
         _windowHandle = windowHandle;
     }
 
+    internal void ClearNativeWindowHandle() => _windowHandle = 0;
+
+    protected override ValueTask ResizeCoreAsync(
+        HostedPreviewResizeRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_windowHandle == 0)
+        {
+            throw new MediaForgeUnsupportedFeatureException(
+                $"output.{RenderOutputTypes.PreviewWindow.Value}",
+                "Hosted preview resize requires a Windows adapter-bound native surface.");
+        }
+
+        // The engine publishes the new binding to the render thread after this
+        // platform host has accepted the physical pixel dimensions.
+        return ValueTask.CompletedTask;
+    }
+
     protected override RenderOutputTarget CreateRenderOutputTargetCore()
     {
         if (_windowHandle == 0)

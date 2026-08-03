@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using WTK.MediaForge.Studio.Services;
 
 namespace WTK.MediaForge.Studio.Views.Preview;
 
@@ -15,6 +16,8 @@ public sealed partial class PreviewFrameHost : UserControl
     public PreviewFrameHost()
     {
         AvaloniaXamlLoader.Load(this);
+        if (NameScope.GetNameScope(this)?.Find<ContentControl>("NativeHost") is { } nativeHost)
+            nativeHost.Content = StudioPreviewHostFactory.Create();
     }
 
     public object? FrameSource
