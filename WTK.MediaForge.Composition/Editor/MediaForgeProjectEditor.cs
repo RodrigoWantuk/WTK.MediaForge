@@ -4,6 +4,7 @@ using WTK.MediaForge.Composition.Outputs;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Composition.Sources;
 using WTK.MediaForge.Composition.Validation;
+using WTK.MediaForge.Core.Color;
 using WTK.MediaForge.Core.Frames;
 using WTK.MediaForge.Core.Geometry;
 using WTK.MediaForge.Core.Identifiers;
@@ -86,6 +87,25 @@ public sealed class MediaForgeProjectEditor
 
         canvas.Objects.Add(textObject);
         return textObject;
+    }
+
+    public SolidDrawObject AddSolid(CanvasId canvasId, ColorRgba fillColor, Transform2D transform)
+    {
+        var canvas = RequireCanvas(canvasId);
+
+        if (!fillColor.IsInRange())
+            throw new ArgumentOutOfRangeException(nameof(fillColor), "Color components must be finite and between 0 and 1.");
+
+        var solidObject = new SolidDrawObject
+        {
+            Id = DrawObjectId.New(),
+            Name = "Solid",
+            FillColor = fillColor,
+            Transform = transform
+        };
+
+        canvas.Objects.Add(solidObject);
+        return solidObject;
     }
 
     public CanvasDrawObject AddCanvasLayer(CanvasId parentCanvasId, CanvasId nestedCanvasId, Transform2D transform)

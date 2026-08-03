@@ -355,6 +355,7 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Project.MediaForgeSourceDefinition",
                 "WTK.MediaForge.Composition.Project.ProjectLoadResult",
                 "WTK.MediaForge.Composition.Project.ProjectMigrateResult",
+                "WTK.MediaForge.Composition.Project.SolidLayerBuilder",
                 "WTK.MediaForge.Composition.Project.SourceLayerBuilder",
                 "WTK.MediaForge.Composition.Project.TextLayerBuilder",
                 "WTK.MediaForge.Composition.Project.MediaForgeProjectSerializer",

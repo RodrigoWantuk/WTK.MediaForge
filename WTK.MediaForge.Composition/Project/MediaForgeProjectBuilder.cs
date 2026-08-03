@@ -190,6 +190,27 @@ public sealed class MediaForgeProjectBuilder
         }
     }
 
+    public MediaForgeProjectBuilder AddSolid(
+        MediaForgeCanvas canvas,
+        ColorRgba fillColor,
+        Action<SolidLayerBuilder>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(canvas);
+
+        var layer = _editor.AddSolid(canvas.Id, fillColor, Transform2D.Default);
+
+        try
+        {
+            configure?.Invoke(new SolidLayerBuilder(layer));
+            return this;
+        }
+        catch
+        {
+            canvas.Objects.Remove(layer);
+            throw;
+        }
+    }
+
     public MediaForgeProjectBuilder AddCanvasLayer(
         MediaForgeCanvas parentCanvas,
         MediaForgeCanvas nestedCanvas,
@@ -390,6 +411,43 @@ public sealed class SourceLayerBuilder
         return this;
     }
 
+    public SourceLayerBuilder SetRotationDegrees(float rotationDegrees)
+    {
+        EnsureFinite(rotationDegrees, nameof(rotationDegrees));
+        _layer.Transform = _layer.Transform with { RotationDegrees = rotationDegrees };
+        return this;
+    }
+
+    public SourceLayerBuilder SetPivot(float x, float y)
+    {
+        EnsureUnitRange(x, nameof(x));
+        EnsureUnitRange(y, nameof(y));
+        _layer.Transform = _layer.Transform with { Pivot = new NormalizedPoint(x, y) };
+        return this;
+    }
+
+    public SourceLayerBuilder SetCrop(float left, float top, float right, float bottom)
+    {
+        var crop = new NormalizedRect(left, top, right, bottom);
+        if (!crop.IsValid)
+            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
+
+        _layer.Crop = crop;
+        return this;
+    }
+
+    public SourceLayerBuilder ClearCrop()
+    {
+        _layer.Crop = null;
+        return this;
+    }
+
+    public SourceLayerBuilder SetEnabled(bool enabled)
+    {
+        _layer.Enabled = enabled;
+        return this;
+    }
+
     public SourceLayerBuilder SetFit()
     {
         _layer.LayoutMode = LayoutMode.Fit;
@@ -544,6 +602,43 @@ public sealed class TextLayerBuilder
         return this;
     }
 
+    public TextLayerBuilder SetRotationDegrees(float rotationDegrees)
+    {
+        EnsureFinite(rotationDegrees, nameof(rotationDegrees));
+        _layer.Transform = _layer.Transform with { RotationDegrees = rotationDegrees };
+        return this;
+    }
+
+    public TextLayerBuilder SetPivot(float x, float y)
+    {
+        EnsureUnitRange(x, nameof(x));
+        EnsureUnitRange(y, nameof(y));
+        _layer.Transform = _layer.Transform with { Pivot = new NormalizedPoint(x, y) };
+        return this;
+    }
+
+    public TextLayerBuilder SetCrop(float left, float top, float right, float bottom)
+    {
+        var crop = new NormalizedRect(left, top, right, bottom);
+        if (!crop.IsValid)
+            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
+
+        _layer.Crop = crop;
+        return this;
+    }
+
+    public TextLayerBuilder ClearCrop()
+    {
+        _layer.Crop = null;
+        return this;
+    }
+
+    public TextLayerBuilder SetEnabled(bool enabled)
+    {
+        _layer.Enabled = enabled;
+        return this;
+    }
+
     public TextLayerBuilder SetFontSize(float fontSize)
     {
         if (!float.IsFinite(fontSize) || fontSize <= 0)
@@ -573,6 +668,12 @@ public sealed class TextLayerBuilder
         return this;
     }
 
+    public TextLayerBuilder SetBlendMode(BlendMode blendMode)
+    {
+        _layer.BlendMode = blendMode;
+        return this;
+    }
+
     private static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
     {
         EnsurePositive(width, nameof(width));
@@ -597,6 +698,124 @@ public sealed class TextLayerBuilder
     {
         if (!float.IsFinite(value) || value < 0 || value > 1)
             throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
+    }
+
+    private static void EnsureFinite(float value, string parameterName)
+    {
+        if (!float.IsFinite(value))
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
+    }
+}
+
+public sealed class SolidLayerBuilder
+{
+    private readonly SolidDrawObject _layer;
+
+    internal SolidLayerBuilder(SolidDrawObject layer) =>
+        _layer = layer ?? throw new ArgumentNullException(nameof(layer));
+
+    public SolidLayerBuilder SetName(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        _layer.Name = name;
+        return this;
+    }
+
+    public SolidLayerBuilder SetBounds(float x, float y, float width, float height)
+    {
+        _layer.Transform = WithBounds(_layer.Transform, x, y, width, height);
+        return this;
+    }
+
+    public SolidLayerBuilder SetRotationDegrees(float rotationDegrees)
+    {
+        EnsureFinite(rotationDegrees, nameof(rotationDegrees));
+        _layer.Transform = _layer.Transform with { RotationDegrees = rotationDegrees };
+        return this;
+    }
+
+    public SolidLayerBuilder SetPivot(float x, float y)
+    {
+        EnsureUnitRange(x, nameof(x));
+        EnsureUnitRange(y, nameof(y));
+        _layer.Transform = _layer.Transform with { Pivot = new NormalizedPoint(x, y) };
+        return this;
+    }
+
+    public SolidLayerBuilder SetCrop(float left, float top, float right, float bottom)
+    {
+        var crop = new NormalizedRect(left, top, right, bottom);
+        if (!crop.IsValid)
+            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
+
+        _layer.Crop = crop;
+        return this;
+    }
+
+    public SolidLayerBuilder ClearCrop()
+    {
+        _layer.Crop = null;
+        return this;
+    }
+
+    public SolidLayerBuilder SetEnabled(bool enabled)
+    {
+        _layer.Enabled = enabled;
+        return this;
+    }
+
+    public SolidLayerBuilder SetFillColor(ColorRgba color)
+    {
+        if (!color.IsInRange())
+            throw new ArgumentOutOfRangeException(nameof(color), "Color components must be finite and between 0 and 1.");
+
+        _layer.FillColor = color;
+        return this;
+    }
+
+    public SolidLayerBuilder SetOpacity(float opacity)
+    {
+        EnsureUnitRange(opacity, nameof(opacity));
+        _layer.Opacity = opacity;
+        return this;
+    }
+
+    public SolidLayerBuilder SetBlendMode(BlendMode blendMode)
+    {
+        _layer.BlendMode = blendMode;
+        return this;
+    }
+
+    private static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
+    {
+        EnsurePositive(width, nameof(width));
+        EnsurePositive(height, nameof(height));
+
+        return new Transform2D
+        {
+            Position = new CanvasPoint(x, y),
+            Size = new CanvasSize(width, height),
+            RotationDegrees = current.RotationDegrees,
+            Pivot = current.Pivot
+        };
+    }
+
+    private static void EnsurePositive(float value, string parameterName)
+    {
+        if (!float.IsFinite(value) || value <= 0)
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and positive.");
+    }
+
+    private static void EnsureUnitRange(float value, string parameterName)
+    {
+        if (!float.IsFinite(value) || value < 0 || value > 1)
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
+    }
+
+    private static void EnsureFinite(float value, string parameterName)
+    {
+        if (!float.IsFinite(value))
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
     }
 }
 
@@ -620,10 +839,53 @@ public sealed class CanvasLayerBuilder
         return this;
     }
 
+    public CanvasLayerBuilder SetRotationDegrees(float rotationDegrees)
+    {
+        EnsureFinite(rotationDegrees, nameof(rotationDegrees));
+        _layer.Transform = _layer.Transform with { RotationDegrees = rotationDegrees };
+        return this;
+    }
+
+    public CanvasLayerBuilder SetPivot(float x, float y)
+    {
+        EnsureUnitRange(x, nameof(x));
+        EnsureUnitRange(y, nameof(y));
+        _layer.Transform = _layer.Transform with { Pivot = new NormalizedPoint(x, y) };
+        return this;
+    }
+
+    public CanvasLayerBuilder SetCrop(float left, float top, float right, float bottom)
+    {
+        var crop = new NormalizedRect(left, top, right, bottom);
+        if (!crop.IsValid)
+            throw new ArgumentOutOfRangeException(nameof(left), "Crop must be normalized with 0 <= left/top, right/bottom <= 1, and positive width/height.");
+
+        _layer.Crop = crop;
+        return this;
+    }
+
+    public CanvasLayerBuilder ClearCrop()
+    {
+        _layer.Crop = null;
+        return this;
+    }
+
+    public CanvasLayerBuilder SetEnabled(bool enabled)
+    {
+        _layer.Enabled = enabled;
+        return this;
+    }
+
     public CanvasLayerBuilder SetOpacity(float opacity)
     {
         EnsureUnitRange(opacity, nameof(opacity));
         _layer.Opacity = opacity;
+        return this;
+    }
+
+    public CanvasLayerBuilder SetBlendMode(BlendMode blendMode)
+    {
+        _layer.BlendMode = blendMode;
         return this;
     }
 
@@ -651,5 +913,11 @@ public sealed class CanvasLayerBuilder
     {
         if (!float.IsFinite(value) || value < 0 || value > 1)
             throw new ArgumentOutOfRangeException(parameterName, "Value must be finite and between 0 and 1.");
+    }
+
+    private static void EnsureFinite(float value, string parameterName)
+    {
+        if (!float.IsFinite(value))
+            throw new ArgumentOutOfRangeException(parameterName, "Value must be finite.");
     }
 }

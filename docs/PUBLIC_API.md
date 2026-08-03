@@ -29,6 +29,7 @@ Current public authoring types:
 - `MediaForgeProjectBuilder`
 - `SourceLayerBuilder`
 - `TextLayerBuilder`
+- `SolidLayerBuilder`
 - `CanvasLayerBuilder`
 - `MediaForgeSources`
 - `MediaForgeOutputs`
@@ -72,10 +73,54 @@ Current scoped rendering support includes:
 - `TextDrawObject.FontFamily`, propagated through snapshots into the Vulkan text
   renderer.
 - `TextLayerBuilder.SetFontFamily(...)` for fluent text authoring.
+- `MediaForgeProjectBuilder.AddSolid(...)` and `SolidLayerBuilder` for fluent
+  solid-layer authoring without direct list mutation.
+- Fluent layer builders for source, text, solid, and nested-canvas layers expose
+  canonical transform, crop, visibility, opacity, and blend properties needed by
+  the public quickstart workflow.
 - `SourceLayerBuilder.AddBlur(...)` for the currently supported source-layer
   blur effect.
 - `MediaForgeRenderOutput.RouteTransition` for cut/fade route transitions on an
   output.
+
+### Functional workflow audit
+
+The current functional milestone workflow can be expressed through public
+product APIs as follows:
+
+| Step | Public API existing | Type/method | Problem | Required change |
+|---|---:|---|---|---|
+| Create project | Yes | `MediaForgeProjectBuilder.Create`, `MediaForgeProjectLoader` | None | None |
+| Create reusable sources | Yes | `MediaForgeProjectBuilder.Source`, `DesktopSource`, `ImageSource`, `MediaForgeSources.*` | Runtime availability remains capability-gated | None |
+| Create two scenes | Yes | `Canvas(...)` / `Scene(...)` | None | None |
+| Add source layers | Yes | `AddSourceLayer`, `SourceLayerBuilder` | None | None |
+| Add text | Yes | `AddText`, `TextLayerBuilder` | None | None |
+| Add solid | Yes | `AddSolid`, `SolidLayerBuilder` | Previously required direct model mutation | Implemented in the public builder/editor |
+| Use scene as layer | Yes | `AddCanvasLayer`, `CanvasLayerBuilder` | None | None |
+| Configure transform, crop, opacity, blend | Yes | Layer builders and `SceneMutationPatch` | Initial fluent authoring was incomplete | Builder helpers expose the canonical properties |
+| Configure implemented effects | Yes | `AddChromaKey`, `AddColorCorrection`, `AddBlur`, effect DTOs | Renderer support is scope-limited to source layers | None |
+| Configure preview | Yes | `PreviewOutput`, `MediaForgeOutputs.PreviewWindow` | Product hosted promotion remains proof-gated | None |
+| Configure MP4 | Yes | `RecordMp4Output`, `RecordingMp4OutputSettings` | Availability requires hardware proof | None |
+| Configure RTMP | Yes | `RtmpOutput`, `StreamingRtmpOutputSettings` | Availability requires hardware/network proof | None |
+| Create Windows engine | Yes | `MediaForgeWindows.CreateEngine` | None | None |
+| Query capabilities asynchronously | Yes | `GetCapabilityReportAsync`, `GetCapabilitySnapshotAsync`, hardware-proof APIs | None | None |
+| Load project | Yes | `MediaForgeEngine.LoadProjectAsync` | None | None |
+| Start engine | Yes | `StartAsync` | Missing hardware reports typed unavailable/unsupported failures | None |
+| Start/stop outputs | Yes | `StartEncodedOutputAsync`, `StopEncodedOutputAsync`, `BindOutputAsync`, `AttachSinkAsync` | Encoded outputs are proof-gated; debug readback is not product preview | None |
+| Open Live session | Yes | `BeginSceneEditSessionAsync(..., SceneEditMode.Live)` | None | None |
+| Send Live mutation | Yes | `ApplySceneMutationAsync`, `ApplySceneMutationsAsync` | None | None |
+| Open Apply session | Yes | `BeginSceneEditSessionAsync(..., SceneEditMode.Apply)` | None | None |
+| Send draft mutations | Yes | `ApplySceneMutationAsync`, `ApplySceneMutationsAsync` | None | None |
+| Apply/discard draft | Yes | `ApplySceneDraftAsync`, `DiscardSceneDraftAsync` | None | None |
+| Query status and health | Yes | `State`, `GetRuntimeHealthSnapshot`, `GetEncodedOutputRuntimeSnapshots` | None | None |
+| Handle unavailable capability | Yes | `MediaForgeCapabilityReport`, `MediaForgeUnsupportedFeatureException` | None | None |
+| Handle route failure | Yes | `EncodedOutputRuntimeSnapshot`, diagnostics, typed exceptions | None | None |
+| Stop and dispose deterministically | Yes | `StopAsync`, `DisposeAsync` | Hardware cleanup evidence remains validation-gated | None |
+
+The existing `WTK.MediaForge.Sample.Offscreen` sample remains a debug/offscreen
+sample because it uses `CpuReadbackSink`. The functional API quickstart must use
+the public product workflow above and treat unavailable preview, MP4, or RTMP
+capabilities as explicit unavailable states rather than simulated success.
 
 ## 2. Public Runtime API
 
@@ -115,6 +160,9 @@ Engine operations are observable:
 - `GetEncodedOutputRuntimeSnapshots()` exposes high-level encoded output state
   (`Running`, `Backpressure`, `Failed`, etc.) and counters without exposing
   encoder workers, GPU surfaces, command buffers, or native handles
+- `StartEncodedOutputAsync(...)` and `StopEncodedOutputAsync(...)` are the
+  product-level controls for proof-gated MP4/RTMP encoded routes. Hosts do not
+  construct exporters, encoders, muxers, RTMP clients, or sink workers directly.
 - `BeginSceneEditSessionAsync(...)`, `ApplySceneMutationAsync(...)`,
   `ApplySceneDraftAsync(...)`, and `DiscardSceneDraftAsync(...)` are the public
   scene-editing APIs. `Live` sessions update the published scene after

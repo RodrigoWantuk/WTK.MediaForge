@@ -24,9 +24,13 @@ Files under `docs/history` are evidence only. They must not be used as active re
 
 ## Active delivery milestone
 
-[`MVP_API_STUDIO.md`](MVP_API_STUDIO.md) defines the current functional integration milestone for the public API and Avalonia Studio.
+The functional API/Studio milestone document defines the current integration
+checkpoint for the public API and Avalonia Studio.
 
-In this repository, **MVP is a delivery checkpoint, not a product capability status**. It does not relax the GPU Media Transport Law, capability truth, deterministic ownership, cross-platform architecture, validation requirements, or final-product model.
+In this repository, the integration checkpoint is not a product capability
+status. It does not relax the GPU Media Transport Law, capability truth,
+deterministic ownership, cross-platform architecture, validation requirements,
+or final-product model.
 
 ## Subject guides
 

@@ -11,6 +11,7 @@ Windows currently owns the physical production video path. Core, Composition, Vu
 ## Non-negotiable video law
 
 Continuous video decode and encode use hardware acceleration.
+Continuous video decode and encode must use platform hardware acceleration.
 
 Continuous uncompressed frames remain on GPU-backed surfaces from capture/decode through composition and encode/presentation. There is no product software codec fallback and no raw-video pipe.
 
@@ -187,7 +188,8 @@ Studio has explicit Design/Test and Runtime composition.
 - Runtime credentials never enter project JSON.
 - Project replacement awaits physical draft disposal before session maps are cleared.
 
-The active API/Studio integration milestone is defined in `docs/MVP_API_STUDIO.md`.
+The active API/Studio integration milestone is defined by the functional
+API/Studio milestone document.
 
 ## Portable audio boundary
 
@@ -257,7 +259,8 @@ Unsupported platform adapters report a concrete unavailable reason. Portable pro
 7. Build Linux physical media adapters.
 8. Build Remote Scene media and later deferred features.
 
-See `docs/ROADMAP_CURRENT.md` for exit criteria and `docs/MVP_API_STUDIO.md` for the functional API/Studio milestone.
+See `docs/ROADMAP_CURRENT.md` for exit criteria and the functional API/Studio
+milestone document for the integration scope.
 
 ## Documentation authority
 
@@ -275,3 +278,5 @@ Normative sources:
 - `AGENTS.md`
 
 Files under `docs/history` are non-normative.
+Historical readiness scripts live under `docs/history/readiness-scripts` and are
+not current gates.

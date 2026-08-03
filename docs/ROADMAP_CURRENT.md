@@ -21,7 +21,8 @@ The following rules are not negotiable:
 - sinks consume completed output leases or validated encoded packets and never trigger rendering;
 - native resources remain in platform assemblies;
 - Core uses stable logical ids, immutable snapshots, explicit capability truth, and asynchronous ownership;
-- unsupported hardware, missing proof, incomplete adapters, and license blockers are reported explicitly rather than hidden by fallback code.
+- unsupported hardware, missing proof, incomplete adapters, and license blockers are reported explicitly rather than hidden by fallback code;
+- hardware media paths never fall back to software decode/encode.
 
 ## Current product reality
 
@@ -121,7 +122,7 @@ The following rules are not negotiable:
 
 The following have real implementations but are not automatically product-promoted on every machine:
 
-- hosted GPU preview;
+- hosted GPU preview through `PreviewPanelSink`;
 - desktop capture;
 - window capture;
 - webcam capture;
@@ -156,7 +157,8 @@ Promotion requires the matching capability proof and sustained qualification on 
 
 ## Active functional milestone
 
-The current delivery checkpoint is defined in `docs/MVP_API_STUDIO.md`.
+The current delivery checkpoint is defined by the functional API/Studio
+milestone document.
 
 The milestone must produce:
 
@@ -168,7 +170,8 @@ The milestone must produce:
 - deterministic stop/dispose and resource baseline return;
 - mandatory Windows/Linux baseline validation and reviewed Windows hardware evidence.
 
-“MVP” is not a support-status label and does not authorize reduced architecture or temporary media paths.
+The integration checkpoint is not a support-status label and does not authorize
+reduced architecture or temporary media paths.
 
 ## Current execution order
 
@@ -304,7 +307,7 @@ GPU-sensitive changes:
 ./scripts/test.ps1 -Tier Gpu
 ```
 
-Current engine readiness:
+Current engine readiness is the only current engine readiness entrypoint:
 
 ```powershell
 ./scripts/verify-engine-readiness-v14.ps1
