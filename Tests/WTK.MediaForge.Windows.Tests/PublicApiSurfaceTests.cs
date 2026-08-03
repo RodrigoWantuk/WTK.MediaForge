@@ -1,4 +1,8 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
+using WTK.MediaForge.Composition.Engine;
+using WTK.MediaForge.Composition.Outputs;
+using WTK.MediaForge.Composition.Outputs.Settings;
 using WTK.MediaForge.Capture.DesktopDuplication;
 using WTK.MediaForge.Composition.Project;
 using WTK.MediaForge.Core.Frames;
@@ -100,6 +104,62 @@ public class PublicApiSurfaceTests
             Assert.False(type.IsPublic, $"{type.FullName} must not be public.");
             Assert.False(type.IsNestedPublic, $"{type.FullName} must not be nested public.");
         }
+    }
+
+    [Fact]
+    public void Product_api_signatures_do_not_expose_native_handles_or_internal_runtime_types()
+    {
+        var productTypes = new[]
+        {
+            typeof(HostedPreviewAttachRequest),
+            typeof(HostedPreviewCloseRequest),
+            typeof(HostedPreviewDetachRequest),
+            typeof(HostedPreviewDpiScale),
+            typeof(HostedPreviewRebindRequest),
+            typeof(HostedPreviewResizeRequest),
+            typeof(HostedPreviewSurface),
+            typeof(HostedPreviewSurfaceId),
+            typeof(HostedPreviewSurfaceState),
+            typeof(WindowsHostedPreviewSurface),
+            typeof(MediaForgeProjectBuilder),
+            typeof(SourceLayerBuilder),
+            typeof(TextLayerBuilder),
+            typeof(SolidLayerBuilder),
+            typeof(CanvasLayerBuilder),
+            typeof(PreviewWindowOutputSettings),
+            typeof(RecordingMp4OutputSettings),
+            typeof(StreamingRtmpOutputSettings)
+        };
+
+        foreach (var type in productTypes)
+            AssertPublicTypeSignatureIsProductSafe(type);
+
+        var productMethods = new[]
+        {
+            GetSinglePublicMethod(typeof(MediaForgeWindows), nameof(MediaForgeWindows.CreateEngine)),
+            GetSinglePublicMethod(typeof(MediaForgeWindows), nameof(MediaForgeWindows.CreateHostedPreviewSurface)),
+            GetSinglePublicMethod(typeof(MediaForgeEngine), nameof(MediaForgeEngine.AttachHostedPreviewAsync)),
+            GetSinglePublicMethod(typeof(MediaForgeEngine), nameof(MediaForgeEngine.DetachHostedPreviewAsync)),
+            GetSinglePublicMethod(typeof(MediaForgeEngine), nameof(MediaForgeEngine.StartEncodedOutputAsync)),
+            GetSinglePublicMethod(typeof(MediaForgeEngine), nameof(MediaForgeEngine.StopEncodedOutputAsync))
+        };
+
+        foreach (var method in productMethods)
+            AssertMethodSignatureIsProductSafe(method, $"{method.DeclaringType!.FullName}.{method.Name}");
+    }
+
+    [Fact]
+    public void Hosted_preview_product_flow_does_not_require_native_handle_or_manual_sink()
+    {
+        var attachMethod = GetSinglePublicMethod(typeof(MediaForgeEngine), nameof(MediaForgeEngine.AttachHostedPreviewAsync));
+        var parameterTypes = attachMethod.GetParameters().Select(parameter => parameter.ParameterType).ToArray();
+
+        Assert.Contains(typeof(HostedPreviewSurface), parameterTypes);
+        Assert.DoesNotContain(typeof(nint), parameterTypes);
+        Assert.DoesNotContain(typeof(IntPtr), parameterTypes);
+        Assert.DoesNotContain(typeof(WinFormsPreviewRenderOutputTarget), parameterTypes);
+        Assert.DoesNotContain(typeof(PreviewPanelSink), parameterTypes);
+        Assert.DoesNotContain(typeof(RenderOutputFrameLease), parameterTypes);
     }
 
     private static readonly IReadOnlyDictionary<string, string[]> ApprovedPublicTypes =
@@ -301,6 +361,15 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Composition.Outputs.EncodedPacketSinkContext",
                 "WTK.MediaForge.Composition.Outputs.FrameNotificationEventArgs",
                 "WTK.MediaForge.Composition.Outputs.FrameNotificationSink",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewAttachRequest",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewCloseRequest",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewDetachRequest",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewDpiScale",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewRebindRequest",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewResizeRequest",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewSurface",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewSurfaceId",
+                "WTK.MediaForge.Composition.Outputs.HostedPreviewSurfaceState",
                 "WTK.MediaForge.Composition.Outputs.IEncodedPacketSink",
                 "WTK.MediaForge.Composition.Outputs.IRenderOutputSettings",
                 "WTK.MediaForge.Composition.Outputs.IRenderOutputSink",
@@ -476,7 +545,94 @@ public class PublicApiSurfaceTests
                 "WTK.MediaForge.Windows.Media.WindowsHardwareMediaCapabilityProbe",
                 "WTK.MediaForge.Windows.MediaForgeEngineOptions",
                 "WTK.MediaForge.Windows.MediaForgeWindows",
+                "WTK.MediaForge.Windows.WindowsHostedPreviewSurface",
                 "WTK.MediaForge.Windows.WindowsMediaForgeRuntimeFactory"
             ]
         };
+
+    private static MethodInfo GetSinglePublicMethod(Type type, string name) =>
+        Assert.Single(type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static), method => method.Name == name);
+
+    private static void AssertPublicTypeSignatureIsProductSafe(Type type)
+    {
+        AssertSignatureTypeIsProductSafe(type, type.FullName!, []);
+
+        foreach (var constructor in type.GetConstructors(BindingFlags.Public | BindingFlags.Instance))
+        {
+            foreach (var parameter in constructor.GetParameters())
+                AssertSignatureTypeIsProductSafe(parameter.ParameterType, $"{type.FullName}.ctor({parameter.Name})", []);
+        }
+
+        foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            AssertMethodSignatureIsProductSafe(method, $"{type.FullName}.{method.Name}");
+
+        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            AssertSignatureTypeIsProductSafe(property.PropertyType, $"{type.FullName}.{property.Name}", []);
+
+        foreach (var @event in type.GetEvents(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            AssertSignatureTypeIsProductSafe(@event.EventHandlerType!, $"{type.FullName}.{@event.Name}", []);
+    }
+
+    private static void AssertMethodSignatureIsProductSafe(MethodInfo method, string context)
+    {
+        AssertSignatureTypeIsProductSafe(method.ReturnType, $"{context} return", []);
+        foreach (var parameter in method.GetParameters())
+            AssertSignatureTypeIsProductSafe(parameter.ParameterType, $"{context} parameter {parameter.Name}", []);
+    }
+
+    private static void AssertSignatureTypeIsProductSafe(Type type, string context, HashSet<Type> visited)
+    {
+        if (!visited.Add(type))
+            return;
+
+        if (type.IsByRef)
+            type = type.GetElementType()!;
+
+        Assert.False(type.IsPointer, $"{context} exposes pointer type '{type}'.");
+        Assert.False(type == typeof(IntPtr) || type == typeof(UIntPtr), $"{context} exposes native handle type '{type}'.");
+        Assert.False(typeof(SafeHandle).IsAssignableFrom(type), $"{context} exposes SafeHandle type '{type}'.");
+
+        var fullName = type.FullName ?? type.Name;
+        Assert.False(
+            ProhibitedProductSignatureTypeNames.Contains(fullName) ||
+            ProhibitedProductSignatureNamespacePrefixes.Any(prefix => fullName.StartsWith(prefix, StringComparison.Ordinal)),
+            $"{context} exposes prohibited product API type '{fullName}'.");
+
+        var underlying = Nullable.GetUnderlyingType(type);
+        if (underlying is not null)
+            AssertSignatureTypeIsProductSafe(underlying, context, visited);
+
+        if (type.HasElementType)
+            AssertSignatureTypeIsProductSafe(type.GetElementType()!, context, visited);
+
+        foreach (var argument in type.GetGenericArguments())
+            AssertSignatureTypeIsProductSafe(argument, context, visited);
+
+        if (typeof(Delegate).IsAssignableFrom(type))
+        {
+            var invoke = type.GetMethod("Invoke");
+            if (invoke is not null)
+                AssertMethodSignatureIsProductSafe(invoke, $"{context} delegate");
+        }
+    }
+
+    private static readonly string[] ProhibitedProductSignatureNamespacePrefixes =
+    [
+        "WTK.MediaForge.Composition.Runtime.",
+        "WTK.MediaForge.Graphics.Vulkan.",
+        "WTK.MediaForge.Graphics.D3D11.",
+        "WTK.MediaForge.Capture.Gpu."
+    ];
+
+    private static readonly HashSet<string> ProhibitedProductSignatureTypeNames =
+    [
+        "WTK.MediaForge.Core.Gpu.GpuFrameLease",
+        "WTK.MediaForge.Composition.Snapshots.RenderFrameSnapshot",
+        "WTK.MediaForge.Composition.Snapshots.ProjectStateSnapshot",
+        "WTK.MediaForge.Composition.Runtime.Rendering.IRenderBackend",
+        "WTK.MediaForge.Composition.Runtime.Rendering.IRenderFrameSubmission",
+        "WTK.MediaForge.Composition.Outputs.PreviewPanelSink",
+        "WTK.MediaForge.Composition.Outputs.WinFormsPreviewRenderOutputTarget",
+        "WTK.MediaForge.Composition.Outputs.RenderOutputFrameLease"
+    ];
 }

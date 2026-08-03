@@ -10,18 +10,30 @@ namespace WTK.MediaForge.Windows;
 
 internal sealed class WindowsRenderOutputSinkFactory : IRenderOutputSinkFactory
 {
-    public bool CanCreate(RenderOutputTypeId typeId) => typeId == RenderOutputTypes.Offscreen;
+    public bool CanCreate(RenderOutputTypeId typeId) =>
+        typeId == RenderOutputTypes.Offscreen ||
+        typeId == RenderOutputTypes.PreviewWindow;
 
     public RuntimeRenderOutputSink CreateSink(RenderOutputTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
 
-        if (target.TypeId != RenderOutputTypes.Offscreen)
+        if (target.TypeId == RenderOutputTypes.Offscreen)
+            return new OffscreenRenderOutputSink();
+
+        if (target is WindowsHostedPreviewRenderOutputTarget preview)
+            return new Win32HostedPreviewRenderOutputSink(preview.WindowHandle);
+
+        if (target.TypeId == RenderOutputTypes.PreviewWindow)
+        {
             throw new MediaForgeUnsupportedFeatureException(
                 $"output.{target.TypeId.Value}",
-                $"Output target '{target.TypeId.Value}' is not supported by the Windows facade yet.");
+                "Preview output requires a Windows hosted preview surface created by the platform adapter.");
+        }
 
-        return new OffscreenRenderOutputSink();
+        throw new MediaForgeUnsupportedFeatureException(
+            $"output.{target.TypeId.Value}",
+            $"Output target '{target.TypeId.Value}' is not supported by the Windows facade.");
     }
 
     private sealed class OffscreenRenderOutputSink : RuntimeRenderOutputSink
@@ -35,6 +47,24 @@ internal sealed class WindowsRenderOutputSinkFactory : IRenderOutputSinkFactory
                 OutputId = outputId,
                 TargetKind = RenderTargetKind.Offscreen,
                 NativeHandle = 0,
+                SurfaceSize = surfaceSize,
+                BindingVersion = bindingVersion
+            };
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class Win32HostedPreviewRenderOutputSink(nint windowHandle) : RuntimeRenderOutputSink
+    {
+        public RenderOutputBindingSnapshot CreateBinding(
+            RenderOutputId outputId,
+            FrameSize surfaceSize,
+            long bindingVersion) =>
+            new()
+            {
+                OutputId = outputId,
+                TargetKind = RenderTargetKind.Win32Hwnd,
+                NativeHandle = windowHandle,
                 SurfaceSize = surfaceSize,
                 BindingVersion = bindingVersion
             };

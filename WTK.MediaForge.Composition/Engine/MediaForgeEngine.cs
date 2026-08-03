@@ -1030,6 +1030,125 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         }
     }
 
+    public async Task AttachHostedPreviewAsync(
+        RenderOutputId outputId,
+        HostedPreviewSurface surface,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(surface);
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        var operationTimeout = timeout ?? CommandTimeout;
+        HostedPreviewAttachRequest.ValidateTimeout(operationTimeout, nameof(timeout));
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (State == MediaForgeEngineState.Failed)
+                throw CreateEngineException("Hosted preview attachment is not allowed after the engine entered a failed state.");
+
+            if (_currentProject is null)
+                throw CreateEngineException("A project must be loaded before hosted preview can be attached.");
+
+            var output = _currentProject.Outputs.FirstOrDefault(o => o.Id == outputId)
+                ?? throw CreateEngineException($"Output {outputId} was not found in the current project.");
+            if (!output.Enabled)
+                throw CreateEngineException($"Output {outputId} is disabled and cannot accept hosted preview.");
+            if (output.TypeId != RenderOutputTypes.PreviewWindow)
+            {
+                throw new MediaForgeUnsupportedFeatureException(
+                    $"output.{output.TypeId.Value}",
+                    "Hosted preview requires a preview-window render output.");
+            }
+
+            var target = surface.CreateRenderOutputTarget();
+            if (target.TypeId != output.TypeId)
+            {
+                throw CreateEngineException(
+                    $"Hosted preview target type '{target.TypeId.Value}' does not match output type '{output.TypeId.Value}'.");
+            }
+
+            if (!_outputSinkFactory.CanCreate(target.TypeId))
+            {
+                throw new MediaForgeUnsupportedFeatureException(
+                    $"output.{target.TypeId.Value}",
+                    $"No hosted preview output sink factory registered for type '{target.TypeId.Value}'.");
+            }
+
+            var newSink = _outputSinkFactory.CreateSink(target);
+            OutputSinkEntry? oldEntry = null;
+            var sinkAccepted = false;
+            var surfaceAttached = false;
+
+            try
+            {
+                await surface.AttachAsync(
+                    new HostedPreviewAttachRequest(outputId, operationTimeout),
+                    cancellationToken).ConfigureAwait(false);
+                surfaceAttached = true;
+
+                if (State == MediaForgeEngineState.Running)
+                    await EnqueueBindOutputAsync(output, newSink, target, cancellationToken).ConfigureAwait(false);
+
+                _outputSinks.TryGetValue(outputId, out oldEntry);
+                _outputSinks[outputId] = new OutputSinkEntry(newSink, target, IsAutomaticForSinks: false);
+                sinkAccepted = true;
+            }
+            finally
+            {
+                if (!sinkAccepted)
+                {
+                    if (surfaceAttached)
+                    {
+                        try
+                        {
+                            await surface.DetachAsync(
+                                new HostedPreviewDetachRequest(operationTimeout),
+                                CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            MediaForgeDiagnostics.Report(
+                                _diagnostics,
+                                MediaForgeDiagnosticSeverity.Warning,
+                                "engine.hosted_preview_attach_rollback_failed",
+                                "Hosted preview detach failed while rolling back an attach failure.",
+                                nameof(MediaForgeEngine),
+                                ex);
+                        }
+                    }
+
+                    await newSink.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+
+            if (oldEntry is not null)
+                await oldEntry.Sink.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task DetachHostedPreviewAsync(
+        RenderOutputId outputId,
+        HostedPreviewSurface surface,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(surface);
+        var operationTimeout = timeout ?? CommandTimeout;
+        HostedPreviewAttachRequest.ValidateTimeout(operationTimeout, nameof(timeout));
+
+        await UnbindOutputAsync(outputId, cancellationToken).ConfigureAwait(false);
+        await surface.DetachAsync(
+            new HostedPreviewDetachRequest(operationTimeout),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task AttachSinkAsync(
         RenderOutputId outputId,
         PublicRenderOutputSink sink,

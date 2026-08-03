@@ -85,37 +85,30 @@ Current scoped rendering support includes:
 
 ### Functional workflow audit
 
-The current functional milestone workflow can be expressed through public
-product APIs as follows:
+The current functional milestone workflow is audited by separating saved model
+contract, product API activation, physical implementation, and evidence:
 
-| Step | Public API existing | Type/method | Problem | Required change |
-|---|---:|---|---|---|
-| Create project | Yes | `MediaForgeProjectBuilder.Create`, `MediaForgeProjectLoader` | None | None |
-| Create reusable sources | Yes | `MediaForgeProjectBuilder.Source`, `DesktopSource`, `ImageSource`, `MediaForgeSources.*` | Runtime availability remains capability-gated | None |
-| Create two scenes | Yes | `Canvas(...)` / `Scene(...)` | None | None |
-| Add source layers | Yes | `AddSourceLayer`, `SourceLayerBuilder` | None | None |
-| Add text | Yes | `AddText`, `TextLayerBuilder` | None | None |
-| Add solid | Yes | `AddSolid`, `SolidLayerBuilder` | Previously required direct model mutation | Implemented in the public builder/editor |
-| Use scene as layer | Yes | `AddCanvasLayer`, `CanvasLayerBuilder` | None | None |
-| Configure transform, crop, opacity, blend | Yes | Layer builders and `SceneMutationPatch` | Initial fluent authoring was incomplete | Builder helpers expose the canonical properties |
-| Configure implemented effects | Yes | `AddChromaKey`, `AddColorCorrection`, `AddBlur`, effect DTOs | Renderer support is scope-limited to source layers | None |
-| Configure preview | Yes | `PreviewOutput`, `MediaForgeOutputs.PreviewWindow` | Product hosted promotion remains proof-gated | None |
-| Configure MP4 | Yes | `RecordMp4Output`, `RecordingMp4OutputSettings` | Availability requires hardware proof | None |
-| Configure RTMP | Yes | `RtmpOutput`, `StreamingRtmpOutputSettings` | Availability requires hardware/network proof | None |
-| Create Windows engine | Yes | `MediaForgeWindows.CreateEngine` | None | None |
-| Query capabilities asynchronously | Yes | `GetCapabilityReportAsync`, `GetCapabilitySnapshotAsync`, hardware-proof APIs | None | None |
-| Load project | Yes | `MediaForgeEngine.LoadProjectAsync` | None | None |
-| Start engine | Yes | `StartAsync` | Missing hardware reports typed unavailable/unsupported failures | None |
-| Start/stop outputs | Yes | `StartEncodedOutputAsync`, `StopEncodedOutputAsync`, `BindOutputAsync`, `AttachSinkAsync` | Encoded outputs are proof-gated; debug readback is not product preview | None |
-| Open Live session | Yes | `BeginSceneEditSessionAsync(..., SceneEditMode.Live)` | None | None |
-| Send Live mutation | Yes | `ApplySceneMutationAsync`, `ApplySceneMutationsAsync` | None | None |
-| Open Apply session | Yes | `BeginSceneEditSessionAsync(..., SceneEditMode.Apply)` | None | None |
-| Send draft mutations | Yes | `ApplySceneMutationAsync`, `ApplySceneMutationsAsync` | None | None |
-| Apply/discard draft | Yes | `ApplySceneDraftAsync`, `DiscardSceneDraftAsync` | None | None |
-| Query status and health | Yes | `State`, `GetRuntimeHealthSnapshot`, `GetEncodedOutputRuntimeSnapshots` | None | None |
-| Handle unavailable capability | Yes | `MediaForgeCapabilityReport`, `MediaForgeUnsupportedFeatureException` | None | None |
-| Handle route failure | Yes | `EncodedOutputRuntimeSnapshot`, diagnostics, typed exceptions | None | None |
-| Stop and dispose deterministically | Yes | `StopAsync`, `DisposeAsync` | Hardware cleanup evidence remains validation-gated | None |
+| Workflow | Model contract | Product API | Physical implementation | Proof status | Gap |
+|---|---|---|---|---|---|
+| Create/load project | `MediaForgeProject` is the persisted root. | `MediaForgeProjectBuilder.Create`, `FromProject`, `MediaForgeProjectLoader`. | Portable authoring only. | Complete through unit tests. | None. |
+| Create reusable sources | Source definitions serialize typed settings. | `Source`, `DesktopSource`, `ImageSource`, `MediaForgeSources.*`. | Runtime availability is capability-gated by platform providers. | Contract complete; physical paths proof-gated per source. | None for authoring. |
+| Create scenes/canvases | `MediaForgeCanvas` is canonical. | `Canvas(...)` / `Scene(...)`. | Portable model and runtime snapshots. | Complete through validation tests. | None. |
+| Add source, text, solid, and nested-canvas layers | Layers reference sources, primitives, or canvases; sources do not render. | `AddSourceLayer`, `AddText`, `AddSolid`, `AddCanvasLayer` and fluent builders. | Portable authoring and Vulkan render scope for implemented primitives. | Builder coverage complete; renderer scope remains capability-gated. | None for authoring. |
+| Configure transform, crop, visibility, opacity, blend | Canonical layer properties. | Layer builders and `SceneMutationPatch`. | Portable validation and renderer snapshots. | Complete for public authoring; runtime proof follows renderer gates. | None. |
+| Configure implemented effects | Effects are ordered product objects with validated scope. | `AddChromaKey`, `AddColorCorrection`, `AddBlur`, effect DTOs. | Renderer support is scope-limited to source layers. | Implemented/proof-gated by renderer tests. | Non-source effect expansion remains planned. |
+| Configure preview output | `PreviewOutput` / `PreviewWindowOutputSettings` can describe a preview output. | `PreviewOutput`, `MediaForgeOutputs.PreviewWindow`. | `WindowsRenderOutputSinkFactory` creates preview targets only from the hosted-preview adapter path. `BindOutputAsync` with `WinFormsPreviewRenderOutputTarget` remains an advanced/legacy bridge and is not the product path. `AttachSinkAsync` still only accepts `Offscreen`. | Public boundary implemented; preview remains Experimental/proof-gated. | Studio.Windows must bind the native host through the adapter and hardware reliability evidence must pass before promotion. |
+| Configure MP4 output | `RecordingMp4OutputSettings` describes recording intent. | `RecordMp4Output`, `MediaForgeOutputs.RecordMp4`. | Windows route uses native Media Foundation hardware encode when proofs pass. | Proof-gated via hardware-media readiness. | Runtime unavailable reason required when proof is absent. |
+| Configure RTMP output | `StreamingRtmpOutputSettings` describes publishing intent. | `RtmpOutput`, `MediaForgeOutputs.Rtmp`. | Windows route consumes validated hardware H.264 packets and publishes RTMP without FFmpeg. | Proof-gated via hardware/network readiness. | Runtime unavailable reason required when proof is absent. |
+| Create Windows engine | Platform facade owns wiring. | `MediaForgeWindows.CreateEngine`. | Windows owns D3D11/DXGI/Media Foundation/Vulkan interop. | Implemented, environment-dependent. | None. |
+| Query capabilities asynchronously | Capability report separates support, license, readiness, and proof. | `GetCapabilityReportAsync`, `GetCapabilitySnapshotAsync`, hardware-proof APIs. | Windows probes real adapter/backend facts. | Implemented; proof results machine-specific. | None. |
+| Load/start engine | Project validation precedes runtime start. | `LoadProjectAsync`, `StartAsync`. | Engine lifecycle and render pump. | Implemented; physical media may report unavailable. | None. |
+| Start/stop encoded outputs | Encoded routes consume validated encoded packets. | `StartEncodedOutputAsync`, `StopEncodedOutputAsync`. | MP4/RTMP route factories own workers internally. | Proof-gated; unavailable remains explicit. | None for public control surface. |
+| Activate preview output | Preview route consumes completed GPU output leases through a hosted surface. | `MediaForgeWindows.CreateHostedPreviewSurface`, `MediaForgeEngine.AttachHostedPreviewAsync`, `DetachHostedPreviewAsync`, `HostedPreviewSurface.ResizeAsync`, `RebindAsync`, `DetachAsync`, `CloseAsync`. | Portable lifecycle contract owns logical identity, async attach, resize, DPI scale, rebind, detach, timeout, cancellation, close, and in-flight preservation. Windows keeps the native handle in its adapter and creates the internal preview target. | Boundary implemented with portable and Windows tests; preview remains Experimental/proof-gated. | Product promotion still requires Studio visual QA and hardware hosted-preview reliability evidence. |
+| Open Live session and mutate | Engine owns Live publication. | `BeginSceneEditSessionAsync(..., SceneEditMode.Live)`, `ApplySceneMutationAsync`. | Runtime publishes transactionally. | Implemented by scene-editing tests. | None. |
+| Open Apply session and commit/discard | Engine owns draft isolation. | `BeginSceneEditSessionAsync(..., SceneEditMode.Apply)`, `ApplySceneDraftAsync`, `DiscardSceneDraftAsync`. | Runtime keeps drafts out of published sinks until commit. | Implemented by scene-editing tests. | None. |
+| Query status and health | Public snapshots expose aggregate health, not native ownership. | `State`, `GetRuntimeHealthSnapshot`, `GetEncodedOutputRuntimeSnapshots`. | Engine diagnostics and route snapshots. | Implemented. | None. |
+| Handle unavailable capability and route failure | Missing implementation/proof remains truthful. | `MediaForgeCapabilityReport`, `MediaForgeUnsupportedFeatureException`, diagnostics. | Runtime capability gates. | Implemented; proof evidence environment-specific. | None. |
+| Stop and dispose deterministically | Cleanup uses explicit async waits and preserves in-flight resources on timeout. | `StopAsync`, `DisposeAsync`. | Engine, providers, sinks, render thread cleanup. | Implemented; sustained hardware evidence remains required. | Hardware qualification still proof-gated. |
 
 The existing `WTK.MediaForge.Sample.Offscreen` sample remains a debug/offscreen
 sample because it uses `CpuReadbackSink`. The functional API quickstart must use
@@ -217,13 +210,41 @@ Current public output settings:
 
 Public output targets are typed separately from saved output settings.
 
-Current public output target contracts:
+Current product output target contracts:
 
 - `RenderOutputTarget`
 - `OffscreenRenderOutputTarget`
-- `WinFormsPreviewRenderOutputTarget`
 
-Current public sink contracts:
+Current product hosted-preview contracts:
+
+- `HostedPreviewSurface`
+- `HostedPreviewSurfaceId`
+- `HostedPreviewSurfaceState`
+- `HostedPreviewAttachRequest`
+- `HostedPreviewResizeRequest`
+- `HostedPreviewDpiScale`
+- `HostedPreviewRebindRequest`
+- `HostedPreviewDetachRequest`
+- `HostedPreviewCloseRequest`
+- `WindowsHostedPreviewSurface`
+
+Advanced/diagnostic or legacy output target contracts:
+
+- `WinFormsPreviewRenderOutputTarget` is a Windows handle-based bridge kept for
+  internal tests and advanced diagnostics. It is not the normal product preview
+  path and must not be used by a public quickstart.
+
+Current product encoded packet contracts:
+
+- `EncodedVideoPacket`
+- `EncodedVideoPacketEvidence`
+- `EncodedVideoPacketLease`
+- `EncodedVideoCodec`
+- `EncodedVideoBitstreamFormat`
+- `EncodedOutputRuntimeStatus`
+- `EncodedOutputRuntimeSnapshot`
+
+Current advanced/diagnostic sink contracts:
 
 - `CpuReadbackFrame`
 - `CpuReadbackFrameEventArgs`
@@ -240,13 +261,6 @@ Current public sink contracts:
 - `RenderBackendKind`
 - `FrameNotificationSink`
 - `FrameNotificationEventArgs`
-- `EncodedVideoPacket`
-- `EncodedVideoPacketEvidence`
-- `EncodedVideoPacketLease`
-- `EncodedVideoCodec`
-- `EncodedVideoBitstreamFormat`
-- `EncodedOutputRuntimeStatus`
-- `EncodedOutputRuntimeSnapshot`
 
 The product architecture is:
 
@@ -254,7 +268,41 @@ The product architecture is:
 Canvas -> RenderOutput -> internal GPU RenderOutputSurface -> RenderOutputSink(s)
 ```
 
-`AttachSinkAsync` / `DetachSinkAsync` is the public direction for consuming completed output frames. `BindOutputAsync` remains for the internal target bridge while the sink model is completed. `FrameNotificationSink` is intended for diagnostics, samples, and tests that need completed-frame notification metadata. It does not expose pixels and must not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an owned CPU buffer and must not become the primary preview, encoder, or streaming path. Product recording and streaming sinks consume `EncodedVideoPacket` after hardware encode only. Encoded packets identify codec, bitstream format, presentation time, duration, codec configuration, and trusted evidence. MP4 and RTMP reject non-validated or unknown bitstreams. `PreviewPanelSink` is an experimental Win32/Vulkan GPU sink: it preserves in-flight presenter resources after timeout and must not introduce CPU readback, but remains unpromoted until hosted reliability evidence passes.
+`AttachHostedPreviewAsync` / `DetachHostedPreviewAsync` is the product direction
+for hosted GPU preview. `AttachSinkAsync` / `DetachSinkAsync` is currently public
+only for completed offscreen surfaces and diagnostics. `BindOutputAsync` remains
+a lower-level target bridge and is not the normal product hosted-preview path.
+`FrameNotificationSink` is intended for diagnostics, samples, and tests that
+need completed-frame notification metadata. It does not expose pixels and must
+not be treated as CPU readback. `CpuReadbackSink` is a debug/sample/validation
+sink only (`MediaTransportKind.DebugOnlyCpuReadback`): it copies pixels into an
+owned CPU buffer and must not become the primary preview, encoder, or streaming
+path. Product recording and streaming controls are
+`StartEncodedOutputAsync(...)` / `StopEncodedOutputAsync(...)`; the route
+workers consume `EncodedVideoPacket` after hardware encode only. Encoded packets
+identify codec, bitstream format, presentation time, duration, codec
+configuration, and trusted evidence. MP4 and RTMP reject non-validated or
+unknown bitstreams. `PreviewPanelSink` is an experimental Win32/Vulkan GPU sink:
+it preserves in-flight presenter resources after timeout and must not introduce
+CPU readback, but it requires manual construction with a native handle and is
+therefore not the product hosted preview path. The product quickstart preview
+path is:
+
+```text
+Public product API
+  -> portable hosted-preview contract
+  -> Windows/Studio.Windows adapter
+  -> internal hosted preview target/presenter
+  -> completed GPU output lease
+```
+
+The product hosted-preview API does not require a consumer to instantiate
+`PreviewPanelSink`, `WinFormsPreviewRenderOutputTarget`, `RenderOutputFrameLease`,
+or any sink/presenter/lease/native-handle type. The public contract exposes
+logical surface identity, async attach, resize, DPI/scale, native-surface rebind
+through a platform adapter, detach, timeout, cancellation, close, and in-flight
+ownership behavior without carrying `nint`, `IntPtr`, `SafeHandle`, or pointer
+values.
 
 FFmpeg is not used in the first hardware MP4/RTMP product path. Future FFmpeg integration requires LGPL-only build, no GPL components, no libx264/libx265, no rawvideo pipe, and license review.
 
