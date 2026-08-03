@@ -1,240 +1,331 @@
 # Current Product Roadmap
 
-This is the active roadmap for WTK MediaForge. Historical CP, phase, and
-readiness documents under `docs/history` are evidence only and are not product
-requirements.
+This is the active execution roadmap for WTK MediaForge.
 
-## Product Contract
+Historical CP, phase, readiness, and action-plan documents under `docs/history` are evidence only. They do not override this file, `AI_CONTEXT.md`, `PRODUCT_MODEL.md`, `PUBLIC_API.md`, `ARCHITECTURE.md`, or the current support matrices.
 
-- Continuous video is hardware-first: GPU decode, GPU surfaces, Vulkan
-  composition, GPU conversion, hardware encode, then encoded packets.
-- Product paths never fall back to software decode/encode or move continuous
-  uncompressed frames through CPU/RAM.
-- Sources produce leased frames and know nothing about scenes or sinks.
-- A scene is a `MediaForgeCanvas`; layers place sources, primitives, or nested
-  canvases. `Live` and `Apply` semantics belong to the engine.
-- Sinks consume completed output leases or validated encoded packets and never
-  trigger rendering.
-- Native resources stay in platform assemblies. Core uses stable logical ids,
-  immutable snapshots, explicit capabilities, and asynchronous ownership.
-- `Unavailable` is valid only with a concrete hardware, driver, API, license,
-  or failed-proof reason. It is never a placeholder for omitted implementation.
+See `docs/README.md` for the complete documentation authority order.
 
-## Current Reality
+## Product contract
 
-Implemented foundations:
+WTK MediaForge is a GPU-first media composition engine and native Avalonia Studio with a cross-platform product architecture.
 
-- Transactional engine lifecycle, source runtime ownership, bounded sink
-  workers, asynchronous GPU submission cleanup, and explicit timeout diagnostics.
-- Vulkan multi-layer composition, nested canvases, transforms, crop, opacity,
-  blend, solid/text, chroma key, color correction, blur, and cut/fade routing.
-- Windows desktop duplication, Windows Graphics Capture for HWND sources,
-  static images, Media Foundation webcam capture, hardware MP4 decode,
-  Vulkan/D3D11 interop, Media Foundation H.264 encode, packet-only MP4 muxing,
-  and TCP RTMP publishing.
-- Published/draft scene versions, nested version binding, Apply propagation,
-  old/new transition snapshots, and physical output/canvas/effect operations.
-- Canonical canvas/draw-object visual fingerprints now drive scene versioning,
-  dirty classification, and RenderGraph cache keys. Layer ordering and all
-  supported visual properties invalidate consistently while metadata-only
-  renames preserve the compiled graph.
-- Logical `CanvasId` values remain stable across Published, Draft, and Explicit
-  bindings. Deterministic resolved canvas keys identify physical content and
-  nested-version graphs, allowing equivalent outputs to share work without
-  aliasing different pixels. Scene history retains the latest 32 versions per
-  canvas plus pinned published, draft, and explicit bindings and recursively
-  pins explicit dependencies found inside historical snapshots. Direct,
-  transitive, discarded, high-water, and resolution-failure counters are
-  exposed in runtime health.
-- Compatible MP4/RTMP routes share one rendered output, NV12 conversion, and
-  hardware encoder; sinks retain independent bounded queues and status.
-- Shared encoded routes support dynamic logical consumer activation and
-  bounded per-sink drain/finalization, preserving healthy peers.
-- H.264 profile and level are validated public enum contracts with legacy JSON
-  migration. The Media Foundation session has transactional lifecycle states,
-  rejects negotiated profile/level divergence, drains delayed packets before
-  flush, and publishes requested/negotiated values in hardware proof evidence.
-- Encoded grouping separates rendered-pixel, encoder, and sink compatibility:
-  a destination or backpressure policy cannot alter pixel/encoder identity,
-  while any profile difference prevents unsafe encoder sharing.
-- Runtime health exposes aggregate live, retired, pending-fence, and cached GPU
-  resources together with texture, intermediate-target, framebuffer, and
-  descriptor-set high-water marks. These counters make sustained qualification
-  able to detect unbounded growth and verify return to baseline after stop.
-- Capability snapshots are cached by adapter/device generation. Vulkan and
-  D3D11 adapters are matched by Windows LUID; cross-GPU interop fails closed.
-- Automatic recovery policies expose public health snapshots, observe providers
-  that fail asynchronously, recreate the Vulkan backend after submit/device
-  failure, and isolate source, export, encoder, MP4, and RTMP failures.
-- `proof.media_io.window_capture.product` creates a real HWND and validates
-  WGC -> D3D11 GPU slot -> Vulkan on the active adapter. The sustained runtime
-  tool validates a shared encode route through real MP4 and local RTMP sinks.
+The following rules are not negotiable:
 
-Experimental and not yet product-promoted:
+- continuous video decode and encode use hardware acceleration or the feature is unavailable;
+- continuous uncompressed video remains in GPU memory on product paths;
+- sources produce leased frames and do not know about scenes or sinks;
+- `MediaForgeCanvas` is the canonical scene object;
+- layers place reusable sources, primitives, or nested canvases;
+- `Live` and `Apply` editing semantics belong to the engine;
+- sinks consume completed output leases or validated encoded packets and never trigger rendering;
+- native resources remain in platform assemblies;
+- Core uses stable logical ids, immutable snapshots, explicit capability truth, and asynchronous ownership;
+- unsupported hardware, missing proof, incomplete adapters, and license blockers are reported explicitly rather than hidden by fallback code.
 
-- `PreviewPanelSink`: fence-timeout cleanup is retryable and no longer destroys
-  in-flight resources, but hosted Avalonia resize/attach/detach and sustained
-  presentation must pass before promotion.
-- MP4 recording, RTMP, MP4 input, webcam, desktop, and window capture: real Windows
-  implementations exist, but product availability remains hardware-dependent
-  and requires the current composite proof report plus sustained route evidence.
-- Physical RenderGraph: the product Vulkan backend accepts only snapshots with
-  an executed physical plan and validates topology/identity before importing
-  textures or recording commands. An explicit low-level-test factory alone may
-  synthesize plans for renderer tests. Source acquisition, every effect,
-  encoded dispatch, and all temporary-resource ownership are not yet physical
-  operations owned exclusively by the graph.
-- Fault recovery: source restart, RTMP reconnect, and Vulkan backend recreation
-  are wired. MP4 route recovery intentionally requires a new recording segment;
-  silently overwriting an active recording is prohibited. Sustained fault
-  injection for every matrix item remains a release activity.
-- Studio: production bootstrap uses a real engine session and asynchronous
-  capability probing. Disabled outputs are now canonical `MediaForgeProject`
-  state and survive Studio round trips without creating runtime routes.
-  `StudioProjectSession` now applies UI edits to a cloned canonical project,
-  preserves extension settings, encode profiles, color/output configuration,
-  advanced text state, nested version bindings, and effects not editable by the
-  current UI, and commits only after atomic file replacement succeeds. Native
-  GPU preview remains disabled until its runtime gate passes. MP4/RTMP controls
-  now activate real proof-gated routes, report health/metrics and elapsed time,
-  and roll restarted recording to a new numbered segment.
-  The shell now reflects engine Starting/Running/Degraded/Recovering/Failed/
-  Stopped state and performs deterministic project-switch/application shutdown;
-  all active scene drafts are explicitly discarded before project replacement.
-  Scene Apply reflects exactly engine-reported affected output ids and the
-  route-owned Cut/Fade transition policy.
-  Draft and Live editing are now explicit Studio modes. Live activation is
-  confirmed when outputs are active, publishes coalesced atomic mutations
-  without Apply, reports rejection without replacing the last valid scene, and
-  deterministically discards its runtime session when leaving the mode.
-- Remote Scene has platform-neutral contracts, bounded encoded-packet leases,
-  a GPU-only hardware decode pump contract, a physical qualification schema,
-  and a separately deployable
-  HTTPS/WebSocket signaling service with one-time hashed invitations, role-scoped
-  bearer access, bounded SDP/ICE relay, SQLite session storage, expiration, rate
-  limiting, and coturn-compatible temporary credentials. Signaling carries no
-  media. The C ABI and managed bindings are pinned and contract-tested, but the
-  checked-in native target deliberately reports its backend unavailable. A
-  functional pinned libwebrtc adapter and Direct/TURN physical GPU evidence are
-  not present, so publish/subscribe remain unavailable.
+## Current product reality
 
-Unavailable/planned:
+### Implemented foundations
 
-- SRT, virtual camera, physical audio capture/playback/mux, and product NDI
-  video. The portable audio graph/model/runtime is current roadmap work, but
-  has no physical adapter or product audio route yet.
-- Linux VAAPI/DRM/DMABUF and macOS VideoToolbox/IOSurface adapters.
-- NDI discovery/runtime packaging exists, but Standard SDK raw CPU video buffers
-  do not satisfy the GPU Media Transport Law.
-- Remote Scene publish/subscribe media remains unavailable until a pinned native
-  libwebrtc bridge and direct/TURN GPU end-to-end proofs pass. The signaling
-  service alone is not media capability evidence.
+#### Product model and API
 
-## Current Execution Order
+- Canonical `MediaForgeProject` serialization, validation, migration, builders, editors, typed source/output settings, presets, and package contracts.
+- Public engine lifecycle, capability, scene-editing, sink, output-route, health, and diagnostics contracts.
+- Stable logical identity separated from native handles and physical resource identity.
+- Canonical disabled-output persistence and secret-safe project boundaries.
 
-1. Make the Physical RenderGraph the sole authority for production rendering,
-   resource ownership, fan-out and encoded dispatch.
-2. Complete the usable runtime/Studio vertical with hosted native preview,
-   real Live/Apply, output routing and actionable diagnostics on Windows and
-   Linux through platform adapters.
-3. Sustain and promote preview/capture/MP4/RTMP only through v14 hardware
-   evidence and long-running target-adapter qualification.
-4. Build the portable audio model, compiler and deterministic memory runtime;
-   native audio capture/playback and mux remain separate future adapter work.
-5. Resume advanced effects, complex masks and later media/Remote Scene work.
+#### Engine lifecycle and ownership
 
-## v14 Media Promotion Order
+- Transactional load/update/start/stop behavior.
+- Source runtime ownership and asynchronous provider cleanup.
+- Bounded sink workers and explicit backpressure.
+- Submission tracking with fence-aware cleanup and timeout diagnostics.
+- Recovery coordination for sources, RTMP routes, exports, encoders, and Vulkan backend failure.
+- Aggregate live, retired, cached, pending-fence, high-water, scene-version, pin, queue, and route health counters.
 
-1. Close Desktop Duplication and preview presenter lifetime under repeated stop,
-   timeout, resize, and device/display-reset cycles.
-2. Sustain `Vulkan -> D3D11/NV12 -> MF H.264 -> MP4 + RTMP` with one compatible
-   encode group and bounded resource counters.
-3. Sustain `MP4 -> D3D11VA GPU lease -> Vulkan` including seek, pause, loop, EOF,
-   reconnect, and shutdown during a frame in flight.
-4. Connect recovery to physical device-lost recreation and prove isolation:
-   RTMP failure must not interrupt recording; source loss must not stop unrelated routes.
-5. Extend the now-mandatory compiled physical RenderGraph so source acquisition,
-   all effect intermediates, output fanout, and encoded dispatch execute as
-   graph-owned physical operations.
-6. Extend the bounded GPU pools and live/high-water diagnostics already used by
-   Vulkan targets, framebuffers, descriptor sets, and textures to every export
-   intermediate, then enforce baseline-return assertions in sustained runs.
-7. Promote preview/desktop/window/webcam/video/MP4/RTMP only from sustained
-   v14 evidence on the target adapter.
-8. Keep Studio preview and output controls behind the portable runtime boundary;
-   hosted native presentation is promoted only after its target-adapter evidence,
-   while Avalonia overlays remain independent from the native surface.
-9. Freeze Core adapter contracts, then implement Linux and macOS backends in
-   their own projects.
-10. Build the functional pinned libwebrtc adapter behind the frozen C ABI only
-    after shared encode/decode lifetimes are sustained; then qualify Remote
-    Scene direct and TURN routes without software codecs or raw CPU frames. ABI
-    contract-test success alone cannot promote the feature.
+#### Scene model and editing
 
-Scene identity and bounded retention are complete. The store retains the latest
-32 versions per canvas in addition to older pinned versions. Drafts and output
-transitions own explicit pin handles, replacement/completion releases them, and
-runtime health exposes retained, pinned, discarded, and high-water counts.
-Remaining v14 work is sustained Apply qualification with baseline-return
-assertions across transitions and submissions.
+- Multi-layer canvas composition.
+- Canvas-as-source with cycle rejection and bounded nesting depth.
+- Published, draft-session, and explicit-version bindings.
+- Live transactional publication.
+- Apply draft isolation, commit, discard, transitive parent invalidation, and affected-output calculation.
+- Old/new route snapshots for Cut/Fade transitions.
+- Bounded scene history with direct and transitive pins.
+- Visual fingerprints shared by versioning, dirty classification, and render-graph cache identity.
 
-## Readiness v14
+#### Physical RenderGraph
 
-The only current engine readiness entrypoint is:
+- Logical and physical planning for source acquisition, layer transforms, effect intermediates, canvases, nested canvases, output passes, transitions, fan-out, and encoded dispatch.
+- Topology, dependency, identity, output coverage, source acquisition, and encoded-dispatch validation before native execution.
+- Product Vulkan submission requires a physical plan; test-only synthesis remains isolated.
+- Vulkan external texture imports are constrained by physical source-acquisition operations.
+- Encoded frame delivery is constrained by physical encoded-output dispatch operations.
+- Physical operation identity no longer depends on parsing operation-key text.
 
-```powershell
-./scripts/verify-engine-readiness-v14.ps1
-```
+#### Windows physical media path
 
-It runs one flat sequence: build, Fast, GPU, transport/license policies,
-composite media proofs, real performance-tagged workloads, a short sustained
-engine MP4+RTMP route, and writes
-`test-reports/engine-readiness-v14.json` plus the media proof reports. The gate
-performs a locked restore first and verifies that the aggregate status agrees
-with the composite media report.
+- Desktop Duplication capture.
+- Windows Graphics Capture for HWND sources.
+- Media Foundation webcam capture with immediate OS-boundary GPU upload.
+- PNG/JPEG static image load-time decode and GPU upload.
+- Media Foundation MP4 hardware decode accepting GPU-backed samples only.
+- D3D11 shared textures and Vulkan external-memory interop with adapter matching by LUID.
+- Vulkan composition and GPU output surfaces.
+- D3D11/NV12 export and Media Foundation hardware H.264 encode.
+- Packet-only MP4 writing.
+- TCP RTMP/FLV publishing with bounded queues and reconnect behavior.
+- Compatible MP4/RTMP routes sharing rendered pixels, conversion, and hardware encoder while retaining independent sinks.
 
-Release hardware validation uses:
+#### Studio
+
+- Native Avalonia/MVVM shell with Design/Test and Runtime composition boundaries.
+- Canonical project open/save with clone validation and atomic replacement.
+- Preservation of canonical fields not represented by current editors.
+- Scenes, reusable sources, layers, contextual properties, outputs, production cards, and dock layout persistence.
+- Canvas selection, zoom, pan, move, resize, nudge, grid, safe areas, lock, visibility, reorder, and undo/redo.
+- Explicit Draft and Live modes connected to engine scene-editing services.
+- Apply/Discard using engine sessions and engine-reported affected outputs.
+- Real engine lifecycle state and deterministic project/application shutdown orchestration.
+- Real proof-gated MP4/RTMP activation, route metrics, reconnect state, elapsed recording time, and numbered segment rollover.
+- Headless shell tests, automation ids, accessibility names, and visual QA at supported resolutions.
+
+#### Portable audio foundation
+
+- Serializable global audio graph with sources, nodes, connections, buses, routes, and sinks.
+- Immutable compiled plans and transactional publication.
+- Pooled planar float32 blocks at 48 kHz.
+- Generated tone and silence sources.
+- Gain, mute, pan, polarity, mixing, meters, and one-quantum fixed delay.
+- Deterministic source/node DAG execution into buses.
+- Bounded Program Mix route fan-out.
+- Queue/pool pressure isolated to the affected route without blocking or faulting the callback path.
+- Clock, timestamp, latency, drift, resampling, and A/V mapping contracts.
+
+#### Remote Scene coordination
+
+- Platform-neutral publish/subscribe, packet-lease, state, telemetry, reorder, keyframe-feedback, and hardware-decode-pump contracts.
+- Separately deployable HTTPS/WebSocket signaling service.
+- Hashed one-time invitations and access tokens.
+- Role-scoped sessions, bounded SDP/ICE relay, SQLite state, quotas, rate limits, trusted-proxy policy, and coturn-compatible credentials.
+- Versioned managed/native WebRTC C ABI contract and reproducible native supply-chain pin.
+
+#### Validation and CI
+
+- Mandatory Windows and Linux self-hosted CI jobs.
+- Locked restore, Release build, portable test classification audit, Fast gate, media-transport policy, and license policy.
+- Dedicated manual RX 580 hardware-media qualification job.
+- Current readiness, final gate, media proof, Studio visual QA, and sustained qualification scripts.
+
+### Experimental and proof-gated
+
+The following have real implementations but are not automatically product-promoted on every machine:
+
+- hosted GPU preview;
+- desktop capture;
+- window capture;
+- webcam capture;
+- MP4 file input;
+- MP4 recording;
+- RTMP publishing;
+- full Vulkan/D3D11 device-lost recovery;
+- all physical RenderGraph ownership under sustained in-flight pressure.
+
+Promotion requires the matching capability proof and sustained qualification on the active adapter/driver.
+
+### Implemented but not product-available
+
+- Portable audio graph processing and in-memory Program Mix routes exist, but physical audio capture, playback, encode, and A/V mux do not.
+- Remote Scene signaling exists, but media publish/subscribe does not.
+- NDI runtime detection and discovery exist, but product NDI video does not.
+- Linux and macOS platform boundaries exist, but physical media adapters do not.
+
+### Planned or deferred
+
+- Linux VAAPI/DRM/DMABUF and vendor-specific GPU media adapters.
+- macOS VideoToolbox/CVPixelBuffer/IOSurface/Metal media adapters.
+- Physical audio adapters and A/V mux.
+- Functional pinned libwebrtc encoded-access-unit adapter and Direct/TURN media qualification.
+- RTSP/IP-camera input.
+- Animated GIF/APNG/WebP and Lottie product paths.
+- Product NDI video.
+- SRT.
+- Virtual camera.
+- Advanced masks, temporal effects, plugins, complex transitions, and later production features.
+- FFmpeg/libav review for encoded-packet/container-only use. It remains outside the current native product path.
+
+## Active functional milestone
+
+The current delivery checkpoint is defined in `docs/MVP_API_STUDIO.md`.
+
+The milestone must produce:
+
+- a public .NET API quickstart that authors and operates a real nested composition through public contracts;
+- native hosted GPU preview;
+- proof-gated MP4 and RTMP output routing through public APIs;
+- physical Live and Apply operation while outputs are active;
+- an Avalonia Studio completing the same workflow without fake product services;
+- deterministic stop/dispose and resource baseline return;
+- mandatory Windows/Linux baseline validation and reviewed Windows hardware evidence.
+
+“MVP” is not a support-status label and does not authorize reduced architecture or temporary media paths.
+
+## Current execution order
+
+### 1. Documentation and public contract alignment
+
+- Keep normative documents consistent with current source and tests.
+- Audit the public API needed by the functional workflow.
+- Add and maintain the API quickstart sample.
+
+Exit criteria:
+
+- no normative document describes portable mixing as absent;
+- no normative document describes the Physical RenderGraph as planning-only;
+- the quickstart workflow requires no internal runtime type.
+
+### 2. Physical RenderGraph authority
+
+- Complete graph-owned source acquisition.
+- Complete graph-owned effect and temporary-resource operations.
+- Complete output fan-out and encoded dispatch authority.
+- Reject any production submission whose physical plan is incomplete or divergent.
+
+Exit criteria:
+
+- production Vulkan execution consumes only validated physical operations;
+- no production side path independently discovers sources, effects, outputs, or encoded routes;
+- resource ownership and diagnostics correspond to physical operations.
+
+### 3. Hosted native preview
+
+- Finalize the platform-neutral hosted-surface lifecycle.
+- Implement the Windows Avalonia native host.
+- Qualify attach, resize/DPI, rebind, dock/undock, minimize/restore, timeout, detach, and close.
+
+Exit criteria:
+
+- 30-minute 1080p60 preview passes;
+- no continuous CPU readback;
+- in-flight resources survive timeout correctly;
+- counters return to baseline after stop.
+
+### 4. Public API vertical
+
+- Complete product-level preview, MP4, and RTMP activation APIs.
+- Add the canonical API quickstart.
+- Qualify nested canvas, Live, Apply, preview, MP4, RTMP, failure isolation, and shutdown in one workflow.
+
+Exit criteria:
+
+- compatible MP4+RTMP routes render/convert/encode once;
+- recording has no silent drops;
+- RTMP reports every drop and reconnect;
+- Live and Apply do not restart unrelated outputs;
+- public hosts do not wire internal services.
+
+### 5. Studio vertical
+
+- Replace remaining placeholder source/output editing with typed canonical settings.
+- Add explicit scene-as-source workflow.
+- Bind the hosted preview below the Avalonia overlay.
+- Complete real output cards, capability reasons, diagnostics, project replacement, and shutdown behavior.
+
+Exit criteria:
+
+- the production workflow completes without fake services;
+- save/open preserves canonical fields;
+- rejected Live edits preserve the last valid scene;
+- Apply marks only engine-reported outputs;
+- visual QA, accessibility, keyboard, and docking scenarios pass.
+
+### 6. Functional milestone qualification
+
+Run and review:
 
 ```powershell
 ./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia
+./scripts/verify-studio-ui-visual-qa.ps1
+./scripts/verify-final-gate.ps1 -RequireHardwareMedia
 ```
 
-Missing or skipped required hardware evidence returns exit code `2`. A normal
-developer run may report hardware as unavailable, but cannot promote the feature.
+Required sustained workloads:
 
-Full local and release-candidate qualification are explicit modes:
+- 30 minutes: hosted 1080p60 preview;
+- 30 minutes: preview + MP4 + RTMP shared route;
+- 30 minutes: MP4 hardware decode to Vulkan render;
+- 30 minutes: nested Live/Apply transitions with active outputs.
+
+Release-candidate qualification remains eight hours per target adapter family.
+
+### 7. Physical audio
+
+After the API/Studio video vertical is accepted:
+
+- finalize channel mapping and adapter buffering;
+- implement Windows physical capture/playback adapters;
+- implement explicit device selection/removal behavior;
+- integrate Program Bus controls into Studio;
+- add hardware encode/mux only through an approved A/V architecture.
+
+Portable mixing must remain allocation-free and bounded on the callback path.
+
+### 8. Linux physical media
+
+After portable contracts are stable and the Windows vertical is sustained:
+
+- implement VAAPI/DRM PRIME/DMABUF and/or approved vendor adapters;
+- implement Linux preview presentation;
+- qualify capture, decode, encode, preview, MP4, and RTMP without CPU video staging.
+
+### 9. Remote Scene media and later expansion
+
+Only after shared encode/decode lifetimes are sustained:
+
+- build the functional pinned libwebrtc adapter;
+- connect encoded publish and receive-side hardware decode;
+- run 30-minute Direct and TURN qualification between two machines;
+- then resume advanced effects, masks, NDI video, SRT, virtual camera, and other deferred features according to capability and license review.
+
+## Current validation entrypoints
+
+Baseline:
 
 ```powershell
-./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia -RunLocalQualification
-./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia -ReleaseCandidateQualification
+dotnet restore .\WTK.MediaForge.sln --locked-mode
+dotnet build .\WTK.MediaForge.sln --no-restore --configuration Release
+dotnet test .\WTK.MediaForge.sln --no-restore --no-build --configuration Release
+./scripts/test.ps1 -Tier Fast
 ```
 
-## Release Acceptance
+GPU-sensitive changes:
 
-- Local qualification: 30 minutes each for 1080p60 preview, preview+MP4+RTMP,
-  MP4 decode-to-render, and nested Live/Apply transition.
-- Release candidate: eight hours per target adapter family.
-- Recording drops zero frames; streaming reports every drop/reconnect.
-- RAM, VRAM estimate, handles, imports, slots, descriptor sets, and leases stay
-  bounded after warm-up and return to baseline after stop.
-- Fault matrix includes disk full, network disconnect, encoder failure, monitor
-  disconnect, webcam removal, export failure, device lost, cancellation, and
-  shutdown with work in flight.
-- AMD RX 580 is the first mandatory Windows baseline. NVIDIA and Intel paths
-  must be capability-detected and may not rely on vendor-specific assumptions.
-- Remote Scene requires separate 30-minute Direct and TURN reports from two
-  machines, all scenarios defined by `RemoteSceneQualificationGate`, no raw CPU
-  video, deterministic shutdown/reconnect, and resource baseline return.
+```powershell
+./scripts/test.ps1 -Tier Gpu
+```
 
-The aggregate documented entrypoint is `scripts/verify-final-gate.ps1`. It
-keeps hardware and Remote Scene requirements explicit so a portable developer
-run cannot accidentally promote unavailable media.
+Current engine readiness:
 
-## Deferred Scope
+```powershell
+./scripts/verify-engine-readiness-v14.ps1
+./scripts/verify-engine-readiness-v14.ps1 -RequireHardwareMedia
+```
 
-SRT, virtual camera, FFmpeg, physical audio capture/playback/mux, audio plugins,
-and product NDI video remain outside v14 promotion. The portable audio graph,
-compiler, clock/sync contracts and deterministic memory runtime are explicitly
-inside the current roadmap after the runtime/Studio vertical. FFmpeg/libav may
-only be reconsidered after native sustained routes and a separate
-encoded-packet/container legal review.
+Aggregate release gate:
+
+```powershell
+./scripts/verify-final-gate.ps1 -RequireHardwareMedia
+```
+
+Omitting a required hardware or Remote Scene switch is developer validation only. It cannot promote the omitted capability.
+
+## Release acceptance principles
+
+- Recording never silently drops frames.
+- Streaming reports every drop, reconnect, and terminal failure.
+- Source, sink, network, encoder, export, and device failures remain isolated where architecture permits.
+- RAM, VRAM estimates, handles, imports, slots, targets, framebuffers, descriptor sets, packets, queues, and leases remain bounded after warm-up and return to baseline after stop.
+- AMD RX 580 is the first mandatory Windows hardware baseline.
+- NVIDIA and Intel support remains runtime-detected and may not depend on vendor assumptions.
+- Windows/Linux baseline CI is mandatory for every change and is not replaced by hardware qualification.
+- Documentation must describe current implementation and proof status, not intended future capability.
