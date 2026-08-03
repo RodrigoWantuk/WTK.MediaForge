@@ -37,6 +37,7 @@ public sealed class MediaForgeEngine : IAsyncDisposable
     private readonly EngineRecoveryCoordinator _engineRecoveryCoordinator = new();
     private SemaphoreSlim _gate => _lifecycleCoordinator.Gate;
     private Dictionary<RenderOutputId, OutputSinkEntry> _outputSinks => _outputRouteCoordinator.Sinks;
+    private readonly Dictionary<RenderOutputId, HostedPreviewAttachment> _hostedPreviewAttachments = [];
     private Dictionary<SceneEditSessionId, ActiveSceneEditSession> _sceneEditSessions => _sceneEditSessionCoordinator.Sessions;
     private readonly RenderOutputSinkDispatcher _sinkDispatcher;
     private readonly OutputRouteTransitionRuntime _outputRouteTransitions = new();
@@ -1046,6 +1047,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_hostedPreviewAttachments.ContainsKey(outputId))
+            {
+                throw CreateEngineException(
+                    "Hosted preview outputs must be detached through DetachHostedPreviewAsync so engine and surface ownership remain synchronized.");
+            }
+
             if (State == MediaForgeEngineState.Failed)
                 throw CreateEngineException("Hosted preview attachment is not allowed after the engine entered a failed state.");
 
@@ -1063,6 +1070,15 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                     "Hosted preview requires a preview-window render output.");
             }
 
+            if (_hostedPreviewAttachments.ContainsKey(outputId) || _outputSinks.ContainsKey(outputId))
+            {
+                throw CreateEngineException(
+                    "The output already has a binding. Detach it before attaching a hosted preview surface.");
+            }
+
+            if (_hostedPreviewAttachments.Values.Any(attachment => ReferenceEquals(attachment.Surface, surface)))
+                throw CreateEngineException("The hosted preview surface is already attached to another output.");
+
             var target = surface.CreateRenderOutputTarget();
             if (target.TypeId != output.TypeId)
             {
@@ -1078,7 +1094,6 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             }
 
             var newSink = _outputSinkFactory.CreateSink(target);
-            OutputSinkEntry? oldEntry = null;
             var sinkAccepted = false;
             var surfaceAttached = false;
 
@@ -1092,8 +1107,11 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 if (State == MediaForgeEngineState.Running)
                     await EnqueueBindOutputAsync(output, newSink, target, cancellationToken).ConfigureAwait(false);
 
-                _outputSinks.TryGetValue(outputId, out oldEntry);
                 _outputSinks[outputId] = new OutputSinkEntry(newSink, target, IsAutomaticForSinks: false);
+                var attachment = new HostedPreviewAttachment(surface, target, newSink);
+                _hostedPreviewAttachments.Add(outputId, attachment);
+                attachment.Controller = new HostedPreviewSurfaceController(this, outputId, surface);
+                surface.SetAttachmentController(attachment.Controller);
                 sinkAccepted = true;
             }
             finally
@@ -1124,8 +1142,6 @@ public sealed class MediaForgeEngine : IAsyncDisposable
                 }
             }
 
-            if (oldEntry is not null)
-                await oldEntry.Sink.DisposeAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -1143,10 +1159,34 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         var operationTimeout = timeout ?? CommandTimeout;
         HostedPreviewAttachRequest.ValidateTimeout(operationTimeout, nameof(timeout));
 
-        await UnbindOutputAsync(outputId, cancellationToken).ConfigureAwait(false);
-        await surface.DetachAsync(
-            new HostedPreviewDetachRequest(operationTimeout),
-            cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_hostedPreviewAttachments.TryGetValue(outputId, out var attachment) ||
+                !ReferenceEquals(attachment.Surface, surface) ||
+                surface.AttachedOutputId != outputId)
+            {
+                throw CreateEngineException("The hosted preview surface is not attached to the specified output.");
+            }
+
+            if (State == MediaForgeEngineState.Running && _renderThread is not null)
+            {
+                await AwaitCommandAsync(
+                    _renderThread.EnqueueCommandAsync(new UnbindOutputCommand { OutputId = outputId }),
+                    "Hosted preview render output unbind command timed out.",
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            await attachment.Sink.DisposeAsync().ConfigureAwait(false);
+            await surface.DetachPhysicalAsync(new HostedPreviewDetachRequest(operationTimeout), cancellationToken).ConfigureAwait(false);
+            _outputSinks.Remove(outputId);
+            _hostedPreviewAttachments.Remove(outputId);
+            attachment.Surface.ClearAttachmentController(attachment.Controller!);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task AttachSinkAsync(
@@ -1332,6 +1372,71 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         {
             _lifecycleCoordinator.Dispose();
         }
+    }
+
+    private async Task ResizeHostedPreviewAsync(
+        RenderOutputId outputId,
+        HostedPreviewSurface surface,
+        HostedPreviewResizeRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_hostedPreviewAttachments.TryGetValue(outputId, out var attachment) || !ReferenceEquals(attachment.Surface, surface))
+                throw CreateEngineException("The hosted preview surface is no longer attached to this output.");
+
+            await surface.ResizePhysicalAsync(request, cancellationToken).ConfigureAwait(false);
+            if (State == MediaForgeEngineState.Running)
+            {
+                var binding = attachment.Sink.CreateBinding(outputId, request.Size, Interlocked.Increment(ref _bindingVersion));
+                await AwaitCommandAsync(_renderThread!.EnqueueCommandAsync(new BindOutputCommand { Binding = binding }),
+                    "Hosted preview resize bind command timed out.", cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally { _gate.Release(); }
+    }
+
+    private async Task RebindHostedPreviewAsync(
+        RenderOutputId outputId,
+        HostedPreviewSurface surface,
+        HostedPreviewRebindRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_hostedPreviewAttachments.TryGetValue(outputId, out var attachment) || !ReferenceEquals(attachment.Surface, surface))
+                throw CreateEngineException("The hosted preview surface is no longer attached to this output.");
+
+            await surface.RebindPhysicalAsync(request, cancellationToken).ConfigureAwait(false);
+            var replacementTarget = surface.CreateRenderOutputTarget();
+            var replacementSink = _outputSinkFactory.CreateSink(replacementTarget);
+            var accepted = false;
+            try
+            {
+                if (State == MediaForgeEngineState.Running)
+                {
+                    await EnqueueBindOutputAsync(
+                        _currentProject!.Outputs.Single(output => output.Id == outputId),
+                        replacementSink,
+                        replacementTarget,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                var retiredSink = attachment.Sink;
+                attachment.Replace(replacementTarget, replacementSink);
+                _outputSinks[outputId] = new OutputSinkEntry(replacementSink, replacementTarget, IsAutomaticForSinks: false);
+                accepted = true;
+                await retiredSink.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                if (!accepted)
+                    await replacementSink.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        finally { _gate.Release(); }
     }
 
     private Task EnqueueBindOutputAsync(
@@ -1980,6 +2085,27 @@ public sealed class MediaForgeEngine : IAsyncDisposable
 
         if (originalState != MediaForgeEngineState.Starting)
         {
+            foreach (var attachment in _hostedPreviewAttachments.Values)
+            {
+                try
+                {
+                    await attachment.Surface.DetachPhysicalAsync(
+                        new HostedPreviewDetachRequest(StopTimeout),
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    cleanupErrors.Add(ex);
+                    MediaForgeDiagnostics.Report(
+                        _diagnostics,
+                        MediaForgeDiagnosticSeverity.Error,
+                        "engine.hosted_preview_detach_failed",
+                        "Failed to detach a hosted preview surface during engine cleanup.",
+                        nameof(MediaForgeEngine),
+                        ex);
+                }
+            }
+
             foreach (var entry in _outputSinks.Values)
             {
                 try
@@ -2000,6 +2126,12 @@ public sealed class MediaForgeEngine : IAsyncDisposable
             }
 
             _outputSinks.Clear();
+            foreach (var attachment in _hostedPreviewAttachments.Values)
+            {
+                if (attachment.Controller is not null)
+                    attachment.Surface.ClearAttachmentController(attachment.Controller);
+            }
+            _hostedPreviewAttachments.Clear();
         }
 
         if (_sourceRuntimeManager is not null)
@@ -2853,5 +2985,43 @@ public sealed class MediaForgeEngine : IAsyncDisposable
         public RenderOutputTarget Target { get; } = target;
 
         public bool IsAutomaticForSinks { get; } = IsAutomaticForSinks;
+    }
+
+    private sealed class HostedPreviewAttachment(
+        HostedPreviewSurface surface,
+        RenderOutputTarget target,
+        RuntimeRenderOutputSink sink)
+    {
+        public HostedPreviewSurface Surface { get; } = surface;
+        public RenderOutputTarget Target { get; private set; } = target;
+        public RuntimeRenderOutputSink Sink { get; private set; } = sink;
+        public IHostedPreviewSurfaceAttachmentController? Controller { get; set; }
+
+        public void Replace(RenderOutputTarget target, RuntimeRenderOutputSink sink)
+        {
+            Target = target;
+            Sink = sink;
+        }
+    }
+
+    private sealed class HostedPreviewSurfaceController(
+        MediaForgeEngine engine,
+        RenderOutputId outputId,
+        HostedPreviewSurface surface) : IHostedPreviewSurfaceAttachmentController
+    {
+        public ValueTask ResizeAsync(HostedPreviewResizeRequest request, CancellationToken cancellationToken) =>
+            new(engine.ResizeHostedPreviewAsync(outputId, surface, request, cancellationToken));
+
+        public ValueTask RebindAsync(HostedPreviewRebindRequest request, CancellationToken cancellationToken) =>
+            new(engine.RebindHostedPreviewAsync(outputId, surface, request, cancellationToken));
+
+        public ValueTask DetachAsync(HostedPreviewDetachRequest request, CancellationToken cancellationToken) =>
+            new(engine.DetachHostedPreviewAsync(outputId, surface, request.Timeout, cancellationToken));
+
+        public async ValueTask CloseAsync(HostedPreviewCloseRequest request, CancellationToken cancellationToken)
+        {
+            await engine.DetachHostedPreviewAsync(outputId, surface, request.Timeout, cancellationToken).ConfigureAwait(false);
+            await surface.ClosePhysicalAsync(request, cancellationToken).ConfigureAwait(false);
+        }
     }
 }

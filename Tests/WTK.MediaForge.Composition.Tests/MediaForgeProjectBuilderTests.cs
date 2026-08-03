@@ -315,6 +315,20 @@ public class MediaForgeProjectBuilderTests
     }
 
     [Theory]
+    [InlineData(float.NaN, 0f)]
+    [InlineData(float.PositiveInfinity, 0f)]
+    [InlineData(0f, float.NegativeInfinity)]
+    public void LayerBuilder_set_bounds_rejects_non_finite_position(float x, float y)
+    {
+        var builder = MediaForgeProjectBuilder.Create()
+            .Canvas("Main", 1920, 1080, out var main)
+            .DesktopSource("Desktop", displayIndex: 0, out var desktop);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            builder.AddSourceLayer(main, desktop, layer => layer.SetBounds(x, y, 100, 100)));
+    }
+
+    [Theory]
     [InlineData(float.NaN)]
     [InlineData(float.PositiveInfinity)]
     public void LayerBuilder_set_rotation_rejects_non_finite_values(float rotationDegrees)

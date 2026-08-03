@@ -410,6 +410,8 @@ internal static class LayerBuilderValidation
 {
     public static Transform2D WithBounds(Transform2D current, float x, float y, float width, float height)
     {
+        EnsureFinite(x, nameof(x));
+        EnsureFinite(y, nameof(y));
         EnsurePositive(width, nameof(width));
         EnsurePositive(height, nameof(height));
 

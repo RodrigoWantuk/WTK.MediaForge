@@ -90,7 +90,7 @@ public sealed class HostedPreviewSurfaceTests
     [Fact]
     public async Task HostedPreviewSurface_timeout_preserves_attached_resource()
     {
-        var surface = new TestHostedPreviewSurface { HangResize = true };
+        var surface = new TestHostedPreviewSurface { ResizeCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously) };
         await surface.AttachAsync(new HostedPreviewAttachRequest(RenderOutputId.New(), Timeout));
 
         await Assert.ThrowsAsync<TimeoutException>(async () =>
@@ -101,12 +101,16 @@ public sealed class HostedPreviewSurfaceTests
 
         Assert.Equal(HostedPreviewSurfaceState.Attached, surface.State);
         Assert.Null(surface.Size);
+
+        surface.ResizeCompletion.SetResult();
+        await Task.Delay(20);
+        Assert.Equal(new FrameSize(1920, 1080), surface.Size);
     }
 
     [Fact]
     public async Task HostedPreviewSurface_close_timeout_preserves_inflight_resource_until_retry()
     {
-        var surface = new TestHostedPreviewSurface { HangClose = true };
+        var surface = new TestHostedPreviewSurface { CloseCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously) };
         await surface.AttachAsync(new HostedPreviewAttachRequest(RenderOutputId.New(), Timeout));
 
         await Assert.ThrowsAsync<TimeoutException>(async () =>
@@ -114,7 +118,8 @@ public sealed class HostedPreviewSurfaceTests
 
         Assert.Equal(HostedPreviewSurfaceState.Attached, surface.State);
 
-        surface.HangClose = false;
+        surface.CloseCompletion.SetResult();
+        await Task.Delay(20);
         await surface.CloseAsync(new HostedPreviewCloseRequest(Timeout));
 
         Assert.Equal(HostedPreviewSurfaceState.Closed, surface.State);
@@ -162,9 +167,9 @@ public sealed class HostedPreviewSurfaceTests
 
         public int CloseCount { get; private set; }
 
-        public bool HangResize { get; set; }
+        public TaskCompletionSource? ResizeCompletion { get; set; }
 
-        public bool HangClose { get; set; }
+        public TaskCompletionSource? CloseCompletion { get; set; }
 
         public bool ThrowOnRebind { get; set; }
 
@@ -184,8 +189,8 @@ public sealed class HostedPreviewSurfaceTests
             CancellationToken cancellationToken)
         {
             ResizeCount++;
-            if (HangResize)
-                await Task.Delay(global::System.Threading.Timeout.InfiniteTimeSpan, cancellationToken);
+            if (ResizeCompletion is not null)
+                await ResizeCompletion.Task;
         }
 
         protected override ValueTask RebindCoreAsync(
@@ -212,8 +217,8 @@ public sealed class HostedPreviewSurfaceTests
             CancellationToken cancellationToken)
         {
             CloseCount++;
-            if (HangClose)
-                await Task.Delay(global::System.Threading.Timeout.InfiniteTimeSpan, cancellationToken);
+            if (CloseCompletion is not null)
+                await CloseCompletion.Task;
         }
     }
 
